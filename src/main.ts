@@ -38,6 +38,7 @@ import { createCronEngine, createCronListener, createCronTools } from './task/cr
 import { createHeartbeat } from './task/heartbeat/index.js'
 import { NewsCollectorStore, NewsCollector } from './domain/news/index.js'
 import { createNewsArchiveTools } from './tool/news.js'
+import { ShinkaPlugin } from './plugin/shinka/index.js'
 
 // ==================== Persistence paths ====================
 
@@ -261,7 +262,7 @@ async function main() {
   // ==================== Plugins ====================
 
   // Core plugins — always-on, not toggleable at runtime
-  const corePlugins: Plugin[] = []
+  const corePlugins: Plugin[] = [new ShinkaPlugin()]
 
   // MCP Server is always active when a port is set — Claude Code provider depends on it for tools
   if (config.connectors.mcp.port) {
