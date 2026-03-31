@@ -8,6 +8,7 @@
 import { tool, type Tool } from 'ai'
 import { z } from 'zod'
 import { access } from 'node:fs/promises'
+import { signalStore } from './signal-store.js'
 
 // ==================== Types ====================
 
@@ -142,6 +143,7 @@ export async function executeShinkaSignalTool(
 
   if (!exists) {
     const filtered = filterMock(MOCK_SIGNALS)
+    signalStore.update(filtered)
     return { source: 'mock', reason: 'warehouse file not found', signals: filtered, count: filtered.length }
   }
 
@@ -150,6 +152,7 @@ export async function executeShinkaSignalTool(
 
     if (signals === null) {
       const filtered = filterMock(MOCK_SIGNALS)
+      signalStore.update(filtered)
       return {
         source: 'mock',
         reason: 'shinka/signal tables not found in warehouse',
@@ -158,10 +161,12 @@ export async function executeShinkaSignalTool(
       }
     }
 
+    signalStore.update(signals)
     return { source: 'warehouse', warehouse: WAREHOUSE_PATH, signals, count: signals.length }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const filtered = filterMock(MOCK_SIGNALS)
+    signalStore.update(filtered)
     return {
       source: 'mock',
       reason: `warehouse query failed: ${msg}`,

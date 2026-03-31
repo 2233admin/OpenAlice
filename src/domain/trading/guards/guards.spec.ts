@@ -4,8 +4,10 @@ import { Contract, Order, UNSET_DOUBLE, UNSET_DECIMAL } from '@traderalice/ibkr'
 import { MaxPositionSizeGuard } from './max-position-size.js'
 import { CooldownGuard } from './cooldown.js'
 import { SymbolWhitelistGuard } from './symbol-whitelist.js'
+import { PRiskGuard } from './p-risk.js'
 import { createGuardPipeline } from './guard-pipeline.js'
 import { resolveGuards, registerGuard } from './registry.js'
+import { signalStore } from '@/plugin/shinka/signal-store.js'
 import type { GuardContext, OperationGuard } from './types.js'
 import type { Operation } from '../git/types.js'
 import type { AccountInfo, Position } from '../brokers/types.js'
@@ -186,6 +188,94 @@ describe('SymbolWhitelistGuard', () => {
       operation: { action: 'cancelOrder', orderId: '123' },
     })
     expect(guard.check(ctx)).toBeNull()
+  })
+})
+
+// ==================== PRiskGuard ====================
+
+describe('PRiskGuard', () => {
+  beforeEach(() => {
+    signalStore.clear()
+  })
+
+  it('allows when no signal exists for symbol', () => {
+    const guard = new PRiskGuard({})
+    const ctx = makeContext({ operation: makePlaceOrderOp({ cashQty: 50_000 }) })
+    expect(guard.check(ctx)).toBeNull()
+  })
+
+  it('allows when p_risk is high', () => {
+    const guard = new PRiskGuard({ baseMaxPercent: 25 })
+    signalStore.update([{
+      symbol: 'AAPL', direction: 'long', strength: 0.8,
+      shinka_gen: 77, p_risk: 1.0, timestamp: new Date().toISOString(), market: 'a_share',
+    }])
+    const ctx = makeContext({
+      operation: makePlaceOrderOp({ cashQty: 20_000 }),
+      account: { netLiquidation: 100_000 },
+    })
+    expect(guard.check(ctx)).toBeNull()
+  })
+
+  it('blocks when p_risk below threshold', () => {
+    const guard = new PRiskGuard({ blockThreshold: 0.2 })
+    signalStore.update([{
+      symbol: 'AAPL', direction: 'long', strength: 0.8,
+      shinka_gen: 77, p_risk: 0.05, timestamp: new Date().toISOString(), market: 'a_share',
+    }])
+    const ctx = makeContext()
+    const result = guard.check(ctx)
+    expect(result).not.toBeNull()
+    expect(result).toContain('P_risk 0.05')
+    expect(result).toContain('threshold')
+  })
+
+  it('scales position limit by p_risk', () => {
+    const guard = new PRiskGuard({ baseMaxPercent: 25 })
+    // p_risk=0.5 → effective max = 12.5%
+    signalStore.update([{
+      symbol: 'AAPL', direction: 'long', strength: 0.8,
+      shinka_gen: 77, p_risk: 0.5, timestamp: new Date().toISOString(), market: 'a_share',
+    }])
+    const ctx = makeContext({
+      operation: makePlaceOrderOp({ cashQty: 15_000 }), // 15% > 12.5%
+      account: { netLiquidation: 100_000 },
+    })
+    const result = guard.check(ctx)
+    expect(result).not.toBeNull()
+    expect(result).toContain('p_risk=0.50')
+    expect(result).toContain('limit: 12.5%')
+  })
+
+  it('allows within p_risk-adjusted limit', () => {
+    const guard = new PRiskGuard({ baseMaxPercent: 25 })
+    // p_risk=0.5 → effective max = 12.5%
+    signalStore.update([{
+      symbol: 'AAPL', direction: 'long', strength: 0.8,
+      shinka_gen: 77, p_risk: 0.5, timestamp: new Date().toISOString(), market: 'a_share',
+    }])
+    const ctx = makeContext({
+      operation: makePlaceOrderOp({ cashQty: 10_000 }), // 10% < 12.5%
+      account: { netLiquidation: 100_000 },
+    })
+    expect(guard.check(ctx)).toBeNull()
+  })
+
+  it('skips non-placeOrder operations', () => {
+    const guard = new PRiskGuard({})
+    signalStore.update([{
+      symbol: 'AAPL', direction: 'long', strength: 0.8,
+      shinka_gen: 77, p_risk: 0.01, timestamp: new Date().toISOString(), market: 'a_share',
+    }])
+    const contract = makeContract({ symbol: 'AAPL' })
+    const ctx = makeContext({ operation: { action: 'closePosition', contract } })
+    expect(guard.check(ctx)).toBeNull()
+  })
+
+  it('resolves via registry', () => {
+    const guards = resolveGuards([{ type: 'p-risk', options: { baseMaxPercent: 30 } }])
+    expect(guards).toHaveLength(1)
+    expect(guards[0].name).toBe('p-risk')
   })
 })
 
