@@ -11,6 +11,7 @@ import type { AccountConfig } from '../../../core/config.js'
 import { CcxtBroker } from './ccxt/CcxtBroker.js'
 import { AlpacaBroker } from './alpaca/AlpacaBroker.js'
 import { IbkrBroker } from './ibkr/IbkrBroker.js'
+import { AShareBroker } from './ashare/AShareBroker.js'
 
 // ==================== Subtitle field descriptor ====================
 
@@ -89,6 +90,20 @@ export const BROKER_REGISTRY: Record<string, BrokerRegistryEntry> = {
     subtitleFields: [
       { field: 'host', prefix: 'TWS ' },
       { field: 'port' },
+    ],
+    guardCategory: 'securities',
+  },
+  ashare: {
+    configSchema: AShareBroker.configSchema,
+    configFields: AShareBroker.configFields,
+    fromConfig: AShareBroker.fromConfig,
+    name: 'A-Share (招商证券)',
+    description: 'A-share equities via quant-terminal QT backend. Supports TDX, QMT, THS, and paper trading modes.',
+    badge: 'CN',
+    badgeColor: 'text-red-500',
+    subtitleFields: [
+      { field: 'mode' },
+      { field: 'baseUrl', prefix: 'QT ' },
     ],
     guardCategory: 'securities',
   },
