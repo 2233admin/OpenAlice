@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useConfigPage } from '../hooks/useConfigPage'
 import { SaveIndicator } from '../components/SaveIndicator'
 import { SDKSelector, CONNECTOR_OPTIONS } from '../components/SDKSelector'
@@ -6,11 +8,33 @@ import { PageHeader } from '../components/PageHeader'
 import type { AppConfig, ConnectorsConfig } from '../api'
 
 export function ConnectorsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [pendingChatId, setPendingChatId] = useState<number | null>(null)
+
   const { config, status, loadError, updateConfig, updateConfigImmediate, retry } =
     useConfigPage<ConnectorsConfig>({
       section: 'connectors',
       extract: (full: AppConfig) => full.connectors,
     })
+
+  // Pick up ?addChatId= from URL
+  useEffect(() => {
+    const raw = searchParams.get('addChatId')
+    if (!raw) return
+    const id = Number(raw)
+    if (!isNaN(id) && id !== 0) setPendingChatId(id)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  const handleAuthorize = () => {
+    if (!config || !pendingChatId) return
+    if (!config.telegram.chatIds.includes(pendingChatId)) {
+      updateConfigImmediate({
+        telegram: { ...config.telegram, chatIds: [...config.telegram.chatIds, pendingChatId] },
+      })
+    }
+    setPendingChatId(null)
+  }
 
   // Derive selected connector IDs from enabled flags (web + mcp are always included)
   const selected = config
@@ -43,6 +67,28 @@ export function ConnectorsPage() {
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-5">
         {config && (
           <div className="max-w-[880px] mx-auto">
+            {/* Telegram chat authorization banner */}
+            {pendingChatId !== null && (
+              <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-[13px]">
+                <span>
+                  Authorize Telegram chat <code className="font-mono font-semibold">{pendingChatId}</code>?
+                </span>
+                <span className="flex gap-2 shrink-0">
+                  <button
+                    className="rounded-md bg-blue-600 px-3 py-1 text-white hover:bg-blue-500"
+                    onClick={handleAuthorize}
+                  >
+                    Authorize
+                  </button>
+                  <button
+                    className="rounded-md border border-border px-3 py-1 hover:bg-bg-2"
+                    onClick={() => setPendingChatId(null)}
+                  >
+                    Dismiss
+                  </button>
+                </span>
+              </div>
+            )}
             {/* Connector selector cards */}
             <ConfigSection
               title="Active Connectors"

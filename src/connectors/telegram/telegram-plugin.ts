@@ -34,6 +34,7 @@ export class TelegramPlugin implements Plugin {
 
   /** Throttle: last time we sent an auth-guidance reply per chatId. */
   private authReplyThrottle = new Map<number, number>()
+  private webPort = 3002
 
   constructor(
     config: Omit<TelegramConfig, 'pollingTimeout'> & { pollingTimeout?: number },
@@ -45,6 +46,7 @@ export class TelegramPlugin implements Plugin {
 
   async start(engineCtx: EngineContext) {
     this.connectorCenter = engineCtx.connectorCenter
+    this.webPort = engineCtx.config.connectors.web.port
 
     // Inject agent config into Claude Code config (used by /compact command)
     this.agentSdkConfig = {
@@ -75,8 +77,9 @@ export class TelegramPlugin implements Plugin {
       const last = this.authReplyThrottle.get(chatId) ?? 0
       if (now - last > 60_000) {
         this.authReplyThrottle.set(chatId, now)
-        console.log(`telegram: unauthorized chat ${chatId}, add to chatIds in connectors.json to allow`)
-        await ctx.reply('This chat is not authorized.').catch(() => {})
+        const link = `http://localhost:${this.webPort}/connectors?addChatId=${chatId}`
+        console.log(`telegram: unauthorized chat ${chatId}, authorize via ${link}`)
+        await ctx.reply(`To authorize this chat, open:\n${link}`).catch(() => {})
       }
     })
 
