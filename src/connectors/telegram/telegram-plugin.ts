@@ -10,7 +10,7 @@ import { askAgentSdk } from '../../ai-providers/agent-sdk/query.js'
 import type { AgentSdkConfig } from '../../ai-providers/agent-sdk/query.js'
 import { SessionStore } from '../../core/session'
 import { forceCompact } from '../../core/compaction'
-import { readAIBackend, writeAIBackend, type AIBackend } from '../../core/config'
+import { readAIBackend, writeAIBackend, readConnectorsConfig, type AIBackend } from '../../core/config'
 import type { ConnectorCenter } from '../../core/connector-center.js'
 import { TelegramConnector, splitMessage, MAX_MESSAGE_LENGTH } from './telegram-connector.js'
 
@@ -63,19 +63,20 @@ export class TelegramPlugin implements Plugin {
       console.error('telegram bot error:', err)
     })
 
-    // ── Middleware: auth guard (always active) ──
+    // ── Middleware: auth guard (hot-reloads chatIds from connectors.json) ──
     bot.use(async (ctx, next) => {
       const chatId = ctx.chat?.id
       if (!chatId) return
-      if (this.config.allowedChatIds.includes(chatId)) return next()
+      const { telegram } = await readConnectorsConfig()
+      if (telegram.chatIds.includes(chatId)) return next()
 
       // Unauthorized — log chat ID for operator, throttle reply (60s)
       const now = Date.now()
       const last = this.authReplyThrottle.get(chatId) ?? 0
       if (now - last > 60_000) {
         this.authReplyThrottle.set(chatId, now)
-        console.log(`telegram: unauthorized chat ${chatId}, set TELEGRAM_CHAT_ID=${chatId} to allow`)
-        await ctx.reply('This chat is not authorized. Add this chat ID to TELEGRAM_CHAT_ID in your environment config.').catch(() => {})
+        console.log(`telegram: unauthorized chat ${chatId}, add to chatIds in connectors.json to allow`)
+        await ctx.reply('This chat is not authorized.').catch(() => {})
       }
     })
 

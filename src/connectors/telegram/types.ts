@@ -4,7 +4,7 @@ export type { Update, Message, Chat, User }
 
 export interface TelegramConfig {
   token: string
-  /** Chat IDs allowed to interact. Empty = allow all. */
+  /** Chat IDs allowed to interact. Empty = reject all. */
   allowedChatIds: number[]
   /** Polling timeout in seconds (Telegram long-poll parameter). Default: 30 */
   pollingTimeout: number

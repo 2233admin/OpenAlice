@@ -437,6 +437,16 @@ export async function readToolsConfig() {
   }
 }
 
+/** Read connectors config from disk (called per-request for hot-reload). */
+export async function readConnectorsConfig() {
+  try {
+    const raw = JSON.parse(await readFile(resolve(CONFIG_DIR, 'connectors.json'), 'utf-8'))
+    return connectorsSchema.parse(raw)
+  } catch {
+    return connectorsSchema.parse({})
+  }
+}
+
 // ==================== AI Backend Helpers ====================
 
 export type AIBackend = 'claude-code' | 'vercel-ai-sdk' | 'agent-sdk'
