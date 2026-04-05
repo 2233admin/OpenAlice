@@ -47,6 +47,17 @@ export class ConnectorCenter {
   private lastInteraction: LastInteraction | null = null
 
   constructor(eventLog?: EventLog) {
+    // Restore last interaction from event log buffer (survives restart)
+    if (eventLog) {
+      const recent = eventLog.recent({ type: 'message.received' })
+      if (recent.length > 0) {
+        const last = recent[recent.length - 1]
+        const { channel, to } = last.payload as { channel: string; to: string }
+        this.lastInteraction = { channel, to, ts: last.ts }
+      }
+    }
+
+    // Subscribe to future interactions
     eventLog?.subscribeType('message.received', (entry) => {
       const { channel, to } = entry.payload as { channel: string; to: string }
       this.touch(channel, to)

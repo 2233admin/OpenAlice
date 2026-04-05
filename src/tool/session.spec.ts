@@ -213,6 +213,21 @@ describe('session tools', () => {
       expect(assistantMsg.text).toContain('[Tool: getPrice')
     })
 
+    it('includeToolCalls=false strips tool blocks, keeps text only', async () => {
+      const [assistantLine, userLine] = makeToolEntry('getPrice', { symbol: 'BTC' }, '95000')
+      const lines = [assistantLine, userLine].join('\n') + '\n'
+      await writeFile(join(tmpDir, 'filtered.jsonl'), lines)
+
+      const tools = createSessionTools(cc, tmpDir)
+      const result = await (tools.readSession.execute as Function)({ sessionId: 'filtered', includeToolCalls: false })
+
+      // Only the assistant text block survives; tool_use and tool_result entries are stripped
+      expect(result.messages).toHaveLength(1)
+      expect(result.messages[0].role).toBe('assistant')
+      expect(result.messages[0].text).toBe('Let me check.')
+      expect(result.messages[0].text).not.toContain('[Tool:')
+    })
+
     it('respects limit parameter', async () => {
       const lines = Array.from({ length: 10 }, (_, i) =>
         makeEntry('user', `msg ${i}`),

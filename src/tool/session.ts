@@ -32,7 +32,10 @@ export function createSessionTools(
           to: c.to,
           capabilities: c.capabilities,
         }))
-        const lastInteraction = connectorCenter.getLastInteraction()
+        const raw = connectorCenter.getLastInteraction()
+        const lastInteraction = raw
+          ? { channel: raw.channel, to: raw.to, time: new Date(raw.ts).toISOString() }
+          : null
         return { connectors, lastInteraction }
       },
     }),
@@ -54,8 +57,9 @@ export function createSessionTools(
         sessionId: z.string().describe('Session ID to read, e.g. "web/default", "heartbeat", "telegram/12345"'),
         limit: z.number().int().positive().optional().describe('Number of recent messages to return (default: 20)'),
         offset: z.number().int().nonnegative().optional().describe('Number of messages to skip from the end for pagination (default: 0)'),
+        includeToolCalls: z.boolean().optional().describe('Include tool call details in output (default: true). Set to false to see only text content, keeping context concise.'),
       }),
-      execute: async ({ sessionId, limit = 20, offset = 0 }) => {
+      execute: async ({ sessionId, limit = 20, offset = 0, includeToolCalls = true }) => {
         // Security: prevent path traversal
         const filePath = resolve(join(sessionsDir, sessionId + '.jsonl'))
         if (!filePath.startsWith(resolve(sessionsDir))) {
@@ -75,7 +79,10 @@ export function createSessionTools(
             )
 
           const active = getActiveEntries(allEntries)
-          const history = toTextHistory(active)
+
+          // When includeToolCalls is false, strip tool blocks from entries before conversion
+          const filtered = includeToolCalls ? active : stripToolBlocks(active)
+          const history = toTextHistory(filtered)
 
           // Add timestamps from the original entries
           const withTimestamps = history.map((h, i) => {
@@ -102,6 +109,27 @@ export function createSessionTools(
 }
 
 // ==================== Helpers ====================
+
+/**
+ * Strip tool_use and tool_result blocks from session entries.
+ * Entries that become empty after stripping are dropped entirely.
+ */
+function stripToolBlocks(entries: SessionEntry[]): SessionEntry[] {
+  const result: SessionEntry[] = []
+  for (const entry of entries) {
+    if (typeof entry.message.content === 'string') {
+      result.push(entry)
+      continue
+    }
+    const textOnly = entry.message.content.filter(
+      (b) => b.type !== 'tool_use' && b.type !== 'tool_result',
+    )
+    if (textOnly.length > 0) {
+      result.push({ ...entry, message: { ...entry.message, content: textOnly } })
+    }
+  }
+  return result
+}
 
 /** Recursively find all .jsonl files under a directory. */
 async function findJsonlFiles(
