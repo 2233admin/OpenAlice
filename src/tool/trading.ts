@@ -343,7 +343,7 @@ NOTE: This stages the operation. Call tradingCommit + tradingPush to execute.`,
     }),
 
     tradingPush: tool({
-      description: 'Trading push requires manual approval — call tradingStatus to show the user what is pending, then tell them to approve in the UI.',
+      description: 'Trading push requires manual approval — call tradingStatus to show the user what is pending, then tell them to approve (via Web UI, Telegram /trading, or other connected channels).',
       inputSchema: z.object({
         source: z.string().optional().describe(sourceDesc(false, 'If omitted, checks all accounts.')),
       }),
@@ -361,7 +361,7 @@ NOTE: This stages the operation. Call tradingCommit + tradingPush to execute.`,
           return { message: 'No committed operations to push.' }
         }
         return {
-          message: 'Push requires manual approval. The user can approve pending operations in the UI.',
+          message: 'Push requires manual approval. The user can approve pending operations from any connected channel (Web UI, Telegram /trading, etc).',
           pending: pending.map(uta => ({
             source: uta.id,
             ...uta.status(),

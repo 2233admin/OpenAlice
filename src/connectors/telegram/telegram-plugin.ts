@@ -13,6 +13,9 @@ import { forceCompact } from '../../core/compaction'
 import { readAIBackend, writeAIBackend, readConnectorsConfig, type AIBackend } from '../../core/config'
 import type { ConnectorCenter } from '../../core/connector-center.js'
 import { TelegramConnector, splitMessage, MAX_MESSAGE_LENGTH } from './telegram-connector.js'
+import type { AccountManager } from '../../domain/trading/index.js'
+import type { Operation } from '../../domain/trading/git/types.js'
+import { getOperationSymbol } from '../../domain/trading/git/types.js'
 
 const BACKEND_LABELS: Record<AIBackend, string> = {
   'claude-code': 'Claude Code',
@@ -103,6 +106,10 @@ export class TelegramPlugin implements Plugin {
       await this.handleCompactCommand(ctx.chat.id, userId)
     })
 
+    bot.command('trading', async (ctx) => {
+      await this.handleTradingCommand(ctx.chat.id, engineCtx.accountManager)
+    })
+
     // ── Callback queries (inline keyboard presses) ──
     bot.on('callback_query:data', async (ctx) => {
       const data = ctx.callbackQuery.data
@@ -124,6 +131,42 @@ export class TelegramPlugin implements Plugin {
             `Current provider: ${BACKEND_LABELS[backend]}\n\nChoose default AI provider:`,
             { reply_markup: keyboard },
           )
+        } else if (data.startsWith('trading:')) {
+          const parts = data.split(':')
+          const action = parts[1]
+          const accountId = parts.slice(2).join(':')
+
+          if (action === 'back') {
+            // Return to overview
+            const { text, keyboard } = await this.buildTradingOverview(engineCtx.accountManager)
+            await ctx.answerCallbackQuery()
+            await ctx.editMessageText(text, { reply_markup: keyboard }).catch(() => {})
+          } else if (action === 'view') {
+            const { text, keyboard } = await this.buildAccountPanel(engineCtx.accountManager, accountId)
+            await ctx.answerCallbackQuery()
+            await ctx.editMessageText(text, { reply_markup: keyboard }).catch(() => {})
+          } else if (action === 'push' || action === 'reject') {
+            const uta = engineCtx.accountManager.get(accountId)
+            if (!uta) { await ctx.answerCallbackQuery({ text: 'Account not found' }); return }
+            const status = uta.status()
+            if (!status.pendingMessage) {
+              await ctx.answerCallbackQuery({ text: 'No pending commit' })
+              // Refresh panel
+              const { text, keyboard } = await this.buildAccountPanel(engineCtx.accountManager, accountId)
+              await ctx.editMessageText(text, { reply_markup: keyboard }).catch(() => {})
+              return
+            }
+            if (action === 'push') {
+              const result = await uta.push()
+              await ctx.answerCallbackQuery({ text: `${result.submitted.length} submitted, ${result.rejected.length} rejected` })
+            } else {
+              await uta.reject()
+              await ctx.answerCallbackQuery({ text: 'Rejected' })
+            }
+            // Refresh panel after action
+            const { text, keyboard } = await this.buildAccountPanel(engineCtx.accountManager, accountId)
+            await ctx.editMessageText(text, { reply_markup: keyboard }).catch(() => {})
+          }
         } else if (data.startsWith('heartbeat:')) {
           const newEnabled = data === 'heartbeat:on'
           await engineCtx.heartbeat.setEnabled(newEnabled)
@@ -169,6 +212,7 @@ export class TelegramPlugin implements Plugin {
       { command: 'settings', description: 'Choose default AI provider' },
       { command: 'heartbeat', description: 'Toggle heartbeat self-check' },
       { command: 'compact', description: 'Force compact session context' },
+      { command: 'trading', description: 'Trading status and pending commits' },
     ])
 
     // ── Initialize and get bot info ──
@@ -395,6 +439,125 @@ export class TelegramPlugin implements Plugin {
     // No text or edit failed — clean up the placeholder
     if (placeholderMsgId) {
       await this.bot!.api.deleteMessage(chatId, placeholderMsgId).catch(() => {})
+    }
+  }
+
+  // ── Trading command ──
+
+  private async handleTradingCommand(chatId: number, accountManager: AccountManager) {
+    const accounts = accountManager.resolve()
+    if (accounts.length === 0) {
+      await this.sendReply(chatId, 'No trading accounts configured.')
+      return
+    }
+
+    // Single account — skip overview, show panel directly
+    if (accounts.length === 1) {
+      const { text, keyboard } = await this.buildAccountPanel(accountManager, accounts[0].id)
+      await this.bot!.api.sendMessage(chatId, text, { reply_markup: keyboard })
+      return
+    }
+
+    // Multiple accounts — show overview with account selector
+    const { text, keyboard } = await this.buildTradingOverview(accountManager)
+    await this.bot!.api.sendMessage(chatId, text, { reply_markup: keyboard })
+  }
+
+  private async buildTradingOverview(accountManager: AccountManager): Promise<{ text: string; keyboard: InlineKeyboard }> {
+    const accounts = accountManager.resolve()
+    const lines: string[] = ['Trading Panel', '']
+    const keyboard = new InlineKeyboard()
+
+    for (const uta of accounts) {
+      const healthIcon = uta.health === 'healthy' ? '🟢' : uta.health === 'degraded' ? '🟡' : '🔴'
+      const gitStatus = uta.status()
+      const pendingTag = gitStatus.pendingMessage ? '  ⏳ pending' : ''
+      let equityStr = ''
+      try {
+        const acc = await uta.getAccount()
+        equityStr = `  $${acc.netLiquidation.toFixed(0)}`
+      } catch { /* skip */ }
+      lines.push(`${healthIcon} ${uta.label}${equityStr}${pendingTag}`)
+      keyboard.text(uta.label, `trading:view:${uta.id}`)
+    }
+
+    return { text: lines.join('\n'), keyboard }
+  }
+
+  private async buildAccountPanel(accountManager: AccountManager, accountId: string): Promise<{ text: string; keyboard: InlineKeyboard }> {
+    const uta = accountManager.get(accountId)
+    if (!uta) return { text: 'Account not found.', keyboard: new InlineKeyboard() }
+
+    const healthIcon = uta.health === 'healthy' ? '🟢' : uta.health === 'degraded' ? '🟡' : '🔴'
+    const gitStatus = uta.status()
+    const lines: string[] = [`Trading · ${uta.label} ${healthIcon}`]
+
+    // Account info
+    try {
+      const acc = await uta.getAccount()
+      const pnl = acc.unrealizedPnL >= 0 ? `+$${acc.unrealizedPnL.toFixed(0)}` : `-$${Math.abs(acc.unrealizedPnL).toFixed(0)}`
+      lines.push(`Equity $${acc.netLiquidation.toFixed(0)}  Cash $${acc.totalCashValue.toFixed(0)}  PnL ${pnl}`)
+    } catch {
+      lines.push('(account data unavailable)')
+    }
+
+    // Pending commit
+    const keyboard = new InlineKeyboard()
+    if (gitStatus.pendingMessage) {
+      lines.push('')
+      lines.push(`Pending: ${gitStatus.pendingMessage}`)
+      for (const op of gitStatus.staged) {
+        lines.push(`  ${this.formatOperation(op)}`)
+      }
+      keyboard
+        .text('Approve', `trading:push:${uta.id}`)
+        .text('Reject', `trading:reject:${uta.id}`)
+        .row()
+    } else if (gitStatus.staged.length > 0) {
+      lines.push('')
+      lines.push('Staged (not committed):')
+      for (const op of gitStatus.staged) {
+        lines.push(`  ${this.formatOperation(op)}`)
+      }
+    }
+
+    // Recent history
+    const commits = uta.log({ limit: 3 })
+    if (commits.length > 0) {
+      lines.push('')
+      lines.push('History:')
+      for (const c of commits) {
+        const ops = c.operations.map((o) => `${o.symbol} ${o.action}`).join(', ')
+        lines.push(`  ${c.hash.slice(0, 7)} ${c.message}${ops ? ` (${ops})` : ''}`)
+      }
+    }
+
+    // Back button only if multiple accounts
+    if (accountManager.size > 1) {
+      keyboard.text('← Back', 'trading:back:')
+    }
+
+    return { text: lines.join('\n'), keyboard }
+  }
+
+  private formatOperation(op: Operation): string {
+    const symbol = getOperationSymbol(op)
+    switch (op.action) {
+      case 'placeOrder': {
+        const side = op.order?.action || '?'
+        const qty = op.order?.totalQuantity
+        const cashQty = op.order?.cashQty
+        const size = (cashQty && cashQty > 0) ? `$${cashQty}` : qty ? `${qty}` : '?'
+        return `${side} ${symbol} ${size}`
+      }
+      case 'closePosition':
+        return `CLOSE ${symbol}${op.quantity ? ` (${op.quantity})` : ''}`
+      case 'modifyOrder':
+        return `MODIFY order ${op.orderId}`
+      case 'cancelOrder':
+        return `CANCEL order ${op.orderId}`
+      case 'syncOrders':
+        return 'SYNC orders'
     }
   }
 
