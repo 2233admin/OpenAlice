@@ -155,6 +155,12 @@ const connectorsSchema = z.object({
     botUsername: z.string().optional(),
     chatIds: z.array(z.number()).default([]),
   }).default({ enabled: false, chatIds: [] }),
+  webhooks: z.array(z.object({
+    name: z.string(),
+    url: z.string().url(),
+    type: z.enum(['feishu', 'wecom', 'dingtalk', 'discord', 'slack', 'custom']),
+    template: z.string().optional(),
+  })).default([]),
 })
 
 const heartbeatSchema = z.object({

@@ -39,6 +39,7 @@ import { createHeartbeat } from './task/heartbeat/index.js'
 import { NewsCollectorStore, NewsCollector } from './domain/news/index.js'
 import { createNewsArchiveTools } from './tool/news.js'
 import { ShinkaPlugin } from './plugin/shinka/index.js'
+import { WebhookPlugin } from './connectors/webhook/index.js'
 
 // ==================== Persistence paths ====================
 
@@ -288,6 +289,10 @@ async function main() {
     }))
   }
 
+  for (const wh of config.connectors.webhooks) {
+    optionalPlugins.set(`webhook-${wh.name}`, new WebhookPlugin(wh))
+  }
+
   if (config.marketData.apiServer.enabled) {
     optionalPlugins.set('openbb-server', new OpenBBServerPlugin({ port: config.marketData.apiServer.port }))
   }
@@ -331,6 +336,25 @@ async function main() {
         await p.start(ctx)
         optionalPlugins.set('telegram', p)
         changes.push('telegram started')
+      }
+
+      // --- Webhooks ---
+      const freshWebhookKeys = new Set(fresh.connectors.webhooks.map(w => `webhook-${w.name}`))
+      for (const key of [...optionalPlugins.keys()]) {
+        if (key.startsWith('webhook-') && !freshWebhookKeys.has(key)) {
+          await optionalPlugins.get(key)!.stop()
+          optionalPlugins.delete(key)
+          changes.push(`${key} stopped`)
+        }
+      }
+      for (const wh of fresh.connectors.webhooks) {
+        const key = `webhook-${wh.name}`
+        if (!optionalPlugins.has(key)) {
+          const p = new WebhookPlugin(wh)
+          await p.start(ctx)
+          optionalPlugins.set(key, p)
+          changes.push(`${key} started`)
+        }
       }
 
       // --- OpenBB API Server ---
