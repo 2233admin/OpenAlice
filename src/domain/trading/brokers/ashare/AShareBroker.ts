@@ -96,6 +96,13 @@ interface QtCancelOrderResponse {
   error?: string
 }
 
+/** Full order response from GET /order/{id} — any status including filled/cancelled. */
+interface QtOrderFull extends QtOrder {
+  entrust_no?: string
+  filled_volume?: number
+  filled_price?: number
+}
+
 interface QtAccountInfoResponse {
   data: {
     balance?: { available?: number; total?: number; [key: string]: unknown }
@@ -314,6 +321,21 @@ export class AShareBroker implements IBroker {
     return res.json() as Promise<T>
   }
 
+  /**
+   * Like qtFetch but returns null on 404 instead of throwing.
+   * Used for single-order lookups where "not found" is a valid outcome.
+   */
+  private async qtFetchOptional<T>(path: string): Promise<T | null> {
+    const url = `${this.baseUrl}${path}`
+    const res = await fetch(url, { method: 'GET' })
+    if (res.status === 404) return null
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new BrokerError('NETWORK', `QT backend ${res.status}: ${text}`)
+    }
+    return res.json() as Promise<T>
+  }
+
   // ---- Lifecycle ----
 
   async init(): Promise<void> {
@@ -524,8 +546,20 @@ export class AShareBroker implements IBroker {
   }
 
   async getOrder(orderId: string): Promise<OpenOrder | null> {
-    const all = await this.getOrdersPending()
-    return all.find(o => String(o.order.orderId) === orderId) ?? null
+    try {
+      const full = await this.qtFetchOptional<QtOrderFull>(`/order/${orderId}`)
+      if (!full) return null
+      const openOrder = mapQtOrderToOpenOrder(full)
+      if (full.filled_volume && full.filled_volume > 0) {
+        openOrder.order.filledQuantity = new Decimal(full.filled_volume)
+      }
+      if (full.filled_price && full.filled_price > 0) {
+        openOrder.avgFillPrice = full.filled_price
+      }
+      return openOrder
+    } catch (err) {
+      throw BrokerError.from(err, 'NETWORK')
+    }
   }
 
   /**
