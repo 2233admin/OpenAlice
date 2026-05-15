@@ -25,10 +25,17 @@ fi
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
 
-# MCP config — leave ${AQ_LAUNCHER_REPO_ROOT} / ${OPENALICE_MCP_URL}
-# placeholders unexpanded so the agent CLI does its own expansion at spawn
-# time.
-cp "$AQ_TEMPLATE_FILES_DIR/mcp.json" .mcp.json
+# Workspace UUID — directory name. WorkspaceCreator names $OUT_DIR with the
+# random UUID it just assigned, so basename matches the registry's wsId.
+WS_ID="$(basename "$OUT_DIR")"
+
+# MCP config — leave ${OPENALICE_MCP_URL} placeholder unexpanded so the
+# agent CLI evaluates it at spawn time. The __WS_ID__ literal IS expanded
+# now: it gets baked into the `openalice-workspace` server URL so the
+# OpenAlice MCP `/mcp/:wsId` route can identify which workspace called
+# inbox_push and other workspace-scoped tools. wsId is invisible to the
+# agent — workspace identity rides the URL path, not a tool argument.
+sed "s|__WS_ID__|$WS_ID|g" "$AQ_TEMPLATE_FILES_DIR/mcp.json" > .mcp.json
 
 # Locate Alice's persona — prefer the user's live edit, fall back to the
 # shipped default. If neither is reachable (e.g. AQ_LAUNCHER_REPO_ROOT

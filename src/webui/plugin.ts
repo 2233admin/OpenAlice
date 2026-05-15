@@ -30,6 +30,18 @@ import { createVersionRoutes } from './routes/version.js'
 import { mountOpenTypeBB } from '../server/opentypebb.js'
 import { buildSDKCredentials } from '../domain/market-data/credential-map.js'
 import { createWorkspaceService, type WorkspaceService } from '../workspaces/service.js'
+
+/** Cross-plugin hand-off for WorkspaceService. WebPlugin creates it
+ *  inside `start()`; McpPlugin needs it earlier for the `/mcp/:wsId`
+ *  route lookup. A small ref-box lets the late creator publish without
+ *  changing either plugin's constructor signature. */
+export interface WorkspaceServiceRef {
+  current: WorkspaceService | null
+}
+
+export function createWorkspaceServiceRef(): WorkspaceServiceRef {
+  return { current: null }
+}
 import { createWorkspaceRoutes } from './routes/workspaces.js'
 import { attachWorkspacesWS, type AttachedWS } from './workspaces-ws.js'
 import type { Server as HttpServer } from 'node:http'
@@ -48,7 +60,14 @@ export class WebPlugin implements Plugin {
   private workspaceService: WorkspaceService | null = null
   private workspacesWs: AttachedWS | null = null
 
-  constructor(private config: WebConfig) {}
+  constructor(
+    private config: WebConfig,
+    /** Optional cross-plugin ref that gets populated when the workspace
+     *  service finishes starting. McpPlugin reads through this to find
+     *  workspaces for the `/mcp/:wsId` route. Omitted in legacy callers
+     *  / tests; ignored when null. */
+    private workspaceServiceRef?: WorkspaceServiceRef,
+  ) {}
 
   async start(ctx: EngineContext) {
     // Load sub-channel definitions
@@ -129,6 +148,7 @@ export class WebPlugin implements Plugin {
     // Self-contained subsystem ported from auto-quant-launcher. Owns its own
     // state under ~/.openalice/workspaces/ and its own /api/workspaces/pty WS.
     this.workspaceService = await createWorkspaceService()
+    if (this.workspaceServiceRef) this.workspaceServiceRef.current = this.workspaceService
     app.route('/api/workspaces', createWorkspaceRoutes(this.workspaceService))
 
     // ==================== Mount opentypebb (market data HTTP) ====================
@@ -176,6 +196,7 @@ export class WebPlugin implements Plugin {
     if (this.workspaceService) {
       await this.workspaceService.dispose('plugin stop')
       this.workspaceService = null
+      if (this.workspaceServiceRef) this.workspaceServiceRef.current = null
     }
     this.server?.close()
   }

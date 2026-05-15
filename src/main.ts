@@ -6,6 +6,7 @@ import type { Plugin, EngineContext, ReconnectResult } from './core/types.js'
 import { McpPlugin } from './server/mcp.js'
 import { TelegramPlugin } from './connectors/telegram/index.js'
 import { WebPlugin } from './webui/index.js'
+import { createWorkspaceServiceRef } from './webui/plugin.js'
 import { McpAskPlugin } from './connectors/mcp-ask/index.js'
 import { createThinkingTools } from './tool/thinking.js'
 import { UTAManager, createSnapshotService, createSnapshotScheduler } from './domain/trading/index.js'
@@ -31,6 +32,8 @@ import { ConnectorCenter } from './core/connector-center.js'
 import { createNotificationsStore } from './core/notifications-store.js'
 import { createInboxStore } from './core/inbox-store.js'
 import { ToolCenter } from './core/tool-center.js'
+import { WorkspaceToolCenter } from './core/workspace-tool-center.js'
+import { inboxPushFactory } from './tool/inbox-push.js'
 import { AgentCenter } from './core/agent-center.js'
 import { AgentWorkRunner } from './core/agent-work.js'
 import { createNotifyUserTool } from './tool/notify-user.js'
@@ -85,6 +88,11 @@ async function main() {
   // ==================== Tool Center (created early — UTAManager needs it) ====================
 
   const toolCenter = new ToolCenter()
+
+  // ==================== Workspace Tool Center (factories — instantiated per wsId at MCP request time) ====================
+
+  const workspaceToolCenter = new WorkspaceToolCenter()
+  workspaceToolCenter.register(inboxPushFactory)
 
   // ==================== Trading Account Manager ====================
 
@@ -328,16 +336,26 @@ async function main() {
   // Core plugins — always-on, not toggleable at runtime
   const corePlugins: Plugin[] = []
 
+  // Cross-plugin ref so McpPlugin can resolve workspaces for `/mcp/:wsId`
+  // even though WebPlugin (the service's actual creator) starts later.
+  const workspaceServiceRef = createWorkspaceServiceRef()
+
   // MCP Server is always active when a port is set — Claude Code provider depends on it for tools.
   // Lives at top-level config (not under connectors:) because it exports
   // ToolCenter outward rather than consuming chat input.
   if (config.mcp.port) {
-    corePlugins.push(new McpPlugin(toolCenter, config.mcp.port))
+    corePlugins.push(new McpPlugin(
+      toolCenter,
+      config.mcp.port,
+      workspaceToolCenter,
+      inboxStore,
+      () => workspaceServiceRef.current,
+    ))
   }
 
   // Web UI is always active (no enabled flag)
   if (config.connectors.web.port) {
-    corePlugins.push(new WebPlugin({ port: config.connectors.web.port }))
+    corePlugins.push(new WebPlugin({ port: config.connectors.web.port }, workspaceServiceRef))
   }
 
   // Optional plugins — toggleable at runtime via reconnectConnectors()
