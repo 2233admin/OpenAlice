@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, MessageSquare } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { inboxLive } from '../live/inbox'
@@ -95,26 +95,19 @@ function Detail({ entry }: { entry: InboxEntry }) {
 
   return (
     <div className="max-w-[820px] mx-auto py-6 px-4 md:px-8">
-      {/* Header: workspace · timestamp. Workspace label is a button when
-       *  the workspace still exists. No "New" chip — selection always
-       *  marks read, so by the time the detail pane renders the entry is
-       *  read by definition; the chip would only ever flash for one
-       *  render. The sidebar dot is the canonical unread signal. */}
+      {/* Header: workspace · timestamp. Plain text — the primary navigation
+       *  affordance sits at the bottom of the comments thread (Linear-style
+       *  reply input). Making the label itself a button was too subtle and
+       *  the user didn't expect to click a heading. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {wsAlive ? (
-          <button
-            type="button"
-            onClick={openWorkspace}
-            className="text-[14px] font-medium text-text hover:text-accent transition-colors cursor-pointer"
-            title={`Open workspace ${displayLabel}`}
-          >
-            {displayLabel}
-          </button>
-        ) : (
-          <span className="text-[14px] font-medium text-text-muted/70 line-through" title="Workspace no longer exists">
-            {displayLabel}
-          </span>
-        )}
+        <span
+          className={`text-[14px] font-medium ${
+            wsAlive ? 'text-text' : 'text-text-muted/70 line-through'
+          }`}
+          title={wsAlive ? undefined : 'Workspace no longer exists'}
+        >
+          {displayLabel}
+        </span>
         <span className="text-[11px] text-text-muted/70 tabular-nums ml-auto">
           {formatAbsolute(entry.ts)}
           <span className="mx-1.5 text-text-muted/40">·</span>
@@ -141,24 +134,30 @@ function Detail({ entry }: { entry: InboxEntry }) {
         </div>
       )}
 
-      {/* Jump-to-workspace CTA. The Linear analogue is "open issue from the
-       *  inbox notification" — except OpenAlice's atom is a workspace, so
-       *  the action takes the user from a read-only inbox view into the
-       *  workspace's live chat where they can reply to the agent. */}
-      <div className="mt-8 pt-5 border-t border-border/50">
+      {/* Reply bar — the navigation entry point. Linear-style: a wide bar
+       *  appended to the comments thread, visually styled like a chat
+       *  input. The action isn't actually sending — clicking opens the
+       *  workspace tab + switches the sidebar so the user can pick a
+       *  session and chat back to the agent there. v2 could pre-fill the
+       *  workspace chat input with whatever the user types here; for v1
+       *  the bar is single-click navigation. */}
+      <div className="mt-6">
         {wsAlive ? (
           <button
             type="button"
             onClick={openWorkspace}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-accent/15 text-accent text-[12px] font-medium hover:bg-accent/25 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-bg-tertiary/40 hover:bg-bg-tertiary hover:border-accent/40 transition-colors text-left group"
           >
-            <span>Open {displayLabel}</span>
-            <ArrowRight size={13} strokeWidth={2} />
+            <MessageSquare size={15} strokeWidth={1.75} className="shrink-0 text-text-muted/70 group-hover:text-accent transition-colors" />
+            <span className="flex-1 text-[13px] text-text-muted/80 group-hover:text-text transition-colors">
+              Reply in <span className="font-medium text-text">{displayLabel}</span>…
+            </span>
+            <ArrowRight size={15} strokeWidth={1.75} className="shrink-0 text-text-muted/60 group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
           </button>
         ) : (
-          <span className="text-[12px] text-text-muted/60 italic">
-            Workspace no longer exists — nowhere to navigate.
-          </span>
+          <div className="px-4 py-3 text-[12px] text-text-muted/60 italic border-t border-border/40 pt-4">
+            Workspace no longer exists — nowhere to reply.
+          </div>
         )}
       </div>
 
