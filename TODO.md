@@ -27,6 +27,21 @@ the item when done — git log is the history.
       a workspace can call OpenAlice". Future template authors need to
       know what shape to ship.
 
+- [ ] Retire the `mcp-ask` connector (`src/connectors/mcp-ask/`). It
+      exposed Alice's conversation as an MCP endpoint so external agents
+      could "ask Alice as an agent". The new Workspace architecture
+      gives external agents a richer interaction surface (a real PTY
+      session with file-system access + the full MCP tool catalog),
+      making the ask-Alice-over-MCP shape redundant. Default config has
+      `mcpAsk.enabled: false` so nobody is depending on it in practice.
+      Delete: `src/connectors/mcp-ask/`, related schema in
+      `src/core/config.ts` (`connectorsSchema.mcpAsk`), the two `McpAsk`
+      wiring sites in `src/main.ts` (initial spawn + reconnect path).
+      Also resolves the Node 22-only `fs/promises.glob` usage in
+      `mcp-ask-plugin.ts:82` that would otherwise leak into runtime
+      requirements (the only currently-flagged Node 22 API in OpenAlice
+      backend code).
+
 ## Security
 
 - [ ] Broader API security audit. Only `/api/events/ingest` has auth
