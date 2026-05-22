@@ -1,0 +1,38 @@
+{
+  "name": "@traderalice/uta-protocol",
+  "version": "0.1.0",
+  "description": "UTA-Alice wire protocol — Zod schemas, TS types, client SDK",
+  "type": "module",
+  "exports": {
+    ".": {
+      "openalice-source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TraderAlice/OpenAlice.git",
+    "directory": "packages/uta-protocol"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "AGPL-3.0"
+}
