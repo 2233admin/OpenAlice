@@ -177,9 +177,9 @@ export class TelegramPlugin implements Plugin {
             await ctx.answerCallbackQuery()
             await ctx.editMessageText(text, { reply_markup: keyboard }).catch(() => {})
           } else if (action === 'push' || action === 'reject') {
-            const uta = engineCtx.utaManager.get(accountId)
+            const uta = await engineCtx.utaManager.get(accountId)
             if (!uta) { await ctx.answerCallbackQuery({ text: 'Account not found' }); return }
-            const status = uta.status()
+            const status = await uta.status()
             if (!status.pendingMessage) {
               await ctx.answerCallbackQuery({ text: 'No pending commit' })
               // Refresh panel
@@ -492,7 +492,7 @@ export class TelegramPlugin implements Plugin {
   // ── Trading command ──
 
   private async handleTradingCommand(chatId: number, utaManager: UTAManager) {
-    const accounts = utaManager.resolve()
+    const accounts = await utaManager.resolve()
     if (accounts.length === 0) {
       await this.sendReply(chatId, 'No trading accounts configured.')
       return
@@ -511,13 +511,13 @@ export class TelegramPlugin implements Plugin {
   }
 
   private async buildTradingOverview(utaManager: UTAManager): Promise<{ text: string; keyboard: InlineKeyboard }> {
-    const accounts = utaManager.resolve()
+    const accounts = await utaManager.resolve()
     const lines: string[] = ['Trading Panel', '']
     const keyboard = new InlineKeyboard()
 
     for (const uta of accounts) {
       const healthIcon = uta.health === 'healthy' ? '🟢' : uta.health === 'degraded' ? '🟡' : '🔴'
-      const gitStatus = uta.status()
+      const gitStatus = await uta.status()
       const pendingTag = gitStatus.pendingMessage ? '  ⏳ pending' : ''
       let equityStr = ''
       try {
@@ -532,11 +532,11 @@ export class TelegramPlugin implements Plugin {
   }
 
   private async buildAccountPanel(utaManager: UTAManager, accountId: string): Promise<{ text: string; keyboard: InlineKeyboard }> {
-    const uta = utaManager.get(accountId)
+    const uta = await utaManager.get(accountId)
     if (!uta) return { text: 'Account not found.', keyboard: new InlineKeyboard() }
 
     const healthIcon = uta.health === 'healthy' ? '🟢' : uta.health === 'degraded' ? '🟡' : '🔴'
-    const gitStatus = uta.status()
+    const gitStatus = await uta.status()
     const lines: string[] = [`Trading · ${uta.label} ${healthIcon}`]
 
     // Account info
@@ -570,7 +570,7 @@ export class TelegramPlugin implements Plugin {
     }
 
     // Recent history
-    const commits = uta.log({ limit: 3 })
+    const commits = await uta.log({ limit: 3 })
     if (commits.length > 0) {
       lines.push('')
       lines.push('History:')
@@ -580,8 +580,12 @@ export class TelegramPlugin implements Plugin {
       }
     }
 
-    // Back button only if multiple accounts
-    if (utaManager.size > 1) {
+    // Back button only if multiple accounts. We don't cache the UTA
+    // list here (telegram is low-traffic); a fresh count via listUTAs
+    // is fine and avoids a `size` getter that won't survive the SDK
+    // swap.
+    const utaCount = (await utaManager.listUTAs()).length
+    if (utaCount > 1) {
       keyboard.text('← Back', 'trading:back:')
     }
 
