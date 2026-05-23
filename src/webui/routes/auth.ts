@@ -19,7 +19,7 @@ import {
   validateAndTouch,
   getTokenInfo,
 } from '@/services/auth/index.js'
-import { SESSION_COOKIE_NAME } from '../middleware/auth.js'
+import { SESSION_COOKIE_NAME, isLoopbackIp } from '../middleware/auth.js'
 
 const loginSchema = z.object({
   token: z.string().min(1, 'token is required'),
@@ -40,9 +40,25 @@ export function createAuthRoutes(opts: AuthRouteOptions = {}) {
    * metadata. No-side-effect endpoint — does NOT extend session expiry.
    */
   app.get('/status', async (c) => {
+    const tokenInfo = await getTokenInfo()
+
+    // Mirror the middleware's localhost-trust passthrough: when no
+    // trusted proxy is configured and the request came from a real
+    // loopback socket, report authed:true even without a cookie. This
+    // keeps `pnpm dev` zero-friction — the UI never bounces to the
+    // login page in single-user local mode.
+    const trustedProxies = (process.env['OPENALICE_TRUSTED_PROXIES'] ?? '')
+      .split(',').map((s) => s.trim()).filter(Boolean)
+    if (trustedProxies.length === 0) {
+      const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+      const remote = env?.incoming?.socket?.remoteAddress ?? ''
+      if (isLoopbackIp(remote)) {
+        return c.json({ authed: true, tokenConfigured: tokenInfo.exists, passthrough: 'localhost' })
+      }
+    }
+
     const sid = readSidFromCookie(c.req.header('cookie') ?? '')
     if (!sid) {
-      const tokenInfo = await getTokenInfo()
       return c.json({ authed: false, tokenConfigured: tokenInfo.exists })
     }
     const session = await validateAndTouch(sid)
