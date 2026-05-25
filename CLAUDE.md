@@ -6,22 +6,57 @@ File-driven AI trading agent. All state (sessions, config, logs) stored as files
 
 ```bash
 pnpm install
-pnpm dev        # Dev mode (tsx watch, port 3002)
-pnpm build      # Production build (backend + UI)
-pnpm test       # Vitest
-pnpm test:e2e   # e2e test
+pnpm dev          # Dev: Guardian spawns UTA (47333) + Alice (47331) + Vite (5173)
+pnpm build        # Production: turbo (packages + UI + services/uta) + tsup (Alice)
+pnpm test         # Vitest across the monorepo (src/, packages/, services/, ui/)
+```
+
+Less-common commands:
+
+```bash
+pnpm test:watch       # Vitest watch mode
+pnpm test:e2e         # End-to-end suite (separate config)
+pnpm test:bbProvider  # OpenBB provider integration suite
+pnpm start            # Run the built Alice bundle (dist/main.js)
+pnpm electron:dev     # Electron shell over the built bundle
+pnpm build:migration-index  # Regenerate src/migrations/INDEX.md
 ```
 
 ### Pre-commit Verification
 
-Always run these checks before committing:
+The monorepo has four typecheck scopes; the root tsc command only covers
+Alice's `src/`. Each scope has a different reason to exist; run the ones
+your change actually touched.
 
 ```bash
-npx tsc --noEmit   # Type check (catches errors pnpm build misses)
-pnpm test           # Unit tests
+# Alice src/ — always run
+npx tsc --noEmit
+
+# UI strict types (only if you touched ui/)
+cd ui && npx tsc -b && cd ..
+
+# A workspace package (only if you touched packages/<pkg>)
+pnpm -F @traderalice/<pkg> typecheck
+
+# Behavior across the whole monorepo — always run
+pnpm test
 ```
 
-`pnpm build` uses tsup which is lenient — `tsc --noEmit` catches strict type errors that tsup ignores.
+Notes:
+
+- **`pnpm build` runs lenient tsup** for the Alice bundle and proper
+  `tsc -b` for the UI. So `pnpm build` catches UI type errors but not
+  Alice's; that's why `npx tsc --noEmit` from root is the canonical
+  Alice strict-check.
+- **`pnpm test` covers all `*.spec.ts` under `src/`, `packages/`,
+  `services/`, and (via the jsdom project) `ui/`** — Vitest's `projects`
+  config does the routing. But Vitest transpiles via esbuild, which does
+  NOT enforce strict types. Tests catch behavior, not type drift.
+- **`services/uta` standalone `pnpm -F @traderalice/uta-service typecheck`
+  currently has known errors** tracked in
+  [ANG-65](https://linear.app/angelkawaii/issue/ANG-65/) — root cause is
+  ctx-type leak from Alice's `EngineContext` into UTA's route handlers.
+  Don't run it as a gate until that's fixed.
 
 ### Cross-platform note
 
