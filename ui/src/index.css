@@ -19,16 +19,23 @@
   --color-purple: #a78bfa;
   --color-purple-dim: rgba(139, 92, 246, 0.2);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
-  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas,
-    monospace;
+  --font-sans: "Alibaba PuHuiTi", "AliPuHuiTi", "PingFang SC", "Microsoft YaHei",
+    "Noto Sans SC", "Source Han Sans SC", "Source Han Sans CN", "Source Han Sans",
+    sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", Menlo,
+    Consolas, monospace;
 }
 
 html,
 body,
 #root {
   height: 100%;
+  font-family: var(--font-sans, "Noto Sans SC", "Source Han Sans SC",
+    "Source Han Sans CN", "Source Han Sans", sans-serif);
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ==================== Typography scale ====================

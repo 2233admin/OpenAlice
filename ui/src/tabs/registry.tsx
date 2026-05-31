@@ -118,17 +118,54 @@ const marketDetailModule: ViewModule<'market-detail'> = {
   Component: MarketDetailPage,
 }
 
-const settingsCategoryTitle: Record<
-  Extract<ViewSpec, { kind: 'settings' }>['params']['category'],
-  string
+type SettingsLocale = 'en' | 'zh'
+type SettingsCategory = Extract<ViewSpec, { kind: 'settings' }>['params']['category']
+
+const SETTINGS_LOCALE_KEY = 'openalice-settings-locale'
+
+const settingsCategoryText: Record<
+  SettingsLocale,
+  Record<SettingsCategory, string>
 > = {
-  general: 'Settings',
-  'ai-provider': 'AI Provider',
-  trading: 'Trading',
-  connectors: 'Connectors',
-  mcp: 'MCP Server',
-  'market-data': 'Market Data',
-  'news-collector': 'News Sources',
+  en: {
+    general: 'Settings',
+    'ai-provider': 'AI Provider',
+    trading: 'Trading',
+    connectors: 'Connectors',
+    mcp: 'MCP Server',
+    'market-data': 'Market Data',
+    'news-collector': 'News Sources',
+  },
+  zh: {
+    general: '设置',
+    'ai-provider': 'AI 提供商',
+    trading: '交易',
+    connectors: '连接器',
+    mcp: 'MCP 服务',
+    'market-data': '市场数据',
+    'news-collector': '新闻源',
+  },
+}
+
+function resolveSettingsLocale(): SettingsLocale {
+  if (typeof window === 'undefined') return 'en'
+
+  try {
+    const raw = localStorage.getItem(SETTINGS_LOCALE_KEY)
+    if (raw === 'zh' || raw === 'en') return raw
+  } catch {
+    // ignore storage read errors
+  }
+
+  const browser = (window.navigator?.language || '').toLowerCase()
+  return browser.startsWith('zh') ? 'zh' : 'en'
+}
+
+function settingsCategoryLabel(
+  locale: SettingsLocale,
+  category: SettingsCategory,
+) {
+  return settingsCategoryText[locale][category]
 }
 
 function SettingsRouter({ spec }: ViewProps<'settings'>) {
@@ -145,7 +182,7 @@ function SettingsRouter({ spec }: ViewProps<'settings'>) {
 
 const settingsModule: ViewModule<'settings'> = {
   kind: 'settings',
-  title: (spec) => settingsCategoryTitle[spec.params.category],
+  title: (spec) => settingsCategoryLabel(resolveSettingsLocale(), spec.params.category),
   toUrl: (spec) =>
     spec.params.category === 'general'
       ? '/settings'
