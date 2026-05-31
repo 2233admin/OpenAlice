@@ -140,7 +140,7 @@ const GROUP_LABELS: Record<SettingsLocale, Record<string, string>> = {
     news: '新闻',
     'news-archive': '新闻归档',
     analysis: '分析工具',
-    'crypto-trading': '加密交易',
+    'crypto-trading': '加密货币交易',
     'securities-trading': '证券交易',
   },
 }
@@ -621,6 +621,7 @@ export function SettingsPage() {
       // ignore storage write errors
     }
     setLocale(nextLocale)
+    window.location.reload()
   }, [locale])
 
   return (
