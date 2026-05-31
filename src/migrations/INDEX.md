@@ -13,3 +13,4 @@ Each row corresponds to one migration in `src/migrations/`. The runner applies p
 | `0004_prune_internal_cron_jobs` | 0.10.0-beta.3 | 2026-05-12 | cron/jobs.json | Prune orphan __heartbeat__ / __snapshot__ entries from data/cron/jobs.json (Pump refactor leftover) |
 | `0005_extract_mcp_from_connectors` | 0.10.0-beta.3 | 2026-05-12 | connectors.json, mcp.json | Move connectors.mcp → top-level mcp.json (MCP server is a ToolCenter export, not a chat-input connector) |
 | `0006_retire_brain` | 0.10.0-beta.5 | 2026-05-13 | brain/commit.json, brain/frontal-lobe.md | Delete orphan data/brain/{commit.json,frontal-lobe.md} after Brain retirement (persona.md / heartbeat.md retained) |
+| `0007_retire_legacy_chat` | 0.21.0-beta.6 | 2026-05-31 | connectors.json, sessions/notifications.jsonl | Strip dead telegram/mcpAsk from connectors.json (keep web) + delete orphan notifications.jsonl after legacy chat cluster removal |

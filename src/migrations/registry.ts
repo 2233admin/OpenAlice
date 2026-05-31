@@ -18,6 +18,7 @@ import { migration as migration_0003_backfill_credentials } from './0003_backfil
 import { migration as migration_0004_prune_internal_cron_jobs } from './0004_prune_internal_cron_jobs/index.js'
 import { migration as migration_0005_extract_mcp_from_connectors } from './0005_extract_mcp_from_connectors/index.js'
 import { migration as migration_0006_retire_brain } from './0006_retire_brain/index.js'
+import { migration as migration_0007_retire_legacy_chat } from './0007_retire_legacy_chat/index.js'
 
 export const REGISTRY: Migration[] = [
   migration_0001_initial_unified,
@@ -26,4 +27,5 @@ export const REGISTRY: Migration[] = [
   migration_0004_prune_internal_cron_jobs,
   migration_0005_extract_mcp_from_connectors,
   migration_0006_retire_brain,
+  migration_0007_retire_legacy_chat,
 ]
