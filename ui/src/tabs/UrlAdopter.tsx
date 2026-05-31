@@ -139,7 +139,15 @@ function AdoptUtaDetail() {
 
 function AdoptDev() {
   const { tab } = useParams<{ tab: string }>()
-  const valid: ReadonlyArray<string> = ['connectors', 'tools', 'sessions', 'snapshots', 'logs', 'simulator']
+  const valid: ReadonlyArray<string> = [
+    'connectors',
+    'tools',
+    'sessions',
+    'snapshots',
+    'logs',
+    'simulator',
+    'showcase',
+  ]
   if (!tab || !valid.includes(tab)) return <Navigate to="/dev/connectors" replace />
   return (
     <AdoptStatic

@@ -15,6 +15,7 @@
  */
 
 import { resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import {
   probePorts,
@@ -26,7 +27,61 @@ import {
   type SpawnSpec,
 } from './shared.js'
 
+function cleanupStaleDevProcesses(): void {
+  if (process.platform !== 'win32') return
+
+  const selfPid = process.pid
+  const root = process.cwd().toLowerCase()
+
+  const markers = [
+    resolve(process.cwd(), 'scripts', 'guardian', 'dev.ts'),
+    resolve(process.cwd(), 'services', 'uta', 'src', 'main.ts'),
+    resolve(process.cwd(), 'src', 'main.ts'),
+    resolve(process.cwd(), 'ui', 'node_modules', 'vite', 'bin', 'vite.js'),
+  ].map((s) => s.toLowerCase().replaceAll('\\', '/'))
+
+  const normalize = (input: string) => input.toLowerCase().replaceAll('\\', '/')
+
+  let lines: string[] = []
+  try {
+    const query = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | ForEach-Object { \"{0}|{1}\" -f $_.ProcessId, $_.CommandLine }"
+    const out = execFileSync('powershell', ['-NoProfile', '-Command', query], { encoding: 'utf8' })
+    lines = out.split(/\r?\n/)
+  } catch {
+    return
+  }
+
+  const targets = lines
+    .map((line) => line.trim())
+    .map((line) => {
+      const pipe = line.indexOf('|')
+      if (pipe <= 0) return null
+      const pid = Number.parseInt(line.slice(0, pipe), 10)
+      if (!Number.isFinite(pid) || pid === selfPid) return null
+      const cmd = line.slice(pipe + 1).trim()
+      if (!cmd) return null
+      return { pid, cmd }
+    })
+    .filter((item): item is { pid: number; cmd: string } => item !== null)
+    .filter(({ cmd }) => {
+      const normalized = normalize(cmd)
+      if (!normalized.includes(root)) return false
+      return markers.some((m) => normalized.includes(m))
+    })
+
+  for (const { pid } of targets) {
+    try {
+      process.kill(pid)
+      console.log(`[guardian] cleaned stale process pid=${pid}`)
+    } catch {
+      // If kill fails here, continue; user can still proceed manually.
+    }
+  }
+}
+
 async function main(): Promise<void> {
+  cleanupStaleDevProcesses()
+
   const ports = await probePorts()
   const dataHome = process.cwd()
   const flagPath = resolve(dataHome, 'data/control/restart-uta.flag')
@@ -82,9 +137,14 @@ async function main(): Promise<void> {
   // ── Vite ──────────────────────────────────────────────────
   const vite: ChildProcess = spawnChild({
     name: 'vite',
-    command: 'pnpm',
-    args: ['--filter', 'open-alice-ui', 'dev'],
+    command: 'node',
+    args: [
+      resolve(process.cwd(), 'ui', 'node_modules', 'vite', 'bin', 'vite.js'),
+      '--host',
+      '0.0.0.0',
+    ],
     env: { ...baseEnv, OPENALICE_BACKEND_PORT: String(ports.webPort) },
+    cwd: resolve(process.cwd(), 'ui'),
     prefixLogs: true,
   })
 

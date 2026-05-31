@@ -5,6 +5,7 @@ import { Spinner, EmptyState } from '../components/StateViews'
 import { useToast } from '../components/Toast'
 import { LogsPage } from './LogsPage'
 import { SimulatorPage } from './SimulatorPage'
+import { DevShowcasePage } from './DevShowcasePage'
 import {
   devApi,
   type RegistryResponse,
@@ -30,6 +31,7 @@ const TAB_TITLES: Record<Tab, string> = {
   snapshots: 'Snapshots',
   logs: 'Logs',
   simulator: 'Simulator',
+  showcase: 'Showcase',
 }
 
 /** Tabs that render content with internal scroll containers — the outer wrapper must NOT add overflow. */
@@ -54,6 +56,7 @@ export function DevPage({ spec }: DevPageProps) {
         {tab === 'snapshots' && <SnapshotsTab />}
         {tab === 'logs' && <LogsPage />}
         {tab === 'simulator' && <SimulatorPage />}
+        {tab === 'showcase' && <DevShowcasePage />}
       </div>
     </div>
   )

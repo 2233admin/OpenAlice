@@ -26,7 +26,7 @@ export type ViewSpec =
   | { kind: 'market-detail';  params: { assetClass: 'equity' | 'crypto' | 'currency' | 'commodity'; symbol: string } }
   | { kind: 'settings';       params: { category: 'general' | 'ai-provider' | 'trading' | 'connectors' | 'mcp' | 'market-data' | 'news-collector' } }
   | { kind: 'uta-detail';     params: { id: string } }
-  | { kind: 'dev';            params: { tab: 'connectors' | 'tools' | 'sessions' | 'snapshots' | 'logs' | 'simulator' } }
+  | { kind: 'dev';            params: { tab: 'connectors' | 'tools' | 'sessions' | 'snapshots' | 'logs' | 'simulator' | 'showcase' } }
   | { kind: 'notifications-inbox'; params: Record<string, never> }
   | { kind: 'inbox';               params: Record<string, never> }
 

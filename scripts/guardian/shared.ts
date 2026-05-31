@@ -19,9 +19,10 @@
  */
 
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { watch, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, delimiter, resolve } from 'node:path'
 import { probeFreePort } from '../probe-port.js'
 
 export interface GuardianPorts {
@@ -48,14 +49,40 @@ export interface SpawnSpec {
   command: string
   args: string[]
   env: NodeJS.ProcessEnv
+  cwd?: string
   /** When true, pipe stdout/stderr through this process with a `[name] `
    *  prefix on every line. Default true in dev, false in prod. */
   prefixLogs: boolean
 }
 
 export function spawnChild(spec: SpawnSpec): ChildProcess {
-  const child = spawn(spec.command, spec.args, {
-    env: spec.env,
+  const localBin = resolve(process.cwd(), 'node_modules', '.bin')
+  const pnpmHome = process.env.PNPM_HOME
+  const resolvedPath = [localBin, pnpmHome, spec.env.PATH ?? process.env.PATH ?? '']
+    .filter(Boolean)
+    .join(delimiter)
+
+  let command = spec.command
+  let args = spec.args
+  if (spec.command === 'tsx') {
+    const cli = [
+      resolve(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      resolve(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.cjs'),
+    ].find((candidate) => existsSync(candidate))
+    if (cli !== undefined) {
+      command = 'node'
+      args = [String(cli), ...spec.args]
+    }
+  }
+  const useShell = command.endsWith('.cmd') || command.endsWith('.bat')
+  const child = spawn(command, args, {
+    env: {
+      ...spec.env,
+      PATH: resolvedPath,
+      Path: resolvedPath,
+    },
+    cwd: spec.cwd,
+    shell: useShell,
     stdio: spec.prefixLogs ? ['inherit', 'pipe', 'pipe'] : 'inherit',
   } satisfies SpawnOptions)
 
