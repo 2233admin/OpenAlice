@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { AgentWorkRunner, type AgentWorkRequest, type AgentWorkEmitFn } from './agent-work.js'
+import { AgentWorkRunner, type AgentWorkRequest, type AgentWorkEmitFn, type AgentWorkResultProbe } from './agent-work.js'
 import type { GenerateRouter } from './ai-provider-manager.js'
 import type { ISessionStore } from './session.js'
 import { createMemoryInboxStore, type IInboxStore } from './inbox-store.js'
@@ -390,7 +390,7 @@ describe('AgentWorkRunner — tool-inspecting outputGate', () => {
    *  deliver a tool's args instead of the raw model text. This is the
    *  generic idiom the (now-deleted) notify_user gate relied on; the
    *  AgentWork primitive still guarantees it works for any tool name. */
-  function pushToolGate(probe: { text: string; media: never[]; toolCalls: ReadonlyArray<ToolCallSummary> }) {
+  function pushToolGate(probe: AgentWorkResultProbe) {
     const call = probe.toolCalls.find((c) => c.name === 'push')
     if (!call) return { kind: 'skip' as const, reason: 'ack', payload: { reason: 'ack' } }
     const text = ((call.input ?? {}) as { text?: string }).text ?? ''
