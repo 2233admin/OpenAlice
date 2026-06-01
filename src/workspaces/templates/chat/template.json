@@ -5,5 +5,5 @@
   "defaultAgents": ["claude", "codex"],
   "injectMcp": true,
   "injectPersona": true,
-  "bundledSkills": ["scan-value-chain"]
+  "bundledSkills": ["scan-value-chain", "build-thesis", "sector-rotation"]
 }

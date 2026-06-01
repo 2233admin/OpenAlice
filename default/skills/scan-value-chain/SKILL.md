@@ -18,27 +18,25 @@ Turn a theme the user can't yet act on into a short list of names worth
 digging into. The point is NOT a data dump — it's "where is the interesting
 thing, and why."
 
-## Procedure (don't answer from memory — run the tools)
+## Procedure (don't answer from memory — go to the data)
 
 1. **Decompose the chain, not a flat list.** Break the theme into structural
    layers — upstream (inputs, equipment, IP) → midstream (manufacture, core
    product) → downstream (demand, end-market). Place the real names in each
-   layer with `marketSearchForResearch`. The value is the structure itself:
-   who supplies whom, where the margin/bottleneck sits, who's a
-   picks-and-shovels play. This is the meta-method — apply it to ANY theme,
-   don't hardcode one taxonomy.
-2. **Quick read per node.** Across the candidates: `equityGetProfile`
-   (valuation snapshot), `equityGetEarningsCalendar` (near catalysts),
-   `calculateIndicator` (stretched vs basing on its own trend). Wide and
-   cheap — you're triaging, not deep-diving.
+   layer. The value is the structure itself: who supplies whom, where the
+   margin/bottleneck sits, who's a picks-and-shovels play. This is the
+   meta-method — apply it to ANY theme, don't hardcode one taxonomy.
+2. **Quick read per node.** Across the candidates, pull a quick read from the
+   data: a valuation snapshot, any near-term catalysts, and where each trades
+   vs its own trend (stretched or basing). Wide and cheap — you're triaging,
+   not deep-diving.
 3. **Find the divergence.** Surface 3–6 names where there's something to pull
    on: cheap vs its layer, margin shifting along the chain, a catalyst close,
    a leader/laggard gap. Drop the rest — a scan that returns everything
    returns nothing.
-4. **Frame the top-down driver.** Is the theme live right now? Tie it to
-   macro: rate/capex cycle via `economyFredSeries`, energy via the EIA tools,
-   plus any news cluster from `grepNews` — the macro frame is what separates a
-   live theme from noise.
+4. **Frame the top-down driver.** Is the theme live right now? Tie it to macro
+   — the rate/capex cycle, energy, any news cluster around the theme — the
+   macro frame is what separates a live theme from noise.
 5. **Hand off to research.** For each surfaced name: one-line WHY + the next
    question to answer (the "is the thesis real" question). That next question
    is the baton to the deeper research step.
@@ -93,8 +91,8 @@ headline GPU names. ASML is the single most concentrated upstream choke point.
 
 **Top-down frame:** semis run on three clocks — hyperscaler
 **capex**, the **rate** cycle (long-duration growth multiples), and the
-**memory inventory / pricing** cycle. Tie the scan to these via the FRED
-series + news archive.
+**memory inventory / pricing** cycle. Tie the scan to these via the macro and
+news data.
 
 **Proposed file structure** (confirm / adjust with the user — don't impose):
 
