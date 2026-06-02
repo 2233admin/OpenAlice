@@ -77,11 +77,12 @@ export async function createWorkspace(
   tag: string,
   template: string,
   agents: readonly string[],
+  toolAccess?: 'mcp' | 'cli',
 ): Promise<CreateResult> {
   const res = await fetch('/api/workspaces', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tag, template, agents }),
+    body: JSON.stringify({ tag, template, agents, toolAccess }),
   });
   if (res.ok) {
     const body = (await res.json()) as { workspace: Workspace };

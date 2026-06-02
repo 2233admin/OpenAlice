@@ -99,10 +99,13 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     const agentsRequested = Array.isArray(rawAgents)
       ? rawAgents.filter((a): a is string => typeof a === 'string' && a.length > 0)
       : undefined;
+    const rawToolAccess = fields['toolAccess'];
+    const toolAccess = rawToolAccess === 'cli' ? 'cli' : rawToolAccess === 'mcp' ? 'mcp' : undefined;
     const result = await svc.creator.create(
       tag,
       templateName,
       agentsRequested && agentsRequested.length > 0 ? agentsRequested : undefined,
+      { toolAccess },
     );
     if (!result.ok) {
       const status =

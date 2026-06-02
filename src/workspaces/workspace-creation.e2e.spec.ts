@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { injectWorkspaceContext } from './context-injector.js';
+import { injectWorkspaceContext, resolveInjection } from './context-injector.js';
 import type { TemplateMeta } from './template-registry.js';
 import { commitInitial } from './workspace-creator.js';
 
@@ -169,4 +169,20 @@ describe('finance-research workspace create: bootstrap(+skills clone) → inject
     expect((await run('git', ['-C', frDir, 'log', '--pretty=%s'])).trim()).toBe('finance-research: frtag');
     expect((await run('git', ['-C', frDir, 'status', '--porcelain'])).trim()).toBe('');
   }, 60_000);
+});
+
+describe('chat workspace create in CLI mode (toolAccess=cli)', () => {
+  it('injects inbox-only MCP + the openalice-cli skill, drops the global tool server', async () => {
+    await run('bash', [CHAT_BOOTSTRAP, 'clitag', dir], { ...process.env, AQ_TEMPLATE_ROOT: CHAT_DIR });
+    const effective = resolveInjection(chatMeta(), 'cli');
+    await injectWorkspaceContext({ template: effective, wsId: 'ws-cli-1', dir });
+    await commitInitial(dir, 'chat: clitag');
+
+    const mcp = await readFile(join(dir, '.mcp.json'), 'utf8');
+    expect(mcp).toContain('openalice-workspace'); // inbox server stays
+    expect(mcp).not.toContain('"openalice"');      // global tool server dropped
+    expect(existsSync(join(dir, '.claude/skills/openalice-cli/SKILL.md'))).toBe(true);
+    expect(existsSync(join(dir, '.claude/skills/scan-value-chain/SKILL.md'))).toBe(true);
+    expect((await run('git', ['-C', dir, 'status', '--porcelain'])).trim()).toBe('');
+  });
 });

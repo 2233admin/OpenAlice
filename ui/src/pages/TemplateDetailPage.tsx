@@ -153,6 +153,25 @@ export function TemplateDetailPage({ spec }: Props) {
             <p className="text-[11px] text-text-muted/70">{TAG_HINT}</p>
           </div>
 
+          <div className="space-y-1.5">
+            <label htmlFor="tpl-detail-tools" className="block text-[11px] uppercase tracking-wider text-text-muted/70">
+              Tools
+            </label>
+            <select
+              id="tpl-detail-tools"
+              value={create.toolAccess}
+              onChange={(e) => create.setToolAccess(e.target.value as 'mcp' | 'cli')}
+              disabled={create.creating}
+              className="w-full px-3 py-2 text-[13px] bg-bg border border-border rounded text-text focus:outline-none focus:border-accent"
+            >
+              <option value="mcp">MCP — data tools as MCP servers (default)</option>
+              <option value="cli">CLI — data tools via the `alice` command on PATH</option>
+            </select>
+            <p className="text-[11px] text-text-muted/70">
+              How the agent reaches Alice's data tools. Applies to tool-injecting workspaces.
+            </p>
+          </div>
+
           {create.error && (
             <div className="text-[12px] text-red">{create.error}</div>
           )}

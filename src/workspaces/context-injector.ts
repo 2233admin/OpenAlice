@@ -45,7 +45,8 @@ const MCP_JSON = `{
  * `openalice-workspace` server — the inbox-push outbound channel, which is
  * stateful and stays on MCP — and DROP the global `openalice` tool server. In
  * this mode the agent reaches market/data tools through the `alice` CLI on its
- * PATH instead of MCP. Used by the `chat-cli` template.
+ * PATH instead of MCP. Selected by the launcher-level `toolAccess: 'cli'`
+ * option — see `resolveInjection`.
  */
 const MCP_JSON_INBOX_ONLY = `{
   "mcpServers": {
@@ -56,6 +57,29 @@ const MCP_JSON_INBOX_ONLY = `{
   }
 }
 `;
+
+/** Launcher-level option: where the agent reaches Alice's data tools. */
+export type ToolAccess = 'mcp' | 'cli';
+
+/** The launcher-level skill teaching the `alice` CLI; added in CLI mode. */
+const CLI_TOOLS_SKILL = 'openalice-cli';
+
+/**
+ * Resolve a template's injection config against the launcher-level `toolAccess`
+ * option. A template with `injectMcp: true` is "tool-injectable, user-choosable"
+ * — `toolAccess` picks the mode: `'mcp'` keeps the full MCP tool server; `'cli'`
+ * drops it to inbox-only MCP and adds the `openalice-cli` skill (tools reached
+ * via the `alice` CLI on PATH instead). `injectMcp: false` (no tools) and
+ * `injectMcp: 'inbox'` (a template locked to CLI) ignore `toolAccess`.
+ */
+export function resolveInjection(template: TemplateMeta, toolAccess: ToolAccess): TemplateMeta {
+  if (template.injectMcp !== true) return template;
+  if (toolAccess !== 'cli') return template;
+  const bundledSkills = template.bundledSkills.includes(CLI_TOOLS_SKILL)
+    ? template.bundledSkills
+    : [...template.bundledSkills, CLI_TOOLS_SKILL];
+  return { ...template, injectMcp: 'inbox', bundledSkills };
+}
 
 export async function injectWorkspaceContext(opts: {
   readonly template: TemplateMeta;

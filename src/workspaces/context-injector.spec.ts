@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { dataPath, defaultPath } from '@/core/paths.js';
 
-import { injectWorkspaceContext } from './context-injector.js';
+import { injectWorkspaceContext, resolveInjection } from './context-injector.js';
 import type { TemplateMeta } from './template-registry.js';
 
 // src/workspaces/ — this spec's directory.
@@ -37,6 +37,36 @@ function makeTemplate(over: Partial<TemplateMeta>): TemplateMeta {
     ...over,
   };
 }
+
+describe('resolveInjection (toolAccess)', () => {
+  it('mcp mode leaves an injectable template unchanged', () => {
+    const t = makeTemplate({ injectMcp: true, bundledSkills: ['scan-value-chain'] });
+    expect(resolveInjection(t, 'mcp')).toEqual(t);
+  });
+
+  it('cli mode drops to inbox-only MCP and adds the openalice-cli skill', () => {
+    const t = makeTemplate({ injectMcp: true, bundledSkills: ['scan-value-chain'] });
+    const r = resolveInjection(t, 'cli');
+    expect(r.injectMcp).toBe('inbox');
+    expect(r.bundledSkills).toEqual(['scan-value-chain', 'openalice-cli']);
+  });
+
+  it('cli mode does not duplicate an already-present openalice-cli', () => {
+    const t = makeTemplate({ injectMcp: true, bundledSkills: ['openalice-cli'] });
+    expect(resolveInjection(t, 'cli').bundledSkills).toEqual(['openalice-cli']);
+  });
+
+  it('a non-injectable template (injectMcp false) ignores toolAccess', () => {
+    const t = makeTemplate({ injectMcp: false });
+    expect(resolveInjection(t, 'cli')).toEqual(t);
+    expect(resolveInjection(t, 'mcp')).toEqual(t);
+  });
+
+  it('a CLI-locked template (injectMcp inbox) ignores toolAccess', () => {
+    const t = makeTemplate({ injectMcp: 'inbox', bundledSkills: ['openalice-cli'] });
+    expect(resolveInjection(t, 'mcp')).toEqual(t);
+  });
+});
 
 let dir: string;
 beforeEach(async () => {

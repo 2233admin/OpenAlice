@@ -20,9 +20,14 @@ interface UseCreateWorkspaceOpts {
   onCreated: (workspace: Workspace) => void
 }
 
+export type ToolAccess = 'mcp' | 'cli'
+
 interface UseCreateWorkspaceState {
   tag: string
   setTag: (s: string) => void
+  /** Launcher-level: where the agent reaches Alice's data tools (default 'mcp'). */
+  toolAccess: ToolAccess
+  setToolAccess: (v: ToolAccess) => void
   creating: boolean
   error: string | null
   submit: () => Promise<void>
@@ -47,6 +52,7 @@ interface UseCreateWorkspaceState {
  */
 export function useCreateWorkspace(opts: UseCreateWorkspaceOpts): UseCreateWorkspaceState {
   const [tag, setTag] = useState('')
+  const [toolAccess, setToolAccess] = useState<ToolAccess>('mcp')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -71,7 +77,7 @@ export function useCreateWorkspace(opts: UseCreateWorkspaceOpts): UseCreateWorks
     }
     setCreating(true)
     setError(null)
-    const result = await createWorkspace(t, opts.template, agents)
+    const result = await createWorkspace(t, opts.template, agents, toolAccess)
     setCreating(false)
     if (result.ok) {
       setTag('')
@@ -84,8 +90,9 @@ export function useCreateWorkspace(opts: UseCreateWorkspaceOpts): UseCreateWorks
 
   const reset = useCallback((): void => {
     setTag('')
+    setToolAccess('mcp')
     setError(null)
   }, [])
 
-  return { tag, setTag, creating, error, submit, reset }
+  return { tag, setTag, toolAccess, setToolAccess, creating, error, submit, reset }
 }

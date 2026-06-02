@@ -4,7 +4,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AdapterRegistry } from './cli-adapter.js';
-import { injectWorkspaceContext } from './context-injector.js';
+import { injectWorkspaceContext, resolveInjection, type ToolAccess } from './context-injector.js';
 import type { Logger } from './logger.js';
 import type { TemplateRegistry } from './template-registry.js';
 import type { WorkspaceMeta, WorkspaceRegistry } from './workspace-registry.js';
@@ -46,6 +46,11 @@ export type CreateResult =
       readonly exitCode?: number;
     };
 
+export interface CreateOptions {
+  /** Launcher-level: where the agent reaches Alice's data tools (default 'mcp'). */
+  readonly toolAccess?: ToolAccess;
+}
+
 const TAG_RE = /^[a-z0-9][a-z0-9_-]{0,32}$/;
 
 /**
@@ -64,6 +69,7 @@ export class WorkspaceCreator {
     tag: string,
     templateName: string,
     agentsRequested?: readonly string[],
+    options?: CreateOptions,
   ): Promise<CreateResult> {
     if (!TAG_RE.test(tag)) {
       return {
@@ -139,7 +145,8 @@ export class WorkspaceCreator {
     // template manifest), then the initial commit. The launcher — not the
     // bootstrap script — owns what lands in the workspace's first commit.
     try {
-      await injectWorkspaceContext({ template, wsId: id, dir });
+      const effectiveTemplate = resolveInjection(template, options?.toolAccess ?? 'mcp');
+      await injectWorkspaceContext({ template: effectiveTemplate, wsId: id, dir });
     } catch (err) {
       log.warn('inject.failed', { err });
       await rm(dir, { recursive: true, force: true });
