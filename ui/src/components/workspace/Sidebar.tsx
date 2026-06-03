@@ -123,6 +123,15 @@ export function Sidebar(props: SidebarProps): ReactElement {
           autoCorrect="off"
           autoCapitalize="off"
         />
+        <select
+          value={create.toolAccess}
+          onChange={(e) => create.setToolAccess(e.target.value as 'mcp' | 'cli')}
+          disabled={create.creating}
+          title="Where the agent reaches Alice's data tools"
+        >
+          <option value="mcp">tools: MCP</option>
+          <option value="cli">tools: CLI</option>
+        </select>
         <button type="submit" disabled={create.creating || create.tag.length === 0}>
           {create.creating ? '…' : 'create'}
         </button>

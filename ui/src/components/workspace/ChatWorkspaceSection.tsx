@@ -159,6 +159,16 @@ export function ChatWorkspaceSection(): ReactElement | null {
               {create.creating ? '…' : 'create'}
             </button>
           </div>
+          <select
+            value={create.toolAccess}
+            onChange={(e) => create.setToolAccess(e.target.value as 'mcp' | 'cli')}
+            disabled={create.creating}
+            title="Where the agent reaches Alice's data tools"
+            className="px-2 py-1 text-[12px] rounded border border-border bg-bg text-text focus:outline-none focus:border-accent"
+          >
+            <option value="mcp">tools: MCP (default)</option>
+            <option value="cli">tools: CLI (alice)</option>
+          </select>
           {create.error && (
             <div className="text-[11px] text-red">{create.error}</div>
           )}
