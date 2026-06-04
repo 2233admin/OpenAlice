@@ -25,3 +25,33 @@ jobs:
       - run: pnpm build
 
       - run: pnpm test
+
+  # Boots the real `pnpm dev` stack and asserts UTA/Alice/Vite all spawn.
+  # Exists to catch cross-platform spawn regressions (e.g. `spawn tsx ENOENT`
+  # on Windows) that `pnpm test` can't see — esbuild transpiles, it never
+  # spawns the children. Runs on Windows (the at-risk OS) plus Ubuntu as a
+  # control: if Windows goes red while Ubuntu stays green, it's a real platform
+  # diff, not a harness bug. See scripts/guardian/smoke.ts.
+  dev-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Skip the Electron desktop shell — the smoke only needs UTA/Alice/UI,
+      # and this avoids a large electron download on the Windows runner.
+      - run: pnpm install --frozen-lockfile --filter='!@traderalice/desktop'
+
+      - run: pnpm test:smoke
+        timeout-minutes: 8

@@ -36,9 +36,9 @@ const CODEX_PROVIDER_NAME = 'workspace';
  *      Adapter doesn't set `CODEX_HOME`. Codex reads the user's global
  *      `~/.codex/auth.json` + `~/.codex/config.toml` — exactly what a
  *      vanilla `codex` invocation in any project does. The OpenAlice MCP
- *      server is wired via the per-invocation `-c mcp_servers.openalice.url=...`
- *      flag in `composeCommand` below, so MCP is visible without
- *      polluting the user's global config.
+ *      servers are wired via per-invocation `-c mcp_servers...url=...`
+ *      flags in `composeCommand` below, so MCP is visible without polluting
+ *      the user's global config.
  *
  *   2. **Override (user-configured via OpenAlice UI).** Workspace has its
  *      own `.codex/{config.toml, env.json[, auth.json]}`. Adapter sets
@@ -63,8 +63,9 @@ export const codexAdapter: CliAdapter = {
   },
 
   /**
-   * Always prepends `-c mcp_servers.openalice.url="..."` so OpenAlice MCP
-   * is visible per-spawn without writing to `~/.codex/config.toml`. The
+   * Always prepends `-c mcp_servers.openalice.url="..."` and the workspace
+   * scoped `openalice-workspace` server so OpenAlice MCP is visible
+   * per-spawn without writing to `~/.codex/config.toml`. The
    * flag overrides any same-key entry in the read config.toml (verified
    * empirically), and adds a new key when none exists — safe in both
    * default and override modes.
@@ -81,7 +82,17 @@ export const codexAdapter: CliAdapter = {
     if (!mcpUrl) {
       throw new Error('codex adapter: OPENALICE_MCP_URL missing from spawn env');
     }
-    const head = ['codex', '-c', `mcp_servers.openalice.url="${mcpUrl}"`];
+    const workspaceId = ctx.env['AQ_WS_ID'];
+    if (!workspaceId) {
+      throw new Error('codex adapter: AQ_WS_ID missing from spawn env');
+    }
+    const head = [
+      'codex',
+      '-c',
+      `mcp_servers.openalice.url="${mcpUrl}"`,
+      '-c',
+      `mcp_servers."openalice-workspace".url="${mcpUrl}/${workspaceId}"`,
+    ];
     if (ctx.resume === undefined) return head;
     if (ctx.resume === 'last') return [...head, 'resume', '--last'];
     return [...head, 'resume', ctx.resume.sessionId];
@@ -104,8 +115,8 @@ export const codexAdapter: CliAdapter = {
     }
 
     // Provider override. config.toml carries only model / model_provider /
-    // [model_providers.*] — the OpenAlice MCP server entry is wired per-spawn
-    // via this adapter's `-c mcp_servers.openalice.url=...` flag, so we
+    // [model_providers.*] — the OpenAlice MCP server entries are wired per-spawn
+    // via this adapter's `-c mcp_servers...url=...` flags, so we
     // don't repeat it here.
     let toml = '';
     if (cred.model) toml += `model = ${tomlString(cred.model)}\n`;

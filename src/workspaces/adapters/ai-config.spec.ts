@@ -71,6 +71,47 @@ describe('claudeAdapter AI-config', () => {
 });
 
 describe('codexAdapter AI-config', () => {
+  it('injects both global and workspace MCP servers into fresh commands', () => {
+    expect(codexAdapter.composeCommand(['ignored'], {
+      cwd: dir,
+      env: {
+        OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp',
+        AQ_WS_ID: 'ws-abc',
+      },
+    })).toEqual([
+      'codex',
+      '-c',
+      'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
+      '-c',
+      'mcp_servers."openalice-workspace".url="http://127.0.0.1:47332/mcp/ws-abc"',
+    ]);
+  });
+
+  it('preserves both MCP servers when resuming codex sessions', () => {
+    const env = {
+      OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp',
+      AQ_WS_ID: 'ws-abc',
+    };
+    expect(codexAdapter.composeCommand([], { cwd: dir, env, resume: 'last' })).toEqual([
+      'codex',
+      '-c',
+      'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
+      '-c',
+      'mcp_servers."openalice-workspace".url="http://127.0.0.1:47332/mcp/ws-abc"',
+      'resume',
+      '--last',
+    ]);
+    expect(codexAdapter.composeCommand([], { cwd: dir, env, resume: { sessionId: 'rollout-id' } })).toEqual([
+      'codex',
+      '-c',
+      'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
+      '-c',
+      'mcp_servers."openalice-workspace".url="http://127.0.0.1:47332/mcp/ws-abc"',
+      'resume',
+      'rollout-id',
+    ]);
+  });
+
   it('writes full provider config byte-exact (config.toml + env.json)', async () => {
     await codexAdapter.writeAiConfig!(dir, {
       baseUrl: 'https://oai.test/v1', apiKey: 'sk-c', model: 'gpt-x', wireApi: 'responses',

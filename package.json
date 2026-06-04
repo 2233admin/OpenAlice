@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:bbProvider": "vitest run --config vitest.bbProvider.config.ts",
+    "test:smoke": "tsx scripts/guardian/smoke.ts",
     "postinstall": "node scripts/fix-pty-perms.mjs"
   },
   "keywords": [
