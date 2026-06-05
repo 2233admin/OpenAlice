@@ -91,6 +91,7 @@ The first screen is a Linear-style Alice shell:
 - The sidebar is compact and work-focused.
 - Empty editor is a central composer, not onboarding copy.
 - Root `/` intentionally clears tabs and sidebars in the modified branch.
+- The modified branch has direct home entry points: the top tab toolbar Home icon and the left `OpenAlice` brand both return to `Ask Alice`.
 
 Relevant files:
 
@@ -103,6 +104,19 @@ Relevant files:
 - `ui/src/i18n/locales/*.ts`
 - `docs/design-brief-linear-alice-shell.md`
 - `docs/agent-linear-alignment.md`
+
+## Captured Frontend Ideas
+
+These are accepted as current product/development direction, not random parking-lot notes:
+
+- Wire the `Ask Alice` composer into the real workspace flow. Submitting from the root surface should create or reuse a chat-template workspace, spawn an agent session, pass the typed prompt, and focus the resulting workspace/session tab.
+- Make composer keyboard behavior real: Enter submits when appropriate, Shift+Enter inserts a newline, disabled/loading states prevent double submit, and errors surface inline.
+- Connect `Skills` to an actual skills/tool surface instead of leaving it as visual chrome. If the skills backend is not ready, route it to the closest existing capability list rather than a dead button.
+- Connect `Attach context` to a small picker for workspace, file, market symbol, tracked entity, or current page context, then include that context in the spawned session payload.
+- Decide whether the shared-skills banner is a live feature or future copy. If live, wire `Dismiss` and `Share skills`; if not, remove or demote it so the root surface does not advertise dead affordances.
+- Keep the direct home entry visible. Users need a one-click way back to `Ask Alice` from any page; the current Home icon and brand click should remain part of the shell.
+- Continue A/B testing against the original frontend before changing navigation or workspace behavior. The A/B script is now the default dev path for this.
+- Isolate the Windows test debt separately from frontend work: POSIX path assertions, Node localStorage setup, and local auth env leakage should not block UI iteration, but they should be fixed before treating full `pnpm test` as a release gate.
 
 ## Before Pushing
 
