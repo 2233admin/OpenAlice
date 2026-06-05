@@ -1,5 +1,6 @@
 import { useState, type MouseEvent, type WheelEvent } from 'react'
-import { X } from 'lucide-react'
+import { Home, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useWorkspaces } from '../contexts/WorkspacesContext'
 import { useWorkspace } from '../tabs/store'
 import { getView } from '../tabs/registry'
@@ -21,6 +22,7 @@ import { ContextMenu, type ContextMenuItem } from './ContextMenu'
  * would just be noise.
  */
 export function TabStrip() {
+  const navigate = useNavigate()
   const { workspaces } = useWorkspaces()
   const tabIds = useWorkspace((state) =>
     state.tree.kind === 'leaf' ? state.tree.group.tabIds : [],
@@ -35,6 +37,7 @@ export function TabStrip() {
   const closeToRight = useWorkspace((state) => state.closeToRight)
   const closeToLeft = useWorkspace((state) => state.closeToLeft)
   const closeAll = useWorkspace((state) => state.closeAll)
+  const setSidebar = useWorkspace((state) => state.setSidebar)
 
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
 
@@ -97,6 +100,19 @@ export function TabStrip() {
         onWheel={handleWheel}
         className="scrollbar-hide hidden md:flex shrink-0 h-10 bg-bg-secondary/95 border-b border-border/80 overflow-x-auto"
       >
+        <button
+          type="button"
+          title="Ask Alice"
+          aria-label="Ask Alice"
+          onClick={() => {
+            setSidebar(null)
+            closeAll()
+            navigate('/')
+          }}
+          className="sticky left-0 z-10 flex h-full w-10 shrink-0 items-center justify-center border-r border-border/80 bg-bg-secondary/95 text-text-muted transition-colors hover:bg-white/[0.035] hover:text-text"
+        >
+          <Home size={15} strokeWidth={1.9} />
+        </button>
         {tabIds.map((id) => {
           const tab = tabsMap[id]
           if (!tab) return null

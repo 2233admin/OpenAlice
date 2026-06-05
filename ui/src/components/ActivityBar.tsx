@@ -1,5 +1,6 @@
 import { type LucideIcon, MessageSquare, Inbox, Telescope, LineChart, GitBranch, BarChart3, Newspaper, Zap, Settings, Code2, TerminalSquare, ChevronDown, Info } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { type Page } from '../App'
 import { useWorkspace } from '../tabs/store'
 import type { ActivitySection, ViewSpec } from '../tabs/types'
@@ -158,9 +159,11 @@ const NAV_SECTIONS: NavSection[] = [
  */
 export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const selectedSidebar = useWorkspace((state) => state.selectedSidebar)
   const setSidebar = useWorkspace((state) => state.setSidebar)
   const openOrFocus = useWorkspace((state) => state.openOrFocus)
+  const closeAll = useWorkspace((state) => state.closeAll)
   const unreadInbox = useUnreadInboxCount()
   const collapsedSections = useActivityBarCollapse((s) => s.collapsedSections)
   const setCollapsed = useActivityBarCollapse((s) => s.setCollapsed)
@@ -188,7 +191,19 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
         `}
       >
         {/* Branding */}
-        <div className="px-5 py-4 flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => {
+            setSidebar(null)
+            closeAll()
+            navigate('/')
+            if (onItemActivated) onItemActivated(null)
+            else onClose()
+          }}
+          className="px-5 py-4 flex items-center gap-2.5 text-left transition-colors hover:bg-white/[0.025]"
+          title={t('home.askLabel')}
+          aria-label={t('home.askLabel')}
+        >
           <img
             src="/alice.ico"
             alt="Alice"
@@ -197,7 +212,7 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
           />
           <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-text">OpenAlice</h1>
           <span className="text-text-muted/70">⌄</span>
-        </div>
+        </button>
 
         {/* Navigation */}
         <nav className="flex-1 flex flex-col px-3 overflow-y-auto pb-3">
