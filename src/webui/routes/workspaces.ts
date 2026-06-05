@@ -732,11 +732,12 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     const meta = svc.registry.get(id);
     if (!meta) return c.json({ error: 'not_found' }, 404);
     try {
-      const [claude, codex] = await Promise.all([
+      const [claude, codex, opencode] = await Promise.all([
         svc.adapters.get('claude')?.readAiConfig?.(meta.dir) ?? null,
         svc.adapters.get('codex')?.readAiConfig?.(meta.dir) ?? null,
+        svc.adapters.get('opencode')?.readAiConfig?.(meta.dir) ?? null,
       ]);
-      return c.json({ claude, codex });
+      return c.json({ claude, codex, opencode });
     } catch (err) {
       if (err instanceof PathTraversal) return c.json({ error: 'invalid_path' }, 400);
       launcherLogger.warn('agent_config.read_failed', { id, err });
@@ -748,7 +749,9 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     const id = c.req.param('id');
     const agent = c.req.param('agent');
     if (!validId(id)) return c.json({ error: 'not_found' }, 404);
-    if (agent !== 'claude' && agent !== 'codex') return c.json({ error: 'unknown_agent' }, 400);
+    if (agent !== 'claude' && agent !== 'codex' && agent !== 'opencode') {
+      return c.json({ error: 'unknown_agent' }, 400);
+    }
     const meta = svc.registry.get(id);
     if (!meta) return c.json({ error: 'not_found' }, 404);
 
@@ -773,7 +776,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     const id = c.req.param('id');
     const agent = c.req.param('agent');
     if (!validId(id)) return c.json({ ok: false, error: 'invalid_id' }, 400);
-    if (agent !== 'claude' && agent !== 'codex') {
+    if (agent !== 'claude' && agent !== 'codex' && agent !== 'opencode') {
       return c.json({ ok: false, error: 'unknown_agent' }, 400);
     }
 
@@ -786,6 +789,9 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     }
 
     try {
+      // opencode drives providers through `@ai-sdk/openai-compatible`, i.e. the
+      // OpenAI Chat Completions wire — so its provider test must probe with
+      // wireApi 'chat' (not 'responses', which is codex-only).
       const result = agent === 'claude'
         ? await probeAnthropic({
             baseUrl,
@@ -797,7 +803,9 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
             baseUrl,
             apiKey,
             model,
-            wireApi: body?.wireApi === 'chat' ? 'chat' : 'responses',
+            wireApi: agent === 'opencode'
+              ? 'chat'
+              : body?.wireApi === 'chat' ? 'chat' : 'responses',
           });
       return c.json({ ok: true, response: result.text });
     } catch (err) {

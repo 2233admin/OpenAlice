@@ -397,9 +397,10 @@ export interface AgentConfig {
 export interface AgentConfigBundle {
   readonly claude: AgentConfig | null;
   readonly codex: AgentConfig | null;
+  readonly opencode: AgentConfig | null;
 }
 
-export type AgentId = 'claude' | 'codex';
+export type AgentId = 'claude' | 'codex' | 'opencode';
 
 export async function listAgentProfiles(): Promise<AgentProfile[]> {
   const res = await fetch('/api/workspaces/agent-profiles');
