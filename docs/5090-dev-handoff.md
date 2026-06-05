@@ -55,9 +55,9 @@ From the modified checkout:
 Default URLs:
 
 - B modified: `http://127.0.0.1:5173`
-- A original: `http://localhost:5174`
+- A original: `http://127.0.0.1:5174`
 
-The script starts B first and waits for its UI before starting A. This is intentional: a clean upstream A checkout does not know the new fixed-port environment variables yet, so it auto-selects the next free backend and Vite ports after B has occupied the defaults. For A backend and UTA ports, read `.dev/openalice-original.out.log`.
+The script starts B through the modified guardian. It starts A from the clean upstream source tree directly, with fixed A ports: backend `47431`, MCP `47432`, UTA `47433`, and UI `5174`. This keeps the A frontend original while avoiding Windows `localhost` IPv4/IPv6 port splitting.
 
 If the original checkout is not in the default sibling path, pass it explicitly:
 
