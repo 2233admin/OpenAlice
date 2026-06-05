@@ -91,6 +91,18 @@ export const ja: Resources = {
     tools: 'ツール',
     logs: 'ログ',
     off: 'オフ',
+    delete: '削除',
+  },
+  chat: {
+    workspaceChatHeader: 'ワークスペースチャット',
+    recommended: '推奨',
+    newChatWorkspace: '新しいチャットワークスペース',
+    collapseSessions: 'セッションを折りたたむ',
+    expandSessions: 'セッションを展開',
+    deleteWorkspace: 'ワークスペースを削除',
+    deleteWorkspaceTitle: 'チャットワークスペースを削除',
+    deleteWorkspaceMessage: 'チャットワークスペース {{tag}} を削除しますか？ディスク上のファイルは保持され、ランチャーの登録エントリのみが削除されます。開いているタブはすべて閉じます。',
+    noChatWorkspacesYet: 'チャットワークスペースはまだありません',
   },
   dev: {
     snapshots: 'スナップショット',

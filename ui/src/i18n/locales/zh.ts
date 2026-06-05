@@ -91,6 +91,18 @@ export const zh: Resources = {
     tools: '工具',
     logs: '日志',
     off: '关闭',
+    delete: '删除',
+  },
+  chat: {
+    workspaceChatHeader: '工作区对话',
+    recommended: '推荐',
+    newChatWorkspace: '新建对话工作区',
+    collapseSessions: '收起会话',
+    expandSessions: '展开会话',
+    deleteWorkspace: '删除工作区',
+    deleteWorkspaceTitle: '删除对话工作区',
+    deleteWorkspaceMessage: '删除对话工作区 {{tag}}？磁盘上的文件会保留，只移除发射架的注册记录。它任何打开的标签页都会关闭。',
+    noChatWorkspacesYet: '还没有对话工作区',
   },
   dev: {
     snapshots: '快照',

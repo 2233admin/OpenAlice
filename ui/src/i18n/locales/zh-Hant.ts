@@ -99,6 +99,18 @@ export const zhHant: Resources = {
     tools: '工具',
     logs: '日誌',
     off: '關閉',
+    delete: '刪除',
+  },
+  chat: {
+    workspaceChatHeader: '工作區對話',
+    recommended: '推薦',
+    newChatWorkspace: '新增對話工作區',
+    collapseSessions: '收合工作階段',
+    expandSessions: '展開工作階段',
+    deleteWorkspace: '刪除工作區',
+    deleteWorkspaceTitle: '刪除對話工作區',
+    deleteWorkspaceMessage: '刪除對話工作區 {{tag}}？磁碟上的檔案會保留，只移除發射架的註冊記錄。它任何開啟的分頁都會關閉。',
+    noChatWorkspacesYet: '尚無對話工作區',
   },
   dev: {
     snapshots: '快照',

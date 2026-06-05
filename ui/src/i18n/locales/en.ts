@@ -102,6 +102,18 @@ export const en = {
     tools: 'Tools',
     logs: 'Logs',
     off: 'off',
+    delete: 'Delete',
+  },
+  chat: {
+    workspaceChatHeader: 'Workspace chat',
+    recommended: 'recommended',
+    newChatWorkspace: 'New chat workspace',
+    collapseSessions: 'Collapse sessions',
+    expandSessions: 'Expand sessions',
+    deleteWorkspace: 'Delete workspace',
+    deleteWorkspaceTitle: 'Delete chat workspace',
+    deleteWorkspaceMessage: "Delete chat workspace {{tag}}? The files on disk are kept; only the launcher's registry entry is removed. Any open tab for it will close.",
+    noChatWorkspacesYet: 'no chat workspaces yet',
   },
   dev: {
     snapshots: 'Snapshots',
