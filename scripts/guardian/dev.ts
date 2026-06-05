@@ -27,7 +27,11 @@ import {
 } from './shared.js'
 
 async function main(): Promise<void> {
-  const ports = await probePorts()
+  const ports = await probePorts({
+    webStart: envPort('OPENALICE_WEB_PORT_START'),
+    utaStart: envPort('OPENALICE_UTA_PORT_START'),
+    uiStart: envPort('OPENALICE_UI_PORT_START'),
+  })
   const dataHome = process.cwd()
   const flagPath = resolve(dataHome, 'data/control/restart-uta.flag')
 
@@ -35,7 +39,7 @@ async function main(): Promise<void> {
   console.log(`[guardian] UTA      →  http://127.0.0.1:${ports.utaPort}`)
   console.log(`[guardian] Alice    →  http://localhost:${ports.webPort}`)
   console.log(`[guardian] MCP      →  http://localhost:${ports.mcpPort}/mcp`)
-  console.log(`[guardian] UI       →  http://localhost:5173  (Vite picks +1 if taken)`)
+  console.log(`[guardian] UI       →  http://127.0.0.1:${ports.uiPort}`)
   console.log(`[guardian] flag     →  ${flagPath}`)
   console.log('')
 
@@ -83,7 +87,17 @@ async function main(): Promise<void> {
   const vite: ChildProcess = spawnChild({
     name: 'vite',
     command: 'pnpm',
-    args: ['--filter', 'open-alice-ui', 'dev'],
+    args: [
+      '--filter',
+      'open-alice-ui',
+      'dev',
+      '--',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(ports.uiPort),
+      '--strictPort',
+    ],
     env: { ...baseEnv, OPENALICE_BACKEND_PORT: String(ports.webPort) },
     prefixLogs: true,
   })
@@ -114,3 +128,13 @@ main().catch((err: unknown) => {
   console.error('[guardian] fatal:', err)
   process.exit(1)
 })
+
+function envPort(name: string): number | undefined {
+  const raw = process.env[name]
+  if (!raw) return undefined
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new Error(`${name} must be a TCP port, got ${raw}`)
+  }
+  return value
+}

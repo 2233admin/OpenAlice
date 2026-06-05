@@ -21,6 +21,7 @@ Thumbs.db
 
 # Build cache
 *.tsbuildinfo
+.dev/
 
 # Test
 coverage/

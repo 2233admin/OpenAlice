@@ -28,19 +28,23 @@ export interface GuardianPorts {
   webPort: number
   mcpPort: number
   utaPort: number
+  uiPort: number
 }
 
 /** Probe all three ports starting from defaults. Returns triple. */
 export async function probePorts(opts: {
   webStart?: number
   utaStart?: number
+  uiStart?: number
 } = {}): Promise<GuardianPorts> {
   const webStart = opts.webStart ?? 47331
   const utaStart = opts.utaStart ?? 47333
+  const uiStart = opts.uiStart ?? 5173
   const webPort = await probeFreePort(webStart)
   const mcpPort = await probeFreePort(webPort + 1)
   const utaPort = await probeFreePort(Math.max(utaStart, mcpPort + 1))
-  return { webPort, mcpPort, utaPort }
+  const uiPort = await probeFreePort(uiStart)
+  return { webPort, mcpPort, utaPort, uiPort }
 }
 
 export interface SpawnSpec {
