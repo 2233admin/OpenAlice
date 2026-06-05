@@ -55,7 +55,7 @@ From the modified checkout:
 Default URLs:
 
 - B modified: `http://127.0.0.1:5173`
-- A original: `http://127.0.0.1:5174`
+- A original: `http://localhost:5174`
 
 The script starts B first and waits for its UI before starting A. This is intentional: a clean upstream A checkout does not know the new fixed-port environment variables yet, so it auto-selects the next free backend and Vite ports after B has occupied the defaults. For A backend and UTA ports, read `.dev/openalice-original.out.log`.
 

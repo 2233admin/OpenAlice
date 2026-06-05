@@ -91,7 +91,6 @@ async function main(): Promise<void> {
       '--filter',
       'open-alice-ui',
       'dev',
-      '--',
       '--host',
       '127.0.0.1',
       '--port',
