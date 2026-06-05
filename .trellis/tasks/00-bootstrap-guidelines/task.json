@@ -1,0 +1,33 @@
+{
+  "id": "00-bootstrap-guidelines",
+  "name": "00-bootstrap-guidelines",
+  "title": "Bootstrap Guidelines",
+  "description": "Fill in project development guidelines for AI agents",
+  "status": "in_progress",
+  "dev_type": "docs",
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "2233admin",
+  "assignee": "2233admin",
+  "createdAt": "2026-06-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": null,
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/spec/desktop/",
+    ".trellis/spec/ibkr/",
+    ".trellis/spec/opentypebb/",
+    ".trellis/spec/uta-protocol/",
+    ".trellis/spec/uta-service/",
+    ".trellis/spec/open-alice-ui/"
+  ],
+  "notes": "First-time setup task created by trellis init (fullstack project)",
+  "meta": {}
+}
