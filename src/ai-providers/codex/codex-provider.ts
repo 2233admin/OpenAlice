@@ -69,17 +69,27 @@ export class CodexProvider implements AIProvider {
     const instructions = await this.getSystemPrompt()
 
     try {
-      // Use streaming — the ChatGPT subscription endpoint may not support non-streaming
-      const stream = client.responses.stream({
+      // Use raw streaming via responses.create({ stream: true }) — NOT
+      // responses.stream(). The latter runs a final-response parser
+      // (maybeParseResponse) when the stream closes; the ChatGPT subscription
+      // endpoint sometimes emits a `response.completed` without the `output`
+      // shape that parser expects, crashing with "Cannot read properties of
+      // undefined (reading 'map')" even though the text deltas streamed fine.
+      // create({ stream: true }) hands back raw events with no final parse.
+      const stream = await client.responses.create({
         model,
         instructions,
         input: [{ role: 'user' as const, content: prompt }],
         store: false,
+        stream: true,
       })
 
       let text = ''
       for await (const event of stream) {
         if (event.type === 'response.output_text.delta') text += event.delta
+        else if (event.type === 'error') throw new Error(`Codex stream error: ${event.message}`)
+        else if (event.type === 'response.failed')
+          throw new Error(`Codex response failed: ${event.response.error?.message ?? 'unknown error'}`)
       }
 
       return { text: text || '(no output)', media: [] }
@@ -137,12 +147,16 @@ export class CodexProvider implements AIProvider {
       let stepText = ''
 
       try {
-        const stream = client.responses.stream({
+        // Raw streaming via create({ stream: true }), not responses.stream() —
+        // see ask() for why the stream() helper's final-response parser crashes
+        // on the ChatGPT subscription endpoint.
+        const stream = await client.responses.create({
           model,
           instructions,
           input,
           tools: tools.length > 0 ? tools : undefined,
           store: false, // Required by ChatGPT subscription endpoint
+          stream: true,
         })
 
         for await (const event of stream) {
@@ -160,6 +174,12 @@ export class CodexProvider implements AIProvider {
                 arguments: item.arguments,
               })
             }
+          } else if (event.type === 'error') {
+            throw new Error(`Codex stream error: ${event.message}`)
+          } else if (event.type === 'response.failed') {
+            throw new Error(`Codex response failed: ${event.response.error?.message ?? 'unknown error'}`)
+          } else if (event.type === 'response.incomplete') {
+            throw new Error(`Codex response incomplete: ${event.response.incomplete_details?.reason ?? 'unknown reason'}`)
           }
         }
       } catch (err: any) {
