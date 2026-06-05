@@ -110,16 +110,19 @@ function Detail({ detail }: { detail: EntityDetail }) {
 
 function BacklinkRow({ backlink }: { backlink: Backlink }) {
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
-  const setSidebar = useWorkspace((s) => s.setSidebar)
   const open = () => {
-    setSidebar('workspaces')
-    openOrFocus({ kind: 'workspace', params: { wsId: backlink.workspaceId } })
+    // Open the referencing note in the dedicated file viewer (VS Code-style),
+    // located at its exact path — not the whole workspace.
+    openOrFocus({
+      kind: 'file-viewer',
+      params: { wsId: backlink.workspaceId, path: backlink.path },
+    })
   }
   return (
     <button
       type="button"
       onClick={open}
-      title={`Open ${backlink.workspaceTag}`}
+      title={`Open ${backlink.path}`}
       className="group flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border bg-bg-tertiary/30 hover:bg-bg-tertiary hover:border-accent/40 transition-colors text-left"
     >
       <FileText

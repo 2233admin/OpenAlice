@@ -3,6 +3,7 @@ import { formatRelativeTime } from '../lib/intl'
 import { ArrowRight, MessageSquare, Trash2 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { MarkdownContent } from '../components/MarkdownContent'
+import { FileContentView } from '../components/FileContentView'
 import { api } from '../api'
 import { inboxLive, refreshInbox, removeInboxOptimistically } from '../live/inbox'
 import { useInboxSelection } from '../live/inbox-selection'
@@ -260,55 +261,10 @@ function DocBlock({ workspaceId, doc }: { workspaceId: string; doc: InboxDoc }) 
       <div className="px-4 py-3">
         {result === null ? (
           <div className="text-[12px] text-text-muted">Loading…</div>
-        ) : result.kind === 'ok' ? (
-          <DocContent path={doc.path} content={result.content} />
         ) : (
-          <DocTombstone result={result} />
+          <FileContentView path={doc.path} result={result} />
         )}
       </div>
-    </div>
-  )
-}
-
-function DocContent({ path, content }: { path: string; content: string }) {
-  const lower = path.toLowerCase()
-  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-    return <MarkdownContent text={content} />
-  }
-  if (lower.endsWith('.html') || lower.endsWith('.htm')) {
-    // DOMPurify sanitisation is inside MarkdownContent; for raw HTML we
-    // run it through the markdown renderer too — marked passes HTML
-    // through, then DOMPurify sanitises before insertion.
-    return <MarkdownContent text={content} />
-  }
-  // Plain-text fallback (.txt, .log, no extension, code files…)
-  return (
-    <pre className="text-[12px] text-text whitespace-pre-wrap font-mono leading-relaxed">
-      {content}
-    </pre>
-  )
-}
-
-function DocTombstone({ result }: { result: ReadFileResult }) {
-  const message = (() => {
-    switch (result.kind) {
-      case 'workspace_missing':
-        return 'Workspace no longer exists — it may have been deleted.'
-      case 'file_missing':
-        return 'File not found at this path — it may have been moved, renamed, or deleted in the workspace since this notification was sent.'
-      case 'too_large':
-        return `File too large to render in inbox (${(result.sizeBytes / 1024).toFixed(0)} KB). Open the workspace to view.`
-      case 'invalid_path':
-        return 'Invalid path.'
-      case 'error':
-        return `Could not read file: ${result.message}`
-      case 'ok':
-        return ''
-    }
-  })()
-  return (
-    <div className="text-[12px] text-text-muted italic">
-      {message}
     </div>
   )
 }

@@ -192,6 +192,16 @@ body,
   padding-left: 1.5em;
   margin: 0.5em 0;
 }
+/* Obsidian-style [[name]] wikilinks → clickable entity references. */
+.markdown-content a.wikilink {
+  color: var(--color-accent);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+.markdown-content a.wikilink:hover {
+  border-bottom-style: solid;
+}
 .markdown-content blockquote {
   border-left: 3px solid var(--color-accent);
   padding-left: 12px;

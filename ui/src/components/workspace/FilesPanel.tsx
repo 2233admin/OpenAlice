@@ -3,6 +3,7 @@ import { formatRelativeTime } from '../../lib/intl';
 import type { ReactElement } from 'react';
 
 import { listFiles, type DirListing, type FileEntry } from './api';
+import { useWorkspace } from '../../tabs/store';
 
 const POLL_MS = 5000;
 
@@ -14,6 +15,7 @@ export function FilesPanel(props: FilesPanelProps): ReactElement {
   const [path, setPath] = useState('');
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const openOrFocus = useWorkspace((s) => s.openOrFocus);
 
   useEffect(() => {
     let alive = true;
@@ -48,6 +50,12 @@ export function FilesPanel(props: FilesPanelProps): ReactElement {
   const enter = (entry: FileEntry): void => {
     if (entry.kind === 'dir' || entry.kind === 'symlink') {
       setPath(path ? `${path}/${entry.name}` : entry.name);
+      return;
+    }
+    if (entry.kind === 'file') {
+      // Open the file in the dedicated viewer tab (VS Code-style).
+      const rel = path ? `${path}/${entry.name}` : entry.name;
+      openOrFocus({ kind: 'file-viewer', params: { wsId: props.wsId, path: rel } });
     }
   };
 

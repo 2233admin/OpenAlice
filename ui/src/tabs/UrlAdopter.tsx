@@ -76,6 +76,7 @@ export function UrlAdopter() {
             defensive default). */}
         <Route path="/workspaces/templates" element={<AdoptStatic spec={{ kind: 'template-catalog', params: {} }} />} />
         <Route path="/workspaces/templates/:name" element={<AdoptTemplateDetail />} />
+        <Route path="/workspaces/:wsId/view/:path" element={<AdoptFileViewer />} />
         <Route path="/workspaces/:wsId" element={<AdoptWorkspace />} />
         <Route path="/workspaces/:wsId/s/:sessionId" element={<AdoptWorkspace />} />
 
@@ -179,6 +180,14 @@ function AdoptTemplateDetail() {
   return <AdoptStatic spec={{ kind: 'template-detail', params: { name } }} />
 }
 
+function AdoptFileViewer() {
+  const { wsId, path } = useParams<{ wsId: string; path: string }>()
+  if (!wsId || !path) return <Navigate to="/workspaces" replace />
+  // `path` arrives already URL-decoded by react-router (toUrl encodes it as
+  // a single segment), so it may contain slashes — pass through verbatim.
+  return <AdoptStatic spec={{ kind: 'file-viewer', params: { wsId, path } }} />
+}
+
 function RedirectUtaDetail() {
   const { id } = useParams<{ id: string }>()
   return <Navigate to={`/settings/uta/${id ?? ''}`} replace />
@@ -214,7 +223,8 @@ function specToSection(spec: ViewSpec): ActivitySection {
     case 'workspace':
     case 'workspace-list':
     case 'template-catalog':
-    case 'template-detail':    return 'workspaces'
+    case 'template-detail':
+    case 'file-viewer':        return 'workspaces'
     case 'portfolio':
     case 'uta-detail':         return 'portfolio'
     case 'automation':         return 'automation'

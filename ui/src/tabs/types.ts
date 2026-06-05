@@ -29,6 +29,7 @@ export type ViewSpec =
   | { kind: 'dev';            params: { tab: 'tools' | 'snapshots' | 'logs' | 'simulator' } }
   | { kind: 'inbox';               params: Record<string, never> }
   | { kind: 'tracked';             params: Record<string, never> }
+  | { kind: 'file-viewer';         params: { wsId: string; path: string } }
 
 export type ViewKind = ViewSpec['kind']
 

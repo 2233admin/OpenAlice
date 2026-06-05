@@ -22,6 +22,7 @@ import { WorkspaceListPage } from '../pages/WorkspaceListPage'
 import { WorkspacePage } from '../pages/WorkspacePage'
 import { TemplateCatalogPage } from '../pages/TemplateCatalogPage'
 import { TemplateDetailPage } from '../pages/TemplateDetailPage'
+import { FileViewerPage } from '../pages/FileViewerPage'
 
 /**
  * Central registry mapping each ViewKind to its render component and URL
@@ -216,6 +217,15 @@ const templateDetailModule: ViewModule<'template-detail'> = {
   Component: ({ spec }) => <TemplateDetailPage spec={spec} />,
 }
 
+const fileViewerModule: ViewModule<'file-viewer'> = {
+  kind: 'file-viewer',
+  // Tab title = file basename; path itself shows in the page header.
+  title: (spec) => spec.params.path.split('/').filter(Boolean).pop() ?? spec.params.path,
+  toUrl: (spec) =>
+    `/workspaces/${encodeURIComponent(spec.params.wsId)}/view/${encodeURIComponent(spec.params.path)}`,
+  Component: ({ spec }) => <FileViewerPage spec={spec} />,
+}
+
 // ==================== Aggregate ====================
 
 export const VIEWS = {
@@ -234,6 +244,7 @@ export const VIEWS = {
   workspace: workspaceModule,
   'template-catalog': templateCatalogModule,
   'template-detail': templateDetailModule,
+  'file-viewer': fileViewerModule,
 } as const satisfies { [K in ViewKind]: ViewModule<K> }
 
 /** Untyped lookup — narrow at the call site by inspecting `spec.kind`. */
