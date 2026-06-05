@@ -124,6 +124,7 @@ switch ($Action) {
     Start-Stack -Name $ModifiedName -Repo $ModifiedRepo -WebStart 47331 -UtaStart 47333 -UiStart 5173 -ExactPorts $true
     Wait-Http 'http://127.0.0.1:5173'
     Start-Stack -Name $OriginalName -Repo $OriginalRepo -WebStart 47431 -UtaStart 47433 -UiStart 5174 -ExactPorts $false
+    Wait-Http 'http://127.0.0.1:5174'
     Write-Host ''
     Write-Host 'B modified: http://127.0.0.1:5173'
     Write-Host 'A original:  http://127.0.0.1:5174'
