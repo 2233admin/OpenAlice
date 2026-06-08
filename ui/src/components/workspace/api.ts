@@ -428,8 +428,8 @@ export interface SavedCredential {
   readonly slug: string;
   readonly vendor: string;
   readonly authType: 'api-key' | 'subscription';
-  readonly baseUrl: string | null;
-  readonly wireShape: WireShape | null;
+  /** Wire capabilities: each shape this key speaks → its endpoint baseUrl. */
+  readonly wires: Partial<Record<WireShape, string>>;
   readonly apiKey: string | null;
 }
 

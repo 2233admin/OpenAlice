@@ -44,7 +44,7 @@ export type {
   AIBackend,
   Preset,
   WireShape,
-  SerializedWire,
+  SerializedRegion,
   JsonSchema,
   JsonSchemaProperty,
   ChatMessage,

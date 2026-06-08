@@ -9,14 +9,14 @@
  * its `models` → schema.model.oneOf (see src/ai-providers/presets.ts buildJsonSchema).
  */
 
-import type { Preset, SerializedWire, WireShape } from '../api'
+import type { Preset, SerializedRegion, WireShape } from '../api'
 
 export interface LabeledOption {
   id: string
   label: string
 }
 
-// ==================== Wire shapes ====================
+// ==================== Wire shapes & regions ====================
 
 /** Compact label for a wire shape (list chips / credential rows). */
 export const WIRE_SHAPE_SHORT: Record<WireShape, string> = {
@@ -25,24 +25,47 @@ export const WIRE_SHAPE_SHORT: Record<WireShape, string> = {
   'openai-responses': 'OpenAI Responses',
 }
 
-/** The wire shapes a preset supports (each with its endpoint table). */
-export function presetWires(p: Preset | null | undefined): SerializedWire[] {
-  return p?.wires ?? []
+/** The regions a preset offers (each carrying its per-shape endpoint map). */
+export function presetRegions(p: Preset | null | undefined): SerializedRegion[] {
+  return p?.regions ?? []
 }
 
-/** The endpoints (region variants) for a given wire shape of a preset. */
-export function wireEndpoints(p: Preset | null | undefined, shape: WireShape): LabeledOption[] {
-  return presetWires(p).find((w) => w.shape === shape)?.endpoints ?? []
+/** Look up a region by id (falls back to the first region). */
+export function regionById(p: Preset | null | undefined, id: string): SerializedRegion | undefined {
+  const regions = presetRegions(p)
+  return regions.find((r) => r.id === id) ?? regions[0]
 }
 
-/** The shape a preset defaults to (its first declared wire). */
-export function defaultWireShape(p: Preset | null | undefined): WireShape | undefined {
-  return presetWires(p)[0]?.shape
+/** The wire shapes available in a region, in a stable display order. */
+const SHAPE_ORDER: WireShape[] = ['anthropic', 'openai-chat', 'openai-responses']
+export function regionShapes(region: SerializedRegion | undefined): WireShape[] {
+  if (!region) return []
+  return SHAPE_ORDER.filter((s) => s in region.wires)
 }
 
-/** Reverse lookup: which wire shape's endpoint list contains this baseUrl (for edit mode). */
-export function wireShapeForBaseUrl(p: Preset | null | undefined, baseUrl: string): WireShape | undefined {
-  return presetWires(p).find((w) => w.endpoints.some((e) => e.id === baseUrl))?.shape
+/**
+ * The wire shapes each agent can speak, in preference order — mirrors the
+ * backend `AGENT_WIRE_PREFERENCE` (credential-injection.ts). A credential serves
+ * an agent only if it declares a compatible wire (codex = Responses-only, so few
+ * credentials can drive it — the intended funnel toward pi/opencode).
+ */
+export const AGENT_WIRE_PREFERENCE: Record<string, WireShape[]> = {
+  claude: ['anthropic'],
+  codex: ['openai-responses'],
+  opencode: ['openai-chat', 'anthropic', 'openai-responses'],
+  pi: ['openai-chat', 'anthropic', 'openai-responses'],
+}
+
+/** Pick the wire an agent should use from a credential's capabilities (null = none compatible). */
+export function pickAgentWire(
+  wires: Partial<Record<WireShape, string>>,
+  agentId: string,
+): { shape: WireShape; baseUrl: string } | null {
+  const pref = AGENT_WIRE_PREFERENCE[agentId] ?? SHAPE_ORDER
+  for (const shape of pref) {
+    if (shape in wires) return { shape, baseUrl: wires[shape] ?? '' }
+  }
+  return null
 }
 
 function schemaProps(schema: Preset['schema']): Record<string, Record<string, unknown>> {

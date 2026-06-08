@@ -21,29 +21,27 @@ export interface ModelOption {
   label: string
 }
 
-export interface EndpointOption {
-  id: string
-  label: string
-}
-
 /**
  * The wire protocol a runtime speaks to an endpoint. First-class because a
  * provider often exposes the SAME key behind multiple, mutually-incompatible
  * shapes (Anthropic Messages vs OpenAI Chat Completions vs OpenAI Responses),
- * each at a different endpoint URL. Modelled as an open enum + a per-shape
- * endpoint table (see `WireOption`) so the form is a registry lookup, never a
- * boolean/ternary. Extensible (google-generative-ai etc.) when a runtime needs it.
+ * each at a different endpoint URL. A credential captures every shape its region
+ * offers (see `RegionOption.wires`) as its "wire capabilities". Extensible
+ * (google-generative-ai etc.) when a runtime needs it.
  */
 export type WireShape = 'anthropic' | 'openai-chat' | 'openai-responses'
 
-export interface WireOption {
-  shape: WireShape
-  /**
-   * Region/endpoint variants for THIS shape (e.g. China vs International).
-   * Empty ⇒ a single official endpoint with no region choice (the form then
-   * shows a free-text baseUrl that may be left blank for the default).
-   */
-  endpoints: EndpointOption[]
+/**
+ * A region (or "the official endpoint") a provider's key can authenticate
+ * against, with the per-wire-shape endpoint URLs available there. One key
+ * (= one region) speaks ALL these shapes — they differ only by URL — so a
+ * credential created for this region captures the whole `wires` map and thereby
+ * declares its wire capabilities. (`''` ⇒ the shape's official endpoint.)
+ */
+export interface RegionOption {
+  id: string
+  label: string
+  wires: Partial<Record<WireShape, string>>
 }
 
 export const WIRE_SHAPE_LABELS: Record<WireShape, string> = {
@@ -75,13 +73,13 @@ export interface PresetDef {
   defaultName: string
   zodSchema: z.ZodType
   models?: ModelOption[]
-  endpoints?: EndpointOption[]
   /**
-   * Supported wire shapes × their endpoints. When set, the create-AI-config
-   * form offers a wire-shape selector that auto-fills the matching endpoint;
-   * supersedes the flat `endpoints` (which only ever described one shape).
+   * Regions this provider's key can authenticate against, each carrying the
+   * per-wire-shape endpoint URLs available there. The create form: pick a region
+   * → the credential captures all of that region's wires. Absent for `custom`
+   * (free-form).
    */
-  wires?: WireOption[]
+  regions?: RegionOption[]
   writeOnlyFields?: string[]
   /** Internal — not exposed to the wizard JSON Schema. Drives the
    *  test-path adapter selection in GenerateRouter.askForTest. */
@@ -134,7 +132,7 @@ export const CLAUDE_API: PresetDef = {
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
-  wires: [{ shape: 'anthropic', endpoints: [] }],
+  regions: [{ id: 'official', label: 'Official (api.anthropic.com)', wires: { anthropic: '' } }],
   writeOnlyFields: ['apiKey'],
   sdkAdapters: {
     available: [
@@ -192,10 +190,7 @@ export const CODEX_API: PresetDef = {
   // Same key + base; the shape is how you call it. Responses is OpenAI's
   // current API (what codex speaks); Chat Completions is the legacy shape
   // opencode/pi use.
-  wires: [
-    { shape: 'openai-responses', endpoints: [] },
-    { shape: 'openai-chat', endpoints: [] },
-  ],
+  regions: [{ id: 'official', label: 'OpenAI (api.openai.com)', wires: { 'openai-responses': '', 'openai-chat': '' } }],
   writeOnlyFields: ['apiKey'],
   sdkAdapters: {
     available: [
@@ -227,11 +222,7 @@ export const GEMINI: PresetDef = {
   ],
   // Google's OpenAI-compatibility layer (the native google-generative-ai wire
   // isn't a supported shape yet). Reachable by opencode/pi.
-  wires: [
-    { shape: 'openai-chat', endpoints: [
-      { id: 'https://generativelanguage.googleapis.com/v1beta/openai/', label: 'Google (OpenAI-compatible)' },
-    ] },
-  ],
+  regions: [{ id: 'default', label: 'Google', wires: { 'openai-chat': 'https://generativelanguage.googleapis.com/v1beta/openai/' } }],
   writeOnlyFields: ['apiKey'],
   sdkAdapters: {
     available: [
@@ -262,15 +253,13 @@ export const MINIMAX: PresetDef = {
     model: z.string().default('MiniMax-M3').describe('Model'),
     apiKey: z.string().min(1).describe('MiniMax API key'),
   }),
-  wires: [
-    { shape: 'anthropic', endpoints: [
-      { id: 'https://api.minimaxi.com/anthropic', label: 'China (minimaxi.com)' },
-      { id: 'https://api.minimax.io/anthropic', label: 'International (minimax.io)' },
-    ] },
-    { shape: 'openai-chat', endpoints: [
-      { id: 'https://api.minimaxi.com/v1', label: 'China (minimaxi.com)' },
-      { id: 'https://api.minimax.io/v1', label: 'International (minimax.io)' },
-    ] },
+  regions: [
+    { id: 'china', label: 'China (minimaxi.com)', wires: {
+      anthropic: 'https://api.minimaxi.com/anthropic', 'openai-chat': 'https://api.minimaxi.com/v1',
+    } },
+    { id: 'intl', label: 'International (minimax.io)', wires: {
+      anthropic: 'https://api.minimax.io/anthropic', 'openai-chat': 'https://api.minimax.io/v1',
+    } },
   ],
   models: [
     { id: 'MiniMax-M3', label: 'MiniMax M3' },
@@ -305,15 +294,13 @@ export const GLM: PresetDef = {
     model: z.string().default('glm-5.1').describe('Model'),
     apiKey: z.string().min(1).describe('GLM API key'),
   }),
-  wires: [
-    { shape: 'anthropic', endpoints: [
-      { id: 'https://open.bigmodel.cn/api/anthropic', label: 'China (bigmodel.cn)' },
-      { id: 'https://api.z.ai/api/anthropic', label: 'International (z.ai)' },
-    ] },
-    { shape: 'openai-chat', endpoints: [
-      { id: 'https://open.bigmodel.cn/api/paas/v4', label: 'China (bigmodel.cn)' },
-      { id: 'https://api.z.ai/api/paas/v4', label: 'International (z.ai)' },
-    ] },
+  regions: [
+    { id: 'china', label: 'China (bigmodel.cn)', wires: {
+      anthropic: 'https://open.bigmodel.cn/api/anthropic', 'openai-chat': 'https://open.bigmodel.cn/api/paas/v4',
+    } },
+    { id: 'intl', label: 'International (z.ai)', wires: {
+      anthropic: 'https://api.z.ai/api/anthropic', 'openai-chat': 'https://api.z.ai/api/paas/v4',
+    } },
   ],
   models: [
     { id: 'glm-5.1', label: 'GLM 5.1' },
@@ -352,15 +339,13 @@ export const KIMI: PresetDef = {
     model: z.string().default('kimi-k2.6').describe('Model'),
     apiKey: z.string().min(1).describe('Moonshot API key'),
   }),
-  wires: [
-    { shape: 'anthropic', endpoints: [
-      { id: 'https://api.moonshot.cn/anthropic', label: 'China (moonshot.cn)' },
-      { id: 'https://api.moonshot.ai/anthropic', label: 'International (moonshot.ai)' },
-    ] },
-    { shape: 'openai-chat', endpoints: [
-      { id: 'https://api.moonshot.cn/v1', label: 'China (moonshot.cn)' },
-      { id: 'https://api.moonshot.ai/v1', label: 'International (moonshot.ai)' },
-    ] },
+  regions: [
+    { id: 'china', label: 'China (moonshot.cn)', wires: {
+      anthropic: 'https://api.moonshot.cn/anthropic', 'openai-chat': 'https://api.moonshot.cn/v1',
+    } },
+    { id: 'intl', label: 'International (moonshot.ai)', wires: {
+      anthropic: 'https://api.moonshot.ai/anthropic', 'openai-chat': 'https://api.moonshot.ai/v1',
+    } },
   ],
   models: [
     { id: 'kimi-k2.6', label: 'Kimi K2.6' },
@@ -393,13 +378,10 @@ export const DEEPSEEK: PresetDef = {
     model: z.string().default('deepseek-v4-pro').describe('Model'),
     apiKey: z.string().min(1).describe('DeepSeek API key'),
   }),
-  wires: [
-    { shape: 'anthropic', endpoints: [
-      { id: 'https://api.deepseek.com/anthropic', label: 'DeepSeek (anthropic)' },
-    ] },
-    { shape: 'openai-chat', endpoints: [
-      { id: 'https://api.deepseek.com', label: 'DeepSeek (OpenAI-compatible)' },
-    ] },
+  regions: [
+    { id: 'default', label: 'DeepSeek', wires: {
+      anthropic: 'https://api.deepseek.com/anthropic', 'openai-chat': 'https://api.deepseek.com',
+    } },
   ],
   models: [
     { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro (flagship)' },
@@ -433,11 +415,8 @@ export const CUSTOM: PresetDef = {
     baseUrl: z.string().optional().describe('Custom API endpoint (leave empty for official)'),
     apiKey: z.string().optional().describe('API key'),
   }),
-  wires: [
-    { shape: 'anthropic', endpoints: [] },
-    { shape: 'openai-chat', endpoints: [] },
-    { shape: 'openai-responses', endpoints: [] },
-  ],
+  // No `regions` — Custom is free-form: the form lets the user pick any wire
+  // shape and type the endpoint URL by hand.
   writeOnlyFields: ['apiKey'],
 }
 

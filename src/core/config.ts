@@ -83,7 +83,7 @@ export const credentialSchema = z.object({
    * of them — "wire capabilities" — and injection picks the one the target agent
    * speaks. Fill the key once.
    */
-  wires: z.record(credentialWireShapeEnum, z.string()).optional(),
+  wires: z.partialRecord(credentialWireShapeEnum, z.string()).optional(),
   /** @deprecated legacy single-endpoint fields — read via `credentialWires()`. */
   baseUrl: z.string().trim().transform((s) => s || undefined).optional(),
   /** @deprecated legacy single wire shape — superseded by `wires`. */

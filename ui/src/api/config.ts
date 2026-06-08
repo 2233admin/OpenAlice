@@ -108,7 +108,7 @@ export const configApi = {
     return res.json()
   },
 
-  async addCredential(input: { vendor: string; baseUrl?: string; apiKey: string; wireShape?: WireShape }): Promise<{ slug: string; vendor: string }> {
+  async addCredential(input: { vendor: string; wires: Partial<Record<WireShape, string>>; apiKey: string }): Promise<{ slug: string; vendor: string }> {
     const res = await fetch('/api/config/credentials', { method: 'POST', headers, body: JSON.stringify(input) })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to add credential' }))
@@ -117,7 +117,7 @@ export const configApi = {
     return res.json()
   },
 
-  async updateCredential(slug: string, input: { vendor: string; baseUrl?: string; apiKey?: string; wireShape?: WireShape }): Promise<void> {
+  async updateCredential(slug: string, input: { vendor: string; wires: Partial<Record<WireShape, string>>; apiKey?: string }): Promise<void> {
     const res = await fetch(`/api/config/credentials/${encodeURIComponent(slug)}`, { method: 'PUT', headers, body: JSON.stringify(input) })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to update credential' }))
@@ -146,13 +146,13 @@ export const configApi = {
 
 }
 
-/** A central credential as the vault lists it — the raw key is never sent. */
+/** A central credential as the vault lists it. */
 export interface CredentialSummary {
   slug: string
   vendor: string
   authType: 'api-key' | 'subscription'
-  baseUrl: string | null
-  wireShape: WireShape | null
+  /** Wire capabilities: each shape this key speaks → its endpoint baseUrl. */
+  wires: Partial<Record<WireShape, string>>
   /** The stored key (admin-gated; lets the edit form round-trip it). */
   apiKey: string | null
   hasApiKey: boolean

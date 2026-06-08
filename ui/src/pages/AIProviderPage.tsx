@@ -20,12 +20,21 @@ import type { CredentialSummary } from '../api/config'
 import { PageHeader } from '../components/PageHeader'
 import { PageLoading } from '../components/StateViews'
 import { Field, inputClass } from '../components/form'
-import { EndpointField, ModelCombobox } from '../components/credentials/PresetFields'
+import { ModelCombobox } from '../components/credentials/PresetFields'
 import {
   VENDOR_BY_PRESET, isApiKeyPreset, presetModels, vendorPreset, WIRE_SHAPE_SHORT,
-  presetWires, wireEndpoints, defaultWireShape, wireShapeForBaseUrl,
+  presetRegions, regionById, regionShapes,
 } from '../lib/presetHelpers'
 import { useTestGate } from '../lib/useTestGate'
+
+const SHAPE_ORDER: WireShape[] = ['anthropic', 'openai-chat', 'openai-responses']
+
+/** Find the region whose wires match a stored credential (for edit mode). */
+function matchRegionId(preset: Preset | null, wires: Partial<Record<WireShape, string>>): string | undefined {
+  const shapes = Object.keys(wires) as WireShape[]
+  if (shapes.length === 0) return undefined
+  return presetRegions(preset).find((r) => shapes.every((s) => r.wires[s] === wires[s]))?.id
+}
 
 // ==================== Agent runtimes ====================
 //
@@ -144,18 +153,18 @@ export function AIProviderPage() {
               {credentials.map((cred) => (
                 <div key={cred.slug} className="flex items-center gap-3 rounded-lg border border-border bg-bg px-4 py-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[13px] font-medium text-text">{cred.vendor}</span>
                       <span className="text-[11px] text-text-muted font-mono">{cred.slug}</span>
-                      {cred.wireShape && (
-                        <span className="text-[10px] text-text-muted border border-border rounded px-1">{WIRE_SHAPE_SHORT[cred.wireShape]}</span>
-                      )}
+                      {(SHAPE_ORDER.filter((s) => s in cred.wires)).map((s) => (
+                        <span key={s} className="text-[10px] text-text-muted border border-border rounded px-1">{WIRE_SHAPE_SHORT[s]}</span>
+                      ))}
                       {cred.hasApiKey && (
                         <span className="text-[10px] text-green border border-green/40 rounded px-1">key set</span>
                       )}
                     </div>
                     <div className="text-[11px] text-text-muted mt-0.5 font-mono truncate">
-                      {cred.baseUrl ?? 'default endpoint'}
+                      {Object.values(cred.wires)[0] || 'default endpoint'}
                     </div>
                   </div>
                   <button
@@ -243,16 +252,17 @@ function CredentialModal({ mode, cred, presets, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
-  // In edit mode the vendor is fixed → resolve its preset + the wire shape that
-  // owns the stored endpoint; in add mode the user picks a provider first.
+  // In edit mode the vendor is fixed → resolve its preset + the region whose
+  // wires match the stored credential; in add mode the user picks a provider.
   const initialPreset = mode === 'edit' && cred ? vendorPreset(cred.vendor, presets) ?? null : null
   const [preset, setPreset] = useState<Preset | null>(initialPreset)
-  const [wireShape, setWireShape] = useState<WireShape | undefined>(
-    // Prefer the shape stored on the credential; fall back to inferring from the
-    // stored endpoint (pre-wireShape creds) or the preset default.
-    cred?.wireShape ?? (initialPreset ? (wireShapeForBaseUrl(initialPreset, cred?.baseUrl ?? '') ?? defaultWireShape(initialPreset)) : undefined),
+  const [regionId, setRegionId] = useState<string>(
+    () => matchRegionId(initialPreset, cred?.wires ?? {}) ?? presetRegions(initialPreset)[0]?.id ?? '',
   )
-  const [baseUrl, setBaseUrl] = useState(cred?.baseUrl ?? '')
+  // Custom (free-form) provider — one shape + a hand-typed endpoint.
+  const customInit = cred ? (SHAPE_ORDER.find((s) => s in (cred.wires ?? {})) ?? 'openai-chat') : 'openai-chat'
+  const [customShape, setCustomShape] = useState<WireShape>(customInit)
+  const [customUrl, setCustomUrl] = useState<string>(cred?.wires?.[customInit] ?? '')
   const [apiKey, setApiKey] = useState(cred?.apiKey ?? '')
   const [showKey, setShowKey] = useState(false)
   const [model, setModel] = useState('')
@@ -265,58 +275,59 @@ function CredentialModal({ mode, cred, presets, onClose, onSaved }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const regions = presetRegions(preset)
+  const isCustom = !!preset && regions.length === 0
+  const region = regionById(preset, regionId)
+  const models = preset ? presetModels(preset) : []
+
+  // The wire capabilities this credential will declare: a whole region's map,
+  // or — for custom — the single hand-entered shape→url.
+  const wires: Partial<Record<WireShape, string>> = isCustom
+    ? (customUrl.trim() ? { [customShape]: customUrl.trim() } : {})
+    : (region?.wires ?? {})
+  const shapes = isCustom ? [customShape] : regionShapes(region)
+  // The shape the Test probes (the key is shared, so one probe validates it).
+  const primaryShape = shapes[0]
+  const primaryUrl = primaryShape ? (wires[primaryShape] ?? '') : ''
+
   const pickPreset = (p: Preset) => {
-    const shape = defaultWireShape(p)
     setPreset(p)
-    setWireShape(shape)
-    setBaseUrl(shape ? (wireEndpoints(p, shape)[0]?.id ?? '') : '')
+    setRegionId(presetRegions(p)[0]?.id ?? '')
     setModel(presetModels(p)[0]?.id ?? '')
     setError('')
     gate.reset()
   }
 
-  const changeWireShape = (shape: WireShape) => {
-    setWireShape(shape)
-    // Auto-fill the matching endpoint for the new shape (first region, or blank).
-    if (preset) setBaseUrl(wireEndpoints(preset, shape)[0]?.id ?? '')
-    setError('')
-  }
-
-  const wires = presetWires(preset)
-  const endpoints = preset && wireShape ? wireEndpoints(preset, wireShape) : []
-  const models = preset ? presetModels(preset) : []
-
   // The fields the test covers — editing any of them re-locks Save.
-  const testKey = `${wireShape ?? ''}|${baseUrl.trim()}|${apiKey.trim()}|${model.trim()}`
-  const canTest = !!apiKey.trim() && !!model.trim() && !!wireShape
+  const testKey = `${JSON.stringify(wires)}|${apiKey.trim()}|${model.trim()}`
+  const canTest = !!apiKey.trim() && !!model.trim() && !!primaryShape
   // ADD must pass a test. EDIT keeping the stored key (key blank) can't be probed
   // — it was verified at creation, so allow it; if a key is entered, re-test.
   const needsTest = mode === 'add' || !!apiKey.trim()
   const canSave = !saving && (!needsTest || gate.passedFor(testKey))
 
   const handleTest = () => {
-    if (!canTest || !wireShape) { setError('Fill the API key + model first'); return }
+    if (!canTest || !primaryShape) { setError('Fill the API key + model first'); return }
     setError('')
     void gate.run(testKey, () =>
-      api.config.testCredential({ wireShape, baseUrl: baseUrl.trim() || undefined, apiKey: apiKey.trim(), model: model.trim() }),
+      api.config.testCredential({ wireShape: primaryShape, baseUrl: primaryUrl || undefined, apiKey: apiKey.trim(), model: model.trim() }),
     )
   }
 
   const handleSave = async () => {
     if (!preset) return
+    if (Object.keys(wires).length === 0) { setError('Pick a region / endpoint first'); return }
     const vendor = VENDOR_BY_PRESET[preset.id] ?? 'custom'
     setSaving(true); setError('')
     try {
       if (mode === 'edit' && cred) {
         await api.config.updateCredential(cred.slug, {
-          vendor,
-          baseUrl: baseUrl.trim() || undefined,
-          ...(wireShape ? { wireShape } : {}),
+          vendor, wires,
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         })
       } else {
         if (!apiKey.trim()) { setError('API key is required'); setSaving(false); return }
-        await api.config.addCredential({ vendor, baseUrl: baseUrl.trim() || undefined, apiKey: apiKey.trim(), ...(wireShape ? { wireShape } : {}) })
+        await api.config.addCredential({ vendor, wires, apiKey: apiKey.trim() })
       }
       await onSaved()
     } catch (err) {
@@ -370,18 +381,45 @@ function CredentialModal({ mode, cred, presets, onClose, onSaved }: {
                 <p className="text-[11px] text-text-muted bg-bg-tertiary rounded-lg px-3 py-2.5 leading-relaxed">{preset.hint}</p>
               )}
 
-              {/* Wire shape — only when the provider exposes more than one */}
-              {wires.length > 1 && (
-                <Field label="API mode" description="The provider exposes the same key behind multiple, incompatible wire shapes — pick the one your runtime speaks.">
-                  <select className={inputClass} value={wireShape ?? ''} onChange={(e) => changeWireShape(e.target.value as WireShape)}>
-                    {wires.map((w) => <option key={w.shape} value={w.shape}>{w.shapeLabel}</option>)}
-                  </select>
-                </Field>
-              )}
+              {isCustom ? (
+                <>
+                  <Field label="API mode" description="Which wire protocol your endpoint speaks.">
+                    <select className={inputClass} value={customShape} onChange={(e) => { setCustomShape(e.target.value as WireShape); gate.reset() }}>
+                      {SHAPE_ORDER.map((s) => <option key={s} value={s}>{WIRE_SHAPE_SHORT[s]}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Base URL">
+                    <input className={inputClass + ' font-mono text-[12px]'} value={customUrl}
+                      onChange={(e) => { setCustomUrl(e.target.value); gate.reset() }}
+                      placeholder="https://… (leave empty for the official endpoint)"
+                      spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+                  </Field>
+                </>
+              ) : (
+                <>
+                  {/* Region — only when the provider offers more than one */}
+                  {regions.length > 1 && (
+                    <Field label="Endpoint / region" description="Region picks the endpoints; this key authenticates against one region.">
+                      <select className={inputClass} value={regionId} onChange={(e) => { setRegionId(e.target.value); gate.reset() }}>
+                        {regions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                      </select>
+                    </Field>
+                  )}
 
-              <Field label={endpoints.length > 0 ? 'Endpoint / region' : 'Base URL (optional)'}>
-                <EndpointField value={baseUrl} endpoints={endpoints} onChange={(v) => { setBaseUrl(v) }} />
-              </Field>
+                  {/* Wire capabilities this credential will declare (read-only) */}
+                  <Field label="Wire capabilities" description="One key, every shape this region speaks — injected per agent (claude→Anthropic, opencode/pi→either, codex→Responses).">
+                    <div className="space-y-1.5 rounded-lg border border-border bg-bg-secondary/30 px-3 py-2.5">
+                      {shapes.length === 0 && <p className="text-[11px] text-text-muted">No endpoints for this provider.</p>}
+                      {shapes.map((s) => (
+                        <div key={s} className="flex items-baseline gap-2 text-[11px]">
+                          <span className="text-text-muted w-28 shrink-0">{WIRE_SHAPE_SHORT[s]}</span>
+                          <span className="font-mono text-text-muted/80 break-all">{wires[s] || 'official endpoint'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Field>
+                </>
+              )}
 
               <Field label="API key">
                 <div className="flex gap-2">

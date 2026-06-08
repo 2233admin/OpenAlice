@@ -27,7 +27,7 @@ import { logger as launcherLogger } from '../../workspaces/logger.js';
 import type { SessionRecord } from '../../workspaces/session-registry.js';
 import { HeadlessCapacityError, resumeFromRecord, type SessionFactoryContext, type WorkspaceService } from '../../workspaces/service.js';
 import type { WorkspaceAiCred } from '../../workspaces/cli-adapter.js';
-import { addCredential, readCredentials, credentialWireShapeEnum, type Credential } from '../../core/config.js';
+import { addCredential, readCredentials, credentialWires, credentialWireShapeEnum, type Credential } from '../../core/config.js';
 import { inferCredentialVendor, resolveAnthropicAuthMode } from '../../core/credential-inference.js';
 
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -843,8 +843,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
         slug,
         vendor: cred.vendor,
         authType: cred.authType,
-        baseUrl: cred.baseUrl ?? null,
-        wireShape: cred.wireShape ?? null,
+        wires: credentialWires(cred), // shape → endpoint; the modal picks one per agent
         apiKey: cred.apiKey ?? null,
       }));
       return c.json({ credentials: list });
@@ -862,14 +861,14 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     if (!apiKey) return c.json({ error: 'apiKey_required' }, 400);
     const baseUrl = body?.baseUrl?.trim() || undefined;
     const wireParse = credentialWireShapeEnum.safeParse(body?.wireShape);
-    // Subscriptions never flow through the workspace modal — these are always
-    // api-key credentials.
+    // The workspace modal saves a single hand-entered shape; capture it as a
+    // one-entry wires map (the vault can later add more shapes for the same key —
+    // dedup-by-key upgrades in place). Subscriptions never flow through here.
     const cred: Credential = {
       vendor: inferCredentialVendor({ agent: body?.agent, baseUrl }),
       authType: 'api-key',
       apiKey,
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(wireParse.success ? { wireShape: wireParse.data } : {}),
+      ...(wireParse.success ? { wires: { [wireParse.data]: baseUrl ?? '' } } : (baseUrl ? { wires: {} } : {})),
     };
     try {
       const slug = await addCredential(cred);

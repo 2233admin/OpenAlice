@@ -70,10 +70,11 @@ export interface SdkAdapterInfo {
 
 export type WireShape = 'anthropic' | 'openai-chat' | 'openai-responses'
 
-export interface SerializedWire {
-  shape: WireShape
-  shapeLabel: string
-  endpoints: Array<{ id: string; label: string }>
+/** A region + the per-wire-shape endpoints it offers. */
+export interface SerializedRegion {
+  id: string
+  label: string
+  wires: Partial<Record<WireShape, string>>
 }
 
 export interface Preset {
@@ -84,8 +85,9 @@ export interface Preset {
   hint?: string
   defaultName: string
   schema: JsonSchema
-  /** Supported wire shapes × endpoints — drives the create form's shape/region pickers. */
-  wires?: SerializedWire[]
+  /** Regions × their per-shape endpoints — the form picks a region; the
+   *  credential captures that region's whole wires map (its capabilities). */
+  regions?: SerializedRegion[]
 }
 
 /** Subset of JSON Schema types we use for form rendering. */

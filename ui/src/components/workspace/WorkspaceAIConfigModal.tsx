@@ -21,7 +21,7 @@ import {
   type SavedCredential,
 } from './api'
 import { api, type Preset, type WireShape } from '../../api'
-import { baseUrlToVendor, vendorPreset, presetModels } from '../../lib/presetHelpers'
+import { baseUrlToVendor, vendorPreset, presetModels, pickAgentWire } from '../../lib/presetHelpers'
 import { ModelCombobox } from '../credentials/PresetFields'
 import { useTestGate } from '../../lib/useTestGate'
 
@@ -191,25 +191,23 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
   const applyCredential = () => {
     const cred = credentials.find((x) => x.slug === pickedCredential)
     if (!cred) return
+    // Pick the wire this tab's agent speaks from the credential's capabilities.
+    // (The picker only lists compatible credentials, so this is non-null.)
+    const picked = pickAgentWire(cred.wires, tab)
+    if (!picked) return
     // A credential carries no model, so default it to the matched provider's
     // first model — a stale model from a previous provider (e.g. minimax-m3 left
-    // on a GLM endpoint) would 404. The user can still pick another from the
-    // combobox below.
+    // on a GLM endpoint) would 404. The user can still pick another below.
     const vendorP = vendorPreset(cred.vendor, presets)
     const defaultModel = vendorP ? (presetModels(vendorP)[0]?.id ?? '') : ''
     // Auth mode: api.minimax.io needs Bearer; default x-api-key otherwise.
-    const bearer = /api\.minimax\.io/i.test(cred.baseUrl ?? '')
+    const bearer = /api\.minimax\.io/i.test(picked.baseUrl)
     setForm({
       ...form,
-      baseUrl: cred.baseUrl ?? '',
+      baseUrl: picked.baseUrl,
       apiKey: cred.apiKey ?? '',
       model: defaultModel,
-      // The credential's stored wire shape drives the test + the adapter config;
-      // fall back to the tab's native shape for pre-wireShape credentials. Codex
-      // is Responses-only (its adapter ignores any other shape), so loading a
-      // chat/anthropic credential there must NOT make the Test probe a shape the
-      // runtime won't use — clamp it.
-      wireShape: tab === 'codex' ? 'openai-responses' : (cred.wireShape ?? DEFAULT_WIRE_BY_TAB[tab]),
+      wireShape: picked.shape,
       authMode: bearer ? 'bearer' : 'x-api-key',
     })
     gate.reset() // a new provider invalidates any prior test verdict
@@ -225,11 +223,10 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1800)
       // Offer to solidify a hand-entered key into Alice's central store — but
-      // only when it isn't already there (loaded-from-credential, or re-typed
-      // an existing one, shouldn't re-prompt).
+      // only when that key isn't already there (one key = one account; dedup is
+      // by key, so a known key shouldn't re-prompt).
       const key = form.apiKey.trim()
-      const url = form.baseUrl.trim()
-      const known = credentials.some((c) => c.apiKey === key && (c.baseUrl ?? '') === url)
+      const known = credentials.some((c) => c.apiKey === key)
       setOfferSaveCred(!!key && !known)
     } catch (err) {
       setError((err as Error).message)
@@ -345,36 +342,48 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
             <label className="block text-xs font-medium text-text-muted mb-2">
               Load from saved credential
             </label>
-            <div className="flex gap-2">
-              <select
-                value={pickedCredential}
-                onChange={(e) => setPickedCredential(e.target.value)}
-                className={inputClass + ' flex-1'}
-                disabled={credentials.length === 0}
-              >
-                <option value="">
-                  {credentials.length === 0 ? '— none saved yet —' : '— select a credential —'}
-                </option>
-                {credentials.map((cred) => (
-                  <option key={cred.slug} value={cred.slug}>
-                    {cred.slug}
-                    {cred.baseUrl ? ` · ${cred.baseUrl}` : ''}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={applyCredential}
-                disabled={!pickedCredential}
-                className="px-3 py-2 rounded-md bg-accent text-bg text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent/90 transition-colors"
-              >
-                Load
-              </button>
-            </div>
-            <p className="text-[11px] text-text-muted/80 leading-snug mt-1.5">
-              Fills base URL + key from a credential Alice already holds. Pick a
-              model below — credentials don't carry one. Or just type a new one;
-              you'll be offered to save it after Test + Save.
-            </p>
+            {(() => {
+              // Only credentials that declare a wire THIS agent speaks. Codex is
+              // Responses-only, so most credentials won't list here — the funnel
+              // toward pi/opencode is by design.
+              const compatible = credentials.filter((c) => pickAgentWire(c.wires, tab))
+              return (
+                <>
+                  <div className="flex gap-2">
+                    <select
+                      value={pickedCredential}
+                      onChange={(e) => setPickedCredential(e.target.value)}
+                      className={inputClass + ' flex-1'}
+                      disabled={compatible.length === 0}
+                    >
+                      <option value="">
+                        {compatible.length === 0 ? `— no ${TAB_LABEL[tab]}-compatible credential —` : '— select a credential —'}
+                      </option>
+                      {compatible.map((cred) => {
+                        const picked = pickAgentWire(cred.wires, tab)
+                        return (
+                          <option key={cred.slug} value={cred.slug}>
+                            {cred.slug}{picked?.baseUrl ? ` · ${picked.baseUrl}` : ''}
+                          </option>
+                        )
+                      })}
+                    </select>
+                    <button
+                      onClick={applyCredential}
+                      disabled={!pickedCredential}
+                      className="px-3 py-2 rounded-md bg-accent text-bg text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent/90 transition-colors"
+                    >
+                      Load
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-text-muted/80 leading-snug mt-1.5">
+                    {compatible.length === 0 && credentials.length > 0
+                      ? `None of your saved credentials speak a wire ${TAB_LABEL[tab]} supports — add one for this provider, or use a runtime that matches (pi / opencode).`
+                      : 'Fills base URL + key from a credential Alice already holds, using the wire this runtime speaks. Pick a model below. Or type a new one; you\'ll be offered to save it after Test + Save.'}
+                  </p>
+                </>
+              )
+            })()}
           </div>
 
           {/* Manual fields */}

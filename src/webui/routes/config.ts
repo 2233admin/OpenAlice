@@ -3,9 +3,21 @@ import {
   loadConfig, writeConfigSection, readAIProviderConfig, validSections,
   writeProfile, deleteProfile, setActiveProfile,
   readCredentials, addCredential, deleteCredential, writeCredential, resolveCredential,
+  credentialWires,
   profileSchema, credentialVendorEnum, credentialWireShapeEnum,
-  type ConfigSection, type Profile, type Credential,
+  type ConfigSection, type Profile, type Credential, type CredentialWireShape,
 } from '../../core/config.js'
+
+/** Validate a `{ [wireShape]: baseUrl }` body into a typed wires map. */
+function parseWires(raw: unknown): Partial<Record<CredentialWireShape, string>> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Partial<Record<CredentialWireShape, string>> = {}
+  for (const [shape, url] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = credentialWireShapeEnum.safeParse(shape)
+    if (parsed.success && typeof url === 'string') out[parsed.data] = url.trim()
+  }
+  return out
+}
 import type { EngineContext } from '../../core/types.js'
 import { BUILTIN_PRESETS } from '../../ai-providers/presets.js'
 import type { WireShape } from '../../ai-providers/preset-catalog.js'
@@ -151,8 +163,7 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
         slug,
         vendor: cred.vendor,
         authType: cred.authType,
-        baseUrl: cred.baseUrl ?? null,
-        wireShape: cred.wireShape ?? null,
+        wires: credentialWires(cred), // derives from legacy {baseUrl,wireShape} too
         apiKey: cred.apiKey ?? null,
         hasApiKey: !!cred.apiKey,
       }))
@@ -162,20 +173,19 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
     }
   })
 
-  /** POST /credentials — add an api-key credential (deduped). Returns slug. */
+  /** POST /credentials — add an api-key credential (deduped by key). Returns slug. */
   app.post('/credentials', async (c) => {
     try {
-      const body = await c.req.json<{ vendor?: string; baseUrl?: string; apiKey?: string; wireShape?: string }>()
+      const body = await c.req.json<{ vendor?: string; wires?: unknown; apiKey?: string }>()
       const apiKey = body.apiKey?.trim()
       if (!apiKey) return c.json({ error: 'apiKey is required' }, 400)
       const vendorParse = credentialVendorEnum.safeParse(body.vendor)
-      const wireParse = credentialWireShapeEnum.safeParse(body.wireShape)
+      const wires = parseWires(body.wires)
       const cred: Credential = {
         vendor: vendorParse.success ? vendorParse.data : 'custom',
         authType: 'api-key',
         apiKey,
-        ...(body.baseUrl?.trim() ? { baseUrl: body.baseUrl.trim() } : {}),
-        ...(wireParse.success ? { wireShape: wireParse.data } : {}),
+        ...(Object.keys(wires).length ? { wires } : {}),
       }
       const slug = await addCredential(cred)
       return c.json({ slug, vendor: cred.vendor }, 201)
@@ -188,18 +198,16 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
   app.put('/credentials/:slug', async (c) => {
     try {
       const slug = c.req.param('slug')
-      const body = await c.req.json<{ vendor?: string; baseUrl?: string; apiKey?: string; wireShape?: string }>()
+      const body = await c.req.json<{ vendor?: string; wires?: unknown; apiKey?: string }>()
       const existing = await resolveCredential(slug)
       const apiKey = body.apiKey?.trim() || existing.apiKey
       const vendorParse = credentialVendorEnum.safeParse(body.vendor)
-      const wireParse = credentialWireShapeEnum.safeParse(body.wireShape)
-      const wireShape = wireParse.success ? wireParse.data : existing.wireShape
+      const wires = parseWires(body.wires)
       const cred: Credential = {
         vendor: vendorParse.success ? vendorParse.data : existing.vendor,
         authType: 'api-key',
         ...(apiKey ? { apiKey } : {}),
-        ...(body.baseUrl?.trim() ? { baseUrl: body.baseUrl.trim() } : {}),
-        ...(wireShape ? { wireShape } : {}),
+        ...(Object.keys(wires).length ? { wires } : { ...(existing.wires ? { wires: existing.wires } : {}) }),
       }
       await writeCredential(slug, cred)
       return c.json({ slug })
