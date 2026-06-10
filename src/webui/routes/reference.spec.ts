@@ -28,6 +28,10 @@ function mkCtx(overrides?: Partial<ReferenceDataService>): EngineContext {
       curves: [{ symbol: 'BTC', spot: 100000, points: [{ expiration: '2026-09-25', price: 102500, daysToExpiry: 107, annualizedBasis: 8.5 }] }],
       meta: { provider: 'deribit', asOf: '2026-06-10T00:00:00.000Z' },
     }),
+    valuation: async () => ({
+      cards: [{ id: 'pe_month', label: 'S&P 500 PE', unit: 'index' as const, points: [{ date: '2026-06-08', value: 31.8 }], latest: 31.8, latestDate: '2026-06-08', change: 0.4 }],
+      meta: { provider: 'multpl', asOf: '2026-06-10T00:00:00.000Z' },
+    }),
     ...overrides,
   }
   return { reference } as unknown as EngineContext
@@ -68,6 +72,13 @@ describe('reference routes', () => {
     const body = await res.json()
     expect(body.curves[0].symbol).toBe('BTC')
     expect(body.curves[0].points[0].annualizedBasis).toBe(8.5)
+  })
+
+  it('GET /valuation returns the strip', async () => {
+    const res = await createReferenceRoutes(mkCtx()).request('/valuation')
+    const body = await res.json()
+    expect(body.cards[0].id).toBe('pe_month')
+    expect(body.meta.provider).toBe('multpl')
   })
 
   it('GET /movers surfaces a failure as { error } with 502, not a crash', async () => {

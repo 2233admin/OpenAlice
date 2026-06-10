@@ -174,6 +174,11 @@ export const zh: Resources = {
     termContango: 'Contango(升水)',
     termBackwardation: 'Backwardation(贴水)',
     termBasisNote: '徽标 = 对永续的年化基差',
+    valuationTitle: '标普 500 估值',
+    valPe: '标普 500 PE',
+    valCape: '席勒 PE(CAPE)',
+    valEarningsYield: '盈利收益率',
+    valDividendYield: '股息率',
   },
   portfolio: {
     overview: '概览',

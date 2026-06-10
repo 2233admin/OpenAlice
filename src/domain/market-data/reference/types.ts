@@ -17,8 +17,9 @@
 import type {
   EquityDiscoveryData, CalendarEarningsData, CalendarIpoData, CalendarDividendData,
 } from '@traderalice/opentypebb'
-// Type-only circular import (term-structure.ts imports ReferenceMeta) — fine in TS.
+// Type-only circular imports (these modules import ReferenceMeta) — fine in TS.
 import type { TermStructureBoard } from './term-structure.js'
+import type { ValuationStrip } from './valuation.js'
 
 /** Envelope on every reference payload. Provider is an explicit label —
  *  same philosophy as the bar layer's sourceId: annotate the source,
@@ -104,4 +105,7 @@ export interface ReferenceDataService {
    *  annualized basis vs the perpetual. Requires the typebb-sdk backend
    *  (the derivatives client has no openbb-api twin). */
   termStructure(): Promise<TermStructureBoard>
+  /** S&P 500 valuation strip (PE / CAPE / earnings yield / dividend
+   *  yield) from multpl — keyless. Requires the typebb-sdk backend. */
+  valuation(): Promise<ValuationStrip>
 }

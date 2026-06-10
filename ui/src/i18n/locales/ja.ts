@@ -174,6 +174,11 @@ export const ja: Resources = {
     termContango: 'コンタンゴ',
     termBackwardation: 'バックワーデーション',
     termBasisNote: 'チップ = 対 Perp 年率ベーシス',
+    valuationTitle: 'S&P 500 バリュエーション',
+    valPe: 'S&P 500 PER',
+    valCape: 'シラー PER(CAPE)',
+    valEarningsYield: '益回り',
+    valDividendYield: '配当利回り',
   },
   portfolio: {
     overview: '概要',

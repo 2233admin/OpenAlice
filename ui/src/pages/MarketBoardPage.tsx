@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, Tooltip } from 'recharts'
 import { PageHeader } from '../components/PageHeader'
+import { SeriesCard } from '../components/market/SeriesCard'
 import {
   referenceApi,
   type MoversBoard, type MoverRow, type ReferenceMeta, type CalendarBoard,
@@ -400,7 +401,9 @@ function MacroBoardView() {
         )}
         {data && (
           <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {data.cards.map((c) => <MacroCard key={c.id} card={c} />)}
+            {data.cards.map((c) => (
+              <SeriesCard key={c.id} card={c} label={macroLabel(c, t)} emptyText={t('market.noMatches')} />
+            ))}
           </div>
         )}
       </div>
@@ -423,50 +426,6 @@ function macroLabel(card: MacroSeriesCard, t: ReturnType<typeof useTranslation>[
     case 'DTWEXBGS': return t('market.macroDollar')
     default: return card.label
   }
-}
-
-function fmtMacro(card: MacroSeriesCard, v: number | null): string {
-  if (v == null) return '—'
-  switch (card.unit) {
-    case 'percent': return `${v.toFixed(2)}%`
-    case 'usd': return `$${v.toFixed(2)}`
-    case 'count': return fmtCompact(v)
-    case 'index': return v.toFixed(1)
-  }
-}
-
-function MacroCard({ card }: { card: MacroSeriesCard }) {
-  const { t } = useTranslation()
-  const empty = card.points.length === 0
-  return (
-    <div className="border border-border rounded-md bg-bg-secondary/40 px-3 py-2.5 flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] text-text-muted truncate" title={card.id}>{macroLabel(card, t)}</span>
-        <span className="text-[10px] text-text-muted/50 shrink-0">{card.latestDate ?? ''}</span>
-      </div>
-      <div className="flex items-end justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[20px] font-semibold text-text font-mono">{fmtMacro(card, card.latest)}</span>
-          {card.change != null && card.change !== 0 && (
-            <span className={`text-[11px] font-mono ${card.change > 0 ? 'text-green' : 'text-red'}`}>
-              {card.change > 0 ? '+' : ''}{card.unit === 'count' ? fmtCompact(card.change) : card.change.toFixed(2)}
-            </span>
-          )}
-        </div>
-        <div className="w-28 h-9">
-          {!empty && (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={card.points} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-                <YAxis hide domain={['dataMin', 'dataMax']} />
-                <Line type="monotone" dataKey="value" stroke="var(--color-accent)" strokeWidth={1.25} dot={false} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-      {empty && <span className="text-[11px] text-text-muted/60">{t('market.noMatches')}</span>}
-    </div>
-  )
 }
 
 // ==================== Term structure ====================

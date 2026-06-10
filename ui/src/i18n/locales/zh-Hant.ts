@@ -182,6 +182,11 @@ export const zhHant: Resources = {
     termContango: 'Contango(升水)',
     termBackwardation: 'Backwardation(貼水)',
     termBasisNote: '徽章 = 對永續的年化基差',
+    valuationTitle: '標普 500 估值',
+    valPe: '標普 500 PE',
+    valCape: '席勒 PE(CAPE)',
+    valEarningsYield: '盈餘殖利率',
+    valDividendYield: '股息殖利率',
   },
   portfolio: {
     overview: '總覽',

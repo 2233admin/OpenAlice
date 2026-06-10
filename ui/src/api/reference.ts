@@ -115,9 +115,15 @@ export interface TermStructureBoard {
   meta: ReferenceMeta
 }
 
+export interface ValuationStrip {
+  cards: MacroSeriesCard[]
+  meta: ReferenceMeta
+}
+
 export const referenceApi = {
   movers: () => fetchJson<MoversBoard>('/api/reference/movers'),
   calendar: () => fetchJson<CalendarBoard>('/api/reference/calendar'),
   macro: () => fetchJson<MacroBoard>('/api/reference/macro'),
   termStructure: () => fetchJson<TermStructureBoard>('/api/reference/term-structure'),
+  valuation: () => fetchJson<ValuationStrip>('/api/reference/valuation'),
 }

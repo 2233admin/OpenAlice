@@ -4,10 +4,11 @@
  * board-shaped payloads with the explicit meta envelope.
  */
 
-import type { DerivativesClientLike, EconomyClientLike, EquityClientLike } from '../client/types.js'
+import type { DerivativesClientLike, EconomyClientLike, EquityClientLike, IndexClientLike } from '../client/types.js'
 import type { CalendarBoard, MacroBoard, MoversBoard, ReferenceDataService } from './types.js'
 import { fetchMacroBoard } from './macro.js'
 import { fetchTermStructure, type TermStructureBoard } from './term-structure.js'
+import { fetchValuationStrip, type ValuationStrip } from './valuation.js'
 
 export interface ReferenceDataDeps {
   equityClient: EquityClientLike
@@ -15,6 +16,8 @@ export interface ReferenceDataDeps {
   /** Only on the typebb-sdk backend — the openbb-api client set has no
    *  derivatives twin. Term structure fails loud without it. */
   derivativesClient?: DerivativesClientLike
+  /** Only on the typebb-sdk backend (no openbb-api twin). */
+  indexClient?: IndexClientLike
   /** Configured default equity provider — the meta label. On the SDK backend
    *  the client routes by its constructed default, so the label is the
    *  REQUESTED provider (same caveat as the bar layer's vendor meta). */
@@ -104,6 +107,13 @@ export function createReferenceData(deps: ReferenceDataDeps): ReferenceDataServi
         throw new Error('Term structure requires the typebb-sdk market-data backend (derivatives client unavailable).')
       }
       return fetchTermStructure(deps.derivativesClient)
+    },
+
+    async valuation(): Promise<ValuationStrip> {
+      if (!deps.indexClient) {
+        throw new Error('Valuation strip requires the typebb-sdk market-data backend (index client unavailable).')
+      }
+      return fetchValuationStrip(deps.indexClient)
     },
   }
 }

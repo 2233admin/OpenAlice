@@ -185,6 +185,11 @@ export const en = {
     termContango: 'Contango',
     termBackwardation: 'Backwardation',
     termBasisNote: 'chips = annualized basis vs perp',
+    valuationTitle: 'S&P 500 Valuation',
+    valPe: 'S&P 500 PE',
+    valCape: 'Shiller PE (CAPE)',
+    valEarningsYield: 'Earnings Yield',
+    valDividendYield: 'Dividend Yield',
   },
   portfolio: {
     overview: 'Overview',

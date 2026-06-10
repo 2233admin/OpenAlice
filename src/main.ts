@@ -191,6 +191,7 @@ async function main() {
     equityClient,
     economyClient,
     derivativesClient,
+    indexClient,
     equityProvider: config.marketData.providers.equity,
   })
 

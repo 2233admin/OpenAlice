@@ -6,7 +6,7 @@ import {
   demoSectorRotation,
 } from '../fixtures/market'
 import type { BarSourceCandidate, BarMeta } from '../../api/market'
-import type { MoversBoard, MoverRow, CalendarBoard, MacroBoard, MacroSeriesCard, TermStructureBoard } from '../../api/reference'
+import type { MoversBoard, MoverRow, CalendarBoard, MacroBoard, MacroSeriesCard, TermStructureBoard, ValuationStrip } from '../../api/reference'
 
 const AAPL = 'AAPL'
 
@@ -39,6 +39,7 @@ export const marketHandlers = [
   http.get('/api/reference/calendar', () => HttpResponse.json(demoCalendar)),
   http.get('/api/reference/macro', () => HttpResponse.json(demoMacro)),
   http.get('/api/reference/term-structure', () => HttpResponse.json(demoTermStructure)),
+  http.get('/api/reference/valuation', () => HttpResponse.json(demoValuation)),
 
   // ---- federated bars (multi-source K-lines) ----
   // AAPL has two demo sources so the source picker is exercised.
@@ -180,4 +181,14 @@ function termCurve(symbol: string, spot: number): TermStructureBoard['curves'][n
 const demoTermStructure: TermStructureBoard = {
   curves: [termCurve('BTC', 104500), termCurve('ETH', 5230)],
   meta: { provider: 'deribit', asOf: '2026-06-10T13:30:00.000Z' },
+}
+
+const demoValuation: ValuationStrip = {
+  cards: [
+    macroCard('pe_month', 'S&P 500 PE', 'index', 27.4, 0.03),
+    macroCard('shiller_pe_month', 'Shiller PE (CAPE)', 'index', 36.2, 0.04),
+    macroCard('earnings_yield_month', 'Earnings Yield', 'percent', 3.6, -0.004),
+    macroCard('dividend_yield_month', 'Dividend Yield', 'percent', 1.25, -0.001),
+  ],
+  meta: { provider: 'multpl', asOf: '2026-06-10T13:30:00.000Z' },
 }

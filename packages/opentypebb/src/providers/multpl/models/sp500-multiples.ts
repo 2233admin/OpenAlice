@@ -98,7 +98,13 @@ function parseDate(dateStr: string): string | null {
  * Parse a value string from multpl.com.
  */
 function parseValue(valueStr: string, isPercent: boolean): number | null {
-  const cleaned = valueStr.replace(/†/g, '').replace(/%/g, '').replace(/\$/g, '').replace(/,/g, '').trim()
+  // Cells embed HTML entities (e.g. "\n&#x2002;\n41.54\n") — strip them
+  // before parseFloat, which bails to NaN on a leading entity.
+  const cleaned = valueStr
+    .replace(/&#x?[0-9a-f]+;/gi, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/†/g, '').replace(/%/g, '').replace(/\$/g, '').replace(/,/g, '')
+    .trim()
   const num = parseFloat(cleaned)
   if (isNaN(num)) return null
   return isPercent ? num / 100 : num
