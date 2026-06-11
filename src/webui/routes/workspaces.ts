@@ -32,6 +32,13 @@ import { inferCredentialVendor, resolveAnthropicAuthMode } from '../../core/cred
 
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// The spawn body's `resume` value is an AGENT-side session id, whose shape is
+// adapter-native: uuid for claude/codex/pi, `ses_<base62>` for opencode. The
+// launcher-side record ids in URL params stay strict-uuid (SESSION_ID_RE) —
+// this looser shape applies ONLY to the resume intent passed through to the
+// adapter's own resume flag.
+const AGENT_SESSION_ID_RE = /^[A-Za-z0-9_.-]{8,128}$/;
+
 export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
   const app = new Hono();
 
@@ -265,7 +272,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       const fields = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
       const raw = fields['resume'];
       if (raw === 'last') resume = 'last';
-      else if (typeof raw === 'string' && SESSION_ID_RE.test(raw)) resume = { sessionId: raw };
+      else if (typeof raw === 'string' && AGENT_SESSION_ID_RE.test(raw)) resume = { sessionId: raw };
       const rawAgent = fields['agent'];
       if (typeof rawAgent === 'string' && rawAgent.length > 0) agentId = rawAgent;
     } catch (err) {

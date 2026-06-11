@@ -85,6 +85,20 @@ export const piAdapter: CliAdapter = {
     return ['pi', '-p', '--mode', 'json', prompt];
   },
 
+  // pi `--mode json` line 1 is `{"type":"session","id":…,"cwd":…}` — pi mints
+  // its own id on a fresh headless run and announces it immediately (verified
+  // 0.78.x, 2026-06-11; `--session-id` is also accepted alongside `-p`, but
+  // harvesting the echo keeps headless uniform with the other adapters).
+  extractHeadlessSessionId(line: string): string | null {
+    try {
+      const evt = JSON.parse(line) as Record<string, unknown>;
+      if (evt['type'] !== 'session') return null;
+      return typeof evt['id'] === 'string' ? evt['id'] : null;
+    } catch {
+      return null;
+    }
+  },
+
   composeEnv(ctx: SpawnContext): Record<string, string> {
     const env: Record<string, string> = {
       // Disable startup-only network ops (version check / install ping). Does

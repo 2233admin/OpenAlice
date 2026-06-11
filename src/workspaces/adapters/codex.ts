@@ -112,6 +112,20 @@ export const codexAdapter: CliAdapter = {
     ];
   },
 
+  // `codex exec --json` line 1 is `{"type":"thread.started","thread_id":…}`;
+  // the thread_id EQUALS the rollout's `session_meta.id` (verified 0.137.0,
+  // 2026-06-11 — same uuid in ~/.codex/sessions/…/rollout-*.jsonl), so it
+  // resumes via `codex resume <id>` like any interactively-captured id.
+  extractHeadlessSessionId(line: string): string | null {
+    try {
+      const evt = JSON.parse(line) as Record<string, unknown>;
+      if (evt['type'] !== 'thread.started') return null;
+      return typeof evt['thread_id'] === 'string' ? evt['thread_id'] : null;
+    } catch {
+      return null;
+    }
+  },
+
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {
     const hasProvider = !!(cred.baseUrl || cred.model);
 

@@ -103,6 +103,18 @@ export const opencodeAdapter: CliAdapter = {
     return ['opencode', 'run', '--format', 'json', '--', prompt];
   },
 
+  // `opencode run --format json` events carry a top-level `sessionID`
+  // (`ses_…`) from the first line (verified 2026-06-11) — resumable via
+  // `opencode --session <id>`.
+  extractHeadlessSessionId(line: string): string | null {
+    try {
+      const evt = JSON.parse(line) as Record<string, unknown>;
+      return typeof evt['sessionID'] === 'string' ? evt['sessionID'] : null;
+    } catch {
+      return null;
+    }
+  },
+
   composeEnv(ctx: SpawnContext): Record<string, string> {
     const env: Record<string, string> = {
       OPENCODE_DISABLE_MODELS_FETCH: '1',

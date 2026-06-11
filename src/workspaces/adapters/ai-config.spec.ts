@@ -293,14 +293,18 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
     expect(piAdapter.capabilities.headless).toBe(true);
   });
 
-  it('claude: -p --output-format json -- <prompt> (prompt after -- terminator, never --bare)', () => {
+  it('claude: -p stream-json --verbose -- <prompt> (prompt after -- terminator, never --bare)', () => {
+    // stream-json REQUIRES --verbose in -p mode (claude errors without it);
+    // every event carries session_id, which is how the launcher captures the
+    // run's identity for "open as session".
     expect(claudeAdapter.composeHeadlessCommand!(['claude'], ctx(), 'do x')).toEqual([
       'claude',
       '--settings',
       '{"enableAllProjectMcpServers":true}',
       '-p',
       '--output-format',
-      'json',
+      'stream-json',
+      '--verbose',
       '--',
       'do x',
     ]);

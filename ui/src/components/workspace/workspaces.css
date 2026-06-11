@@ -540,6 +540,94 @@
   font-size: 13px;
 }
 
+/* ── Headless runs group (collapsed second tier under a workspace) ──────────
+ *
+ * Visual hierarchy is the point: interactive sessions are first-class rows;
+ * headless (automation) runs sit one tier dimmer/smaller in a group that is
+ * collapsed by default — visible enough to find when a run misbehaves,
+ * invisible enough to ignore the rest of the time. */
+
+.sidebar-headless {
+  margin-left: 22px;
+  border-left: 1px solid var(--border);
+  padding: 0 0 4px 8px;
+}
+
+.sidebar-headless-header {
+  background: none;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 8px 2px 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sidebar-headless-header:hover {
+  color: var(--fg);
+}
+
+.sidebar-headless-caret {
+  width: 10px;
+  flex: 0 0 auto;
+  font-size: 9px;
+}
+
+.sidebar-headless-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.sidebar-headless-running-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.sidebar-headless-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-headless-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 14px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  transition: background 80ms;
+}
+.sidebar-headless-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.sidebar-headless-item .sidebar-status-dot {
+  width: 5px;
+  height: 5px;
+}
+
+.sidebar-headless-prompt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-headless-item .sidebar-session-action {
+  opacity: 0;
+}
+.sidebar-headless-item:hover .sidebar-session-action {
+  opacity: 1;
+}
+
 /* ── Right-pane Resume CTA ─────────────────────────────────────────────────
  *
  * Two-layer design: a heavily-blurred faux-TUI backdrop fills the pane

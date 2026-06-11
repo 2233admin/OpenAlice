@@ -139,6 +139,22 @@ export interface CliAdapter {
    */
   composeHeadlessCommand?(base: readonly string[], ctx: SpawnContext, prompt: string): readonly string[];
 
+  /**
+   * Extract the agent's OWN session id from one line of headless stdout.
+   * All four agent CLIs announce their session id in the first line(s) of
+   * their structured headless output (verified 2026-06-11):
+   *   claude:   every stream-json event carries `session_id`
+   *   codex:    `{"type":"thread.started","thread_id":…}` — equals the rollout
+   *             `session_meta.id`, resumable via `codex resume <id>`
+   *   opencode: every event carries top-level `sessionID` (`ses_…`)
+   *   pi:       line 1 is `{"type":"session","id":…}` (echoes --session-id)
+   * The runner calls this per complete line until it returns non-null; the id
+   * is recorded on the task so a finished headless run can be REOPENED as a
+   * normal interactive session (resume-by-id). Present iff
+   * `capabilities.headless` (shell excluded).
+   */
+  extractHeadlessSessionId?(line: string): string | null;
+
   /** Optional per-CLI env adjustments on top of `spawn-env.ts`'s baseline. */
   envOverrides?(parent: NodeJS.ProcessEnv): EnvOverrides;
 

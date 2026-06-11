@@ -78,8 +78,27 @@ export const claudeAdapter: CliAdapter = {
   // lose inbox_push). The prompt is the trailing positional AFTER a `--`
   // end-of-options terminator, so a prompt that starts with `-`/`--` isn't
   // mis-parsed as a flag (verified: without `--`, claude errors out).
+  // Output is `stream-json` (one event per line, REQUIRES --verbose — plain
+  // `-p --output-format stream-json` errors out): the launcher gets live
+  // progress in the task log AND every event carries `session_id`, so the
+  // run's identity is captured from line 1 instead of parsed out of a final
+  // result blob (verified 2.1.x, 2026-06-11).
   composeHeadlessCommand(base: readonly string[], _ctx: SpawnContext, prompt: string): readonly string[] {
-    return [...base, '--settings', AUTOTRUST_SETTINGS, '-p', '--output-format', 'json', '--', prompt];
+    return [
+      ...base,
+      '--settings', AUTOTRUST_SETTINGS,
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--', prompt,
+    ];
+  },
+
+  extractHeadlessSessionId(line: string): string | null {
+    try {
+      const evt = JSON.parse(line) as Record<string, unknown>;
+      return typeof evt['session_id'] === 'string' ? evt['session_id'] : null;
+    } catch {
+      return null;
+    }
   },
 
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {

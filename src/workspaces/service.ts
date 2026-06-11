@@ -24,7 +24,7 @@ import { loadConfig, type ServerConfig } from './config.js';
 import { logger as launcherLogger } from './logger.js';
 import { runHeadlessProbe, type HeadlessProbeResult } from './probe.js';
 import { runHeadlessTask, type HeadlessTaskResult } from './headless-task.js';
-import { HeadlessTaskRegistry } from './headless-task-registry.js';
+import { HeadlessTaskRegistry, headlessLogPaths } from './headless-task-registry.js';
 
 /** Max concurrent in-flight headless tasks — backstop against unbounded spawn. */
 const MAX_CONCURRENT_HEADLESS = 8;
@@ -125,6 +125,8 @@ export interface WorkspaceService {
   ): Promise<{ taskId: string }>;
   /** The headless-task management plane (cross-workspace; powers GET /api/headless). */
   headlessTasks: HeadlessTaskRegistry;
+  /** Where dispatched tasks' full stdout/stderr logs land (read by the output route). */
+  headlessLogsDir: string;
   isShuttingDown(): boolean;
   dispose(reason: string): Promise<void>;
 }
@@ -169,10 +171,13 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
   );
 
   // The headless-task management plane. load() reconciles leftover `running`
-  // records (zombies from a previous Alice life) → `interrupted`.
+  // records (zombies from a previous Alice life) → `interrupted`. Each task's
+  // full stdout/stderr lands in `headlessLogsDir` (pruned with its record).
+  const headlessLogsDir = join(config.launcherRoot, 'state', 'headless-logs');
   const headlessTasks = await HeadlessTaskRegistry.load(
     join(config.launcherRoot, 'state', 'headless-tasks.json'),
     launcherLogger.child({ scope: 'headless-registry' }),
+    { logsDir: headlessLogsDir },
   );
 
   const scrollbackStore = new ScrollbackStore(
@@ -331,6 +336,10 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     adapter: CliAdapter,
     prompt: string,
     timeoutMs: number,
+    // Dispatch-path extras: a taskId keys the on-disk task log; onSessionId
+    // fires when the adapter's stdout scanner captures the agent's own session
+    // id (recorded WHILE running, so the panel can offer "open as session").
+    opts: { taskId?: string; onSessionId?: (id: string) => void } = {},
   ): Promise<HeadlessTaskResult> => {
     if (!adapter.capabilities.headless || !adapter.composeHeadlessCommand) {
       throw new Error(`adapter "${adapter.id}" has no headless mode`);
@@ -339,12 +348,18 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // then swap the interactive command for the one-shot headless argv.
     const { cwd, env } = composeSpawnInputs(ws, adapter, undefined);
     const command = adapter.composeHeadlessCommand(config.command, { cwd, env }, prompt);
+    const logPaths = opts.taskId ? headlessLogPaths(headlessLogsDir, opts.taskId) : null;
     return runHeadlessTask({
       command,
       cwd,
       env,
       timeoutMs,
       logger: launcherLogger.child({ scope: 'headless', wsId: ws.id, agent: adapter.id }),
+      ...(logPaths ? { stdoutFile: logPaths.stdout, stderrFile: logPaths.stderr } : {}),
+      ...(adapter.extractHeadlessSessionId
+        ? { extractSessionId: adapter.extractHeadlessSessionId.bind(adapter) }
+        : {}),
+      ...(opts.onSessionId ? { onSessionId: opts.onSessionId } : {}),
     });
   };
 
@@ -377,7 +392,15 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // is judged by exit code — pi can exit 0 on an in-band model error, so
     // "done" means "process exited cleanly", not "the agent succeeded"; the
     // operator confirms via the Inbox / the task's tail.
-    void runHeadlessTaskMethod(ws, adapter, prompt, timeoutMs)
+    void runHeadlessTaskMethod(ws, adapter, prompt, timeoutMs, {
+      taskId: rec.taskId,
+      onSessionId: (id) =>
+        void headlessTasks
+          .setAgentSessionId(rec.taskId, id)
+          .catch((err) =>
+            launcherLogger.warn('headless.session_id_record_failed', { taskId: rec.taskId, err }),
+          ),
+    })
       .then((r) =>
         headlessTasks.complete(rec.taskId, {
           status: r.killed ? 'failed' : r.exitCode === 0 ? 'done' : 'failed',
@@ -552,6 +575,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     runHeadlessTask: runHeadlessTaskMethod,
     dispatchHeadlessTask: dispatchHeadlessTaskMethod,
     headlessTasks,
+    headlessLogsDir,
     isShuttingDown: () => shuttingDown,
     dispose,
   };

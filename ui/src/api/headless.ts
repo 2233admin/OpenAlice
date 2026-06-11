@@ -15,6 +15,24 @@ export interface HeadlessTaskRecord {
   signal?: string | null
   killed?: boolean
   error?: string
+  /** The agent CLI's own session id, captured from the run's stdout — when
+   *  present (and the run is finished) the run can be reopened as a normal
+   *  interactive session via spawn { resume: agentSessionId }. */
+  agentSessionId?: string
+}
+
+/** One stream's tail from GET /api/headless/:taskId/output. */
+export interface HeadlessOutputStream {
+  text: string
+  sizeBytes: number
+  truncated: boolean
+}
+
+export interface HeadlessOutput {
+  taskId: string
+  status: HeadlessTaskStatus
+  stdout: HeadlessOutputStream | null
+  stderr: HeadlessOutputStream | null
 }
 
 export const headlessApi = {
@@ -31,5 +49,11 @@ export const headlessApi = {
       `/api/headless${qs ? `?${qs}` : ''}`,
     )
     return tasks
+  },
+
+  /** Tail of a run's on-disk stdout/stderr log (poll while running). */
+  async output(taskId: string, opts: { tailBytes?: number } = {}): Promise<HeadlessOutput> {
+    const q = opts.tailBytes ? `?tailBytes=${opts.tailBytes}` : ''
+    return fetchJson<HeadlessOutput>(`/api/headless/${taskId}/output${q}`)
   },
 }

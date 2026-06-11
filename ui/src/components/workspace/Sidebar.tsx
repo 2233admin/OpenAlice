@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatRelativeTime } from '../../lib/intl';
 import type { ReactElement } from 'react';
 import { Cpu, LayoutGrid, Library, Sparkles, Terminal, type LucideIcon } from 'lucide-react';
 
+import { headlessApi, type HeadlessTaskRecord } from '../../api/headless';
 import {
   deleteWorkspace,
   type AgentInfo,
@@ -11,6 +12,8 @@ import {
   type Workspace,
 } from './api';
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
+
+const HEADLESS_POLL_MS = 5000;
 
 export interface Selection {
   readonly wsId: string;
@@ -49,6 +52,36 @@ export interface SidebarProps {
 
 export function Sidebar(props: SidebarProps): ReactElement {
   const [showCreate, setShowCreate] = useState(false);
+
+  // Headless runs, polled once for the whole tree (not per-workspace) and
+  // grouped client-side. Low-frequency passive surface → plain polling.
+  const [headlessTasks, setHeadlessTasks] = useState<readonly HeadlessTaskRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const tasks = await headlessApi.list({ limit: 200 });
+        if (!cancelled) setHeadlessTasks(tasks);
+      } catch {
+        /* sidebar group just stays as-is; the Automation panel surfaces errors */
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), HEADLESS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  const headlessByWs = useMemo(() => {
+    const map = new Map<string, HeadlessTaskRecord[]>();
+    for (const t of headlessTasks) {
+      const list = map.get(t.wsId);
+      if (list) list.push(t);
+      else map.set(t.wsId, [t]);
+    }
+    return map;
+  }, [headlessTasks]);
 
   const onDelete = async (id: string): Promise<void> => {
     if (!window.confirm('Delete workspace? (registry only — files on disk are kept.)')) return;
@@ -122,6 +155,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
             workspace={w}
             agents={props.agents}
             selection={props.selection}
+            headlessTasks={headlessByWs.get(w.id) ?? []}
             onSelectWorkspace={props.onSelectWorkspace}
             onSelectSession={props.onSelectSession}
             onSpawn={props.onSpawn}
@@ -141,6 +175,8 @@ export interface WorkspaceRowProps {
   readonly workspace: Workspace;
   readonly agents: readonly AgentInfo[];
   readonly selection: Selection | null;
+  /** This workspace's headless (automation) runs, newest-first. */
+  readonly headlessTasks?: readonly HeadlessTaskRecord[];
   readonly onSelectWorkspace: (wsId: string) => void;
   readonly onSelectSession: (wsId: string, sessionId: string) => void;
   readonly onSpawn: (wsId: string, opts?: SpawnOpts) => void;
@@ -313,6 +349,111 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
             />
           ))}
         </ul>
+      )}
+
+      {(props.headlessTasks?.length ?? 0) > 0 && (
+        <HeadlessGroup
+          tasks={props.headlessTasks!}
+          onOpenAsSession={(t) => props.onSpawn(w.id, { resume: t.agentSessionId!, agent: t.agent })}
+        />
+      )}
+    </li>
+  );
+}
+
+// ── headless runs (the collapsed second tier under a workspace) ─────────────
+
+const HEADLESS_DOT: Record<HeadlessTaskRecord['status'], string> = {
+  running: '#58a6ff',
+  done: '#6e7681',
+  failed: '#f85149',
+  interrupted: '#d29922',
+};
+
+/**
+ * The boss/employee visual hierarchy: interactive sessions are the first-class
+ * rows; headless (automation) runs live in this one collapsed group beneath
+ * them — out of the way until the user actually wants to check on a worker.
+ * Expanding shows each run; a finished run with a captured agent session id
+ * gets the ▸ "open as session" action, which resumes the run's conversation
+ * in a normal interactive session (terminal tab) for inspection/takeover.
+ * Runs still in flight are view-only (concurrent resume is undefined) — the
+ * Automation panel has the live output log.
+ */
+function HeadlessGroup(props: {
+  readonly tasks: readonly HeadlessTaskRecord[];
+  readonly onOpenAsSession: (t: HeadlessTaskRecord) => void;
+}): ReactElement {
+  const [open, setOpen] = useState(false); // collapsed by default, by design
+  const runningCount = props.tasks.filter((t) => t.status === 'running').length;
+
+  return (
+    <div className="sidebar-headless">
+      <button
+        type="button"
+        className="sidebar-headless-header"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={
+          runningCount > 0
+            ? `headless runs — ${runningCount} running`
+            : 'headless runs (automation)'
+        }
+      >
+        <span className="sidebar-headless-caret">{open ? '▾' : '▸'}</span>
+        <span className="sidebar-headless-label">headless</span>
+        <span className="sidebar-headless-count">{props.tasks.length}</span>
+        {runningCount > 0 && (
+          <span
+            className="sidebar-status-dot sidebar-headless-running-dot"
+            style={{ background: HEADLESS_DOT.running }}
+          />
+        )}
+      </button>
+      {open && (
+        <ul className="sidebar-headless-list">
+          {props.tasks.map((t) => (
+            <HeadlessTaskRow key={t.taskId} task={t} onOpenAsSession={props.onOpenAsSession} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function HeadlessTaskRow(props: {
+  readonly task: HeadlessTaskRecord;
+  readonly onOpenAsSession: (t: HeadlessTaskRecord) => void;
+}): ReactElement {
+  const t = props.task;
+  const openable = t.status !== 'running' && !!t.agentSessionId;
+  const titleParts = [`${t.agent} · ${t.status}`, formatRelativeTime(t.startedAt)];
+  if (t.error) titleParts.push(t.error);
+  titleParts.push(t.prompt);
+
+  return (
+    <li className="sidebar-headless-item" title={titleParts.join('\n')}>
+      <span
+        className="sidebar-status-dot"
+        style={{ background: HEADLESS_DOT[t.status] }}
+        aria-label={t.status}
+      />
+      <span className={`sidebar-agent-badge is-${t.agent} is-paused`}>
+        <AgentBadgeGlyph agentId={t.agent} />
+      </span>
+      <span className="sidebar-headless-prompt">{t.prompt}</span>
+      {openable && (
+        <button
+          type="button"
+          className="sidebar-session-action sidebar-session-resume"
+          title="open this run as an interactive session"
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onOpenAsSession(t);
+          }}
+        >
+          ▸
+        </button>
       )}
     </li>
   );
