@@ -148,7 +148,9 @@ export function createTradingConfigRoutes(ctx: EngineContext) {
       notifyUTAReload()
 
       ctx.utaManager.reconnectUTA(id).catch(() => {})
-      return c.json(validated, 201)
+      // Echo masked — plaintext credentials never leave the server, and the
+      // client's local state stays shape-identical to what GET / returns.
+      return c.json(maskSecrets({ ...validated }), 201)
     } catch (err) {
       if (err instanceof Error && err.name === 'ZodError') {
         return c.json({ error: 'Validation failed', details: JSON.parse(err.message) }, 400)
@@ -201,7 +203,8 @@ export function createTradingConfigRoutes(ctx: EngineContext) {
         ctx.utaManager.reconnectUTA(id).catch(() => {})
       }
 
-      return c.json(validated)
+      // Echo masked — same reasoning as POST.
+      return c.json(maskSecrets({ ...validated }))
     } catch (err) {
       if (err instanceof Error && err.name === 'ZodError') {
         return c.json({ error: 'Validation failed', details: JSON.parse(err.message) }, 400)

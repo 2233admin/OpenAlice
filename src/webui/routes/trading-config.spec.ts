@@ -137,6 +137,23 @@ describe('POST /uta — derived id creation', () => {
     const second = await req(routes, 'POST', '/uta', { presetId: 'mock-simulator', presetConfig })
     expect(second.status).toBe(409)
   })
+
+  it('201 response echoes credentials MASKED; the store keeps them intact', async () => {
+    const routes = makeRoutes()
+    const { status, body } = await req(routes, 'POST', '/uta', {
+      presetId: 'okx',
+      presetConfig: { mode: 'live', apiKey: 'live-api-key-1234', secret: 'live-secret-5678', password: 'p4ss' },
+    })
+    expect(status).toBe(201)
+    const echoed = (body as { presetConfig: Record<string, string> }).presetConfig
+    expect(echoed.apiKey).toBe('****1234')
+    expect(echoed.secret).toBe('****5678')
+    expect(echoed.password).toBe('****')
+    // Persisted record keeps the real values — masking is response-only.
+    const stored = (utaStore[0] as { presetConfig: Record<string, string> }).presetConfig
+    expect(stored.apiKey).toBe('live-api-key-1234')
+    expect(stored.secret).toBe('live-secret-5678')
+  })
 })
 
 // ==================== PUT /uta/:id ====================
@@ -193,6 +210,30 @@ describe('PUT /uta/:id — edit-only', () => {
       presetConfig: { mode: 'live', apiKey: 'k', secret: 's', password: 'p' },
     })
     expect(status).toBe(400)
+  })
+
+  it('200 response echoes credentials MASKED after a rotation', async () => {
+    const routes = makeRoutes()
+    const created = await req(routes, 'POST', '/uta', {
+      presetId: 'okx',
+      presetConfig: { mode: 'live', apiKey: 'old-key-0000', secret: 'old-sec-0000', password: 'p' },
+    })
+    const id = (created.body as { id: string }).id
+
+    const edited = await req(routes, 'PUT', `/uta/${id}`, {
+      id,
+      presetId: 'okx',
+      enabled: true,
+      guards: [],
+      presetConfig: { mode: 'live', apiKey: 'new-key-9999', secret: 'new-sec-8888', password: 'p' },
+    })
+    expect(edited.status).toBe(200)
+    const echoed = (edited.body as { presetConfig: Record<string, string> }).presetConfig
+    expect(echoed.apiKey).toBe('****9999')
+    expect(echoed.secret).toBe('****8888')
+    // Rotation actually landed in the store, unmasked.
+    const stored = (utaStore[0] as { presetConfig: Record<string, string> }).presetConfig
+    expect(stored.apiKey).toBe('new-key-9999')
   })
 })
 
