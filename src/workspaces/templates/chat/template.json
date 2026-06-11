@@ -1,9 +1,9 @@
 {
   "displayName": "Chat",
   "groupOrder": 10,
-  "description": "Chat workspace wired to OpenAlice's MCP server — full trading/market tool surface available to the agent.",
+  "description": "General-purpose Alice workspace — full market/research data surface via the alice*/traderhub CLIs (default) or MCP, per launch choice. Trading tools require MCP mode.",
   "defaultAgents": ["claude", "codex"],
   "injectMcp": true,
   "injectPersona": true,
-  "bundledSkills": ["scan-value-chain", "build-thesis", "sector-rotation"]
+  "bundledSkills": ["scan-value-chain", "build-thesis", "sector-rotation", "opencli-reader"]
 }
