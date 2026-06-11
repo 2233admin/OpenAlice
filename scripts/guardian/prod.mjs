@@ -12,7 +12,7 @@
  * Lifecycle:
  *   - spawn UTA, poll /__uta/health until 200 (≤ 15s) or abort
  *   - spawn Alice with OPENALICE_UTA_URL pointing at the local UTA
- *   - watch `${OPENALICE_USER_DATA_HOME}/data/control/restart-uta.flag`
+ *   - watch `${OPENALICE_HOME}/data/control/restart-uta.flag`
  *     for UI-triggered broker config changes; SIGTERM + respawn UTA
  *     when it changes (debounced 100ms)
  *   - SIGTERM/SIGINT from tini cascades to both children, then exit
@@ -27,7 +27,12 @@ import { mkdir, readFile, watch } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const DATA_HOME = process.env.OPENALICE_USER_DATA_HOME ?? '/data'
+const DATA_HOME = process.env.OPENALICE_HOME
+  ?? process.env.OPENALICE_USER_DATA_HOME // deprecated alias, one-release courtesy
+  ?? '/data'
+if (!process.env.OPENALICE_HOME && process.env.OPENALICE_USER_DATA_HOME) {
+  console.warn('[guardian/prod] OPENALICE_USER_DATA_HOME is deprecated — set OPENALICE_HOME instead')
+}
 
 // Port precedence: env (OPENALICE_*_PORT) > data/config/ports.json > default.
 // Mirrors scripts/guardian/shared.ts (kept inline — the runtime image ships
@@ -94,7 +99,7 @@ function makeUTASpec() {
     env: {
       ...process.env,
       OPENALICE_UTA_PORT: String(UTA_PORT),
-      OPENALICE_USER_DATA_HOME: DATA_HOME,
+      OPENALICE_HOME: DATA_HOME,
     },
   }
 }
@@ -117,7 +122,7 @@ function spawnAlice() {
       OPENALICE_WEB_PORT: String(WEB_PORT),
       OPENALICE_MCP_PORT: String(MCP_PORT),
       OPENALICE_UTA_URL: UTA_URL,
-      OPENALICE_USER_DATA_HOME: DATA_HOME,
+      OPENALICE_HOME: DATA_HOME,
     },
     stdio: 'inherit',
   })

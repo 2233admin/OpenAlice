@@ -114,7 +114,6 @@ COPY --from=build /src/scripts                    ./scripts
 # auth tokens + agent state persist across container rebuild.
 ENV OPENALICE_APP_HOME=/app \
     OPENALICE_HOME=/data \
-    OPENALICE_USER_DATA_HOME=/data \
     AQ_LAUNCHER_ROOT=/data/workspaces \
     HOME=/data/home \
     NODE_ENV=production \

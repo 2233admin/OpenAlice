@@ -13,9 +13,10 @@
 import { appendFile, readFile, mkdir } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname } from 'node:path'
+import { dataPath } from '../../core/paths.js'
 import type { INewsProvider, GetNewsV2Options, NewsItem, NewsRecord } from './types.js'
 
-const DEFAULT_LOG_PATH = 'data/news-collector/news.jsonl'
+const DEFAULT_LOG_PATH = dataPath('news-collector', 'news.jsonl')
 const DEFAULT_MAX_IN_MEMORY = 2000
 const DEFAULT_RETENTION_DAYS = 7
 

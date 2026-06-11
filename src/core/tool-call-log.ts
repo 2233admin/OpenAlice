@@ -14,6 +14,7 @@
 
 import { appendFile, readFile, mkdir, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { dataPath } from './paths.js'
 
 // ==================== Types ====================
 
@@ -80,7 +81,7 @@ export interface ToolCallLog {
 // ==================== Defaults ====================
 
 const DEFAULT_BUFFER_SIZE = 500
-const DEFAULT_LOG_PATH = 'data/tool-calls/tool-calls.jsonl'
+const DEFAULT_LOG_PATH = dataPath('tool-calls', 'tool-calls.jsonl')
 
 // ==================== Implementation ====================
 

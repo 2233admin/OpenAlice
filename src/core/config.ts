@@ -660,7 +660,7 @@ export async function writeUTAsConfig(utas: UTAConfig[]): Promise<void> {
  * No-op if the directory doesn't exist; never touches `data/config/`.
  */
 export async function wipeUTATradingData(id: string): Promise<void> {
-  const dir = resolve('data', 'trading', id)
+  const dir = dataPath('trading', id)
   await rm(dir, { recursive: true, force: true })
 }
 

@@ -15,11 +15,12 @@
 
 import { writeFile, rename, mkdir } from 'fs/promises'
 import { dirname } from 'path'
+import { dataPath } from '@/core/paths.js'
 
 export interface TriggerOpts {
   /** UTA service base URL. Default: process.env.OPENALICE_UTA_URL. */
   utaUrl?: string
-  /** Project-relative path to flag. Default: `data/control/restart-uta.flag`. */
+  /** Flag path. Default: `dataPath('control', 'restart-uta.flag')`. */
   flagPath?: string
   /** Total wait budget for new UTA to come back. Default 20s. */
   timeoutMs?: number
@@ -56,7 +57,7 @@ export async function triggerUTARestart(opts: TriggerOpts = {}): Promise<Trigger
   if (!utaUrl) {
     return { triggered: false, ready: false, error: 'OPENALICE_UTA_URL not set' }
   }
-  const flagPath = opts.flagPath ?? `${process.cwd()}/data/control/restart-uta.flag`
+  const flagPath = opts.flagPath ?? dataPath('control', 'restart-uta.flag')
   const healthUrl = `${utaUrl.replace(/\/$/, '')}/__uta/health`
   const timeoutMs = opts.timeoutMs ?? 20_000
   const intervalMs = opts.intervalMs ?? 200

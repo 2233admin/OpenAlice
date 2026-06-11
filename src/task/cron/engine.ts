@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto'
 import type { ListenerRegistry } from '../../core/listener-registry.js'
 import type { ProducerHandle } from '../../core/producer.js'
 import { parseDuration } from '../../core/duration.js'
+import { dataPath } from '../../core/paths.js'
 
 export { parseDuration }
 
@@ -115,7 +116,7 @@ export function createCronEngine(opts: CronEngineOpts): CronEngine {
     name: PRODUCER_NAME,
     emits: CRON_EMITS,
   })
-  const storePath = opts.storePath ?? 'data/cron/jobs.json'
+  const storePath = opts.storePath ?? dataPath('cron', 'jobs.json')
   const now = opts.now ?? Date.now
 
   let jobs: CronJob[] = []

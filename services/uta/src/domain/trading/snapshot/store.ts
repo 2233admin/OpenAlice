@@ -17,10 +17,11 @@
 
 import { readFile, writeFile, appendFile, rename, mkdir, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { dataPath } from '@/core/paths.js'
 import type { UTASnapshot, SnapshotIndex } from './types.js'
 
 const CHUNK_SIZE = 50
-const DEFAULT_BASE_DIR = 'data/trading'
+const DEFAULT_BASE_DIR = dataPath('trading')
 
 export interface SnapshotStoreOptions {
   baseDir?: string

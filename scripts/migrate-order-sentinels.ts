@@ -26,14 +26,13 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, renameSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { dataPath } from '../src/core/paths.js'
 
 const LEGACY_UNSET_DOUBLE = Number.MAX_VALUE  // = 1.7976931348623157e+308
 const PRICE_FIELDS = ['lmtPrice', 'auxPrice', 'trailStopPrice', 'trailingPercent', 'cashQty'] as const
 
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
-const TRADING_DIR = join(REPO_ROOT, 'data', 'trading')
+const TRADING_DIR = dataPath('trading')
 
 interface Commit {
   hash?: string

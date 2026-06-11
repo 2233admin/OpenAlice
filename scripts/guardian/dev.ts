@@ -45,7 +45,9 @@ async function main(): Promise<void> {
   const baseEnv = {
     ...process.env,
     NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --conditions=openalice-source`.trim(),
-    OPENALICE_USER_DATA_HOME: dataHome,
+    // Children must resolve the same user-data root the Guardian watches —
+    // src/core/paths.ts reads OPENALICE_HOME; never rely on cwd inheritance.
+    OPENALICE_HOME: dataHome,
   }
 
   // ── UTA spec (re-used by Guardian for restart) ────────────

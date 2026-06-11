@@ -12,6 +12,7 @@
 
 import { appendFile, readFile, mkdir, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { dataPath } from './paths.js'
 import type { AgentEventMap } from './agent-event.js'
 import { validateEventPayload } from './agent-event.js'
 
@@ -113,7 +114,7 @@ export async function createEventLog(opts?: {
   /** Max entries in the in-memory ring buffer. Default: 500. */
   bufferSize?: number
 }): Promise<EventLog> {
-  const logPath = opts?.logPath ?? 'data/event-log/events.jsonl'
+  const logPath = opts?.logPath ?? dataPath('event-log', 'events.jsonl')
   const bufferSize = opts?.bufferSize ?? DEFAULT_BUFFER_SIZE
 
   // Ensure directory exists
