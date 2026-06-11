@@ -47,6 +47,7 @@ import {
   defaultCancelOrderById,
   defaultPlaceOrder,
   defaultFetchPositions,
+  defaultFetchAllOpenOrders,
 } from './overrides.js'
 
 // Treated as cash (1:1 to USD) when computing balances and as ineligible
@@ -891,7 +892,10 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     if (this.keyless) return []
     this.ensureInit()
     try {
-      const raw = await this.exchange.fetchOpenOrders()
+      const fetchOverride = this.overrides.fetchAllOpenOrders
+      const raw = fetchOverride
+        ? await fetchOverride(this.exchange, defaultFetchAllOpenOrders)
+        : await defaultFetchAllOpenOrders(this.exchange)
       const converted: OpenOrder[] = []
       for (const o of raw) {
         // convertCcxtOrder also seeds the orderId→symbol cache, so an
