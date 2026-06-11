@@ -50,7 +50,11 @@ export function useConfigPage<T extends object>({
   const saveConfig = useCallback(
     async (data: T) => {
       const result = await api.config.updateSection(section, data)
-      setConfig(result as T)
+      // Adopt the server echo only when its content actually differs
+      // (zod normalization, defaults). Unconditionally swapping in a
+      // fresh object re-arms useAutoSave's [data] effect and loops the
+      // PUT forever — echo → new identity → schedule → PUT → echo …
+      setConfig((prev) => (JSON.stringify(prev) === JSON.stringify(result) ? prev : (result as T)))
     },
     [section],
   )

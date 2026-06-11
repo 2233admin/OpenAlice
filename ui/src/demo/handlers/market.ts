@@ -88,6 +88,9 @@ export const marketHandlers = [
   http.get('/api/market/equity/cash', aaplOnly(demoMarketAAPL.cash)),
 
   http.post('/api/market-data/test-provider', () => HttpResponse.json({ ok: true })),
+  http.get('/api/market-data/hub-status', () =>
+    HttpResponse.json({ enabled: true, baseUrl: 'https://traderhub.openalice.ai', reachable: true }),
+  ),
 ]
 
 // ---- movers fixture ----

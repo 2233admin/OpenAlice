@@ -190,7 +190,7 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
   return app
 }
 
-/** Market data routes: POST /test-provider */
+/** Market data routes: POST /test-provider, GET /hub-status */
 export function createMarketDataRoutes(ctx: EngineContext) {
   const TEST_ENDPOINTS: Record<string, { credField: string; provider: string; model: string; params: Record<string, unknown> }> = {
     fred:             { credField: 'federal_reserve_api_key',  provider: 'federal_reserve', model: 'FredSearch',              params: { query: 'GDP' } },
@@ -202,6 +202,30 @@ export function createMarketDataRoutes(ctx: EngineContext) {
   }
 
   const app = new Hono()
+
+  // Liveness ping for the settings page's hub status dot. Hits the hub's
+  // cheapest parameterless endpoint (fx-rates, Redis-cached hourly) and
+  // shape-checks the envelope — mirrors the trust boundary in
+  // domain/market-data/reference/hub.ts: hub responses are data, never
+  // configuration. `baseUrl` query override lets the UI probe an edited
+  // URL before the debounced config save lands.
+  app.get('/hub-status', async (c) => {
+    const hub = ctx.config.marketData.hub
+    const baseUrl = (c.req.query('baseUrl') || hub.baseUrl).replace(/\/+$/, '')
+    if (!hub.enabled) return c.json({ enabled: false, baseUrl, reachable: false })
+    try {
+      const res = await fetch(`${baseUrl}/api/data/fx-rates`, {
+        signal: AbortSignal.timeout(3000),
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) return c.json({ enabled: true, baseUrl, reachable: false })
+      const data: unknown = await res.json().catch(() => null)
+      const reachable = typeof data === 'object' && data !== null && 'meta' in data
+      return c.json({ enabled: true, baseUrl, reachable })
+    } catch {
+      return c.json({ enabled: true, baseUrl, reachable: false })
+    }
+  })
 
   app.post('/test-provider', async (c) => {
     try {
