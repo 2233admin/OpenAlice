@@ -333,15 +333,22 @@ export interface TradingAccount {
   label: string
 }
 
+/**
+ * Mirrors `AccountInfo` in packages/uta-protocol/src/types/broker.ts — keep
+ * the two in lockstep. The contract is the IBKR superset: brokers that don't
+ * report a field omit it (e.g. Alpaca has no realizedPnL; CCXT venues often
+ * have no buyingPower). The UI must omit those rows, never fabricate zeros.
+ */
 export interface AccountInfo {
   baseCurrency: string
   netLiquidation: string
   totalCashValue: string
   unrealizedPnL: string
-  realizedPnL: string
+  realizedPnL?: string
   buyingPower?: string
   initMarginReq?: string
   maintMarginReq?: string
+  dayTradesRemaining?: number
 }
 
 export interface Position {

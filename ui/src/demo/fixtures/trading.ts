@@ -61,14 +61,19 @@ export const demoUTASummary: UTASummary = demoUTASummaries[0]
 
 // ==================== Per-UTA account info ====================
 
+// Field coverage is deliberately uneven so the demo exercises the UI's
+// omit-row paths (AccountInfo is the IBKR superset; brokers report subsets):
+//   paper  — like live Alpaca: no realizedPnL, has dayTradesRemaining
+//   ibkr   — full superset (margin fields included)
+//   crypto — like live CCXT venues: has realizedPnL, no buyingPower
 export const demoAccountByUTA: Record<string, AccountInfo> = {
   [DEMO_UTA_PAPER]: {
     baseCurrency: 'USD',
     netLiquidation: '52840.13',
     totalCashValue: '8120.55',
     unrealizedPnL: '1924.58',
-    realizedPnL: '380.00',
     buyingPower: '16241.10',
+    dayTradesRemaining: 3,
   },
   [DEMO_UTA_IBKR]: {
     baseCurrency: 'USD',
@@ -218,7 +223,9 @@ export const demoSnapshotsByUTA: Record<string, UTASnapshotSummary[]> = Object.f
         netLiquidation: p.equity,
         totalCashValue: demoAccountByUTA[a.id]!.totalCashValue,
         unrealizedPnL: demoAccountByUTA[a.id]!.unrealizedPnL,
-        realizedPnL: demoAccountByUTA[a.id]!.realizedPnL,
+        // Snapshot schema requires the field; mirror the server-side
+        // builder's coalesce (services/uta .../snapshot/builder.ts).
+        realizedPnL: demoAccountByUTA[a.id]!.realizedPnL ?? '0',
       },
       positions: (demoPositionsByUTA[a.id] ?? []).map((p) => ({
         aliceId: p.contract.symbol ?? 'unknown',

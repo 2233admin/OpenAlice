@@ -115,10 +115,10 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
   }, [searchParams, setSearchParams, orderMode])
 
   // 24h delta = current NLV − the oldest snapshot still within the trailing
-  // 24h window. We label this "today" in the UI even though it's strictly
-  // 24h-trailing — matches consumer-trading apps' "Day's Change" wording
-  // without entangling market-hours / timezone arithmetic.
-  const todayDelta = useMemo(() => {
+  // 24h window. Labeled "24h" in the UI — it IS a trailing-24h diff, not a
+  // market-session "today", and the honest label avoids market-hours /
+  // timezone arithmetic.
+  const delta24h = useMemo(() => {
     if (!account || snapshots.length === 0) return null
     const cutoff = Date.now() - 24 * 60 * 60 * 1000
     let baseline: number | null = null
@@ -180,65 +180,76 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
             <span className="font-mono text-text-muted">{uta.id}</span>
             <span className="mx-2 text-text-muted/40">·</span>
             <HealthBadge health={health} size="sm" />
-            {clock != null && (
-              <>
-                <span className="mx-2 text-text-muted/40">·</span>
-                <MarketClockChip clock={clock} />
-              </>
-            )}
           </>
         }
         right={
+          // One action row, one visual language: the enable toggle (state
+          // control) sits apart from the buttons behind a divider; the
+          // secondary actions share btn-secondary-sm; Place Order is the
+          // single filled-accent primary at the same size. No hand-rolled
+          // paddings — mixed sizes were what made this row look drunk.
           <div className="flex items-center gap-2">
             <Toggle
+              size="sm"
               checked={!isDisabled}
               onChange={async (v) => { await tc.saveUTA({ ...uta, enabled: v }) }}
             />
+            <div className="w-px h-5 bg-border" />
             <ReconnectButton accountId={uta.id} />
+            <button onClick={() => setEditing(true)} className="btn-secondary-sm">
+              Edit
+            </button>
             <button
               onClick={() => setOrderMode({ kind: 'place' })}
               disabled={isDisabled}
-              className="px-3 py-1.5 text-[13px] font-medium rounded-md bg-accent text-bg hover:bg-accent/90 disabled:opacity-40 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-bg hover:bg-accent/90 disabled:opacity-40 transition-all active:scale-[0.98] cursor-pointer"
             >
               + Place Order
-            </button>
-            <button onClick={() => setEditing(true)} className="btn-secondary-sm">
-              Edit
             </button>
           </div>
         }
       />
 
       <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
-        <div className="max-w-[1080px] mx-auto space-y-5">
+        <div className="max-w-[1240px] mx-auto">
           {dataError && (
-            <div className="rounded-md border border-red/30 bg-red/5 px-3 py-2 text-[12px] text-red">
+            <div className="rounded-md border border-red/30 bg-red/5 px-3 py-2 text-[12px] text-red mb-4">
               Failed to load live data: {dataError}
             </div>
           )}
 
-          <Hero account={account} todayDelta={todayDelta} />
+          {/* Exchange-style two-column layout: tables get the wide main
+              column, the Account panel rides a sticky sidebar. On narrow
+              screens it collapses to one column with the Account panel
+              first — it's the summary. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
+            <div className="lg:order-2 lg:sticky lg:top-4 self-start min-w-0">
+              <AccountPanel account={account} positions={positions} delta24h={delta24h} clock={clock} />
+            </div>
 
-          {curvePoints.length >= 2 && (
-            <EquityCurve
-              points={curvePoints}
-              accounts={[{ id, label: preset?.label ?? id }]}
-              selectedAccountId={id}
-              onAccountChange={() => { /* single-account mode: switcher hidden */ }}
-            />
-          )}
+            <div className="lg:order-1 min-w-0 space-y-5">
+              {curvePoints.length >= 2 && (
+                <EquityCurve
+                  points={curvePoints}
+                  accounts={[{ id, label: preset?.label ?? id }]}
+                  selectedAccountId={id}
+                  onAccountChange={() => { /* single-account mode: switcher hidden */ }}
+                />
+              )}
 
-          <PositionsSection
-            positions={positions}
-            onCloseClick={(p) => setOrderMode({
-              kind: 'close',
-              aliceId: p.contract.aliceId ?? p.contract.localSymbol ?? p.contract.symbol ?? '',
-              quantity: p.quantity,
-              symbol: p.contract.symbol,
-            })}
-          />
+              <PositionsSection
+                positions={positions}
+                onCloseClick={(p) => setOrderMode({
+                  kind: 'close',
+                  aliceId: p.contract.aliceId ?? p.contract.localSymbol ?? p.contract.symbol ?? '',
+                  quantity: p.quantity,
+                  symbol: p.contract.symbol,
+                })}
+              />
 
-          <OrdersArea utaId={id} openOrders={orders} />
+              <OrdersArea utaId={id} openOrders={orders} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -282,53 +293,140 @@ function Shell({ title, children }: { title: string; children?: React.ReactNode 
   )
 }
 
-// ==================== Hero ====================
+// ==================== Account panel (sidebar) ====================
 
-interface TodayDelta { delta: number; pct: number; currency: string }
+interface Delta24h { delta: number; pct: number; currency: string }
 
-function Hero({ account, todayDelta }: { account: AccountInfo | null; todayDelta: TodayDelta | null }) {
+/** Sum a string-decimal field, ignoring non-finite entries. */
+function sumFinite(values: number[]): number {
+  return values.reduce((s, n) => s + (Number.isFinite(n) ? n : 0), 0)
+}
+
+/**
+ * Sidebar account summary. The AccountInfo contract is the IBKR superset:
+ * a broker that doesn't report a field gets its row OMITTED — never a
+ * fabricated zero. (Live examples: Alpaca has no realizedPnL; CCXT/okx has
+ * realizedPnL but no buyingPower.)
+ */
+function AccountPanel({ account, positions, delta24h, clock }: {
+  account: AccountInfo | null
+  positions: Position[]
+  delta24h: Delta24h | null
+  clock: MarketClockState
+}) {
   if (!account) {
     return (
-      <div className="border border-border rounded-lg bg-bg-secondary px-5 py-6">
+      <div className="border border-border rounded-lg bg-bg-secondary p-4">
+        {clock != null && (
+          <div className="text-[12px] mb-3"><MarketClockChip clock={clock} /></div>
+        )}
         <p className="text-[13px] text-text-muted">Loading account info…</p>
       </div>
     )
   }
+
   const ccy = account.baseCurrency || 'USD'
+  const netLiq = Number(account.netLiquidation)
   const unrealized = Number(account.unrealizedPnL)
-  const realized = Number(account.realizedPnL ?? '0')
+
+  // Positions value = Σ marketValue of what the page already fetched — NOT
+  // netLiq − cash, which would bake in margin / quote-currency noise.
+  const positionsValue = sumFinite(positions.map(p => Number(p.marketValue)))
+  const utilizationPct = Number.isFinite(netLiq) && netLiq > 0
+    ? (positionsValue / netLiq) * 100
+    : null
+
+  // Unrealized % vs cost basis, when a positive cost basis is computable.
+  const costBasis = sumFinite(positions.map(p =>
+    Math.abs(Number(p.quantity)) * Number(p.avgCost) * (p.contract.multiplier ?? 1)
+  ))
+  const unrealizedPct = costBasis > 0 && Number.isFinite(unrealized)
+    ? (unrealized / costBasis) * 100
+    : null
+
+  const realized = account.realizedPnL != null ? Number(account.realizedPnL) : null
+  const marginUsed = account.initMarginReq != null && !isUnsetDecimal(account.initMarginReq)
+    ? Number(account.initMarginReq)
+    : null
 
   return (
-    <div className="border border-border rounded-lg bg-bg-secondary px-5 py-5 space-y-4">
+    <div className="border border-border rounded-lg bg-bg-secondary p-4">
+      {clock != null && (
+        <div className="text-[12px] mb-3"><MarketClockChip clock={clock} /></div>
+      )}
+
       <Metric
         size="lg"
         label="Net Liquidation"
         value={fmt(account.netLiquidation, ccy)}
-        delta={todayDelta ? {
-          value: `${fmtPnl(todayDelta.delta, ccy)} (${fmtPctSigned(todayDelta.pct)}) today`,
-          sign: signFromDelta(todayDelta.delta),
-        } : { value: '— today', sign: 'flat' }}
+        delta={delta24h ? {
+          value: `${fmtPnl(delta24h.delta, ccy)} (${fmtPctSigned(delta24h.pct)}) 24h`,
+          sign: signFromDelta(delta24h.delta),
+        } : { value: '— 24h', sign: 'flat' }}
       />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border">
-        <Metric size="sm" label="Cash" value={fmt(account.totalCashValue, ccy)} />
-        <Metric
-          size="sm"
+
+      <div className="mt-4 border-t border-border divide-y divide-border">
+        <AccountRow label="Cash" value={fmt(account.totalCashValue, ccy)} />
+
+        <AccountRow label="Positions Value" value={fmt(positionsValue, ccy)} />
+
+        {utilizationPct != null && (
+          <div className="py-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[11px] uppercase tracking-wide text-text-muted">Utilization</span>
+              <span className="text-[13px] font-medium tabular-nums text-text">{utilizationPct.toFixed(1)}%</span>
+            </div>
+            <div className="mt-1.5 h-[2px] rounded-full bg-bg-tertiary overflow-hidden">
+              <div
+                className="h-full rounded-full bg-accent"
+                style={{ width: `${Math.min(100, Math.max(0, utilizationPct))}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <AccountRow
           label="Unrealized P&L"
-          value={fmtPnl(account.unrealizedPnL, ccy)}
-          valueSign={signFromDelta(unrealized)}
+          value={unrealizedPct != null
+            ? `${fmtPnl(account.unrealizedPnL, ccy)} (${fmtPctSigned(unrealizedPct, 1)})`
+            : fmtPnl(account.unrealizedPnL, ccy)}
+          sign={signFromDelta(unrealized)}
         />
-        <Metric
-          size="sm"
-          label="Realized P&L"
-          value={fmtPnl(account.realizedPnL ?? '0', ccy)}
-          valueSign={signFromDelta(realized)}
-        />
-        <Metric
-          size="sm"
-          label="Buying Power"
-          value={account.buyingPower != null ? fmt(account.buyingPower, ccy) : '—'}
-        />
+
+        {realized != null && (
+          <AccountRow
+            label="Realized P&L"
+            value={fmtPnl(account.realizedPnL, ccy)}
+            sign={signFromDelta(realized)}
+          />
+        )}
+
+        {account.buyingPower != null && !isUnsetDecimal(account.buyingPower) && (
+          <AccountRow label="Buying Power" value={fmt(account.buyingPower, ccy)} />
+        )}
+
+        {marginUsed != null && marginUsed > 0 && (
+          <AccountRow label="Margin Used" value={fmt(account.initMarginReq, ccy)} />
+        )}
+
+        {account.dayTradesRemaining != null && (
+          <AccountRow label="Day Trades Left" value={fmtNum(account.dayTradesRemaining)} />
+        )}
       </div>
+    </div>
+  )
+}
+
+function AccountRow({ label, value, sign }: {
+  label: string
+  value: React.ReactNode
+  sign?: 'up' | 'down' | 'flat'
+}) {
+  const valueColor = sign === 'up' ? 'text-green' : sign === 'down' ? 'text-red' : 'text-text'
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-2">
+      <span className="text-[11px] uppercase tracking-wide text-text-muted">{label}</span>
+      <span className={`text-[13px] font-medium tabular-nums text-right ${valueColor}`}>{value}</span>
     </div>
   )
 }
