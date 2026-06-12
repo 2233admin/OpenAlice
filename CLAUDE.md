@@ -98,6 +98,18 @@ wiring. When working on one of these, read its guide first:
     `console.warn` log will surface endpoints you've added but not
     mocked; visible crashes will surface shape mismatches.
 
+- **UTA live testing** — [docs/uta-live-testing.md](docs/uta-live-testing.md).
+  The self-bootstrapped scenario catalog (S1–S12: lifecycle, amendments,
+  TP/SL, external orders, restart survival, partial closes, error
+  ergonomics). After ANY change to trading paths, run the relevant
+  scenarios end-to-end on the demo accounts through the `alice-uta` CLI;
+  a NEW broker integration runs the full catalog plus the acceptance
+  checklist before it's called supported. This method found ~20 real bugs
+  in five rounds (PRs #325–#333) that no unit test or human UI session
+  would have caught — the agent surface against real venue behavior is
+  where they live. Rules that matter: demo accounts only, never trust the
+  ledger over the venue, leave accounts flat, one regression spec per fix.
+
 ## Surfacing future work — Linear, not TODO.md
 
 When a session notices something worth fixing later but **out of scope
