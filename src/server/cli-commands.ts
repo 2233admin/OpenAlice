@@ -166,11 +166,14 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
       },
       order: {
         list: 'getOrders',
+        history: 'orderHistory',
+        trades: 'tradeHistory',
         place: 'placeOrder',
         modify: 'modifyOrder',
         cancel: 'cancelOrder',
       },
       position: {
+        // listing positions = `account portfolio` (one tool, one verb).
         close: 'closePosition',
       },
       // trading-as-git: the approval/state flow mirrors git verbs on purpose.
@@ -180,6 +183,7 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         show: 'tradingShow',
         commit: 'tradingCommit',
         push: 'tradingPush',
+        reject: 'tradingReject',
         sync: 'tradingSync',
       },
       market: {

@@ -72,6 +72,24 @@ export interface CcxtExchangeOverrides {
     defaultImpl: DefaultImpl<[Exchange], CcxtPosition[]>,
   ): Promise<CcxtPosition[]>
 
+  /** Place an order WITH attached TP/SL, venue-verified. CcxtBroker
+   *  refuses tpsl placement entirely when an exchange has no such
+   *  override — observed live: ccxt's unified takeProfit/stopLoss params
+   *  were silently dropped on okx spot and the entry filled unprotected.
+   *  Implementations must map to the venue's real attach mechanism (okx:
+   *  attachAlgoOrds; bybit: v5 takeProfit/stopLoss fields) and be verified
+   *  live before registering. */
+  placeOrderWithTpSl?(
+    exchange: Exchange,
+    symbol: string,
+    type: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price: number | undefined,
+    tpsl: { takeProfit?: { price: string }; stopLoss?: { price: string; limitPrice?: string } },
+    params: Record<string, unknown>,
+  ): Promise<CcxtOrder>
+
   /** List ALL open orders across every market type the account trades.
    *  Override when the venue's listing endpoint is category-scoped and the
    *  unscoped call silently returns a subset (bybit: defaultType 'swap'

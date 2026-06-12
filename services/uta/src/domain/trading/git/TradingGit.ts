@@ -566,7 +566,7 @@ export class TradingGit implements ITradingGit {
     const commit: GitCommit = {
       hash,
       parentHash: this.head,
-      message: `[sync] ${updates.length} order(s) updated`,
+      message: `[sync] ${updates.slice(0, 3).map((u) => `${u.symbol} ${u.currentStatus}`).join(', ')}${updates.length > 3 ? ` +${updates.length - 3} more` : ''}`,
       operations: [{ action: 'syncOrders' as const }],
       results: updates.map((u) => ({
         action: 'syncOrders' as const,

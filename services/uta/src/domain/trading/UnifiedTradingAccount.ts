@@ -14,6 +14,8 @@ import { BrokerError, type IBroker, type AccountInfo, type Position, type OpenOr
 const REACH_RANK: Record<UTAReach, number> = { down: 0, connected: 1, readable: 2 }
 import { TradingGit } from './git/TradingGit.js'
 import { recomputeCostBasisFromCommits } from './cost-basis.js'
+import { projectOrderHistory, projectTradeHistory } from './order-history.js'
+import type { OrderHistoryEntry, TradeHistoryEntry } from '@traderalice/uta-protocol'
 import { pnlOf } from './position-math.js'
 import type {
   Operation,
@@ -626,6 +628,16 @@ export class UnifiedTradingAccount {
 
   getPendingOrderIds(): Array<{ orderId: string; symbol: string; localSymbol?: string }> {
     return this.git.getPendingOrderIds()
+  }
+
+  /** Exchange-frontend projection — same translation the UI and routes use. */
+  async orderHistory(limit = 50): Promise<OrderHistoryEntry[]> {
+    return projectOrderHistory(this.git.exportState().commits, { limit })
+  }
+
+  /** Exchange-frontend projection — fills only. */
+  async tradeHistory(limit = 50): Promise<TradeHistoryEntry[]> {
+    return projectTradeHistory(this.git.exportState().commits, { limit })
   }
 
   /** firstSeen/lastPolled per pending order — drives the per-order polling

@@ -440,6 +440,29 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       return { success: false, error: 'Either totalQuantity or cashQty must be provided' }
     }
 
+    // Attached TP/SL on CCXT venues: REFUSE until a per-exchange override
+    // has verified the attach actually reaches the venue. Observed live on
+    // okx spot: the unified takeProfit/stopLoss params were accepted by
+    // ccxt, silently dropped at the venue mapping, and the entry filled
+    // UNPROTECTED — the ledger said "long with a stop", the exchange said
+    // "naked long". A missing stop that looks attached is the worst failure
+    // mode a trading system has; loud refusal beats silent downgrade
+    // (same rule as order-type support). Venue-verified attach
+    // implementations land via the overrides registry (fetchAllOpenOrders
+    // pattern) — okx needs attachAlgoOrds, bybit its native v5 fields.
+    if (tpsl?.takeProfit || tpsl?.stopLoss) {
+      const attachOverride = this.overrides.placeOrderWithTpSl
+      if (!attachOverride) {
+        return {
+          success: false,
+          error:
+            `Attached TP/SL is not verified to reach ${this.exchangeName} through ccxt — refusing rather than ` +
+            `risking a silently unprotected position. Place the entry first, then a separate stop/take-profit ` +
+            `order, or use a venue with verified attach support.`,
+        }
+      }
+    }
+
     try {
       const params: Record<string, unknown> = { ...extraParams }
 
@@ -460,10 +483,15 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
         ? order.lmtPrice.toNumber()
         : undefined
 
+      const attachOverride = this.overrides.placeOrderWithTpSl
       const placeOverride = this.overrides.placeOrder
-      const ccxtOrder = placeOverride
-        ? await placeOverride(this.exchange, ccxtSymbol, ccxtOrderType, side, parseFloat(size), refPrice, params, defaultPlaceOrder)
-        : await defaultPlaceOrder(this.exchange, ccxtSymbol, ccxtOrderType, side, parseFloat(size), refPrice, params)
+      const ccxtOrder = (tpsl?.takeProfit || tpsl?.stopLoss) && attachOverride
+        // Venue-verified attach path — the gate above guarantees tpsl only
+        // gets this far when the exchange has an override for it.
+        ? await attachOverride(this.exchange, ccxtSymbol, ccxtOrderType, side, parseFloat(size), refPrice, tpsl, params)
+        : placeOverride
+          ? await placeOverride(this.exchange, ccxtSymbol, ccxtOrderType, side, parseFloat(size), refPrice, params, defaultPlaceOrder)
+          : await defaultPlaceOrder(this.exchange, ccxtSymbol, ccxtOrderType, side, parseFloat(size), refPrice, params)
 
       // Cache orderId → symbol
       if (ccxtOrder.id) {

@@ -87,8 +87,11 @@ async function invoke(base, tool, args) {
     body: JSON.stringify({ tool, args }),
   })
   if (!r.ok) {
-    const msg = r.body && r.body.error ? r.body.error : `HTTP ${r.status}`
-    fail(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    let msg = r.body && r.body.error ? r.body.error : `HTTP ${r.status}`
+    if (typeof msg !== 'string') msg = JSON.stringify(msg)
+    const details = r.body && r.body.details
+    if (details) msg += '\n' + (typeof details === 'string' ? details : JSON.stringify(details, null, 2))
+    fail(msg)
   }
   const blocks = (r.body && r.body.content) || []
   return blocks
@@ -136,6 +139,12 @@ function parseFlags(tokens) {
         val = next
         i++
       }
+    }
+    // JSON-looking values parse into objects/arrays so object flags work:
+    //   --takeProfit '{"price":"1725"}'
+    // Parse failures fall through as plain strings (gateway validates).
+    if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+      try { val = JSON.parse(val) } catch { /* keep the raw string */ }
     }
     if (key === 'meta') {
       // repeatable: --meta key=value -> metadataFilter
