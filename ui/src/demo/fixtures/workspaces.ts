@@ -19,6 +19,7 @@ const demoSession: SessionRecord = {
   agentSessionId: null,
   pid: 0,
   startedAt: Date.now(),
+  title: "What jumped out from Apple's Q1 earnings?",
 }
 
 export const demoWorkspace: Workspace = {
@@ -57,6 +58,7 @@ const demoChatSessions: SessionRecord[] = [
     agentSessionId: null,
     pid: 0,
     startedAt: Date.now(),
+    title: "What's moving in semiconductors today?",
   },
   {
     id: 'demo-chat-x1',
@@ -69,6 +71,7 @@ const demoChatSessions: SessionRecord[] = [
     agentSessionId: '019eb75e-0b1b-7fa2',
     pid: 0,
     startedAt: Date.now(),
+    title: 'Build a thesis on NVDA',
   },
   {
     id: 'demo-chat-o1',
@@ -81,6 +84,7 @@ const demoChatSessions: SessionRecord[] = [
     agentSessionId: 'ses_148a17c1bffe',
     pid: null,
     startedAt: null,
+    title: 'Scan the EV supply chain for bottlenecks',
   },
   {
     id: 'demo-chat-p1',
@@ -93,6 +97,7 @@ const demoChatSessions: SessionRecord[] = [
     agentSessionId: '6850b4d0-1c2e',
     pid: null,
     startedAt: null,
+    title: '解释一下美债收益率曲线倒挂意味着什么',
   },
 ]
 

@@ -57,6 +57,7 @@ export const workspacesHandlers = [
       startedAt: Date.now(),
       agent: 'claude',
       agentSessionId: null,
+      title: null,
     }),
   ),
 
@@ -75,6 +76,7 @@ export const workspacesHandlers = [
           startedAt: Date.now(),
           agent: 'claude',
           agentSessionId: null,
+          title: null,
         },
       },
       { status: 201 },

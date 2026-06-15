@@ -192,6 +192,8 @@ export interface SessionRecord {
   readonly agentSessionId: string | null;
   readonly pid: number | null;
   readonly startedAt: number | null;
+  /** First message (seeded sessions) — the sidebar title; null → fall back to `name`. */
+  readonly title: string | null;
 }
 
 export interface SpawnedSession {
@@ -202,6 +204,7 @@ export interface SpawnedSession {
   readonly startedAt: number;
   readonly agent: string;
   readonly agentSessionId: string | null;
+  readonly title: string | null;
 }
 
 export interface SpawnOptions {

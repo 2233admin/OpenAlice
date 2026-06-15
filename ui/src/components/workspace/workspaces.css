@@ -384,7 +384,9 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 3px 8px 3px 4px;
+  /* Taller than a plain id row — these now carry a real message title, which
+     needs vertical room to stay legible (esp. CJK at small sizes). */
+  padding: 6px 8px 6px 4px;
   flex: 1 1 auto;
   cursor: pointer;
   text-align: left;
@@ -447,9 +449,16 @@
 }
 
 .sidebar-session-name {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-  font-weight: 600;
+  /* Sans (not mono) — these now carry real message titles (incl. CJK), which
+     read poorly in a monospace face. Truncate to one line; the action glyph
+     and delete stay right-aligned regardless of how long the title is. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--fg);
 }
 .sidebar-session.is-active .sidebar-session-name {
@@ -501,16 +510,6 @@
   color: var(--accent);
 }
 
-.sidebar-session-state {
-  margin-left: auto;
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--fg-dim);
-  opacity: 0.7;
-}
-
 .sidebar-session-action {
   display: inline-flex;
   align-items: center;
@@ -518,7 +517,7 @@
   background: none;
   border: 0;
   color: var(--fg-dim);
-  padding: 0 6px;
+  padding: 0 5px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 80ms, color 80ms;
@@ -527,15 +526,16 @@
 .sidebar-session.is-active .sidebar-session-action {
   opacity: 1;
 }
+/* The state-as-action glyph (stop/resume) stays visible at rest — it's the
+   at-a-glance running/paused indicator — just dimmed until the row is hovered. */
+.sidebar-session-action.is-persistent {
+  opacity: 0.5;
+}
 .sidebar-session-pause:hover {
   color: #d29922;
 }
-.sidebar-session-resume {
-  color: #7ee787;
-  font-size: 13px;
-}
 .sidebar-session-resume:hover {
-  color: #95eea0;
+  color: #7ee787;
 }
 .sidebar-session-delete:hover {
   color: var(--danger);

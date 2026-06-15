@@ -83,6 +83,9 @@ function parseSeedPrompt(
   return { prompt: trimmed };
 }
 
+/** Max stored length of a session title (the seed message); the row truncates further. */
+const MAX_SESSION_TITLE = 200;
+
 /** The 201 body both `/:id/sessions/spawn` and `/quick-chat` return. */
 interface SpawnedSessionBody {
   readonly sessionId: string;
@@ -92,6 +95,8 @@ interface SpawnedSessionBody {
   readonly agent: string;
   readonly agentSessionId: string | null;
   readonly startedAt: number;
+  /** The seed message, when the session was seeded — its sidebar title. */
+  readonly title: string | null;
 }
 
 type SpawnSessionResult =
@@ -136,6 +141,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     const recordId = randomUUID();
     const recordName = svc.sessionRegistry.nextName(id, adapter.id, prefix);
     const nowIso = new Date().toISOString();
+    const title = initialPrompt ? initialPrompt.slice(0, MAX_SESSION_TITLE) : undefined;
     const record: SessionRecord = {
       id: recordId,
       wsId: id,
@@ -144,6 +150,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       createdAt: nowIso,
       lastActiveAt: nowIso,
       state: 'running',
+      ...(title !== undefined ? { title } : {}),
     };
     try {
       await svc.sessionRegistry.create(record);
@@ -179,6 +186,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
           agent: adapter.id,
           agentSessionId: session.agentSessionId,
           startedAt: session.startedAt,
+          title: title ?? null,
         },
       };
     } catch (err) {

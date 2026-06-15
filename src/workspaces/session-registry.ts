@@ -33,6 +33,13 @@ export interface SessionRecord {
   state: 'running' | 'paused';
   resumeHint?: { kind: 'agent-session-id'; value: string };
   scrollbackFile?: string;
+  /**
+   * The user's first message, captured when the session is seeded (quick-chat).
+   * Surfaced as a human-readable title in the chat sidebar instead of the sticky
+   * `c1` name. Only present for seeded sessions; absent ones fall back to `name`.
+   * Stored capped — we don't need the whole prompt for a one-line title.
+   */
+  readonly title?: string;
 }
 
 interface FileShape {

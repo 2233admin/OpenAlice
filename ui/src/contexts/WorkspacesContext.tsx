@@ -159,6 +159,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
           agentSessionId: sess.agentSessionId,
           pid: sess.pid,
           startedAt: sess.startedAt,
+          title: sess.title,
         }
         setWorkspaces((prev) =>
           prev.map((w) =>
@@ -189,6 +190,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
         agentSessionId: session.agentSessionId,
         pid: session.pid,
         startedAt: session.startedAt,
+        title: session.title,
       }
       // Upsert so the terminal slot mounts immediately (before the 3s poll):
       // append to the reused workspace, or insert the just-created one. The

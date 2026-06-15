@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatRelativeTime } from '../../lib/intl';
 import type { ReactElement } from 'react';
-import { Bot, Code2, Cpu, LayoutGrid, Library, Pause, Play, Sparkles, Terminal, X, type LucideIcon } from 'lucide-react';
+import { Bot, Code2, Cpu, LayoutGrid, Library, Play, Sparkles, Square, Terminal, X, type LucideIcon } from 'lucide-react';
 
 import { headlessApi, type HeadlessTaskRecord } from '../../api/headless';
 import {
@@ -473,28 +473,35 @@ export interface SessionRowProps {
 export function SessionRow(props: SessionRowProps): ReactElement {
   const s = props.session;
   const isPaused = s.state === 'paused';
+  // Title: the captured first message (seeded sessions), else the sticky name.
+  const display = s.title?.trim() || s.name;
   const tidShort = s.agentSessionId ? s.agentSessionId.slice(0, 8) : null;
-  const titleParts: string[] = [`agent ${s.agent}`];
-  if (s.pid !== null) titleParts.push(`pid ${s.pid}`);
-  if (tidShort) titleParts.push(tidShort);
-  if (isPaused) titleParts.push('paused');
-  const title = titleParts.join(' · ');
+  const metaParts: string[] = [`agent ${s.agent}`];
+  if (s.pid !== null) metaParts.push(`pid ${s.pid}`);
+  if (tidShort) metaParts.push(tidShort);
+  if (isPaused) metaParts.push('paused');
+  const meta = metaParts.join(' · ');
+  // Full message on hover when it's been truncated, then the technical meta.
+  const tooltip = s.title?.trim() ? `${s.title.trim()}\n${meta}` : meta;
 
   return (
     <li
       className={`sidebar-session ${props.isActive ? 'is-active' : ''} ${isPaused ? 'is-paused' : ''}`}
     >
-      <button type="button" className="sidebar-session-main" onClick={props.onSelect} title={title}>
+      <button type="button" className="sidebar-session-main" onClick={props.onSelect} title={tooltip}>
         <span className={`sidebar-agent-badge is-${s.agent} ${isPaused ? 'is-paused' : ''}`}>
           <AgentBadgeGlyph agentId={s.agent} />
         </span>
-        <span className="sidebar-session-name">{s.name}</span>
-        {isPaused && <span className="sidebar-session-state">paused</span>}
+        <span className="sidebar-session-name">{display}</span>
       </button>
+      {/* Right-aligned, always-visible state-as-action: a running session shows
+          STOP (■, click to pause it); a paused one shows PLAY (▶, click to
+          resume). The glyph is the at-a-glance state AND the action; the shape
+          stays put on the right edge regardless of title length. */}
       {isPaused ? (
         <button
           type="button"
-          className="sidebar-session-action sidebar-session-resume"
+          className="sidebar-session-action sidebar-session-resume is-persistent"
           title="resume this session"
           aria-label="resume this session"
           onClick={(e) => {
@@ -502,20 +509,20 @@ export function SessionRow(props: SessionRowProps): ReactElement {
             props.onResume();
           }}
         >
-          <Play size={11} strokeWidth={2.25} fill="currentColor" />
+          <Play size={11} strokeWidth={0} fill="currentColor" />
         </button>
       ) : (
         <button
           type="button"
-          className="sidebar-session-action sidebar-session-pause"
-          title="pause this session"
-          aria-label="pause this session"
+          className="sidebar-session-action sidebar-session-pause is-persistent"
+          title="stop this session"
+          aria-label="stop this session"
           onClick={(e) => {
             e.stopPropagation();
             props.onPause();
           }}
         >
-          <Pause size={11} strokeWidth={2.25} fill="currentColor" />
+          <Square size={10} strokeWidth={0} fill="currentColor" />
         </button>
       )}
       <button
