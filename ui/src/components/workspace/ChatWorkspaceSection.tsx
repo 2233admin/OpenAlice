@@ -1,15 +1,15 @@
 /**
- * "Workspace chat" section embedded inside the Chat activity sidebar.
+ * "Ask Alice" secondary sidebar — your chat history.
  *
- * Visual rhythm matches the Traditional channels list below — single
- * row per workspace, with a collapsible session sub-tree. Status dot
- * prefix conveys running/idle without needing a "4h" trailing meta.
+ * Reads as a conversation list: a prominent "New chat" action on top (opens the
+ * Ask Alice composer), then chat workspaces newest-first. Each workspace is a
+ * day's bucket — daily ones (`chat-jun15`) are relabelled Today / Yesterday /
+ * "Jun 14" so the list reads like chat history; user-named ones (`nvda-thesis`)
+ * keep their tag. Sessions hang underneath as the day's individual
+ * conversations, resumable on click.
  *
- * The create form is hidden behind a `+` toggle in the section header;
- * when opened, the tag input pre-fills with a date-based default
- * (`chat-may13`, `chat-may13-2`, …) so users can hit enter without
- * typing. Power-user spawn-by-agent stays in the Workspaces activity
- * — this sidebar is for "pick a conversation and continue".
+ * Named-workspace creation (a custom tag) lives in the Workspaces activity —
+ * this surface is for chatting, not workspace management.
  */
 
 import { useMemo, useState, type ReactElement } from 'react'
@@ -22,9 +22,24 @@ import { getFocusedTab } from '../../tabs/types'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { deleteWorkspace, type SessionRecord, type Workspace } from './api'
 import { SessionRow } from './Sidebar'
-import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 
 const CHAT_TEMPLATE = 'chat'
+
+/** Auto-generated daily tag shape (`chat-jun15`) — these get a friendly date label. */
+const DAILY_TAG_RE = /^chat-[a-z]{3}\d{1,2}$/
+
+/** Friendly label for a chat workspace: Today / Yesterday / "Jun 14" for daily
+ *  buckets, the raw tag for user-named workspaces. */
+function chatLabel(w: Workspace, todayLabel: string, yesterdayLabel: string): string {
+  if (!DAILY_TAG_RE.test(w.tag)) return w.tag
+  const created = new Date(w.createdAt)
+  if (Number.isNaN(created.getTime())) return w.tag
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(created)) / 86_400_000)
+  if (diffDays <= 0) return todayLabel
+  if (diffDays === 1) return yesterdayLabel
+  return created.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 export function ChatWorkspaceSection(): ReactElement | null {
   const { t } = useTranslation()
@@ -43,8 +58,6 @@ export function ChatWorkspaceSection(): ReactElement | null {
     : null
 
   const chatTemplate = ctx.templates.find((tpl) => tpl.name === CHAT_TEMPLATE)
-
-  const [showCreate, setShowCreate] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Workspace | null>(null)
 
   const handleConfirmDelete = async (): Promise<void> => {
@@ -59,59 +72,40 @@ export function ChatWorkspaceSection(): ReactElement | null {
 
   if (!chatTemplate) return null
 
+  const todayLabel = t('chat.today')
+  const yesterdayLabel = t('chat.yesterday')
+
   return (
     <>
-      <div className="px-3 mt-2 flex items-baseline gap-2">
-        <h3 className="text-[10px] font-medium text-text-muted/60 uppercase tracking-wider">
-          {t('chat.workspaceChatHeader')}
-        </h3>
-        <span className="text-[10px] text-text-muted/50">{t('chat.recommended')}</span>
+      {/* Primary action — start a new conversation (the Ask Alice composer). */}
+      <div className="px-2 pt-2 pb-1.5">
         <button
           type="button"
-          onClick={() => setShowCreate(true)}
-          className="ml-auto w-5 h-5 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-bg-secondary"
-          title={t('chat.newChatWorkspace')}
-          aria-label={t('chat.newChatWorkspace')}
+          onClick={() => openOrFocus({ kind: 'chat-landing', params: {} })}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-bg-tertiary/30 text-[13px] font-medium text-text-muted transition-colors hover:text-text hover:border-accent/50 hover:bg-bg-tertiary/60"
         >
-          <Plus size={13} strokeWidth={2.25} />
+          <Plus size={15} strokeWidth={2.25} />
+          <span>{t('chat.newChat')}</span>
         </button>
       </div>
-
-      {showCreate && (
-        <CreateWorkspaceDialog
-          templates={ctx.templates}
-          agents={ctx.agents}
-          presetTemplate={CHAT_TEMPLATE}
-          onCreated={(workspace) => {
-            ctx.refresh()
-            openOrFocus({ kind: 'workspace', params: { wsId: workspace.id } })
-          }}
-          onClose={() => setShowCreate(false)}
-        />
-      )}
 
       <ul className="py-0.5">
         {chatWorkspaces.length === 0 && !ctx.listError && (
           <li className="px-3 py-2 text-[12px] text-text-muted/60">{t('chat.noChatWorkspacesYet')}</li>
         )}
-        {ctx.listError && (
-          <li className="px-3 py-1 text-[11px] text-red">{ctx.listError}</li>
-        )}
+        {ctx.listError && <li className="px-3 py-1 text-[11px] text-red">{ctx.listError}</li>}
         {chatWorkspaces.map((w) => (
           <ChatWorkspaceRow
             key={w.id}
             workspace={w}
+            label={chatLabel(w, todayLabel, yesterdayLabel)}
             selection={selection}
             onOpen={() => {
               const recent = mostRecentSession(w.sessions)
-              if (recent) {
-                openOrFocus({
-                  kind: 'workspace',
-                  params: { wsId: w.id, sessionId: recent.id },
-                })
-              } else {
-                openOrFocus({ kind: 'workspace', params: { wsId: w.id } })
-              }
+              openOrFocus({
+                kind: 'workspace',
+                params: recent ? { wsId: w.id, sessionId: recent.id } : { wsId: w.id },
+              })
             }}
             onOpenSession={(sid) =>
               openOrFocus({ kind: 'workspace', params: { wsId: w.id, sessionId: sid } })
@@ -138,9 +132,7 @@ export function ChatWorkspaceSection(): ReactElement | null {
   )
 }
 
-function mostRecentSession(
-  sessions: readonly SessionRecord[],
-): SessionRecord | undefined {
+function mostRecentSession(sessions: readonly SessionRecord[]): SessionRecord | undefined {
   if (sessions.length === 0) return undefined
   return [...sessions].sort(
     (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime(),
@@ -149,6 +141,7 @@ function mostRecentSession(
 
 interface ChatWorkspaceRowProps {
   workspace: Workspace
+  label: string
   selection: { wsId: string; sessionId: string | null } | null
   onOpen: () => void
   onOpenSession: (sid: string) => void
@@ -164,8 +157,7 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
   const w = props.workspace
   const hasRunning = w.sessions.some((s) => s.state === 'running')
   const [expanded, setExpanded] = useState(true)
-  const isSelected =
-    props.selection?.wsId === w.id && props.selection.sessionId === null
+  const isSelected = props.selection?.wsId === w.id && props.selection.sessionId === null
 
   const statusClass = hasRunning
     ? 'bg-green'
@@ -176,15 +168,12 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
   return (
     <li className="group relative">
       <div
-        className={`flex items-center gap-1 px-3 py-1 text-[13px] cursor-pointer transition-colors ${
+        className={`flex items-center gap-1 pl-2 pr-2 py-1 text-[13px] cursor-pointer transition-colors ${
           isSelected ? 'bg-bg-tertiary text-text' : 'text-text hover:bg-bg-tertiary/50'
         }`}
       >
         {isSelected && (
-          <span
-            aria-hidden="true"
-            className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent"
-          />
+          <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent" />
         )}
         <button
           type="button"
@@ -192,28 +181,30 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
             e.stopPropagation()
             setExpanded((v) => !v)
           }}
-          className="w-3 h-4 flex items-center justify-center text-text-muted/60 hover:text-text"
+          className="w-4 h-5 flex items-center justify-center text-text-muted/50 hover:text-text shrink-0"
           aria-label={expanded ? t('chat.collapseSessions') : t('chat.expandSessions')}
           title={expanded ? t('chat.collapseSessions') : t('chat.expandSessions')}
         >
           {expanded ? (
-            <ChevronDown size={11} strokeWidth={2.25} />
+            <ChevronDown size={12} strokeWidth={2.25} />
           ) : (
-            <ChevronRight size={11} strokeWidth={2.25} />
+            <ChevronRight size={12} strokeWidth={2.25} />
           )}
         </button>
         <button
           type="button"
           onClick={props.onOpen}
-          className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left"
         >
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusClass}`}
-            aria-hidden="true"
-          />
-          <span className="truncate" title={w.tag}>
-            {w.tag}
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusClass}`} aria-hidden="true" />
+          <span className="truncate font-medium" title={w.tag}>
+            {props.label}
           </span>
+          {w.sessions.length > 0 && (
+            <span className="text-[11px] text-text-muted/45 tabular-nums shrink-0">
+              {w.sessions.length}
+            </span>
+          )}
         </button>
         <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button

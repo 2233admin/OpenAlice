@@ -95,9 +95,9 @@ export const zh: Resources = {
     delete: '删除',
   },
   chat: {
-    workspaceChatHeader: '工作区对话',
-    recommended: '推荐',
-    newChatWorkspace: '新建对话工作区',
+    newChat: '新对话',
+    today: '今天',
+    yesterday: '昨天',
     collapseSessions: '收起会话',
     expandSessions: '展开会话',
     deleteWorkspace: '删除工作区',

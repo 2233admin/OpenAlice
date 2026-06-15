@@ -106,9 +106,9 @@ export const en = {
     delete: 'Delete',
   },
   chat: {
-    workspaceChatHeader: 'Workspace chat',
-    recommended: 'recommended',
-    newChatWorkspace: 'New chat workspace',
+    newChat: 'New chat',
+    today: 'Today',
+    yesterday: 'Yesterday',
     collapseSessions: 'Collapse sessions',
     expandSessions: 'Expand sessions',
     deleteWorkspace: 'Delete workspace',

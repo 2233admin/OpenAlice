@@ -103,9 +103,9 @@ export const zhHant: Resources = {
     delete: '刪除',
   },
   chat: {
-    workspaceChatHeader: '工作區對話',
-    recommended: '推薦',
-    newChatWorkspace: '新增對話工作區',
+    newChat: '新對話',
+    today: '今天',
+    yesterday: '昨天',
     collapseSessions: '收合工作階段',
     expandSessions: '展開工作階段',
     deleteWorkspace: '刪除工作區',

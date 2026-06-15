@@ -95,9 +95,9 @@ export const ja: Resources = {
     delete: '削除',
   },
   chat: {
-    workspaceChatHeader: 'ワークスペースチャット',
-    recommended: '推奨',
-    newChatWorkspace: '新しいチャットワークスペース',
+    newChat: '新しいチャット',
+    today: '今日',
+    yesterday: '昨日',
     collapseSessions: 'セッションを折りたたむ',
     expandSessions: 'セッションを展開',
     deleteWorkspace: 'ワークスペースを削除',
