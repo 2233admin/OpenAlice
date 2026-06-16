@@ -471,7 +471,10 @@ headless workspace dispatch (cron → workspace).
 - Strict TypeScript, ES2023 target
 - Zod for config, TypeBox for tool parameter schemas
 - `decimal.js` for financial math
-- Pino logger → `logs/engine.log`
+- Logging: the workspace launcher writes structured JSON to
+  `logs/workspace-sessions.log` (`src/workspaces/logger.ts`); the main
+  process logs via `console`. (`pino` is a declared dep but currently
+  unused — don't assume a central pino sink exists.)
 
 ## Git Workflow
 
