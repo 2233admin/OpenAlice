@@ -280,6 +280,18 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       // script — not written into the workspace, so it never pollutes the
       // workspace's git repo.
       PATH: `${cliBinPath()}${pathDelimiter}${process.env.PATH ?? ''}`,
+      // Per-workspace git identity — so any commit the agent makes (in its own
+      // repo OR a peer's, during cross-workspace collaboration) self-attributes
+      // to this workspace, and never fails for a missing identity on a clean
+      // box. This rides the PTY session env only; the launcher's own
+      // `commitInitial` (-c user.name=launcher) runs in the launcher's
+      // process.env, which we don't touch, so the initial commit stays
+      // `launcher`. Set explicitly here so a host ~/.gitconfig identity leaking
+      // through `process.env` can't shadow the workspace one (extras win).
+      GIT_AUTHOR_NAME: ws.tag,
+      GIT_AUTHOR_EMAIL: `${ws.id}@workspace.local`,
+      GIT_COMMITTER_NAME: ws.tag,
+      GIT_COMMITTER_EMAIL: `${ws.id}@workspace.local`,
     }, ws.dir);
     const baseCtx = {
       ...(resume !== undefined ? { resume } : {}),

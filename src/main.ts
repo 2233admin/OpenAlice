@@ -37,6 +37,8 @@ import { createInboxStore } from './core/inbox-store.js'
 import { ToolCenter } from './core/tool-center.js'
 import { WorkspaceToolCenter } from './core/workspace-tool-center.js'
 import { inboxPushFactory } from './tool/inbox-push.js'
+import { inboxReadFactory } from './tool/inbox-read.js'
+import { workspacePathFactory } from './tool/workspace-path.js'
 import { createEntityStore } from './core/entity-store.js'
 import { entityUpsertFactory } from './tool/entity-upsert.js'
 import { entitySearchFactory } from './tool/entity-search.js'
@@ -93,6 +95,8 @@ async function main() {
 
   const workspaceToolCenter = new WorkspaceToolCenter()
   workspaceToolCenter.register(inboxPushFactory)
+  workspaceToolCenter.register(inboxReadFactory)
+  workspaceToolCenter.register(workspacePathFactory)
   workspaceToolCenter.register(entityUpsertFactory)
   workspaceToolCenter.register(entitySearchFactory)
 

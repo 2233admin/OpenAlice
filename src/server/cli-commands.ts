@@ -134,14 +134,24 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
   workspace: {
     binary: 'alice-workspace',
     scope: 'scoped',
-    description: 'Agent collaboration — push to the user inbox, track entities',
+    description: 'Agent collaboration — push/read the user inbox, locate a peer workspace (peer path), track entities',
     commands: {
       // inbox push: surface doc(s) + comment to the user's Inbox tab. Attach
       // files with repeatable `--doc <path>` (the shim folds them into the
       // `docs: [{ path }]` array; bare paths wrap, JSON objects pass through);
       // `--comments` carries the markdown note. At least one of the two.
+      // inbox read: look back at the inbox stream — `--self` narrows to this
+      // workspace's own pushes (whose doc paths are cwd-relative, so readable
+      // with the shell); `--limit N` caps the newest-first window.
       inbox: {
         push: 'inbox_push',
+        read: 'inbox_read',
+      },
+      // peer path: resolve another workspace's absolute dir by id (the
+      // `workspaceId` an inbox_read entry carries), so the agent can read/edit
+      // that peer's files with native tools — cross-workspace collaboration.
+      peer: {
+        path: 'workspace_path',
       },
       // track: the durable cross-workspace tracked-entity index ([[name]]).
       track: {

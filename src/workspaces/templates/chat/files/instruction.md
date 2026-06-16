@@ -10,7 +10,7 @@ Discover any command live with `<cli> --help` and `<cli> <group> <verb> --help`
 |---|---|---|
 | `alice` | **Research & data** — collected-RSS archive, symbol search (barIds), quant analysis | `alice` |
 | `alice-uta` | **Trading** — accounts, portfolio, orders, positions, trading-as-git approval (MUTATES real broker state) | `alice-uta` |
-| `alice-workspace` | **Collaboration** — push finished work to the user's Inbox, track entities | `alice-workspace` |
+| `alice-workspace` | **Collaboration** — push/read the user's Inbox, locate a peer workspace's files (`peer path`), track entities | `alice-workspace` |
 | `traderhub` | **Low-frequency market data** — fundamentals, macro series, calendars, ETF, boards, shipping, Fed | `traderhub` |
 
 ```bash
@@ -38,12 +38,12 @@ with thinner data. Numbers Alice ships (quotes, fundamentals, macro) stay on
 
 ## Handing work back to the user
 
-This workspace has an outbound channel to the user's Inbox. When you finish
-something the user should see — a shortlist, a thesis, a rotation snapshot, a
-decision you reached — push it to their inbox: the file(s) you produced plus a
-short note on what it is and why it matters. Don't make them come looking in the
-workspace; surface the result. (One-way for now — they read the inbox; they
-don't reply through it.)
+This workspace has a channel to the user's Inbox. When you finish something the
+user should see — a shortlist, a thesis, a rotation snapshot, a decision you
+reached — push it to their inbox: the file(s) you produced plus a short note on
+what it is and why it matters. Don't make them come looking in the workspace;
+surface the result. You can also `inbox read` to recall what's already been
+surfaced (yours or other workspaces').
 
 ```bash
 alice-workspace inbox push --doc research/tsla.md --comments "Done — details in the doc."
@@ -51,6 +51,24 @@ alice-workspace inbox push --doc research/tsla.md --comments "Done — details i
 
 (Repeatable `--doc <path>` attaches workspace files, rendered live in the inbox;
 `--comments` is your markdown note. See the `alice-workspace` skill.)
+
+## Collaborating across workspaces — through git
+
+Workspaces are a group of collaborating agents. Pushing a file to the inbox
+effectively shares it: another workspace can locate it with
+`alice-workspace peer path --id <workspaceId>` (the `workspaceId` rides every
+`inbox read` entry) and **read** it with its own file tools. Reading a peer is
+always fine. Collaboration runs on git, so:
+
+- **Commit before you push to the inbox.** The inbox renders your files live, not
+  a snapshot — the commit is the only durable record of what you actually sent.
+  Skip it and a later edit silently rewrites what the entry shows, with nothing
+  to recover.
+- **Editing a peer is interactive-only.** Reaching into another workspace to
+  *edit* it is a human-approved action — only do it when a person is in the
+  session. An autonomous / headless run reads peers but writes ONLY its own
+  workspace. If you do edit a peer (with approval), commit it in that repo with a
+  clear message so the owner can review or revert it — never edit-and-walk-away.
 
 ## Tracking assets & topics worth following
 
@@ -69,5 +87,5 @@ whole story across your files without re-reading them. Before creating one, call
 `alice-workspace track search` to reuse an existing name instead of fragmenting it.
 
 Otherwise, use this workspace however you like. The CWD is its own git
-repo (commits stay local), and any files you create or edit are scoped
-to this workspace.
+repo (commits stay local, no remote to push to) — which is also the
+versioning backbone for the cross-workspace collaboration above.

@@ -14,6 +14,8 @@ import { createEconomyTools } from '../tool/economy.js'
 import { createQuantTools } from '../tool/quant.js'
 import { createThinkingTools } from '../tool/thinking.js'
 import { inboxPushFactory } from '../tool/inbox-push.js'
+import { inboxReadFactory } from '../tool/inbox-read.js'
+import { workspacePathFactory } from '../tool/workspace-path.js'
 import { entityUpsertFactory } from '../tool/entity-upsert.js'
 import { entitySearchFactory } from '../tool/entity-search.js'
 import { createTradingTools } from '../tool/trading.js'
@@ -73,6 +75,8 @@ describe('CLI_EXPORTS — uta export (global trading tools)', () => {
 describe('CLI_EXPORTS — workspace export (scoped collaboration tools)', () => {
   const wtc = new WorkspaceToolCenter()
   wtc.register(inboxPushFactory)
+  wtc.register(inboxReadFactory)
+  wtc.register(workspacePathFactory)
   wtc.register(entityUpsertFactory)
   wtc.register(entitySearchFactory)
   const built = wtc.build({

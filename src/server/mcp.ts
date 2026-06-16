@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import type { Plugin, EngineContext } from '../core/types.js'
 import type { ToolCenter } from '../core/tool-center.js'
-import type { WorkspaceToolCenter } from '../core/workspace-tool-center.js'
+import { type WorkspaceToolCenter, makeWorkspaceResolver } from '../core/workspace-tool-center.js'
 import type { IInboxStore } from '../core/inbox-store.js'
 import type { IEntityStore } from '../core/entity-store.js'
 import type { WorkspaceService } from '../workspaces/service.js'
@@ -21,7 +21,8 @@ import { registerCliRoutes } from './cli.js'
  *                           identity required.
  *
  *   GET/POST /mcp/:wsId     Workspace-scoped surface (WorkspaceToolCenter).
- *                           inbox_push + entity_upsert / entity_search; tools
+ *                           inbox_push / inbox_read + workspace_path +
+ *                           entity_upsert / entity_search; tools
  *                           that need workspaceId close over it via the factory
  *                           pattern. The URL path IS the identity carrier —
  *                           agent never sees or supplies workspaceId, and
@@ -91,6 +92,9 @@ export class McpPlugin implements Plugin {
         workspaceLabel: wsLabel,
         inboxStore,
         entityStore,
+        // Parity with the CLI gateway so external MCP consumers get the same
+        // workspace_path resolution — shared helper, so the two can't drift.
+        resolveWorkspace: makeWorkspaceResolver(getWorkspaceService),
       })
       const mcp = new McpServer({ name: 'open-alice-workspace', version: '1.0.0' })
       for (const [name, t] of Object.entries(tools)) {

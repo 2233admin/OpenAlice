@@ -45,6 +45,13 @@ export interface WorkspaceToolContext {
    *  entity_upsert / entity_search read and write. Same injection rationale
    *  as inboxStore. */
   entityStore: IEntityStore
+  /** Resolve ANY workspace's location by id (not just this one) — the backing
+   *  for cross-workspace collaboration: an inbox entry from a peer carries its
+   *  workspaceId, and `workspace_path` turns that into the peer's absolute dir
+   *  so the agent can read/edit its files with native tools. Optional because
+   *  it needs the live WorkspaceService (created after this center); the two
+   *  build sites (cli.ts, mcp.ts) inject a lazy closure, tests may omit it. */
+  resolveWorkspace?: (id: string) => { id: string; dir: string; tag: string } | null
 }
 
 // ==================== Factory shape ====================
@@ -83,5 +90,30 @@ export class WorkspaceToolCenter {
   /** Names of registered factories. Useful for introspection / tests. */
   list(): string[] {
     return this.factories.map((f) => f.name)
+  }
+}
+
+// ==================== Resolver helper ====================
+
+/** Minimal structural view of WorkspaceService that {@link makeWorkspaceResolver}
+ *  needs — kept structural so core/ doesn't depend on the workspaces/ module. */
+interface WorkspaceRegistryLike {
+  registry: { get(id: string): { id: string; dir: string; tag: string } | undefined }
+}
+
+/**
+ * Build the `resolveWorkspace` closure both tool-context build sites
+ * (cli.ts, mcp.ts) inject. Single source so the two never drift. Lazy over
+ * `getService` because the WorkspaceService is created after the tool center,
+ * and re-reads the live registry per call so a peer created later still
+ * resolves. Returns null when the service isn't up yet or the id is unknown —
+ * the tool then surfaces a clean error instead of throwing.
+ */
+export function makeWorkspaceResolver(
+  getService: () => WorkspaceRegistryLike | null,
+): NonNullable<WorkspaceToolContext['resolveWorkspace']> {
+  return (id) => {
+    const meta = getService()?.registry.get(id)
+    return meta ? { id: meta.id, dir: meta.dir, tag: meta.tag } : null
   }
 }

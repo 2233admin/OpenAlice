@@ -27,7 +27,7 @@ import type { Hono } from 'hono'
 import { z } from 'zod'
 import type { Tool } from 'ai'
 import type { ToolCenter } from '../core/tool-center.js'
-import type { WorkspaceToolCenter } from '../core/workspace-tool-center.js'
+import { type WorkspaceToolCenter, makeWorkspaceResolver } from '../core/workspace-tool-center.js'
 import type { IInboxStore } from '../core/inbox-store.js'
 import type { IEntityStore } from '../core/entity-store.js'
 import type { WorkspaceService } from '../workspaces/service.js'
@@ -74,6 +74,10 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         workspaceLabel: ws.tag,
         inboxStore,
         entityStore,
+        // Lets workspace_path resolve ANY peer's dir (not just the caller) —
+        // the in-workspace cross-workspace addressing path. Shared with the
+        // mcp.ts build site so the two never drift.
+        resolveWorkspace: makeWorkspaceResolver(getWorkspaceService),
       })
       return {
         resolve: (name) => wsTools[name] ?? null,

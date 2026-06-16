@@ -3,6 +3,9 @@ import { Hono } from 'hono'
 import { ToolCenter } from '../core/tool-center.js'
 import { WorkspaceToolCenter } from '../core/workspace-tool-center.js'
 import { createThinkingTools } from '../tool/thinking.js'
+import { inboxReadFactory } from '../tool/inbox-read.js'
+import { workspacePathFactory } from '../tool/workspace-path.js'
+import { createMemoryInboxStore } from '../core/inbox-store.js'
 import { registerCliRoutes, type CliGatewayDeps } from './cli.js'
 
 /**
@@ -117,5 +120,130 @@ describe('CLI gateway — export scope isolation', () => {
     const body = (await res.json()) as { export: string; groups: Record<string, unknown> }
     expect(body.export).toBe('workspace')
     expect(typeof body.groups).toBe('object')
+  })
+})
+
+describe('CLI gateway — inbox read (scoped, string-arg coercion)', () => {
+  // A real workspace export wired with a memory inbox store, so the CLI shim's
+  // all-strings args (`--self` -> 'true', `--limit 1` -> '1') exercise the
+  // stringbool + number coercion through extractMcpShape + strictObject.
+  async function makeWsApp(): Promise<Hono> {
+    const inboxStore = createMemoryInboxStore()
+    await inboxStore.append({ workspaceId: 'ws1', workspaceLabel: 'demo', comments: 'mine' })
+    await inboxStore.append({ workspaceId: 'other', workspaceLabel: 'them', comments: 'theirs' })
+
+    const wtc = new WorkspaceToolCenter()
+    wtc.register(inboxReadFactory)
+
+    const fakeSvc = { registry: { get: (id: string) => (id === 'ws1' ? { id: 'ws1', tag: 'demo' } : undefined) } }
+    const app = new Hono()
+    registerCliRoutes(app, {
+      toolCenter: new ToolCenter(),
+      workspaceToolCenter: wtc,
+      inboxStore,
+      entityStore: {} as never,
+      getWorkspaceService: () => fakeSvc as never,
+    })
+    return app
+  }
+
+  const invoke = async (app: Hono, args: Record<string, string>) => {
+    const res = await app.request('/cli/ws1/workspace/invoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: 'inbox_read', args }),
+    })
+    const body = (await res.json()) as { content?: Array<{ text?: string }>; error?: string }
+    const payload = body.content ? JSON.parse(body.content.map((b) => b.text ?? '').join('')) : undefined
+    return { status: res.status, body, payload }
+  }
+
+  it('`--self` (string "true") coerces and filters to this workspace', async () => {
+    const app = await makeWsApp()
+    const { status, payload } = await invoke(app, { self: 'true' })
+    expect(status).toBe(200)
+    expect(payload.count).toBe(1)
+    expect(payload.entries[0].mine).toBe(true)
+  })
+
+  it('no flags returns the full cross-workspace stream', async () => {
+    const app = await makeWsApp()
+    const { status, payload } = await invoke(app, {})
+    expect(status).toBe(200)
+    expect(payload.count).toBe(2)
+  })
+
+  it('`--limit 1` (string "1") coerces to a number cap', async () => {
+    const app = await makeWsApp()
+    const { status, payload } = await invoke(app, { limit: '1' })
+    expect(status).toBe(200)
+    expect(payload.count).toBe(1)
+    expect(payload.hasMore).toBe(true)
+  })
+})
+
+describe('CLI gateway — peer path (cross-workspace resolution)', () => {
+  // The /cli gateway threads a resolveWorkspace closure (over getWorkspaceService)
+  // into the workspace ctx, so workspace_path can resolve a PEER's dir — not just
+  // the caller's. Registry here knows two workspaces: the caller ws1 and a peer.
+  function makePeerApp(): Hono {
+    const REG: Record<string, { id: string; tag: string; dir: string }> = {
+      ws1: { id: 'ws1', tag: 'caller', dir: '/wsroot/ws1' },
+      ws2: { id: 'ws2', tag: 'Quant Lab', dir: '/wsroot/ws2' },
+    }
+    const fakeSvc = { registry: { get: (id: string) => REG[id] } }
+
+    const wtc = new WorkspaceToolCenter()
+    wtc.register(workspacePathFactory)
+
+    const app = new Hono()
+    registerCliRoutes(app, {
+      toolCenter: new ToolCenter(),
+      workspaceToolCenter: wtc,
+      inboxStore: {} as never,
+      entityStore: {} as never,
+      getWorkspaceService: () => fakeSvc as never,
+    })
+    return app
+  }
+
+  const invoke = async (app: Hono, args: Record<string, string>) => {
+    const res = await app.request('/cli/ws1/workspace/invoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: 'workspace_path', args }),
+    })
+    const body = (await res.json()) as { content?: Array<{ text?: string }>; error?: string }
+    const payload = body.content ? JSON.parse(body.content.map((b) => b.text ?? '').join('')) : undefined
+    return { status: res.status, payload }
+  }
+
+  it('manifest renders the peer/path verb mapped to workspace_path (--help discovery)', async () => {
+    const res = await makePeerApp().request('/cli/ws1/workspace/manifest')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      groups: Record<string, Record<string, { tool: string }>>
+      unmapped: string[]
+    }
+    expect(body.groups['peer']?.['path']?.tool).toBe('workspace_path')
+    // it's mapped, so it must NOT appear in the no-silent-caps unmapped list
+    expect(body.unmapped).not.toContain('workspace_path')
+  })
+
+  it('resolves a PEER workspace dir from inside another workspace (ws1 -> ws2)', async () => {
+    const { status, payload } = await invoke(makePeerApp(), { id: 'ws2' })
+    expect(status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(payload.path).toBe('/wsroot/ws2')
+    expect(payload.tag).toBe('Quant Lab')
+  })
+
+  it('returns ok:false (not a throw) for an unknown peer id', async () => {
+    // The tool returns a structured {ok:false} value rather than throwing, so
+    // the gateway responds 200 with that payload — not a 500.
+    const { status, payload } = await invoke(makePeerApp(), { id: 'ghost' })
+    expect(status).toBe(200)
+    expect(payload.ok).toBe(false)
+    expect(payload.error).toMatch(/unknown workspace/)
   })
 })
