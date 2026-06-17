@@ -36,6 +36,9 @@ interface WorkspaceActions {
   openOrFocus: (spec: ViewSpec) => void
   closeTab: (id: string) => void
   focusTab: (id: string) => void
+  /** Reorder: move `activeId` to where `overId` sits in the focused group.
+   *  Drives drag-to-reorder in TabStrip. No-op if either id is missing. */
+  moveTab: (activeId: string, overId: string) => void
   closeMatching: (predicate: (spec: ViewSpec) => boolean) => void
   /** Bulk closers used by the tab context menu. All operate on the focused group. */
   closeOthers: (id: string) => void
@@ -164,6 +167,21 @@ export const useWorkspace = create<WorkspaceStore>()(
           if (group.activeTabId === id) return state
           return withFocusedGroup(state, (g) => ({ ...g, activeTabId: id }))
         })
+      },
+
+      moveTab(activeId, overId) {
+        if (activeId === overId) return
+        set((state) =>
+          withFocusedGroup(state, (g) => {
+            const from = g.tabIds.indexOf(activeId)
+            const to = g.tabIds.indexOf(overId)
+            if (from < 0 || to < 0 || from === to) return g
+            const tabIds = [...g.tabIds]
+            const [moved] = tabIds.splice(from, 1)
+            tabIds.splice(to, 0, moved)
+            return { ...g, tabIds }
+          }),
+        )
       },
 
       closeMatching(predicate) {
