@@ -8,9 +8,13 @@
     "build": "tsc -b && vite build",
     "build:demo": "tsc -b && vite build --mode demo",
     "preview": "vite preview",
-    "msw:init": "msw init ./public --save"
+    "msw:init": "msw init ./public --save",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@vercel/analytics": "^2.0.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",

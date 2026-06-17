@@ -36,6 +36,7 @@ export const en = {
     unread: '{{count}} unread',
     pendingPush: '{{count}} pending to push',
     about: 'About {{label}}',
+    reorder: 'Drag to reorder {{label}}',
   },
   settings: {
     title: 'Settings',

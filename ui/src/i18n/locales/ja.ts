@@ -25,6 +25,7 @@ export const ja: Resources = {
     unread: '未読 {{count}} 件',
     pendingPush: 'プッシュ待ち {{count}} 件',
     about: '{{label}}について',
+    reorder: '{{label}}をドラッグして並び替え',
   },
   settings: {
     title: '設定',

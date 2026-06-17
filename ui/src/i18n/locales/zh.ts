@@ -25,6 +25,7 @@ export const zh: Resources = {
     unread: '{{count}} 条未读',
     pendingPush: '{{count}} 笔待推送',
     about: '关于{{label}}',
+    reorder: '拖拽以重新排序{{label}}',
   },
   settings: {
     title: '设置',

@@ -33,6 +33,7 @@ export const zhHant: Resources = {
     unread: '{{count}} 則未讀',
     pendingPush: '{{count}} 筆待推送',
     about: '關於{{label}}',
+    reorder: '拖曳以重新排序{{label}}',
   },
   settings: {
     title: '設定',
