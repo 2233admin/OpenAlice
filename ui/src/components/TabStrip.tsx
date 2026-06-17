@@ -1,5 +1,21 @@
-import { useState, type MouseEvent, type WheelEvent } from 'react'
+import { useState, type CSSProperties, type MouseEvent, type WheelEvent } from 'react'
 import { X } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useWorkspaces } from '../contexts/WorkspacesContext'
 import { useWorkspace } from '../tabs/store'
 import { getView } from '../tabs/registry'
@@ -8,7 +24,8 @@ import { ContextMenu, type ContextMenuItem } from './ContextMenu'
 /**
  * The strip of tab buttons above the main content area. Click to focus,
  * × or middle-click to close, right-click for context menu (close /
- * close others / close to the right / close all / copy URL).
+ * close others / close to the right / close all / copy URL). Drag a tab
+ * sideways to reorder; the new order persists via the workspace store.
  *
  * The strip scrolls horizontally when the row of tabs overflows, but the
  * scrollbar itself is hidden — a thick scrollbar across the full width
@@ -31,12 +48,20 @@ export function TabStrip() {
   const tabsMap = useWorkspace((state) => state.tabs)
   const focusTab = useWorkspace((state) => state.focusTab)
   const closeTab = useWorkspace((state) => state.closeTab)
+  const moveTab = useWorkspace((state) => state.moveTab)
   const closeOthers = useWorkspace((state) => state.closeOthers)
   const closeToRight = useWorkspace((state) => state.closeToRight)
   const closeToLeft = useWorkspace((state) => state.closeToLeft)
   const closeAll = useWorkspace((state) => state.closeAll)
 
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
+
+  // PointerSensor with a small activation distance so a plain click still
+  // selects/closes — drag only kicks in after the pointer moves 5px.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   if (tabIds.length === 0) return null
 
@@ -46,6 +71,13 @@ export function TabStrip() {
     // browser handle the native horizontal scroll.
     if (e.deltaX === 0 && e.deltaY !== 0) {
       e.currentTarget.scrollLeft += e.deltaY
+    }
+  }
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (over && active.id !== over.id) {
+      moveTab(String(active.id), String(over.id))
     }
   }
 
@@ -97,26 +129,35 @@ export function TabStrip() {
         onWheel={handleWheel}
         className="scrollbar-hide hidden md:flex shrink-0 h-10 bg-bg-secondary/95 border-b border-border/80 overflow-x-auto"
       >
-        {tabIds.map((id) => {
-          const tab = tabsMap[id]
-          if (!tab) return null
-          const view = getView(tab.spec.kind)
-          const title = view.title(tab.spec as never, { workspaces })
-          const isActive = id === activeTabId
-          return (
-            <TabButton
-              key={id}
-              title={title}
-              active={isActive}
-              onSelect={() => focusTab(id)}
-              onClose={() => closeTab(id)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setMenu({ tabId: id, x: e.clientX, y: e.clientY })
-              }}
-            />
-          )
-        })}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>
+            {tabIds.map((id) => {
+              const tab = tabsMap[id]
+              if (!tab) return null
+              const view = getView(tab.spec.kind)
+              const title = view.title(tab.spec as never, { workspaces })
+              const isActive = id === activeTabId
+              return (
+                <TabButton
+                  key={id}
+                  id={id}
+                  title={title}
+                  active={isActive}
+                  onSelect={() => focusTab(id)}
+                  onClose={() => closeTab(id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setMenu({ tabId: id, x: e.clientX, y: e.clientY })
+                  }}
+                />
+              )
+            })}
+          </SortableContext>
+        </DndContext>
       </div>
 
       {menu && (
@@ -131,6 +172,7 @@ export function TabStrip() {
 }
 
 interface TabButtonProps {
+  id: string
   title: string
   active: boolean
   onSelect: () => void
@@ -138,9 +180,26 @@ interface TabButtonProps {
   onContextMenu: (e: MouseEvent<HTMLDivElement>) => void
 }
 
-function TabButton({ title, active, onSelect, onClose, onContextMenu }: TabButtonProps) {
+function TabButton({ id, title, active, onSelect, onClose, onContextMenu }: TabButtonProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  })
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // Lift the dragged tab above its neighbours and dim it slightly so the
+    // drop target reads clearly.
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
   return (
     <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       onClick={onSelect}
       onAuxClick={(e) => {
         // Middle click closes the tab (matches VS Code / browser convention).
@@ -159,6 +218,11 @@ function TabButton({ title, active, onSelect, onClose, onContextMenu }: TabButto
       <span className="truncate max-w-[200px]">{title}</span>
       <button
         type="button"
+        onPointerDown={(e) => {
+          // Keep the drag sensor from claiming the press so the close
+          // button stays clickable mid-strip.
+          e.stopPropagation()
+        }}
         onClick={(e) => {
           e.stopPropagation()
           onClose()
