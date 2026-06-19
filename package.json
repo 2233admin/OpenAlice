@@ -50,6 +50,7 @@
     "ajv": "^8.18.0",
     "ccxt": "^4.5.38",
     "decimal.js": "^10.6.0",
+    "dugite": "3.2.2",
     "grammy": "^1.40.0",
     "hono": "^4.12.21",
     "longbridge": "^4.0.5",
@@ -98,7 +99,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "node-pty",
-      "electron"
+      "electron",
+      "dugite"
     ],
     "overrides": {
       "@alpacahq/alpaca-trade-api>axios": "^0.32.0",

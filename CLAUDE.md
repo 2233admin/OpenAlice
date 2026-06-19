@@ -67,7 +67,9 @@ Notes:
 
 ### Cross-platform note
 
-Workspace bootstrap scripts (`src/workspaces/templates/*/bootstrap.sh`) are bash-based. On Windows they require `bash` from Git for Windows (default install) or WSL2. `workspace-creator.ts` already platform-branches the spawn so the same script paths work on win32 — when adding a new template, write bash as usual, but **don't** add POSIX-only commands without checking they ship with Git for Windows's bundled MSYS env (sed/cp/mkdir/basename/printf/source/[[ ]] all work; obscure tools like `jq` do not). See README's *Windows* section for the user-facing story.
+Workspace bootstrap is **cross-platform Node** — built-in templates ship `src/workspaces/templates/<name>/bootstrap.mjs` (plain ESM, no TypeScript syntax). The launcher (`workspace-creator.ts` `runScript`) spawns them on the Electron-bundled Node (`process.execPath` + `ELECTRON_RUN_AS_NODE`), and **all git goes through bundled git** (`dugite`) via `_common.mjs`'s `git()` helper. Net effect: workspace creation works on a **bare Windows or bare Mac** — no bash, no Git for Windows, no system git. When adding a template, write a `bootstrap.mjs` that imports `../_common.mjs` (`initWorkspaceDir` / `copyReadme` / `setupGitExcludes` / `git`) and routes every git call through `git()` — never `spawn('git')`.
+
+`bootstrap.sh` is still supported as a **fallback** for third-party/satellite templates that ship bash (`template-registry` prefers `.mjs`, falls back to `.sh`); those only run where `bash` is on PATH (Git for Windows / WSL2). Don't add new `.sh` bootstraps for in-repo templates. The critical packaging invariant: `dugite` must stay in `pnpm.onlyBuiltDependencies` (its postinstall fetches the per-platform git; drop it and `node_modules/dugite/git/` is silently empty — release CI asserts it's present). See README's *Windows* section for the user-facing story.
 
 ## Subsystem guides
 

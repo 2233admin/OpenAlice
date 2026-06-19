@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { exec as gitExec } from 'dugite';
+
 import { readCredentials } from '@/core/config.js';
 
 import type { AdapterRegistry } from './cli-adapter.js';
@@ -270,17 +272,16 @@ export async function commitInitial(dir: string, message: string): Promise<void>
   ]);
 }
 
-function runGit(dir: string, args: readonly string[]): Promise<void> {
-  return new Promise((resolveCommit, reject) => {
-    const child = spawn('git', [...args], { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    child.stderr?.on('data', (c: Buffer) => { stderr += c.toString(); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) resolveCommit();
-      else reject(new Error(`git ${args[0] ?? ''} exited ${code ?? 'null'}: ${stderr.slice(0, 500)}`));
-    });
-  });
+// Routes through the bundled git (dugite) so the launcher's initial commit
+// needs no system git — same reason the bootstrap scripts use _common.mjs's
+// git(). dugite resolves with an exitCode (it only rejects when git fails to
+// launch), so a non-zero exit is turned into a throw to preserve the old
+// reject-on-failure contract.
+async function runGit(dir: string, args: readonly string[]): Promise<void> {
+  const r = await gitExec([...args], dir);
+  if (r.exitCode !== 0) {
+    throw new Error(`git ${args[0] ?? ''} exited ${r.exitCode}: ${String(r.stderr).slice(0, 500)}`);
+  }
 }
 
 interface RunResult {
@@ -291,9 +292,10 @@ interface RunResult {
 }
 
 const WINDOWS_BASH_HINT =
-  'hint: bash not found on PATH. Install Git for Windows (accept the default ' +
-  '"Use Git from the Windows Command Prompt" option) from https://gitforwindows.org/, ' +
-  'or run OpenAlice from inside WSL2.';
+  'hint: this template ships a bash bootstrap script. OpenAlice\'s built-in ' +
+  'templates (chat, auto-quant) need no bash — only third-party templates do. ' +
+  'To use this one, install Git for Windows from https://gitforwindows.org/ so ' +
+  'bash is on PATH, or run OpenAlice from inside WSL2.';
 
 /**
  * Run a bootstrap script.
@@ -314,13 +316,25 @@ export function runScript(
   extraEnv: { [key: string]: string },
   timeoutMs: number,
 ): Promise<RunResult> {
+  const isMjs = script.endsWith('.mjs');
   const isWindows = process.platform === 'win32';
-  const cmd = isWindows ? 'bash' : script;
-  const cmdArgs = isWindows ? [script, ...args] : args;
+
+  // `.mjs` (built-in templates): run on the Electron-bundled Node. In the
+  // packaged app `process.execPath` is the Electron binary; ELECTRON_RUN_AS_NODE
+  // flips it to pure-Node mode (a harmless no-op for a plain `node` execPath in
+  // dev). No bash, no shebang reliance → works on a bare Windows/Mac box.
+  // `.sh` (third-party fallback): unix reads the `#!/usr/bin/env bash` shebang;
+  // Windows has no native bash, so we invoke `bash <script>` explicitly, which
+  // requires bash on PATH (Git for Windows / WSL).
+  const cmd = isMjs ? process.execPath : isWindows ? 'bash' : script;
+  const cmdArgs = isMjs || isWindows ? [script, ...args] : args;
+  const env = isMjs
+    ? { ...process.env, ...extraEnv, ELECTRON_RUN_AS_NODE: '1' }
+    : { ...process.env, ...extraEnv };
 
   return new Promise((resolve) => {
     const child = spawn(cmd, cmdArgs, {
-      env: { ...process.env, ...extraEnv },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -343,10 +357,11 @@ export function runScript(
     child.on('error', (err) => {
       clearTimeout(timer);
       const errMsg = (err as Error).message;
-      // ENOENT on Windows when we tried `bash` means Git Bash / WSL bash
-      // isn't on PATH — surface the install hint right next to the failure.
+      // ENOENT on Windows when we tried `bash` (a `.sh` third-party template)
+      // means Git Bash / WSL bash isn't on PATH — surface the install hint.
+      // Built-in `.mjs` templates run on the bundled Node and never hit this.
       const hinted =
-        isWindows && /ENOENT/i.test(errMsg) ? `${errMsg}\n${WINDOWS_BASH_HINT}` : errMsg;
+        !isMjs && isWindows && /ENOENT/i.test(errMsg) ? `${errMsg}\n${WINDOWS_BASH_HINT}` : errMsg;
       resolve({
         ok: false,
         stdout: Buffer.concat(stdoutChunks).toString('utf8'),
