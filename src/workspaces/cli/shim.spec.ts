@@ -27,4 +27,19 @@ describe('CLI shim copies', () => {
     expect(src).toContain('process.argv[1]') // derives BIN from how it was invoked
     expect(src).toContain('exportKey') // routes to the per-export gateway path
   })
+
+  // Windows has no shebang concept — it resolves executables on PATH by
+  // extension (PATHEXT). The extensionless shims trigger a "how do you want to
+  // open this file?" association dialog on every invocation. A `.cmd` twin per
+  // export fixes it (ANG / issue #364). Each MUST invoke its OWN shim, because
+  // the shim self-detects its export from argv[1] — a `.cmd` pointing at the
+  // wrong shim would route to the wrong gateway export.
+  it('every export ships a Windows `.cmd` twin that runs its own shim', () => {
+    for (const name of EXPORT_BINARIES) {
+      const cmd = read(`${name}.cmd`).toString('utf8')
+      expect(cmd, `${name}.cmd should run node on its sibling shim`)
+        .toContain(`@node "%~dp0${name}"`)
+      expect(cmd, `${name}.cmd should forward args`).toContain('%*')
+    }
+  })
 })
