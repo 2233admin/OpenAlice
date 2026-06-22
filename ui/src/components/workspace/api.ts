@@ -262,22 +262,38 @@ export interface QuickChatResult {
   readonly session: SpawnedSession;
 }
 
+/** Error thrown by `quickChat`, carrying the backend error `code` when present
+ *  (e.g. `no_ai_credential` → the composer bounces the user to Settings). */
+export class QuickChatError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = 'QuickChatError';
+  }
+}
+
 /**
  * Quick-chat launch — the "type a message → you're in" front door. One POST
  * reuses-or-creates the chat workspace and spawns a fresh session seeded with
  * `prompt`; the returned `session.sessionId` is what the caller attaches to.
+ * `credentialSlug` seeds a loginless runtime (opencode/pi) — ignored for
+ * claude/codex, which carry their own CLI login.
  */
-export async function quickChat(prompt: string, agent?: string): Promise<QuickChatResult> {
+export async function quickChat(
+  prompt: string,
+  agent?: string,
+  credentialSlug?: string,
+): Promise<QuickChatResult> {
   const body: Record<string, unknown> = { prompt };
   if (agent !== undefined) body['agent'] = agent;
+  if (credentialSlug !== undefined) body['credentialSlug'] = credentialSlug;
   const res = await fetch('/api/workspaces/quick-chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => '');
-    throw new Error(`quick chat failed: ${res.status} ${msg}`);
+    const parsed = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new QuickChatError(`quick chat failed: ${res.status} ${parsed?.error ?? ''}`, parsed?.error);
   }
   return (await res.json()) as QuickChatResult;
 }
@@ -465,7 +481,10 @@ export interface SavedCredential {
   readonly authType: 'api-key' | 'subscription';
   /** Wire capabilities: each shape this key speaks → its endpoint baseUrl. */
   readonly wires: Partial<Record<WireShape, string>>;
-  readonly apiKey: string | null;
+  /** Last model run against this key, when remembered. Absent until first use. */
+  readonly lastModel?: string;
+  /** Omitted in the per-agent (`?agent=`) listing — only the unfiltered list returns it. */
+  readonly apiKey?: string | null;
 }
 
 export async function listCredentials(): Promise<SavedCredential[]> {
@@ -473,6 +492,26 @@ export async function listCredentials(): Promise<SavedCredential[]> {
   if (!res.ok) throw new Error(`list credentials failed: ${res.status}`);
   const body = (await res.json()) as { credentials: SavedCredential[] };
   return body.credentials;
+}
+
+/** List only the credentials the given agent can be driven by (wire-compatible). */
+export async function listAgentCredentials(agent: string): Promise<SavedCredential[]> {
+  const res = await fetch(`/api/workspaces/credentials?agent=${encodeURIComponent(agent)}`);
+  if (!res.ok) throw new Error(`list agent credentials failed: ${res.status}`);
+  const body = (await res.json()) as { credentials: SavedCredential[] };
+  return body.credentials;
+}
+
+/** Which vault credential a workspace's agent is currently configured with (null = none/hand-edited). */
+export async function detectWorkspaceCredential(
+  wsId: string,
+  agent: string,
+): Promise<{ slug: string | null; model: string | null }> {
+  const res = await fetch(
+    `/api/workspaces/${encodeURIComponent(wsId)}/agent-config/${encodeURIComponent(agent)}/credential`,
+  );
+  if (!res.ok) return { slug: null, model: null };
+  return (await res.json()) as { slug: string | null; model: string | null };
 }
 
 /** Persist a hand-entered provider as a reusable central credential. Returns the slug. */

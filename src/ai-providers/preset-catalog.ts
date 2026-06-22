@@ -330,3 +330,22 @@ export const PRESET_CATALOG: PresetDef[] = [
   DEEPSEEK,
   CUSTOM,
 ]
+
+/**
+ * The capable-flagship model to seed a fresh injection with when a credential
+ * has no remembered `lastModel` yet (keyed by `CredentialVendor`). This is only
+ * the very-first-run default — once a model is run it's remembered on the cred —
+ * so it favors the most capable tier (a trading agent wants the flagship, not a
+ * fast/cheap variant), mirroring the preset model lists. `custom` has no
+ * canonical model (free-form), so it's absent and the caller falls back to
+ * "let the runtime decide".
+ */
+export const DEFAULT_MODEL_BY_VENDOR: Record<string, string> = {
+  anthropic: 'claude-opus-4-8',
+  openai: 'gpt-5.5',
+  google: 'gemini-2.5-pro',
+  minimax: 'MiniMax-M3',
+  glm: 'glm-5.2',
+  kimi: 'kimi-k2.7-code',
+  deepseek: 'deepseek-v4-pro',
+}

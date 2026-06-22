@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUp,
@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Code2,
   Cpu,
+  KeyRound,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -16,6 +17,27 @@ import {
 
 import { useWorkspaces } from '../contexts/WorkspacesContext'
 import { installHintFor } from '../components/workspace/agentInstall'
+import {
+  listAgentCredentials,
+  detectWorkspaceCredential,
+  QuickChatError,
+  type SavedCredential,
+} from '../components/workspace/api'
+import { useWorkspace } from '../tabs/store'
+
+/** Agent runtimes with no login of their own — they need an injected AI config
+ *  to start (claude/codex carry their own CLI login). Mirrors the backend's
+ *  LOGINLESS_AGENTS; only these surface the credential picker. */
+const LOGINLESS_AGENTS = new Set(['opencode', 'pi'])
+
+/** Today's chat workspace tag — mirrors backend `todayChatTag` / `defaultTagFor`
+ *  (`chat-<month><day>`, en-US short month) so the composer can find the
+ *  workspace a send will reuse and detect its current credential. */
+function todayChatTag(): string {
+  const now = new Date()
+  const month = now.toLocaleString('en-US', { month: 'short' }).toLowerCase()
+  return `chat-${month}${now.getDate()}`
+}
 
 /** Glyph per agent CLI, for the runtime picker (claude/codex/opencode/pi). */
 const AGENT_ICONS: Record<string, LucideIcon> = {
@@ -36,7 +58,8 @@ const AGENT_ICONS: Record<string, LucideIcon> = {
  */
 export function ChatLandingPage() {
   const { t } = useTranslation()
-  const { quickChat, agents } = useWorkspaces()
+  const { quickChat, agents, workspaces } = useWorkspaces()
+  const openOrFocus = useWorkspace((s) => s.openOrFocus)
 
   // The selectable agent runtimes = the agent CLIs (the bare shell has no agent
   // loop, so it can't be seeded with a first message).
@@ -73,7 +96,87 @@ export function ChatLandingPage() {
   const selectedMissing = selectedInfo != null && !isInstalled(selectedInfo)
   const installHint = selectedInfo ? installHintFor(selectedInfo.id) : undefined
 
-  const canSend = value.trim().length > 0 && !launching
+  // ── Loginless-runtime credential picker (opencode/pi) ─────────────────────
+  // opencode/pi have no login of their own, so a quick-chat send must seed them
+  // with a vault credential. claude/codex skip all of this (own CLI login).
+  const needsCred = effectiveAgent !== null && LOGINLESS_AGENTS.has(effectiveAgent)
+  // The loginless-runtime credential set (null = not yet loaded). opencode and
+  // pi are both provider-agnostic and share one compatibility set (any wire), so
+  // a single preloaded list serves both — see the mount-time fetch below.
+  const [creds, setCreds] = useState<SavedCredential[] | null>(null)
+  // The cred the user explicitly picked (null = use the default below).
+  const [pickedCred, setPickedCred] = useState<string | null>(null)
+  // The cred today's chat workspace is already configured with, if it exists.
+  const [detectedCred, setDetectedCred] = useState<string | null>(null)
+  const [credMenuOpen, setCredMenuOpen] = useState(false)
+  const credBoxRef = useRef<HTMLDivElement>(null)
+
+  // Today's chat workspace (the one a send reuses), if already created.
+  const todaysChat = useMemo(
+    () => workspaces.find((w) => w.template === 'chat' && w.tag === todayChatTag()) ?? null,
+    [workspaces],
+  )
+
+  // Preload the loginless credential set ONCE on mount — NOT gated on the
+  // selected agent. Previously this fired only after the agents list resolved
+  // and the user landed on opencode/pi, so the dropdown's data was a second,
+  // late-starting request that visibly lagged behind the agent button (a
+  // request waterfall). Fetching at mount runs it in parallel with the agents
+  // load, so the picker is ready the instant opencode/pi is chosen. opencode and
+  // pi share the same compatibility (any configured wire), so one fetch covers
+  // both; claude/codex never show the picker.
+  useEffect(() => {
+    let live = true
+    listAgentCredentials('opencode')
+      .then((list) => { if (live) setCreds(list) })
+      .catch(() => { if (live) setCreds([]) })
+    return () => { live = false }
+  }, [])
+
+  // Detect today's workspace's current cred for this runtime (for the default
+  // selection + the overwrite notice). Only when the workspace already exists.
+  useEffect(() => {
+    if (!needsCred || effectiveAgent === null || todaysChat === null) {
+      setDetectedCred(null)
+      return
+    }
+    let live = true
+    detectWorkspaceCredential(todaysChat.id, effectiveAgent)
+      .then((r) => { if (live) setDetectedCred(r.slug) })
+      .catch(() => { if (live) setDetectedCred(null) })
+    return () => { live = false }
+  }, [needsCred, effectiveAgent, todaysChat])
+
+  const noCreds = needsCred && creds !== null && creds.length === 0
+  // Effective cred = explicit pick, else what the workspace already uses, else
+  // the first compatible one. Mirrors the backend's resolution order.
+  const effectiveCred =
+    pickedCred ??
+    (detectedCred && creds?.some((c) => c.slug === detectedCred) ? detectedCred : null) ??
+    creds?.[0]?.slug ??
+    null
+  const credInfo = creds?.find((c) => c.slug === effectiveCred) ?? null
+  // Warn when sending will overwrite the workspace's existing cred with a
+  // different one (only meaningful once today's workspace exists).
+  const willOverwrite =
+    needsCred && detectedCred !== null && effectiveCred !== null && effectiveCred !== detectedCred
+
+  useEffect(() => {
+    if (!credMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (credBoxRef.current && !credBoxRef.current.contains(e.target as Node)) {
+        setCredMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [credMenuOpen])
+
+  const goConfigureProvider = () => {
+    openOrFocus({ kind: 'settings', params: { category: 'ai-provider' } })
+  }
+
+  const canSend = value.trim().length > 0 && !launching && !noCreds
 
   // Close the agent menu on an outside click.
   useEffect(() => {
@@ -90,14 +193,29 @@ export function ChatLandingPage() {
   const submit = async () => {
     const prompt = value.trim()
     if (!prompt || launching) return
+    // A loginless runtime with no configured provider can't launch — send the
+    // user to set one up instead of spawning an agent that'll die immediately.
+    if (noCreds) {
+      goConfigureProvider()
+      return
+    }
     setError(null)
     setLaunching(true)
     try {
       // On success this focuses the new session's terminal tab; the landing tab
       // stays open in the background, so clear it for next time.
-      await quickChat(prompt, effectiveAgent ?? undefined)
+      await quickChat(
+        prompt,
+        effectiveAgent ?? undefined,
+        needsCred ? (effectiveCred ?? undefined) : undefined,
+      )
       setValue('')
     } catch (err) {
+      // Backend says no compatible credential — bounce to the provider settings.
+      if (err instanceof QuickChatError && err.code === 'no_ai_credential') {
+        goConfigureProvider()
+        return
+      }
       console.error('chatLanding.quick_chat_failed', err)
       setError(t('chatLanding.error'))
     } finally {
@@ -204,6 +322,62 @@ export function ChatLandingPage() {
                   </div>
                 )}
               </div>
+
+              {/* Credential picker — only for loginless runtimes (opencode/pi),
+                  which can't start without an injected provider. When none is
+                  configured, the pill becomes a shortcut to set one up. */}
+              {needsCred && noCreds && (
+                <button
+                  type="button"
+                  onClick={goConfigureProvider}
+                  className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md transition-colors hover:bg-amber-500/20"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  {t('chatLanding.configureProvider')}
+                </button>
+              )}
+              {needsCred && !noCreds && creds && creds.length > 0 && (
+                <div ref={credBoxRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setCredMenuOpen((o) => !o)}
+                    aria-haspopup="menu"
+                    aria-expanded={credMenuOpen}
+                    aria-label={t('chatLanding.selectCredential')}
+                    className="inline-flex items-center gap-1.5 text-[11px] text-text-muted bg-bg-tertiary px-2 py-1 rounded-md transition-colors hover:text-text"
+                  >
+                    <KeyRound className="w-3 h-3" />
+                    {credInfo?.slug ?? t('chatLanding.selectCredential')}
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                  </button>
+                  {credMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute bottom-full left-0 mb-1 min-w-[180px] py-1 bg-bg-secondary border border-border/70 rounded-lg shadow-lg z-10"
+                    >
+                      {creds.map((cr) => {
+                        const active = cr.slug === effectiveCred
+                        return (
+                          <button
+                            key={cr.slug}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setPickedCred(cr.slug)
+                              setCredMenuOpen(false)
+                            }}
+                            className={`w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:bg-bg-tertiary ${active ? 'text-accent' : 'text-text'}`}
+                          >
+                            <span className="flex-1 truncate">{cr.slug}</span>
+                            <span className="text-[10px] text-text-muted/70 shrink-0">{cr.vendor}</span>
+                            {active && <Check className="w-3.5 h-3.5 shrink-0" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <button
@@ -269,6 +443,32 @@ export function ChatLandingPage() {
             )}
           </div>
         ) : null}
+
+        {/* Loginless runtime has no provider configured — the conversion
+            dead-end. Guide the user to set one up instead of a silent failure. */}
+        {noCreds && selectedInfo && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-[12px] space-y-1.5">
+            <p className="text-text-muted">
+              {t('chatLanding.noCredBody', { name: selectedInfo.displayName })}
+            </p>
+            <button
+              type="button"
+              onClick={goConfigureProvider}
+              className="inline-flex items-center gap-1.5 text-accent hover:underline"
+            >
+              <KeyRound className="w-3 h-3" />
+              {t('chatLanding.configureProvider')} ↗
+            </button>
+          </div>
+        )}
+
+        {/* The selected cred differs from the one today's workspace already uses
+            — sending switches it. A notice, not a block (the user chose it). */}
+        {willOverwrite && credInfo && (
+          <div className="rounded-lg border border-border/60 bg-bg-secondary/60 px-3 py-2 text-[12px] text-text-muted">
+            {t('chatLanding.credOverwrite', { from: detectedCred ?? '', to: credInfo.slug })}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 px-1">
           <span className="text-[11px] text-text-muted/70">{t('chatLanding.examplesLabel')}</span>

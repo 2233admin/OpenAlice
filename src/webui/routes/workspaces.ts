@@ -28,8 +28,23 @@ import type { SessionRecord } from '../../workspaces/session-registry.js';
 import type { WorkspaceMeta } from '../../workspaces/workspace-registry.js';
 import { HeadlessCapacityError, resumeFromRecord, type SessionFactoryContext, type WorkspaceService } from '../../workspaces/service.js';
 import type { WorkspaceAiCred } from '../../workspaces/cli-adapter.js';
-import { addCredential, readCredentials, credentialWires, credentialWireShapeEnum, type Credential } from '../../core/config.js';
+import { addCredential, readCredentials, setCredentialLastModel, credentialWires, credentialWireShapeEnum, type Credential } from '../../core/config.js';
 import { inferCredentialVendor, resolveAnthropicAuthMode } from '../../core/credential-inference.js';
+import {
+  compatibleCredentials,
+  matchCredentialByApiKey,
+  resolveInjectionModel,
+  credentialToWorkspaceAiCred,
+} from '../../workspaces/credential-injection.js';
+
+/**
+ * Agent runtimes that have NO login of their own (provider-agnostic) — they
+ * cannot start without an injected AI config. claude/codex run on their own CLI
+ * login, so quick-chat leaves them alone; opencode/pi must be seeded with a
+ * vault credential or they ENOENT-die at spawn. Keep in sync with the dropdown's
+ * visibility on the quick-chat composer.
+ */
+const LOGINLESS_AGENTS = new Set(['opencode', 'pi']);
 
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -251,6 +266,72 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       return { ok: false, status, body: { error: created.code, message: created.message } };
     }
     return { ok: true, meta: created.workspace };
+  };
+
+  // Detect which vault credential a workspace's loginless agent is currently
+  // configured with (null when none / hand-edited). The "which cred is this
+  // workspace using" probe the overwrite-notice and reuse-default both build on.
+  const detectWorkspaceCred = async (
+    meta: WorkspaceMeta,
+    agentId: string,
+    credentials: Record<string, Credential>,
+  ): Promise<{ slug: string; model: string | null } | null> => {
+    const adapter = svc.adapters.get(agentId);
+    if (!adapter?.readAiConfig) return null;
+    const cfg = await adapter.readAiConfig(meta.dir).catch(() => null);
+    if (!cfg) return null;
+    const slug = matchCredentialByApiKey(credentials, cfg.apiKey);
+    return slug ? { slug, model: cfg.model ?? null } : null;
+  };
+
+  // Seed a loginless agent (opencode/pi) with a vault credential before it
+  // spawns — claude/codex carry their own CLI login and never reach here. Picks
+  // the user's choice, else the cred this workspace already uses, else the first
+  // compatible one; writes the agent's native AI-config and remembers the model.
+  // Returns an HTTP-mappable error only for the dead-end case (no compatible
+  // credential at all), so the composer can bounce the user to Settings.
+  const injectLoginlessCredential = async (
+    meta: WorkspaceMeta,
+    agentId: string,
+    pickedSlug: string | undefined,
+  ): Promise<{ ok: true } | { ok: false; status: number; body: { error: string; agent: string; settingsTarget: string } }> => {
+    const adapter = svc.adapters.get(agentId);
+    if (!adapter?.writeAiConfig) return { ok: true }; // not a configurable agent — let spawn proceed
+    const credentials = await readCredentials();
+    const compatible = compatibleCredentials(credentials, agentId);
+    if (compatible.length === 0) {
+      return { ok: false, status: 400, body: { error: 'no_ai_credential', agent: agentId, settingsTarget: 'ai-provider' } };
+    }
+    const compatMap = new Map(compatible);
+    const detected = await detectWorkspaceCred(meta, agentId, credentials);
+    const chosenSlug =
+      (pickedSlug && compatMap.has(pickedSlug) ? pickedSlug : undefined) ??
+      (detected && compatMap.has(detected.slug) ? detected.slug : undefined) ??
+      compatible[0][0];
+    const cred = compatMap.get(chosenSlug);
+    if (!cred) return { ok: true };
+    const model = resolveInjectionModel(cred);
+    const wsCred = credentialToWorkspaceAiCred(cred, agentId, model ? { model } : {});
+    if (!wsCred) {
+      // compatibleCredentials guarantees a wire, so this is unreachable — but a
+      // loud skip beats injecting a mismatched shape.
+      launcherLogger.warn('quick_chat.cred_inject_incompatible', { agent: agentId, slug: chosenSlug });
+      return { ok: true };
+    }
+    try {
+      await adapter.writeAiConfig(meta.dir, wsCred);
+      if (model) await setCredentialLastModel(chosenSlug, model).catch(() => undefined);
+      launcherLogger.info('quick_chat.cred_injected', {
+        id: meta.id, agent: agentId, slug: chosenSlug,
+        ...(model ? { model } : {}),
+        ...(detected && detected.slug !== chosenSlug ? { replaced: detected.slug } : {}),
+      });
+    } catch (err) {
+      // Best-effort — a write failure shouldn't block the launch; the agent will
+      // surface its own missing-config error in the terminal.
+      launcherLogger.warn('quick_chat.cred_inject_failed', { id: meta.id, agent: agentId, slug: chosenSlug, err });
+    }
+    return { ok: true };
   };
 
   // ── templates / agents ───────────────────────────────────────────────────
@@ -519,6 +600,7 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
   app.post('/quick-chat', async (c) => {
     let prompt: string;
     let agentId: string | undefined;
+    let credentialSlug: string | undefined;
     try {
       const body = await safeJson(c);
       const fields = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
@@ -528,6 +610,10 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       prompt = seed.prompt;
       const rawAgent = fields['agent'];
       if (typeof rawAgent === 'string' && rawAgent.length > 0) agentId = rawAgent;
+      // Optional: which vault credential to seed a loginless runtime with. Only
+      // consulted for opencode/pi; claude/codex ignore it (own login).
+      const rawSlug = fields['credentialSlug'];
+      if (typeof rawSlug === 'string' && rawSlug.length > 0) credentialSlug = rawSlug;
     } catch (err) {
       return c.json({ error: 'bad_request', message: (err as Error).message }, 400);
     }
@@ -544,6 +630,16 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     const target = await run;
     if (!target.ok) return c.json(target.body, target.status as 400 | 409 | 500);
     const meta = target.meta;
+
+    // A loginless runtime (opencode/pi) can't start without an AI config — seed
+    // it from the vault before spawn. The dead-end (no compatible credential at
+    // all) returns 400 no_ai_credential so the composer bounces to Settings
+    // instead of spawning an agent that'll instantly die on a missing key.
+    const effectiveAgent = svc.resolveAdapter(meta, agentId).id;
+    if (LOGINLESS_AGENTS.has(effectiveAgent)) {
+      const inject = await injectLoginlessCredential(meta, effectiveAgent, credentialSlug);
+      if (!inject.ok) return c.json(inject.body, inject.status as 400);
+    }
 
     const spawn = await spawnInteractiveSession(meta, {
       ...(agentId !== undefined ? { agentId } : {}),
@@ -1053,12 +1149,20 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
   app.get('/credentials', async (c) => {
     try {
       const credentials = await readCredentials();
-      const list = Object.entries(credentials).map(([slug, cred]) => ({
+      // `?agent=<id>` filters to the credentials that agent can actually be
+      // driven by (its wire shapes) — the quick-chat runtime dropdown uses this
+      // so it never offers a cred the agent can't speak. apiKey omitted in this
+      // mode (the dropdown only needs to label + pick), kept for the modal's
+      // unfiltered "load saved" picker.
+      const agent = c.req.query('agent');
+      const entries = agent ? compatibleCredentials(credentials, agent) : Object.entries(credentials);
+      const list = entries.map(([slug, cred]) => ({
         slug,
         vendor: cred.vendor,
         authType: cred.authType,
         wires: credentialWires(cred), // shape → endpoint; the modal picks one per agent
-        apiKey: cred.apiKey ?? null,
+        ...(cred.lastModel ? { lastModel: cred.lastModel } : {}),
+        ...(agent ? {} : { apiKey: cred.apiKey ?? null }),
       }));
       return c.json({ credentials: list });
     } catch (err) {
@@ -1114,6 +1218,26 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     }
   });
 
+  // Which vault credential this workspace's agent is currently configured with
+  // (slug + model), or null. Feeds the quick-chat composer's overwrite notice:
+  // "this workspace uses X — sending with Y will switch it". Detection only —
+  // never mutates.
+  app.get('/:id/agent-config/:agent/credential', async (c) => {
+    const id = c.req.param('id');
+    const agent = c.req.param('agent');
+    if (!validId(id)) return c.json({ error: 'not_found' }, 404);
+    const meta = svc.registry.get(id);
+    if (!meta) return c.json({ error: 'not_found' }, 404);
+    try {
+      const detected = await detectWorkspaceCred(meta, agent, await readCredentials());
+      return c.json({ slug: detected?.slug ?? null, model: detected?.model ?? null });
+    } catch (err) {
+      if (err instanceof PathTraversal) return c.json({ error: 'invalid_path' }, 400);
+      launcherLogger.warn('agent_config.detect_cred_failed', { id, agent, err });
+      return c.json({ slug: null, model: null });
+    }
+  });
+
   app.put('/:id/agent-config/:agent', async (c) => {
     const id = c.req.param('id');
     const agent = c.req.param('agent');
@@ -1130,6 +1254,17 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       const adapter = svc.adapters.get(agent);
       if (!adapter?.writeAiConfig) return c.json({ error: 'unknown_agent' }, 400);
       await adapter.writeAiConfig(meta.dir, cfg);
+      // Remember an explicit model choice on the originating vault credential
+      // (matched by apiKey) so quick-chat can reuse it without re-prompting.
+      // Best-effort: the config was already written; a miss here is cosmetic.
+      if (cfg.apiKey && cfg.model) {
+        try {
+          const slug = matchCredentialByApiKey(await readCredentials(), cfg.apiKey);
+          if (slug) await setCredentialLastModel(slug, cfg.model);
+        } catch (err) {
+          launcherLogger.warn('agent_config.last_model_record_failed', { id, agent, err });
+        }
+      }
       launcherLogger.info('agent_config.saved', { id, agent });
       return c.json({ ok: true });
     } catch (err) {
