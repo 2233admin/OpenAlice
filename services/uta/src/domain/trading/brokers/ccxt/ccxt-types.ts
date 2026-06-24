@@ -7,6 +7,10 @@ export interface CcxtBrokerConfig {
   sandbox: boolean
   demoTrading?: boolean
   options?: Record<string, unknown>
+  /** CCXT Node proxy options. Prefer env vars for machine-local routing. */
+  httpProxy?: string
+  httpsProxy?: string
+  socksProxy?: string
   // CCXT standard credential fields (all optional — each exchange requires a different subset)
   apiKey?: string
   secret?: string

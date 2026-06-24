@@ -5,7 +5,7 @@
  * Tests focus on pure logic: searchContracts sorting/filtering, cancelOrder cache,
  * placeOrder notional conversion, and the constructor error path.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Decimal from 'decimal.js'
 import { Contract, Order, UNSET_DOUBLE, UNSET_DECIMAL } from '@traderalice/ibkr'
 
@@ -44,6 +44,7 @@ vi.mock('ccxt', () => {
   }
 })
 
+import ccxt from 'ccxt'
 import { CcxtBroker } from './CcxtBroker.js'
 import '../../contract-ext.js'
 
@@ -91,9 +92,37 @@ function setInitialized(acc: CcxtBroker, markets: Record<string, any>) {
   ;(acc as any).exchange.markets = markets
 }
 
+function mockExchangeCtor() {
+  return (ccxt as unknown as { bybit: ReturnType<typeof vi.fn> }).bybit
+}
+
 // ==================== Constructor ====================
 
 describe('CcxtBroker — constructor', () => {
+  const savedEnv = {
+    CCXT_HTTPS_PROXY: process.env['CCXT_HTTPS_PROXY'],
+    CCXT_HTTP_PROXY: process.env['CCXT_HTTP_PROXY'],
+    CCXT_SOCKS_PROXY: process.env['CCXT_SOCKS_PROXY'],
+    HTTPS_PROXY: process.env['HTTPS_PROXY'],
+    HTTP_PROXY: process.env['HTTP_PROXY'],
+    ALL_PROXY: process.env['ALL_PROXY'],
+    https_proxy: process.env['https_proxy'],
+    http_proxy: process.env['http_proxy'],
+    all_proxy: process.env['all_proxy'],
+  }
+
+  beforeEach(() => {
+    mockExchangeCtor().mockClear()
+    for (const key of Object.keys(savedEnv)) delete process.env[key]
+  })
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
   it('throws for unknown exchange', () => {
     expect(() => new CcxtBroker({ exchange: 'unknownxyz', apiKey: 'k', secret: 's', sandbox: false })).toThrow(
       'Unknown CCXT exchange',
@@ -108,6 +137,56 @@ describe('CcxtBroker — constructor', () => {
   it('defaults id to exchange-main', () => {
     const acc = makeAccount()
     expect(acc.id).toBe('bybit-main')
+  })
+
+  it('passes CCXT_HTTPS_PROXY to the exchange constructor', () => {
+    process.env['CCXT_HTTPS_PROXY'] = 'http://127.0.0.1:7897'
+
+    makeAccount()
+
+    expect(mockExchangeCtor()).toHaveBeenLastCalledWith(expect.objectContaining({
+      httpsProxy: 'http://127.0.0.1:7897',
+    }))
+  })
+
+  it('lets explicit broker proxy config override env proxy config', () => {
+    process.env['CCXT_HTTPS_PROXY'] = 'http://127.0.0.1:7897'
+
+    new CcxtBroker({
+      exchange: 'bybit',
+      apiKey: 'k',
+      secret: 's',
+      sandbox: false,
+      httpsProxy: 'http://127.0.0.1:8888',
+    })
+
+    expect(mockExchangeCtor()).toHaveBeenLastCalledWith(expect.objectContaining({
+      httpsProxy: 'http://127.0.0.1:8888',
+    }))
+  })
+
+  it('passes only one proxy option when multiple env proxy vars exist', () => {
+    process.env['CCXT_HTTPS_PROXY'] = 'http://127.0.0.1:7897'
+    process.env['HTTP_PROXY'] = 'http://127.0.0.1:8080'
+    process.env['ALL_PROXY'] = 'socks5://127.0.0.1:1080'
+
+    makeAccount()
+
+    expect(mockExchangeCtor()).toHaveBeenLastCalledWith({
+      apiKey: 'k',
+      secret: 's',
+      httpsProxy: 'http://127.0.0.1:7897',
+    })
+  })
+
+  it('does not pass proxy options when none are configured', () => {
+    makeAccount()
+
+    expect(mockExchangeCtor()).toHaveBeenLastCalledWith(expect.not.objectContaining({
+      httpProxy: expect.any(String),
+      httpsProxy: expect.any(String),
+      socksProxy: expect.any(String),
+    }))
   })
 })
 

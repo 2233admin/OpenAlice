@@ -71,6 +71,43 @@ const BALANCE_RESERVED_KEYS = new Set(['free', 'used', 'total', 'info', 'timesta
 // CCXT exchanges; USDC/USD as fallbacks.
 const SPOT_QUOTE_PREFERENCE = ['USDT', 'USDC', 'USD'] as const
 
+function firstNonBlank(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (trimmed) return trimmed
+  }
+  return undefined
+}
+
+function resolveProxyOptions(config: CcxtBrokerConfig): Record<string, string> {
+  // CCXT rejects multiple proxy knobs at once, so choose one effective route.
+  const explicitHttpsProxy = firstNonBlank(config.httpsProxy)
+  if (explicitHttpsProxy) return { httpsProxy: explicitHttpsProxy }
+  const explicitHttpProxy = firstNonBlank(config.httpProxy)
+  if (explicitHttpProxy) return { httpProxy: explicitHttpProxy }
+  const explicitSocksProxy = firstNonBlank(config.socksProxy)
+  if (explicitSocksProxy) return { socksProxy: explicitSocksProxy }
+
+  const envHttpsProxy = firstNonBlank(
+    process.env['CCXT_HTTPS_PROXY'],
+    process.env['HTTPS_PROXY'],
+    process.env['https_proxy'],
+    process.env['CCXT_HTTP_PROXY'],
+    process.env['HTTP_PROXY'],
+    process.env['http_proxy'],
+  )
+  if (envHttpsProxy) return { httpsProxy: envHttpsProxy }
+
+  const envSocksProxy = firstNonBlank(
+    process.env['CCXT_SOCKS_PROXY'],
+    process.env['ALL_PROXY'],
+    process.env['all_proxy'],
+  )
+  if (envSocksProxy) return { socksProxy: envSocksProxy }
+
+  return {}
+}
+
 /** Normalize stablecoin quote currencies to 'USD' so they don't trigger FX conversion. */
 function normalizeQuoteCurrency(quote: string): string {
   return STABLECOIN_TO_USD.has(quote.toUpperCase()) ? 'USD' : quote
@@ -97,6 +134,9 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     sandbox: z.boolean().default(false),
     demoTrading: z.boolean().default(false),
     options: z.record(z.string(), z.unknown()).optional(),
+    httpProxy: z.string().trim().min(1).optional(),
+    httpsProxy: z.string().trim().min(1).optional(),
+    socksProxy: z.string().trim().min(1).optional(),
     // All 10 CCXT standard credential fields, all optional.
     // Each exchange requires its own subset (read via Exchange.requiredCredentials).
     apiKey: z.string().optional(),
@@ -133,6 +173,9 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       sandbox: bc.sandbox,
       demoTrading: bc.demoTrading,
       options: bc.options,
+      httpProxy: bc.httpProxy,
+      httpsProxy: bc.httpsProxy,
+      socksProxy: bc.socksProxy,
       apiKey: bc.apiKey,
       // Accept both `secret` (CCXT-native) and legacy `apiSecret`
       secret: bc.secret ?? bc.apiSecret,
@@ -182,7 +225,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     // has its own (e.g. bybit: spot/linear/inverse/option, hyperliquid: spot/swap/hip3).
     // The init() wrapper below handles option-skipping uniformly via type filtering.
     const cfgRecord = config as unknown as Record<string, unknown>
-    const credentials: Record<string, unknown> = {}
+    const credentials: Record<string, unknown> = resolveProxyOptions(config)
     if (config.options !== undefined) credentials.options = config.options
     for (const field of CCXT_CREDENTIAL_FIELDS) {
       const v = cfgRecord[field]
