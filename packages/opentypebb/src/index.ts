@@ -34,7 +34,7 @@ export { Router, type CommandDef, type CommandHandler } from './core/app/router.
 
 // Utilities
 export { amakeRequest, applyAliases, replaceEmptyStrings, buildQueryString } from './core/provider/utils/helpers.js'
-export { OpenBBError, EmptyDataError, UnauthorizedError, NetworkUnreachableError } from './core/provider/utils/errors.js'
+export { OpenBBError, EmptyDataError, UnauthorizedError, NetworkUnreachableError, RateLimitedError } from './core/provider/utils/errors.js'
 
 // App loader — convenience functions to create a fully-loaded system
 export { createRegistry, createExecutor, loadAllRouters } from './core/api/app-loader.js'

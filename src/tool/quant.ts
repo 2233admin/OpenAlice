@@ -81,7 +81,12 @@ or compare sources in one script, e.g. basis check:
   a.close[-1] - b.close[-1]
 
 Returns { value, dataRange } on success, or { error: { kind, message, suggestion } }
-on failure — read the error and fix the script (it pinpoints the problem).`,
+on failure. Most kinds are script problems — read the error and fix the script (it
+pinpoints the problem). The exception is kind:"data-source": the K-line fetch itself
+failed (vendor rate-limited/blocked this client, network down, or a bad barId) — that
+is NOT a script bug. Do not rewrite the expression; follow the suggestion (retry later,
+switch source, or fix the barId), and tell the user if data is simply unavailable.`,
+
       inputSchema: z.object({
         script: z.string().describe('The quant script (let-bindings + a final result expression).'),
         precision: z.number().int().min(0).max(10).optional().describe('Decimal places (default 4).'),
