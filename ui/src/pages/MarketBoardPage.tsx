@@ -4,6 +4,7 @@ import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, Tooltip } from 'rec
 import { useReferenceBoard } from '../components/market/useReferenceBoard'
 import { BoardMeta } from '../components/market/BoardMeta'
 import { PageHeader } from '../components/PageHeader'
+import { CenteredLoading } from '../components/StateViews'
 import { SeriesCard } from '../components/market/SeriesCard'
 import {
   referenceApi,
@@ -95,7 +96,7 @@ function MoversBoardView() {
           ))}
         </div>
 
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}
@@ -199,7 +200,7 @@ function CalendarBoardView() {
           ))}
         </div>
 
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}
@@ -333,7 +334,7 @@ function MacroBoardView() {
         live={{ lastUpdated: updatedAt }}
       />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 min-h-0">
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}
@@ -390,7 +391,7 @@ function TermStructureBoardView() {
         live={{ lastUpdated: updatedAt }}
       />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 flex flex-col gap-6 min-h-0">
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}
@@ -473,7 +474,7 @@ function GlobalMacroBoardView() {
         live={{ lastUpdated: updatedAt }}
       />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 min-h-0">
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}
@@ -542,7 +543,7 @@ function ShippingBoardView() {
         live={{ lastUpdated: updatedAt }}
       />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 min-h-0">
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}
@@ -611,7 +612,7 @@ function FedBoardView() {
         live={{ lastUpdated: updatedAt }}
       />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 flex flex-col gap-5 min-h-0">
-        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {loading && !data && <CenteredLoading label={t('common.loading')} />}
         {error && (
           <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
         )}

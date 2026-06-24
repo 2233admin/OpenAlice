@@ -158,7 +158,7 @@ function Detail({ entry, onDelete }: { entry: InboxEntry; onDelete: () => void }
   }
 
   return (
-    <div className="max-w-[820px] mx-auto py-6 px-4 md:px-8">
+    <div className="max-w-[1040px] mx-auto py-6 px-4 md:px-8">
       {/* Header: workspace label · timestamp · delete. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span

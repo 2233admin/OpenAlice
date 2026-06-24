@@ -25,6 +25,21 @@ export function PageLoading() {
   )
 }
 
+// ==================== CenteredLoading ====================
+
+/** A small spinner + optional label, horizontally centered with vertical
+ *  breathing room. For content blocks that aren't a full-height flex column
+ *  (e.g. a market board section) where `PageLoading`'s flex-1 wouldn't
+ *  expand. */
+export function CenteredLoading({ label }: { label?: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2.5 py-20 text-[13px] text-text-muted">
+      <Spinner size="sm" />
+      {label && <span>{label}</span>}
+    </div>
+  )
+}
+
 // ==================== EmptyState ====================
 
 interface EmptyStateProps {

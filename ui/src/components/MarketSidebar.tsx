@@ -7,6 +7,7 @@ import { useWatchlist } from '../tabs/watchlist-store'
 import { getFocusedTab, type ViewSpec } from '../tabs/types'
 import { SidebarRow } from './SidebarRow'
 import { SidebarSectionHeader } from './SidebarSectionHeader'
+import { Spinner } from './StateViews'
 
 const ASSET_CLASS_COLORS: Record<string, string> = {
   equity: 'bg-accent/15 text-accent',
@@ -132,6 +133,12 @@ export function MarketSidebar() {
             <SidebarSectionHeader>
               {t('market.searchResults')}{loading ? ` (${t('common.searching')})` : results.length ? ` (${results.length})` : ''}
             </SidebarSectionHeader>
+            {loading && (
+              <div className="px-3 py-2 flex items-center gap-2 text-[12px] text-text-muted/60">
+                <Spinner size="sm" />
+                <span>{t('common.searching')}</span>
+              </div>
+            )}
             {!loading && results.length === 0 && (
               <p className="px-3 py-2 text-[12px] text-text-muted/70 leading-relaxed">{t('market.noMatches')}</p>
             )}
