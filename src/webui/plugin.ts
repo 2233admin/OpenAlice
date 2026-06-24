@@ -12,7 +12,7 @@ import { createChannelsRoutes, type SSEClient } from './routes/channels.js'
 import { createConfigRoutes, createMarketDataRoutes } from './routes/config.js'
 import { createEventsRoutes } from './routes/events.js'
 import { createTopologyRoutes } from './routes/topology.js'
-import { createCronRoutes } from './routes/cron.js'
+import { createScheduleRoutes } from './routes/schedule.js'
 import { createTradingProxyRoutes } from './routes/trading-proxy.js'
 import { createTradingConfigRoutes } from './routes/trading-config.js'
 import { createToolsRoutes } from './routes/tools.js'
@@ -189,7 +189,6 @@ export class WebPlugin implements Plugin {
     app.route('/api/market-data', createMarketDataRoutes(ctx))
     app.route('/api/events', createEventsRoutes({ ctx, ingestProducer: this.ingestProducer }))
     app.route('/api/topology', createTopologyRoutes(ctx))
-    app.route('/api/cron', createCronRoutes(ctx))
     app.route('/api/trading/config', createTradingConfigRoutes(ctx))
     // `/api/trading/*` and `/api/simulator/*` are proxied to the co-located
     // UTA service (decision #2 of UTA-split v1 — UI stays single-origin).
@@ -220,6 +219,7 @@ export class WebPlugin implements Plugin {
     if (this.workspaceServiceRef) this.workspaceServiceRef.current = this.workspaceService
     app.route('/api/workspaces', createWorkspaceRoutes(this.workspaceService))
     app.route('/api/headless', createHeadlessRoutes(this.workspaceService))
+    app.route('/api/schedule', createScheduleRoutes(this.workspaceService))
     // Tracked entities — read surface for the Tracked tab. Mounted here (not
     // with the other /api/* routes above) because backlink scanning needs the
     // workspace registry, which only exists once workspaceService is created.

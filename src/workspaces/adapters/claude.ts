@@ -41,6 +41,7 @@ function projectKey(workspaceDir: string): string {
 export const claudeAdapter: CliAdapter = {
   id: 'claude',
   displayName: 'Claude Code',
+  binary: 'claude',
   namePrefix: 'c',
   capabilities: {
     parallelPerCwd: true,

@@ -21,7 +21,7 @@
 
 import type { ComponentType } from 'react'
 import { ChatChannelListContainer } from './components/ChatChannelListContainer'
-import { InboxSidebar } from './components/InboxSidebar'
+import { InboxSidebar, InboxViewToggle } from './components/InboxSidebar'
 import { TrackedSidebar } from './components/TrackedSidebar'
 import { WorkspacesSidebar } from './components/workspace/WorkspacesSidebar'
 import { PushApprovalPanel } from './components/PushApprovalPanel'
@@ -59,6 +59,7 @@ const SECTION_BY_KEY: Partial<Record<ActivitySection, SidebarSection>> = {
   inbox: {
     titleKey: 'nav.item.inbox',
     Secondary: InboxSidebar,
+    Actions: InboxViewToggle,
   },
   tracked: {
     titleKey: 'nav.item.tracked',

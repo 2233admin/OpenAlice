@@ -97,6 +97,14 @@ export interface CliAdapter {
   readonly id: string;                          // 'claude' | 'codex' | 'shell'
   readonly displayName: string;
   /**
+   * Canonical PATH binary name this adapter spawns (`claude`, `codex`,
+   * `opencode`, `pi`). Consumed by `agent-detect.ts` to tell the frontend
+   * whether the runtime is actually installed on the host. Omit for adapters
+   * that always resolve (e.g. `shell` runs `$SHELL`, present on any box) —
+   * those are reported as installed unconditionally.
+   */
+  readonly binary?: string;
+  /**
    * Short prefix used to name sessions (e.g. `c1`, `x1`, `sh1`). Helps scan a
    * mixed sidebar tree. Defaults to `id[0]` if omitted, but adapters whose
    * first character collides with another adapter (claude / codex both 'c')

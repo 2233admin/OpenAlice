@@ -463,7 +463,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
               value={form.model}
               suggestions={modelSuggestions}
               onChange={(v) => setForm({ ...form, model: v })}
-              placeholder={tab === 'claude' ? 'claude-sonnet-4-6' : tab === 'opencode' || tab === 'pi' ? 'deepseek-chat' : 'gpt-4o'}
+              placeholder={tab === 'claude' ? 'claude-opus-4-8' : tab === 'opencode' || tab === 'pi' ? 'deepseek-chat' : 'gpt-5.5'}
             />
             {modelSuggestions.length > 0 && (
               <p className="text-[11px] text-text-muted/70 mt-1">Suggestions from the matched provider — or type any model id.</p>

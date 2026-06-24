@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { formatRelativeTime } from '../lib/intl'
-import { ArrowRight, MessageSquare, Trash2 } from 'lucide-react'
+import { formatRelativeTime, getIntlLocale } from '../lib/intl'
+import { ArrowRight, ChevronRight, MessageSquare, Trash2 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { FileContentView } from '../components/FileContentView'
@@ -21,16 +21,18 @@ interface InboxPageProps {
 }
 
 /**
- * Inbox detail pane. Renders the selected entry's docs (live from
- * workspace) on top, comments (agent's markdown body) below — fixed
- * order, mirroring Linear's issue-body + activity layout.
+ * Inbox detail pane — renders a **single selected push**. The sidebar
+ * clusters pushes by workspace (visual kinship) but each push stays its
+ * own entry, because a workspace's pushes are usually unrelated topics
+ * (we have no Issue layer to make them one thread) — merging them into a
+ * combined timeline read badly. So selection is a single entry, and this
+ * pane shows just that one: its docs (collapsed attachment cards) above
+ * its comment (markdown body), with a reply bar that jumps into the
+ * source workspace.
  *
- * Selection is owned by `useInboxSelection`; the sidebar drives it.
- * Read-state mutation happens in the sidebar at selection time — this
- * pane just renders whatever is selected. Delete is owned here (both
- * the button in the Detail header and the Delete/Backspace shortcut)
- * because it needs access to the full entry list to advance selection
- * to the next entry after removal.
+ * Selection (an entryId) is owned by `useInboxSelection`; the sidebar
+ * drives it and marks the entry read on select. Delete (header trash +
+ * page-level Delete/Backspace) advances selection to the next entry.
  */
 export function InboxPage({ visible }: InboxPageProps) {
   const { t } = useTranslation()
@@ -42,18 +44,15 @@ export function InboxPage({ visible }: InboxPageProps) {
 
   const selected = entries.find((e) => e.id === selectedId) ?? null
 
-  /** Hard-delete an entry. Optimistically removes from local state,
-   *  advances selection to the next-older entry (or previous if last),
-   *  fires the DELETE request, then forces a refresh to reconcile with
-   *  the server. Match Linear's "archive removes from view, focus
-   *  advances" feel — no confirmation dialog. */
+  /** Hard-delete an entry. Optimistically removes it, advances selection
+   *  to the next-older entry (or previous if last), fires the DELETE,
+   *  then refreshes to reconcile with the server. */
   const handleDelete = useCallback(async (id: string) => {
     const idx = entries.findIndex((e) => e.id === id)
     if (idx < 0) return
 
-    // entries is sorted newest-first; "the one after this" is the next
-    // older entry. Fall back to the previous (newer) if we deleted the
-    // tail; null if the list becomes empty.
+    // entries is newest-first; the "next" one is the next older entry.
+    // Fall back to the previous (newer) if we deleted the tail.
     const nextId = entries[idx + 1]?.id ?? entries[idx - 1]?.id ?? null
 
     removeInboxOptimistically(id)
@@ -67,15 +66,13 @@ export function InboxPage({ visible }: InboxPageProps) {
     try {
       await api.inbox.delete(id)
     } catch {
-      // best-effort — refreshInbox below will reconcile if the server
-      // disagreed (e.g. concurrent change re-introduced the entry).
+      // best-effort — refreshInbox below reconciles if the server disagreed.
     }
     refreshInbox()
   }, [entries, select, markRead])
 
-  // Delete / Backspace shortcut. Gated on `visible` so a background
-  // inbox tab doesn't intercept; gated on `selectedId` so the
-  // keypress only fires when there's something to delete.
+  // Delete / Backspace shortcut. Gated on `visible` (background inbox
+  // tabs must not intercept) and on a selected entry existing.
   useEffect(() => {
     if (!visible) return
     if (!selectedId) return
@@ -84,7 +81,6 @@ export function InboxPage({ visible }: InboxPageProps) {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
       e.preventDefault()
-      // selectedId is captured by the closure; safe to use.
       void handleDelete(selectedId!)
     }
     window.addEventListener('keydown', onKey)
@@ -107,7 +103,11 @@ export function InboxPage({ visible }: InboxPageProps) {
             {t('inbox.selectFromSidebar')}
           </div>
         ) : (
-          <Detail entry={selected} onDelete={() => handleDelete(selected.id)} />
+          <Detail
+            key={selected.id}
+            entry={selected}
+            onDelete={() => handleDelete(selected.id)}
+          />
         )}
       </div>
     </div>
@@ -120,15 +120,17 @@ function EmptyState() {
     <div className="px-6 py-16 text-center max-w-[520px] mx-auto">
       <div className="text-[15px] text-text mb-2">{t('inbox.noMessages')}</div>
       <p className="text-[13px] text-text-muted leading-relaxed">
-        Workspaces will push status updates here as they work — finished
-        analysis, blocked tasks, questions back to you. The integration
-        path is still being designed; for now you can seed entries via
-        <code className="mx-1 px-1 py-0.5 rounded bg-bg-tertiary text-[11px]">POST /api/inbox/seed</code>
-        for testing.
+        Workspaces push updates here as they work — finished analysis,
+        blocked tasks, questions back to you. An agent surfaces one by
+        calling the
+        <code className="mx-1 px-1 py-0.5 rounded bg-bg-tertiary text-[11px]">inbox_push</code>
+        tool from inside its workspace. Nothing to read yet.
       </p>
     </div>
   )
 }
+
+// ==================== Detail (single push) ====================
 
 function Detail({ entry, onDelete }: { entry: InboxEntry; onDelete: () => void }) {
   const { t } = useTranslation()
@@ -156,14 +158,8 @@ function Detail({ entry, onDelete }: { entry: InboxEntry; onDelete: () => void }
   }
 
   return (
-    <div className="max-w-[820px] mx-auto py-6 px-4 md:px-8">
-      {/* Header: workspace · timestamp · delete. Plain text label —
-       *  the primary navigation affordance sits at the bottom of the
-       *  comments thread (Linear-style reply input). Trash button is
-       *  always visible, muted by default with accent-red on hover —
-       *  Linear's archive affordance equivalent. Hard delete (no undo
-       *  modal); keyboard parity via Delete / Backspace at the page
-       *  level. */}
+    <div className="max-w-[1040px] mx-auto py-6 px-4 md:px-8">
+      {/* Header: workspace label · timestamp · delete. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span
           className={`text-[14px] font-medium ${
@@ -189,32 +185,37 @@ function Detail({ entry, onDelete }: { entry: InboxEntry; onDelete: () => void }
         </button>
       </div>
 
-      {/* Docs — top, live render from workspace */}
+      {/* Docs — collapsed attachment cards above the comment. */}
       {hasDocs && (
-        <div className="space-y-6">
-          {entry.docs!.map((doc) => (
-            <DocBlock key={doc.path} workspaceId={entry.workspaceId} doc={doc} />
-          ))}
-        </div>
-      )}
-
-      {/* Comments — bottom, agent's voice */}
-      {hasComments && (
-        <div className={`${hasDocs ? 'mt-8 pt-6 border-t border-border' : ''}`}>
+        <div>
           <div className="text-[11px] font-medium text-text-muted/60 uppercase tracking-wider mb-3">
-            {t('inbox.commentsSection')}
+            {t('inbox.documentsSection')}
           </div>
-          <MarkdownContent text={entry.comments!} />
+          <div className="space-y-3">
+            {entry.docs!.map((doc) => (
+              <DocBlock
+                key={doc.path}
+                workspaceId={entry.workspaceId}
+                doc={doc}
+                defaultExpanded={!hasComments}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Reply bar — the navigation entry point. Linear-style: a wide bar
-       *  appended to the comments thread, visually styled like a chat
-       *  input. The action isn't actually sending — clicking opens the
-       *  workspace tab + switches the sidebar so the user can pick a
-       *  session and chat back to the agent there. v2 could pre-fill the
-       *  workspace chat input with whatever the user types here; for v1
-       *  the bar is single-click navigation. */}
+      {/* Comment — the agent's voice; divider from the docs above. */}
+      {hasComments && (
+        <div className={`${hasDocs ? 'mt-6 pt-6 border-t border-border' : ''}`}>
+          <MarkdownContent
+            text={entry.comments!}
+            className="leading-relaxed text-text/90"
+          />
+        </div>
+      )}
+
+      {/* Reply bar — jumps into the workspace (single-click navigation; a
+       *  v2 could pre-fill the workspace chat input). */}
       <div className="mt-6">
         {wsAlive ? (
           <button
@@ -244,10 +245,20 @@ function Detail({ entry, onDelete }: { entry: InboxEntry; onDelete: () => void }
 
 // ==================== Doc block (live fetch from workspace) ====================
 
-function DocBlock({ workspaceId, doc }: { workspaceId: string; doc: InboxDoc }) {
+function DocBlock({
+  workspaceId, doc, defaultExpanded,
+}: {
+  workspaceId: string
+  doc: InboxDoc
+  defaultExpanded: boolean
+}) {
   const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [result, setResult] = useState<ReadFileResult | null>(null)
 
+  // Fetch on mount: the collapsed card shows a text preview, so we need the
+  // content up front. The same `result` then renders in full on expand —
+  // one fetch serves both states.
   useEffect(() => {
     let cancelled = false
     setResult(null)
@@ -257,27 +268,88 @@ function DocBlock({ workspaceId, doc }: { workspaceId: string; doc: InboxDoc }) 
     return () => { cancelled = true }
   }, [workspaceId, doc.path])
 
-  return (
-    <div className="rounded-lg border border-border bg-bg/50">
-      <div className="px-4 py-2 border-b border-border/50 flex items-center gap-2">
-        <span className="text-[11px] text-text-muted/70">📄</span>
-        <span className="text-[12px] font-mono text-text-muted">{doc.path}</span>
-      </div>
-      <div className="px-4 py-3">
-        {result === null ? (
-          <div className="text-[12px] text-text-muted">{t('common.loading')}</div>
-        ) : (
-          <FileContentView path={doc.path} result={result} />
-        )}
-      </div>
+  const preview = useMemo(() => buildDocPreview(result), [result])
+
+  const header = (
+    <div className="px-4 py-3 flex items-center gap-2.5">
+      <ChevronRight
+        size={15}
+        strokeWidth={2}
+        aria-hidden
+        className={`shrink-0 text-text-muted/70 transition-transform ${expanded ? 'rotate-90' : ''}`}
+      />
+      <span className="text-[12px]">📄</span>
+      <span className="flex-1 truncate text-[12px] font-mono text-text-muted">{doc.path}</span>
+      <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-muted/45">
+        {expanded ? t('inbox.docCollapse') : t('inbox.docExpand')}
+      </span>
     </div>
   )
+
+  return (
+    <div className="rounded-lg border border-border bg-bg/50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="w-full text-left bg-bg-tertiary/25 hover:bg-bg-tertiary/50 transition-colors"
+      >
+        {header}
+        {/* Collapsed: a short text preview so the card reads as openable
+         *  content rather than a bare filename. Hidden once expanded (the
+         *  full render takes over below). */}
+        {!expanded && (
+          <div className="pl-11 pr-4 pb-3 -mt-1.5 text-[12px] leading-relaxed text-text-muted/70 line-clamp-2">
+            {result === null ? t('common.loading') : preview || t('inbox.docNoPreview')}
+          </div>
+        )}
+      </button>
+      {expanded && (
+        <div className="px-4 py-3 border-t border-border/50">
+          {result === null ? (
+            <div className="text-[12px] text-text-muted">{t('common.loading')}</div>
+          ) : (
+            <FileContentView path={doc.path} result={result} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Build a short plain-text preview from a fetched doc, for the collapsed
+ *  card. Takes the first couple of non-empty lines and strips the most
+ *  common markdown leaders / inline markers so the snippet reads as prose.
+ *  Returns '' for non-ok results (loading / missing / too-large) — the
+ *  caller shows its own fallback. */
+function buildDocPreview(result: ReadFileResult | null): string {
+  if (!result || result.kind !== 'ok') return ''
+  const strip = (s: string): string =>
+    s
+      .replace(/^#{1,6}\s+/, '')        // heading markers
+      .replace(/^[>*\-+]\s+/, '')       // quote / list leaders
+      .replace(/[*_`]/g, '')            // emphasis / code ticks
+      .replace(/\[\[([^[\]]+)\]\]/g, '$1') // wikilinks → text
+      .trim()
+  const lines = result.content
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(strip)
+  // Single flowing snippet (title — first paragraph), clamped to 2 visual
+  // lines by the caller. A separator beats a newline here: `-webkit-line-
+  // clamp` leaves a faint sliver of a third line when fed hard breaks.
+  const joined = lines.join(' — ')
+  // ~100 chars keeps CJK-dense snippets within 2 lines, so the caller's
+  // `line-clamp-2` rarely has to bite (its cut leaves a faint sliver).
+  return joined.length > 100 ? joined.slice(0, 100).trimEnd() + '…' : joined
 }
 
 // ==================== Date formatting ====================
 
 function formatAbsolute(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
+  return new Date(ts).toLocaleString(getIntlLocale(), {
     month: 'short', day: 'numeric', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })

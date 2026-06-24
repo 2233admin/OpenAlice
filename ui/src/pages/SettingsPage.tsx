@@ -9,6 +9,32 @@ import { PageHeader } from '../components/PageHeader'
 import { PageLoading, EmptyState } from '../components/StateViews'
 import { useTranslation } from 'react-i18next'
 import { useLocale, useSetLocale, LOCALE_LABELS } from '../i18n/useLocale'
+import { useEditorTabsPref } from '../live/editor-tabs-pref'
+
+// ==================== Appearance ====================
+
+function AppearanceSection() {
+  const { t } = useTranslation()
+  const showEditorTabs = useEditorTabsPref((s) => s.showEditorTabs)
+  const setShowEditorTabs = useEditorTabsPref((s) => s.setShowEditorTabs)
+  return (
+    <ConfigSection title={t('settings.appearance.title')} description={t('settings.appearance.description')}>
+      <div className="flex items-center justify-between gap-4 py-1">
+        <div className="flex-1">
+          <span className="text-sm font-medium text-text">
+            {t('settings.appearance.showEditorTabs')}
+          </span>
+          <p className="text-[12px] text-text-muted mt-0.5 leading-relaxed">
+            {showEditorTabs
+              ? t('settings.appearance.showEditorTabsOn')
+              : t('settings.appearance.showEditorTabsOff')}
+          </p>
+        </div>
+        <Toggle checked={showEditorTabs} onChange={setShowEditorTabs} />
+      </div>
+    </ConfigSection>
+  )
+}
 
 // ==================== Language ====================
 
@@ -53,6 +79,9 @@ function SettingsSection() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-[880px] mx-auto">
+        {/* Appearance */}
+        <AppearanceSection />
+
         {/* Language */}
         <LanguageSection />
 

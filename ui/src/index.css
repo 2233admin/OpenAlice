@@ -258,6 +258,14 @@ body {
 }
 
 /* Markdown content inside assistant messages */
+/* Prose base size — the single knob for all markdown surfaces (chat,
+   inbox comment, doc preview, file viewer). Headings/lists use `em` so
+   they scale off this. Without it, markdown inherits the browser default
+   16px, which reads oversized next to the 12–13px UI chrome. Being
+   tuned empirically; candidate prose tier for the semantic scale. */
+.markdown-content {
+  font-size: 15px;
+}
 .markdown-content p {
   margin: 0.5em 0;
 }

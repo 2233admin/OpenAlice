@@ -138,6 +138,15 @@ export const credentialSchema = z.object({
   baseUrl: z.string().trim().transform((s) => s || undefined).optional(),
   /** @deprecated legacy single wire shape — superseded by `wires`. */
   wireShape: credentialWireShapeEnum.optional(),
+  /**
+   * The last model run against this key — a credential carries no model of its
+   * own (model is always a per-use choice), so quick-chat and the per-workspace
+   * config remember the user's last pick here to spare them re-typing it. Set on
+   * every config write that knows the slug; read as the injection default
+   * (falling back to the vendor's catalog flagship when absent). Optional ⇒ no
+   * migration; an old cred just has no remembered model until next write.
+   */
+  lastModel: z.string().optional(),
 })
 export type Credential = z.infer<typeof credentialSchema>
 
@@ -856,6 +865,21 @@ export async function addCredential(credential: Credential): Promise<string> {
   await mkdir(CONFIG_DIR, { recursive: true })
   await writeFile(resolve(CONFIG_DIR, 'ai-provider-manager.json'), JSON.stringify(config, null, 2) + '\n')
   return slug
+}
+
+/**
+ * Remember the model last run against a credential (see `lastModel`). No-ops
+ * silently when the slug is gone or the model is unchanged — it's a convenience
+ * memory, never load-bearing, so a miss must not break the caller's flow.
+ */
+export async function setCredentialLastModel(slug: string, model: string): Promise<void> {
+  if (!model) return
+  const config = await readAIProviderConfig()
+  const cred = config.credentials[slug]
+  if (!cred || cred.lastModel === model) return
+  config.credentials[slug] = { ...cred, lastModel: model }
+  await mkdir(CONFIG_DIR, { recursive: true })
+  await writeFile(resolve(CONFIG_DIR, 'ai-provider-manager.json'), JSON.stringify(config, null, 2) + '\n')
 }
 
 /** Delete a credential from the vault. */

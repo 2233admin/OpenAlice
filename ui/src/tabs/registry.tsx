@@ -69,10 +69,11 @@ const automationSectionTitle: Record<
   Extract<ViewSpec, { kind: 'automation' }>['params']['section'],
   string
 > = {
-  flow: 'Flow',
-  cron: 'Cron Jobs',
-  webhook: 'Webhook',
+  schedules: 'Schedules',
   runs: 'Runs',
+  api: 'API',
+  flow: 'Flow',
+  webhook: 'Webhook',
 }
 
 const automationModule: ViewModule<'automation'> = {

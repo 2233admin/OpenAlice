@@ -43,14 +43,12 @@ Alice runs on your own machine, because trading involves private keys and real m
 
 ### Automation
 
-Automation has two layers in OpenAlice. They're worth separating because each evolves on its own track:
+Automation runs a Workspace **headless on a trigger** — the same Workspace substrate, spawned non-interactively against an agent and a prompt, doing the work and reporting back through the Inbox (and shown live in the Runs tab). One substrate, whether a human opened the workspace or a trigger did.
 
-**Scheduling — *what* fires an AI call.** A typed append-only event log + cron engine that emits events on a schedule. Stable, reusable across both old and new execution models.
+Two ways a run is triggered:
 
-- **Cron scheduling** — cron expressions, intervals, or one-shot timestamps
-- **Webhooks** — inbound event triggers from external systems (planned)
-
-**Execution — *how* the trigger lands.** A fired schedule runs a **headless Workspace** — the same Workspace substrate, spawned non-interactively against the agent and prompt the job names. The agent does the work and reports back through the Inbox, and the run shows up live in the Runs tab. This is the whole execution model now: one substrate, the Workspace, whether a human opened it or a schedule did. (The earlier in-process AI loop that did this is gone.)
+- **Self-scheduled** — a workspace declares its own schedule in `.alice/schedule.json` (interval / cron / one-shot); a dumb scanner discovers declarations and fires due tasks. No central registry — scheduling is a coding task the agent does by writing a file.
+- **External** — `POST /api/workspaces/:id/headless` lets any outside system (a webhook bridge, a cron on another host) drive a workspace.
 
 ### Interface
 
@@ -103,11 +101,11 @@ graph TB
     FX[FX + Snapshots]
   end
 
-  subgraph Sched["Scheduling — what fires"]
-    CRON[Cron / Webhook]
+  subgraph Sched["Triggers — what fires a run"]
+    TRIG[".alice/schedule.json scanner<br/>+ external POST"]
   end
 
-  CRON -.spawns headless run.-> Workspace
+  TRIG -.spawns headless run.-> Workspace
 
   WEB --> Workspace
   WEB --> INB
@@ -178,12 +176,13 @@ through Alice's BFF, so config updates don't require restarting Alice).
 Same module is used by `pnpm dev` (orchestrator with Vite) and the
 Docker entrypoint (with `tini` as PID 1).
 
-**Scheduling** — The cron engine (and webhook ingest) fire events on a
-schedule. A fired cron job runs a **headless Workspace**: it spawns the
-job's named agent non-interactively against the prompt, the agent does
-the work and reports back through the Inbox (dotted line), and the run is
-visible in the Runs tab. Execution is workspace-resident — one substrate,
-whether a human or a schedule opened the Workspace.
+**Automation** — A run is a **headless Workspace**: the same substrate
+spawned non-interactively against an agent + prompt, doing the work and
+reporting back through the Inbox (dotted line), visible in the Runs tab.
+Two triggers — a workspace's own `.alice/schedule.json` (a scanner
+discovers declarations and fires due tasks; no central engine), or an
+external `POST /api/workspaces/:id/headless`. One substrate, whether a
+human or a trigger opened the Workspace.
 
 ## Key Concepts
 
@@ -202,7 +201,7 @@ agent runtime that drives trading decisions.
 
 **Guard** — A pre-execution safety check that runs inside a UTA before orders reach the broker. Guards enforce limits (max position size, cooldown between trades, symbol whitelist) and are configured per-account. Think of it as ESLint for trading — automated rules that catch problems before they go live.
 
-**Scheduled run** — A cron job (cron expression / interval / one-shot) that, when it fires, spawns a **headless Workspace**: the job names an agent + a prompt, the agent runs non-interactively and reports back through the Inbox. Same Workspace substrate as interactive work — there's no separate autonomous-execution path.
+**Scheduled run** — A workspace's self-declared schedule (`.alice/schedule.json`; interval / cron / one-shot) that, when a task is due, spawns a **headless Workspace**: the same agent + a prompt, run non-interactively, reporting back through the Inbox. Same Workspace substrate as interactive work — there's no separate autonomous-execution path. (External systems can also `POST` a one-off run.)
 
 **AI Provider** — Alice runs no model in-process; the model loop lives inside the native workspace CLI (Claude Code / Codex / opencode / Pi). What Alice keeps is a **credential vault**: api-key credentials, each declaring which wire shapes it can speak (Anthropic Messages / OpenAI Chat Completions / OpenAI Responses), injected into workspaces. Subscription logins (Claude Pro/Max, ChatGPT) live in the CLI's own login, not in Alice.
 
@@ -212,7 +211,7 @@ agent runtime that drives trading decisions.
 
 **Templates & satellite repos** — A workspace template is a bootstrap script + initial file set that materializes a workspace of a particular shape (today: `chat`, `auto-quant`). Templates are how OpenAlice's ecosystem grows without bloating the main repo: when a new capability (a research toolkit, a backtest harness, a custom MCP server) is worth packaging, it lives in its own **satellite repo** that a template clones at bootstrap time. The main repo deliberately doesn't accept ecosystem PRs — it owns the Trading domain and the workspace launcher; everything else routes through satellite repos referenced by templates. Means template authors can ship on their own cadence, and OpenAlice's `src/` stays small.
 
-**Inbox** — Workspace-to-user push channel. Agents working inside a workspace call the `inbox_push` MCP tool to surface docs (rendered live from workspace files) plus markdown commentary in a dedicated Inbox tab. The user reads, then clicks the reply bar at the bottom of the entry to jump back into the workspace's session and continue the conversation there. Scheduled runs deliver here too: a cron job spawns a headless Workspace whose agent calls `inbox_push` like any other — the Inbox is the single push surface.
+**Inbox** — Workspace-to-user push channel. Agents working inside a workspace call the `inbox_push` MCP tool to surface docs (rendered live from workspace files) plus markdown commentary in a dedicated Inbox tab. The user reads, then clicks the reply bar at the bottom of the entry to jump back into the workspace's session and continue the conversation there. Scheduled runs deliver here too: a self-scheduled (or externally-triggered) headless Workspace's agent calls `inbox_push` like any other — the Inbox is the single push surface.
 
 ## Workspace chat
 
@@ -514,14 +513,16 @@ Stuck? Here's the recommended path, roughly in order:
 
 ## Contributors
 
-We build OpenAlice in-house and [don't merge external PRs](./CONTRIBUTING.md) —
-but the community's ideas, reports, and designs shape it, and we credit every
+OpenAlice is sharper for the people who dig into it with us — the bugs they
+catch, the ideas they push, the designs and reviews they bring. Credit to every
 one. The people who've left a mark:
 
 <!-- Standouts (⭐) first. Avatars come free from https://github.com/<handle>.png :
      <a href="https://github.com/HANDLE"><img src="https://github.com/HANDLE.png" width="56" height="56" alt="@HANDLE" /></a> -->
 <p>
   <a href="https://github.com/2233admin"><img src="https://github.com/2233admin.png" width="56" height="56" alt="@2233admin" /></a>
+  <a href="https://github.com/lvysssss"><img src="https://github.com/lvysssss.png" width="56" height="56" alt="@lvysssss" /></a>
+  <a href="https://github.com/walkonbothsides"><img src="https://github.com/walkonbothsides.png" width="56" height="56" alt="@walkonbothsides" /></a>
 </p>
 
 **See the full list and what each person shaped** → [CONTRIBUTORS.md](./CONTRIBUTORS.md)

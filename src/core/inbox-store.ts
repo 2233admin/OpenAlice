@@ -20,10 +20,13 @@
  *
  * v0.5 contract: append-only JSONL at `data/inbox/entries.jsonl`,
  * `workspaceId` required, at least one of {docs, comments} required.
- * No connector subscription, no outputGate, no dedup. The production
- * write path is still deliberately deferred — only a dev `/seed`
- * endpoint exists until the workspace integration pathway (MCP tool +
- * workspace identity) is decided.
+ * No connector subscription, no outputGate, no dedup.
+ *
+ * Write path: the production writer is the `inbox_push` MCP tool
+ * (`tool/inbox-push.ts`), workspace-scoped via WorkspaceToolCenter at
+ * `/mcp/:wsId` — the agent inside a workspace calls it; the wsId is
+ * bound by the router, never supplied by the agent. The dev `/seed`
+ * HTTP endpoint remains for manual/testing appends.
  */
 
 import { randomUUID } from 'node:crypto'

@@ -28,6 +28,15 @@ import type { TemplateMeta } from './template-registry.js';
  */
 const CLI_TOOLS_SKILLS = ['alice', 'alice-analysis', 'alice-uta', 'alice-workspace', 'traderhub'];
 
+/**
+ * Skills injected into EVERY new workspace, regardless of template — generic
+ * launcher capabilities every agent should know about. Unlike CLI_TOOLS_SKILLS
+ * (gated on `injectTools`), these are UNGATED: self-scheduling works in any
+ * workspace because the `alice` CLI is on PATH everywhere (so even an untooled
+ * template's headless run can report back to the Inbox).
+ */
+const ALWAYS_SKILLS = ['self-scheduling'];
+
 export async function injectWorkspaceContext(opts: {
   readonly template: TemplateMeta;
   readonly wsId: string;
@@ -50,13 +59,17 @@ export async function injectWorkspaceContext(opts: {
     await writeWorkspaceFile(dir, 'AGENTS.md', composed);
   }
 
-  // Tool-bearing templates also get the per-CLI playbooks (alice / alice-uta /
-  // alice-workspace / traderhub) so the agent knows the CLI surface — its ONLY
-  // path to OpenAlice tools, since the launcher injects no MCP. De-duped
-  // against anything the template already bundles.
-  const skills = template.injectTools
-    ? [...template.bundledSkills, ...CLI_TOOLS_SKILLS.filter((s) => !template.bundledSkills.includes(s))]
-    : [...template.bundledSkills];
+  // Every workspace gets ALWAYS_SKILLS (generic launcher capabilities). Tool-
+  // bearing templates additionally get the per-CLI playbooks (alice / alice-uta
+  // / alice-workspace / traderhub) so the agent knows the CLI surface — its ONLY
+  // path to OpenAlice tools, since the launcher injects no MCP. All de-duped.
+  const skills = [
+    ...new Set([
+      ...ALWAYS_SKILLS,
+      ...template.bundledSkills,
+      ...(template.injectTools ? CLI_TOOLS_SKILLS : []),
+    ]),
+  ];
   if (skills.length > 0) {
     // Each agent CLI discovers skills from its own dir: Claude Code reads
     // `.claude/skills`, Codex reads `.agents/skills`, Pi reads `.pi/skills`.

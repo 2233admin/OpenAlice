@@ -53,6 +53,7 @@ const PI_PROVIDER_NAME = 'workspace';
 export const piAdapter: CliAdapter = {
   id: 'pi',
   displayName: 'Pi',
+  binary: 'pi',
   // c=claude, x=codex, o=opencode, sh=shell taken; 'p' is free.
   namePrefix: 'p',
   capabilities: {

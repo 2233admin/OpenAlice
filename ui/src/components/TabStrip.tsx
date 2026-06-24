@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { useWorkspaces } from '../contexts/WorkspacesContext'
 import { useWorkspace } from '../tabs/store'
 import { getView } from '../tabs/registry'
+import { useEditorTabsPref } from '../live/editor-tabs-pref'
 import { ContextMenu, type ContextMenuItem } from './ContextMenu'
 
 /**
@@ -35,9 +36,13 @@ export function TabStrip() {
   const closeToRight = useWorkspace((state) => state.closeToRight)
   const closeToLeft = useWorkspace((state) => state.closeToLeft)
   const closeAll = useWorkspace((state) => state.closeAll)
+  const showEditorTabs = useEditorTabsPref((state) => state.showEditorTabs)
 
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
 
+  // Hidden by default — navigation is ActivityBar/sidebar-driven. Opt back
+  // in via Settings › Appearance. (Also nothing to show with zero tabs.)
+  if (!showEditorTabs) return null
   if (tabIds.length === 0) return null
 
   const handleWheel = (e: WheelEvent<HTMLDivElement>) => {

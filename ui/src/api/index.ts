@@ -4,7 +4,7 @@
  */
 import { configApi } from './config'
 import { eventsApi } from './events'
-import { cronApi } from './cron'
+import { scheduleApi } from './schedule'
 import { tradingApi } from './trading'
 import { marketDataApi } from './openbb'
 import { toolsApi } from './tools'
@@ -20,7 +20,7 @@ import { headlessApi } from './headless'
 export const api = {
   config: configApi,
   events: eventsApi,
-  cron: cronApi,
+  schedule: scheduleApi,
   trading: tradingApi,
   marketData: marketDataApi,
   tools: toolsApi,
@@ -53,9 +53,6 @@ export type {
   AppConfig,
   AIProviderConfig,
   EventLogEntry,
-  CronSchedule,
-  CronJobState,
-  CronJob,
   TradingAccount,
   AccountInfo,
   Position,

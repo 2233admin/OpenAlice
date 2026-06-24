@@ -20,15 +20,28 @@ export const workspacesHandlers = [
 
   http.get('/api/workspaces/agents', () =>
     HttpResponse.json({
+      // `installed` is PATH-probed on a real backend; the demo has no host to
+      // probe, so present everything as installed (a clean showcase, not a
+      // "go install things" prompt).
       agents: [
-        { id: 'claude', displayName: 'Claude Code', capabilities: { parallelPerCwd: true, resumeLast: false, resumeById: true, transcriptDiscovery: 'fs-watch' } },
-        { id: 'codex', displayName: 'Codex', capabilities: { parallelPerCwd: true, resumeLast: true, resumeById: true, transcriptDiscovery: 'subprocess' } },
-        { id: 'opencode', displayName: 'opencode', capabilities: { parallelPerCwd: true, resumeLast: true, resumeById: true, transcriptDiscovery: 'subprocess' } },
-        { id: 'pi', displayName: 'Pi', capabilities: { parallelPerCwd: true, resumeLast: true, resumeById: true, transcriptDiscovery: 'none' } },
+        { id: 'claude', displayName: 'Claude Code', installed: true, binPath: '/usr/local/bin/claude', capabilities: { parallelPerCwd: true, resumeLast: false, resumeById: true, transcriptDiscovery: 'fs-watch' } },
+        { id: 'codex', displayName: 'Codex', installed: true, binPath: '/usr/local/bin/codex', capabilities: { parallelPerCwd: true, resumeLast: true, resumeById: true, transcriptDiscovery: 'subprocess' } },
+        { id: 'opencode', displayName: 'opencode', installed: true, binPath: '/usr/local/bin/opencode', capabilities: { parallelPerCwd: true, resumeLast: true, resumeById: true, transcriptDiscovery: 'subprocess' } },
+        { id: 'pi', displayName: 'Pi', installed: true, binPath: '/usr/local/bin/pi', capabilities: { parallelPerCwd: true, resumeLast: true, resumeById: true, transcriptDiscovery: 'none' } },
       ],
     }),
   ),
-  http.get('/api/workspaces/credentials', () => HttpResponse.json({ credentials: [] })),
+  // One sample vault credential so the quick-chat runtime picker (opencode/pi)
+  // shows a populated dropdown — a clean showcase, not a "go configure" prompt.
+  // `?agent=` filtering is a no-op here (the sample speaks openai-chat, which
+  // every loginless runtime accepts).
+  http.get('/api/workspaces/credentials', () =>
+    HttpResponse.json({
+      credentials: [
+        { slug: 'openai-1', vendor: 'openai', authType: 'api-key', wires: { 'openai-chat': '' }, lastModel: 'gpt-5.5', apiKey: null },
+      ],
+    }),
+  ),
   http.post('/api/workspaces/credentials', () =>
     HttpResponse.json({ slug: 'custom-1', vendor: 'custom' }, { status: 201 }),
   ),
@@ -90,6 +103,11 @@ export const workspacesHandlers = [
   ),
 
   http.get('/api/workspaces/:id/agent-config', () => HttpResponse.json({})),
+  // Credential detection — demo workspaces have no on-disk config, so report
+  // none (no overwrite notice; the picker defaults to the first compatible).
+  http.get('/api/workspaces/:id/agent-config/:agent/credential', () =>
+    HttpResponse.json({ slug: null, model: null }),
+  ),
   http.put('/api/workspaces/:id/agent-config/:agent', () => HttpResponse.json({ ok: true })),
   http.post('/api/workspaces/:id/agent-config/:agent/test', () =>
     HttpResponse.json({ ok: true, response: 'Demo mode — test is stubbed.' }),

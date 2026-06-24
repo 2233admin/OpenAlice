@@ -68,7 +68,7 @@ interface WorkspacesContextValue {
    * session seeded with `prompt`, and focus into its terminal tab. Rejects on
    * failure so the composer can surface it.
    */
-  quickChat(prompt: string, agent?: string): Promise<void>
+  quickChat(prompt: string, agent?: string, credentialSlug?: string): Promise<void>
   pauseSession(wsId: string, sessionId: string): Promise<void>
   resumeSession(wsId: string, sessionId: string): Promise<void>
   /**
@@ -186,8 +186,8 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
   )
 
   const quickChat = useCallback(
-    async (prompt: string, agent?: string): Promise<void> => {
-      const { workspace, session } = await apiQuickChat(prompt, agent)
+    async (prompt: string, agent?: string, credentialSlug?: string): Promise<void> => {
+      const { workspace, session } = await apiQuickChat(prompt, agent, credentialSlug)
       const nowIso = new Date().toISOString()
       const newRecord: SessionRecord = {
         id: session.sessionId,

@@ -64,9 +64,8 @@ export function uiBundlePath(): string {
  * default/ does: dev points to repo source, packaged points to wherever
  * the bundler copied the templates inside .app/Contents/Resources/.
  *
- * NOTE: For packaged .app distribution, build.files in package.json must
- * include `src/workspaces/templates/**` (currently DOES NOT — workspace
- * spawning will fail until that's added; tracked in TODO).
+ * `build.files` in package.json ships `src/workspaces/templates/**`, so the
+ * `.mjs` bootstraps + their READMEs land in the packaged .app.
  */
 export function templatesPath(): string {
   return resolve(APP_RESOURCES_HOME, 'src', 'workspaces', 'templates')

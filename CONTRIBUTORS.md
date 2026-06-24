@@ -1,16 +1,14 @@
 # Contributors
 
-OpenAlice is built and maintained in-house, and we **don't merge external pull
-requests** — anything that touches trading or keys has to be ours (see
-[CONTRIBUTING.md](./CONTRIBUTING.md) for why). But the project stays open, and
-the community's **ideas, bug reports, designs, and reviews genuinely shape it**.
-This page is the record of those people, and of what each one helped move.
+OpenAlice is shaped by the people who dig into it with us — and this page is the
+record of who they are and what each one moved. The project stays open; if your
+work left a mark on it, you belong here.
 
 ## How recognition works
 
-- We don't merge your code, but if your **idea / report / design / review**
-  shaped a change, you get credited here, with a link to the actual change you
-  influenced. It's a real record, not just a name on a wall.
+- If your **report, idea, design, or review** shaped a change, you're credited
+  here — with a link to the actual change you influenced. A real record, not
+  just a name on a wall.
 - **Credit types:**
   🤔 ideas · 🎨 design · 🐛 bug report · 👀 review · 💬 question answered ·
   📖 docs · 🛡️ security · 🌍 translation · 💻 code _(rare — reimplemented with
@@ -40,6 +38,8 @@ This page is the record of those people, and of what each one helped move.
 | | Contributor | Credits | Shaped |
 |:--:|---|:--:|---|
 | | <a href="https://github.com/2233admin"><img src="https://github.com/2233admin.png" width="40" height="40" alt="@2233admin" /></a><br>[@2233admin](https://github.com/2233admin) | 🎨 | [Linear dark-shell design pass — palette & navigation density re-traced into the app](https://github.com/TraderAlice/OpenAlice/pull/302) |
+| | <a href="https://github.com/lvysssss"><img src="https://github.com/lvysssss.png" width="40" height="40" alt="@lvysssss" /></a><br>[@lvysssss](https://github.com/lvysssss) | 🐛 🤔 | [Windows workspace-launch blockers — diagnosed the bootstrap path/bash failures and the extensionless CLI-shim file-association dialog, with verified repros](https://github.com/TraderAlice/OpenAlice/issues/364) |
+| | <a href="https://github.com/walkonbothsides"><img src="https://github.com/walkonbothsides.png" width="40" height="40" alt="@walkonbothsides" /></a><br>[@walkonbothsides](https://github.com/walkonbothsides) | 🐛 | [OKX showed no spot holdings — reported the broker reporting no spot, which traced to a partial CCXT market-load that silently dropped spot markets and understated netLiquidation](https://github.com/TraderAlice/OpenAlice/commit/d7711887a19629414698678827a79a405797f17d) |
 
 ---
 

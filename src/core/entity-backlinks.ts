@@ -56,7 +56,7 @@ async function listMarkdown(root: string): Promise<string[]> {
  * as one backlink). Callers look up by entity name (case-insensitive); tokens
  * with no matching entity are simply never queried.
  */
-export async function scanBacklinks(registry: WorkspaceRegistry): Promise<Map<string, Backlink[]>> {
+async function scanUncached(registry: WorkspaceRegistry): Promise<Map<string, Backlink[]>> {
   const out = new Map<string, Backlink[]>()
   for (const ws of registry.list()) {
     const files = await listMarkdown(ws.dir)
@@ -82,4 +82,85 @@ export async function scanBacklinks(registry: WorkspaceRegistry): Promise<Map<st
     }
   }
   return out
+}
+
+// ==================== Cache ====================
+//
+// The scan reads every markdown file in every workspace, so doing it per
+// request (the Tracked list polls every 20s AND every entity-detail open
+// re-scanned) was the source of the Tracked tab's slow loads. Cache the
+// reverse index with stale-while-revalidate: a cold call blocks once, then
+// every subsequent call returns the cached map instantly and kicks a
+// background refresh when the entry is older than the TTL. Backlinks come
+// from agent notes that change infrequently, so brief staleness is fine.
+
+const TTL_MS = 30_000
+
+interface CacheEntry {
+  data: Map<string, Backlink[]> | null
+  at: number
+  inflight: Promise<Map<string, Backlink[]>> | null
+}
+
+// Keyed by registry INSTANCE so each registry caches independently. In
+// production there's a single registry → a single cache; in tests every
+// `fakeRegistry(...)` is a distinct key, so the cache never leaks between
+// cases. (WeakMap → entries are GC'd with the registry.)
+const caches = new WeakMap<WorkspaceRegistry, CacheEntry>()
+
+function entryFor(registry: WorkspaceRegistry): CacheEntry {
+  let e = caches.get(registry)
+  if (!e) {
+    e = { data: null, at: 0, inflight: null }
+    caches.set(registry, e)
+  }
+  return e
+}
+
+function refresh(registry: WorkspaceRegistry): Promise<Map<string, Backlink[]>> {
+  const e = entryFor(registry)
+  if (e.inflight) return e.inflight
+  e.inflight = scanUncached(registry)
+    .then((data) => {
+      e.data = data
+      e.at = Date.now()
+      return data
+    })
+    .finally(() => {
+      e.inflight = null
+    })
+  return e.inflight
+}
+
+/**
+ * Cached reverse index. Returns the cached map immediately when present
+ * (revalidating in the background past the TTL); only the first, cold call
+ * awaits a full scan. On a scan error the previous cache is kept (serve
+ * stale) rather than throwing.
+ */
+export async function scanBacklinks(registry: WorkspaceRegistry): Promise<Map<string, Backlink[]>> {
+  const e = entryFor(registry)
+  if (e.data) {
+    if (Date.now() - e.at >= TTL_MS && !e.inflight) {
+      void refresh(registry).catch(() => {
+        /* keep serving the stale cache; next call retries */
+      })
+    }
+    return e.data
+  }
+  return refresh(registry)
+}
+
+/** Kick a scan to warm the cache (fire-and-forget) — call at startup so the
+ *  first Tracked open is fast. */
+export function warmBacklinks(registry: WorkspaceRegistry): void {
+  void refresh(registry).catch(() => {
+    /* warming is best-effort */
+  })
+}
+
+/** Drop a registry's cache so the next `scanBacklinks` re-scans (e.g. after a
+ *  known bulk note change). */
+export function invalidateBacklinks(registry: WorkspaceRegistry): void {
+  caches.delete(registry)
 }

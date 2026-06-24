@@ -122,4 +122,15 @@ describe('injectWorkspaceContext — skills', () => {
     expect(existsSync(join(dir, '.claude/skills/alice-uta/SKILL.md'))).toBe(false);
     expect(existsSync(join(dir, '.claude/skills/scan-value-chain/SKILL.md'))).toBe(true);
   });
+
+  it('injects the self-scheduling skill into every workspace, even an untooled one', async () => {
+    await injectWorkspaceContext({
+      template: makeTemplate({ injectTools: false }),
+      wsId: 'ws-abc',
+      dir,
+    });
+    expect(existsSync(join(dir, '.claude/skills/self-scheduling/SKILL.md'))).toBe(true);
+    expect(existsSync(join(dir, '.agents/skills/self-scheduling/SKILL.md'))).toBe(true);
+    expect(existsSync(join(dir, '.pi/skills/self-scheduling/SKILL.md'))).toBe(true);
+  });
 });

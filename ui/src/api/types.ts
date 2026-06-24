@@ -270,34 +270,6 @@ export interface EventLogEntry {
   payload: unknown
 }
 
-// ==================== Cron ====================
-
-export type CronSchedule =
-  | { kind: 'at'; at: string }
-  | { kind: 'every'; every: string }
-  | { kind: 'cron'; cron: string }
-
-export interface CronJobState {
-  nextRunAtMs: number | null
-  lastRunAtMs: number | null
-  lastStatus: 'ok' | 'error' | null
-  consecutiveErrors: number
-}
-
-export interface CronJob {
-  id: string
-  name: string
-  enabled: boolean
-  schedule: CronSchedule
-  payload: string
-  /** Target workspace the job's prompt runs in, headless. */
-  workspaceId?: string
-  /** Which enabled CLI agent runs it — claude / codex / pi / opencode. */
-  agent?: string
-  state: CronJobState
-  createdAt: number
-}
-
 // ==================== Trading ====================
 
 export type BrokerHealth = 'healthy' | 'degraded' | 'offline'

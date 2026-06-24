@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TrendingUp, Hash, FileText } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
+import { PageLoading } from '../components/StateViews'
 import { api } from '../api'
 import { entitiesLive } from '../live/entities'
 import { useTrackedSelection } from '../live/tracked-selection'
@@ -25,20 +26,23 @@ export function TrackedPage() {
   const selectedName = useTrackedSelection((s) => s.selectedName)
 
   const [detail, setDetail] = useState<EntityDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   useEffect(() => {
     if (!selectedName) {
       setDetail(null)
+      setDetailLoading(false)
       return
     }
     let cancelled = false
     setDetail(null)
+    setDetailLoading(true)
     api.entities
       .get(selectedName)
       .then((d) => {
-        if (!cancelled) setDetail(d)
+        if (!cancelled) { setDetail(d); setDetailLoading(false) }
       })
       .catch(() => {
-        if (!cancelled) setDetail(null)
+        if (!cancelled) { setDetail(null); setDetailLoading(false) }
       })
     return () => {
       cancelled = true
@@ -53,11 +57,13 @@ export function TrackedPage() {
       />
       <div className="flex-1 overflow-y-auto min-h-0">
         {loading && entities.length === 0 ? (
-          <div className="px-6 py-8 text-text-muted text-sm">{t('common.loading')}</div>
+          <PageLoading />
         ) : entities.length === 0 ? (
           <EmptyState />
-        ) : !selectedName || !detail ? (
+        ) : !selectedName ? (
           <div className="px-6 py-8 text-text-muted text-sm">{t('tracked.selectFromSidebar')}</div>
+        ) : detailLoading || !detail ? (
+          <PageLoading />
         ) : (
           <Detail detail={detail} />
         )}

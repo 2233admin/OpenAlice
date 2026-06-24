@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, FolderPlus, Plus, Settings as SettingsIcon, X } from 'lucide-react'
 
+import { getIntlLocale } from '../../lib/intl'
 import { useWorkspaces } from '../../contexts/WorkspacesContext'
 import { useWorkspace } from '../../tabs/store'
 import { getFocusedTab } from '../../tabs/types'
@@ -39,7 +40,7 @@ function chatLabel(w: Workspace, todayLabel: string, yesterdayLabel: string): st
   const diffDays = Math.round((startOfDay(new Date()) - startOfDay(created)) / 86_400_000)
   if (diffDays <= 0) return todayLabel
   if (diffDays === 1) return yesterdayLabel
-  return created.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return created.toLocaleDateString(getIntlLocale(), { month: 'short', day: 'numeric' })
 }
 
 export function ChatWorkspaceSection(): ReactElement | null {
@@ -180,6 +181,7 @@ export function ChatWorkspaceSection(): ReactElement | null {
             onDeleteSession={(sid) => ctx.requestDeleteSession(w.id, sid)}
             onConfigure={() => ctx.openAgentConfig(w.id)}
             onDelete={() => setPendingDelete(w)}
+            onSpawn={() => void ctx.spawn(w.id, { agent: w.agents[0] ?? 'claude' })}
           />
         ))}
       </ul>
@@ -215,6 +217,8 @@ interface ChatWorkspaceRowProps {
   onDeleteSession: (sid: string) => void
   onConfigure: () => void
   onDelete: () => void
+  /** Spawn a fresh agent session in THIS workspace (and open it). */
+  onSpawn: () => void
 }
 
 function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
@@ -271,6 +275,20 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
             </span>
           )}
         </button>
+        {/* Always-visible "+" — spawn a fresh agent runtime in THIS day's
+            workspace (vs "New chat" which starts a whole new one). */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onSpawn()
+          }}
+          className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-text-muted/50 hover:text-text hover:bg-bg-secondary transition-colors"
+          title={t('chat.newSession')}
+          aria-label={t('chat.newSession')}
+        >
+          <Plus size={13} strokeWidth={2.25} />
+        </button>
         <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             type="button"
@@ -299,7 +317,7 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
         </span>
       </div>
       {expanded && w.sessions.length > 0 && (
-        <ul className="sidebar-children chat-ws-children-list">
+        <div className="ml-[18px] border-l border-border/50">
           {w.sessions.map((s) => (
             <SessionRow
               key={s.id}
@@ -311,7 +329,7 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
               onDelete={() => props.onDeleteSession(s.id)}
             />
           ))}
-        </ul>
+        </div>
       )}
     </li>
   )

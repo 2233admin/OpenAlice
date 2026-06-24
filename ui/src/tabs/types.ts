@@ -19,7 +19,7 @@ export type ViewSpec =
   | { kind: 'template-catalog'; params: Record<string, never> }
   | { kind: 'template-detail';  params: { name: string } }
   | { kind: 'portfolio';      params: Record<string, never> }
-  | { kind: 'automation';     params: { section: 'flow' | 'cron' | 'webhook' | 'runs' } }
+  | { kind: 'automation';     params: { section: 'schedules' | 'runs' | 'api' | 'flow' | 'webhook' } }
   | { kind: 'news';           params: Record<string, never> }
   | { kind: 'market-list';    params: Record<string, never> }
   | { kind: 'market-rotation'; params: Record<string, never> }

@@ -121,20 +121,16 @@ const NAV_SECTIONS: NavSection[] = [
       { page: 'market',     labelKey: 'nav.item.market',     icon: BarChart3 },
       { page: 'news',       labelKey: 'nav.item.news',       icon: Newspaper, defaultTab: { kind: 'news', params: {} } },
       { page: 'workspaces', labelKey: 'nav.item.workspaces', icon: TerminalSquare },
+      { page: 'automation', labelKey: 'nav.item.automation', icon: Zap, defaultTab: { kind: 'automation', params: { section: 'schedules' } } },
     ],
   },
-  // Beta — functional but not yet dependable. Two distinct reasons
-  // land an entry here:
-  //  - Cross-broker unification (UTA abstraction, FX/options/futures)
-  //    is in active rearchitecture. Portfolio surfaces that state;
-  //    Trading-as-Git is the operations side (pending broker writes).
-  //    The data runs; the schema/UX underneath isn't settled.
-  //  - Automation runs fine in isolation, but its trigger chain isn't
-  //    closed in the current Harness architecture — nothing fires it
-  //    end-to-end yet, so it's effectively unusable today. Once
-  //    Harness scheduling lands it gets wired back up.
-  // Broker connection CRUD lives under Settings → Trading, not here —
-  // it's a config surface, not a state/ops one.
+  // Beta — functional but not yet dependable. Cross-broker unification
+  // (UTA abstraction, FX/options/futures) is in active rearchitecture:
+  // Portfolio surfaces that state, Trading-as-Git is the operations side
+  // (pending broker writes). The data runs; the schema/UX underneath isn't
+  // settled. (Automation graduated to the top group once its self-scheduling
+  // trigger chain closed end-to-end.) Broker connection CRUD lives under
+  // Settings → Trading, not here — it's a config surface, not state/ops.
   {
     sectionLabel: 'Beta',
     labelKey: 'nav.section.beta',
@@ -142,7 +138,6 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { page: 'trading-as-git', labelKey: 'nav.item.tradingAsGit', icon: GitBranch },
       { page: 'portfolio',      labelKey: 'nav.item.portfolio',    icon: LineChart, defaultTab: { kind: 'portfolio', params: {} } },
-      { page: 'automation',     labelKey: 'nav.item.automation',   icon: Zap, defaultTab: { kind: 'automation', params: { section: 'flow' } } },
     ],
   },
   {

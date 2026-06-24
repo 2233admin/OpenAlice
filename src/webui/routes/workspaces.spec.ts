@@ -136,3 +136,61 @@ describe('POST /:id/headless', () => {
     expect(r.body.error).toBe('capacity');
   });
 });
+
+describe('POST /:id/sessions/:sid/resume — concurrent coalescing (ANG-120)', () => {
+  const TOKEN = '00000000-0000-0000-0000-000000000001';
+
+  function buildResume() {
+    const session = {
+      recordId: TOKEN,
+      wsId: 'ws-1',
+      name: 'c1',
+      pid: 4242,
+      startedAt: 1,
+      waitForFirstExit: vi.fn(async () => null), // stays up
+    };
+    let live: unknown = undefined; // what pool.get returns; set once spawned
+    const spawn = vi.fn(() => {
+      live = session;
+      return session;
+    });
+    const record = {
+      id: TOKEN,
+      wsId: 'ws-1',
+      agent: 'claude',
+      name: 'c1',
+      state: 'paused',
+      resumeHint: { kind: 'agent-session-id', value: 'aid' },
+    };
+    const adapter = { id: 'claude', capabilities: { resumeById: true, resumeLast: false } };
+    const svc = {
+      sessionRegistry: { get: () => record, update: vi.fn(async () => {}) },
+      pool: { get: () => live, spawn, disposeToken: vi.fn() },
+      registry: { get: () => ({ id: 'ws-1', dir: '/w', agents: ['claude'] }) },
+      adapters: { get: () => adapter },
+      computeSpawnPlan: () => ({
+        spawnCwd: '/w',
+        envPWD: '/w',
+        transcriptDir: null,
+        projectKey: 'k',
+        composedCommand: ['claude'],
+        resumeMode: 'by-id',
+        resumeId: 'aid',
+      }),
+      config: { launcherRepoRoot: '/repo' },
+    } as unknown as WorkspaceService;
+    return { app: createWorkspaceRoutes(svc), spawn };
+  }
+
+  it('two simultaneous resumes spawn the agent exactly once', async () => {
+    const { app, spawn } = buildResume();
+    const path = `/ws-1/sessions/${TOKEN}/resume`;
+    const [a, b] = await Promise.all([post(app, path), post(app, path)]);
+
+    expect(spawn).toHaveBeenCalledOnce(); // no double-spawn racing one transcript
+    // both succeed: one really resumed, the other coalesced to alreadyRunning
+    expect(a.body.ok).toBe(true);
+    expect(b.body.ok).toBe(true);
+    expect([a.body, b.body].filter((x) => x.alreadyRunning)).toHaveLength(1);
+  });
+});

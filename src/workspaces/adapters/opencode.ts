@@ -69,6 +69,7 @@ const OPENCODE_SDK_NPM = '@ai-sdk/openai-compatible';
 export const opencodeAdapter: CliAdapter = {
   id: 'opencode',
   displayName: 'opencode',
+  binary: 'opencode',
   // claude='c', codex='x' already taken; 'o' is free.
   namePrefix: 'o',
   capabilities: {

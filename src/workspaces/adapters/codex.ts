@@ -55,6 +55,7 @@ const CODEX_PROVIDER_NAME = 'workspace';
 export const codexAdapter: CliAdapter = {
   id: 'codex',
   displayName: 'Codex',
+  binary: 'codex',
   namePrefix: 'x',
   capabilities: {
     parallelPerCwd: true,

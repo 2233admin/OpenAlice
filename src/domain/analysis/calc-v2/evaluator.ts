@@ -143,7 +143,12 @@ export async function evaluate(program: Program, deps: CalcDeps): Promise<CalcOu
     try {
       r = await fetchBars(barId, opts, assetClass)
     } catch (err) {
-      throw new CalcError({ kind: 'type', message: `bars("${barId}") failed: ${err instanceof Error ? err.message : String(err)}`, line: e.pos.line, col: e.pos.col })
+      // A bars(...) fetch failure is NOT a script bug — the expression is fine,
+      // the data pipe failed (vendor rate-limit / network / bad barId). Tag it
+      // 'data-source' (not 'type') and attach an operational next step so the
+      // agent retries / switches source instead of rewriting a correct script.
+      const detail = err instanceof Error ? err.message : String(err)
+      throw new CalcError({ kind: 'data-source', message: `bars("${barId}") failed: ${detail}`, line: e.pos.line, col: e.pos.col, suggestion: barFetchSuggestion(detail) })
     }
     if (r.bars.length === 0) throw new CalcError({ kind: 'insufficient-bars', message: `bars("${barId}", "${interval}") returned no data`, line: e.pos.line, col: e.pos.col })
     return { k: 'series', barId, r }
@@ -201,6 +206,22 @@ function asNum(v: V, ctx: string, line: number): number {
 function asStr(v: V, fn: string, argIdx: number, line: number): string {
   if (v.k === 'str') return v.v
   throw new CalcError({ kind: 'type', message: `${fn} arg ${argIdx} must be a string`, line })
+}
+
+/**
+ * Map a bars(...) fetch failure to an operational next step for the agent.
+ * Matches the typed prefixes the data layer emits (RATE_LIMITED: /
+ * NETWORK_UNREACHABLE:) — no coupling to the provider's error classes — so the
+ * suggestion stays accurate whichever vendor/broker the barId resolved to.
+ */
+function barFetchSuggestion(detail: string): string {
+  if (/^RATE_LIMITED:|rate.?limit|too many requests|\b429\b/i.test(detail)) {
+    return 'Not a script error — the data source throttled/blocked this client. Wait a few minutes and retry, or switch source (an "fmp|<symbol>" barId if an FMP key is set, or a connected broker barId).'
+  }
+  if (/^NETWORK_UNREACHABLE:|cannot reach|unreachable|\bDNS\b|proxy/i.test(detail)) {
+    return 'Not a script error — the data source was unreachable from this network. Do not retry blindly; try a different source, or surface the network/VPN issue to the user.'
+  }
+  return 'Not a script error in the math — check the barId is one returned by searchBars/searchContracts (vendor barIds also need asset=). If the source genuinely has no data for this symbol/interval, try another source.'
 }
 
 // ---- function registry (reuses indicator math) ----
