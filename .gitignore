@@ -52,3 +52,9 @@ packages/ibkr/ref/CMakeLists.txt
 
 # Dev capture / screen-recording output
 captures/
+.gstack/
+.repowise/
+.trellis/
+.dev/*.log
+.dev/*.pid
+.dev/*.pids
