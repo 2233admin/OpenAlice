@@ -35,7 +35,7 @@ RUN pnpm install --frozen-lockfile
 # backend into `dist/main.js`. UTA service ends up at
 # `services/uta/dist/uta.js`.
 COPY . .
-RUN pnpm build
+RUN rm -rf apps/desktop && pnpm build
 
 # Strip dev deps before the runtime stage harvests node_modules. With
 # `electron` + `electron-builder` (each ~500MB) in devDependencies, this
@@ -53,7 +53,7 @@ WORKDIR /app
 # instead of getting dropped by Node's default PID-1 behaviour, and
 # zombies from short-lived children (workspace CLI auth flows, etc.)
 # get reaped.
-RUN apt-get update && apt-get install -y --no-install-recommends tini \
+RUN apt-get update && apt-get install -y --no-install-recommends tini bash git \
     && rm -rf /var/lib/apt/lists/*
 
 # Two agent CLIs installed globally so they're on PATH for the PTY

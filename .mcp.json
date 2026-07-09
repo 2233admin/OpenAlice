@@ -3,6 +3,16 @@
     "openalice": {
       "type": "streamable-http",
       "url": "${OPENALICE_MCP_URL:-http://127.0.0.1:47332/mcp}"
+    },
+    "repowise": {
+      "command": "repowise",
+      "args": [
+        "mcp",
+        "D:/projects/OpenAlice-latest",
+        "--transport",
+        "stdio"
+      ],
+      "description": "repowise: codebase intelligence \u2014 docs, graph, git signals, dead code, decisions"
     }
   }
 }

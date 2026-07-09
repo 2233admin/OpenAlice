@@ -26,8 +26,7 @@ services:
       - openalice-data:/data
       # Optional: reuse host auth instead of authenticating inside the
       # container. Bind-mount your local credentials read-only.
-      # - ${HOME}/.claude:/data/home/.claude:ro
-      # - ${HOME}/.codex:/data/home/.codex:ro
+      - C:\Users\Administrator\.claude:/data/home/.claude:ro
     # Keep stdin/tty open so `docker exec -it openalice claude` can run
     # the interactive OAuth flow.
     stdin_open: true
