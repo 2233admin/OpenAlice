@@ -178,6 +178,7 @@ export class MockBroker implements IBroker {
 
   // ---- Instance ----
 
+  readonly brokerEngine = 'mock'
   readonly id: string
   readonly label: string
 

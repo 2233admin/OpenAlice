@@ -1,5 +1,9 @@
 import { api } from '../api'
 import { createLiveStore } from './createLiveStore'
+import { reloadOnHotUpdate } from '../lib/hmr'
+import { filterAccountTierUTAs } from '../lib/uta-account-filter'
+
+reloadOnHotUpdate('live/trading-push')
 
 /**
  * Live count of staged-but-unpushed trading operations, for the
@@ -34,14 +38,15 @@ export const tradingPushLive = createLiveStore<TradingPushState>({
 
     async function refresh() {
       try {
-        const { utas } = await api.trading.listUTAs()
+        const { utas } = await api.trading.listUTASummaries()
         if (disposed) return
-        if (utas.length === 0) {
+        const accounts = filterAccountTierUTAs(utas)
+        if (accounts.length === 0) {
           apply({ stagedCount: 0 })
           return
         }
         const statuses = await Promise.all(
-          utas.map((a) =>
+          accounts.map((a) =>
             api.trading.walletStatus(a.id).catch(() => null),
           ),
         )

@@ -152,6 +152,7 @@ export class LongbridgeBroker implements IBroker {
 
   // ---- Instance ----
 
+  readonly brokerEngine = 'longbridge'
   readonly id: string
   readonly label: string
   private readonly cfg: LongbridgeBrokerConfig

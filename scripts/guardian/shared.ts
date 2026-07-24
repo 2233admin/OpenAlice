@@ -4,30 +4,41 @@
  * Guardian is OpenAlice's L2 authority (see memory:port-architecture-3-layers).
  * Three carriers, one set of L2 responsibilities:
  *   - dev:    `scripts/guardian/dev.ts`, spawned by `pnpm dev`
- *   - prod:   `scripts/guardian/prod.mjs`, container CMD (Step 7)
+ *   - built:  `scripts/guardian/prod.mjs`, Docker CMD or local CLI child
  *   - desktop: Electron `main` process (future)
  *
  * Responsibilities (this module):
  *   - port probing
- *   - child-process spawning (UTA / Alice / Vite) with env injection
+ *   - child-process spawning (optional services / Alice / Vite) with env injection
  *   - HTTP readiness gates (`waitForHttp`)
  *   - signal forwarding + cascade shutdown
  *   - log line prefixing (dev only)
  *
- * Step 4 will add: watching `data/control/restart-uta.flag` so Guardian
- * SIGTERMs + respawns UTA without restarting Alice.
+ * Optional services use restart flags so Guardian can reconcile them without
+ * restarting Alice.
  */
 
 import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { watch, mkdir, readFile } from 'node:fs/promises'
+import { watch, mkdir, readFile, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { dirname, basename, resolve } from 'node:path'
 import { probeFreePort } from '../probe-port.js'
+import { resolveLaunchCommand, resolveStockNpmShim } from '../../src/workspaces/win-command.js'
+
+export {
+  isLiteModeEnv,
+  parseGuardianTradingModeEnv,
+  resolveGuardianTradingMode,
+  type GuardianTradingMode,
+  type GuardianTradingModePlan,
+} from '../../packages/guardian-runtime/src/trading-mode.js'
 
 export interface GuardianPorts {
   webPort: number
   mcpPort: number
   utaPort: number
+  connectorPort: number
   /** Vite dev-server port — resolved by Guardian (dev only; prod has no Vite). */
   uiPort: number
 }
@@ -38,7 +49,7 @@ export interface GuardianPorts {
 // them into the children via env (see memory:port-architecture-3-layers).
 // User-facing configuration lives in L1 — `data/config/ports.json`:
 //
-//   { "web": 47331, "mcp": 47332, "uta": 47333, "ui": 5173 }   (all keys optional)
+//   { "web": 47331, "mcp": 47332, "uta": 47333, "connector": 47334, "ui": 5173 }
 //
 // Deliberately a data/config file and NOT a dotenv file: the data dir is the
 // one location every topology agrees on (dev repo, docker volume, Electron
@@ -50,7 +61,7 @@ export interface GuardianPorts {
 // drifting off a value the user pinned would be worse than aborting. Only
 // unconfigured ports keep the probe-upward-from-default behavior.
 
-const PORT_DEFAULTS = { web: 47331, mcp: 47332, uta: 47333, ui: 5173 } as const
+const PORT_DEFAULTS = { web: 47331, mcp: 47332, uta: 47333, connector: 47334, ui: 5173 } as const
 
 export type PortName = keyof typeof PORT_DEFAULTS
 
@@ -66,6 +77,7 @@ const ENV_KEYS: Record<PortName, string> = {
   web: 'OPENALICE_WEB_PORT',
   mcp: 'OPENALICE_MCP_PORT',
   uta: 'OPENALICE_UTA_PORT',
+  connector: 'OPENALICE_CONNECTOR_PORT',
   ui: 'OPENALICE_UI_PORT',
 }
 
@@ -97,7 +109,7 @@ export async function readPortsFile(userDataHome: string): Promise<Partial<Recor
     throw new Error(`[guardian] ${filePath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`)
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`[guardian] ${filePath} must be a JSON object like {"web":47331,"mcp":47332,"uta":47333,"ui":5173}`)
+    throw new Error(`[guardian] ${filePath} must be a JSON object like {"web":47331,"mcp":47332,"uta":47333,"connector":47334,"ui":5173}`)
   }
   const out: Partial<Record<PortName, number>> = {}
   for (const name of Object.keys(PORT_DEFAULTS) as PortName[]) {
@@ -121,7 +133,13 @@ export function resolvePortConfig(
     if (fromFile !== undefined) return { value: fromFile, source: 'file' }
     return { value: PORT_DEFAULTS[name], source: 'default' }
   }
-  return { web: pick('web'), mcp: pick('mcp'), uta: pick('uta'), ui: pick('ui') }
+  return {
+    web: pick('web'),
+    mcp: pick('mcp'),
+    uta: pick('uta'),
+    connector: pick('connector'),
+    ui: pick('ui'),
+  }
 }
 
 /**
@@ -132,7 +150,7 @@ export function resolvePortConfig(
  * (not left to Vite's own auto-increment) so Guardian can print the real
  * URL and inject the value into Alice for the WS-origin allowlist.
  */
-export async function planPorts(cfg: PortConfig): Promise<GuardianPorts> {
+export async function planPorts(cfg: PortConfig, opts?: { skipUta?: boolean; skipConnector?: boolean }): Promise<GuardianPorts> {
   const claim = async (name: PortName, choice: PortChoice, probeStart: number): Promise<number> => {
     if (choice.source === 'default') return probeFreePort(probeStart)
     try {
@@ -145,13 +163,18 @@ export async function planPorts(cfg: PortConfig): Promise<GuardianPorts> {
   }
   const webPort = await claim('web', cfg.web, PORT_DEFAULTS.web)
   const mcpPort = await claim('mcp', cfg.mcp, webPort + 1)
-  const utaPort = await claim('uta', cfg.uta, Math.max(PORT_DEFAULTS.uta, mcpPort + 1))
+  const utaPort = opts?.skipUta === true
+    ? cfg.uta.value
+    : await claim('uta', cfg.uta, Math.max(PORT_DEFAULTS.uta, mcpPort + 1))
+  const connectorPort = opts?.skipConnector === true
+    ? cfg.connector.value
+    : await claim('connector', cfg.connector, Math.max(PORT_DEFAULTS.connector, utaPort + 1))
   const uiPort = await claim('ui', cfg.ui, PORT_DEFAULTS.ui)
-  return { webPort, mcpPort, utaPort, uiPort }
+  return { webPort, mcpPort, utaPort, connectorPort, uiPort }
 }
 
 export interface SpawnSpec {
-  name: 'uta' | 'alice' | 'vite'
+  name: string
   command: string
   args: string[]
   env: NodeJS.ProcessEnv
@@ -160,16 +183,73 @@ export interface SpawnSpec {
   prefixLogs: boolean
 }
 
+/**
+ * Resolve a dev bin command to its absolute Windows `.CMD` shim when one
+ * exists locally.
+ *
+ * On Windows the dev commands (`tsx`, `pnpm`) are `.CMD` shims in
+ * `node_modules/.bin`. Guardian spawns children through cmd.exe (shell:true),
+ * which would resolve them via PATH — but a Git-Bash / MSYS PATH (or a
+ * service-account environment in a self-hosted deploy) frequently doesn't
+ * carry the project's `.bin` dir, so a bare `tsx` throws ENOENT. Handing
+ * cmd.exe the absolute `.CMD` path removes that PATH dependency.
+ *
+ * Two guards the naive "always rewrite to .bin\<cmd>.CMD" form needs:
+ *   - Only rewrite when the shim actually exists — a globally-installed `pnpm`
+ *     (the Vite child) has no local `node_modules\.bin\pnpm.CMD`; for it we
+ *     fall through to the bare command so cmd.exe's PATH lookup still finds the
+ *     global install.
+ *   - Quote the path when it contains a space (`C:\Program Files\…`): under
+ *     shell:true the command line is parsed by cmd.exe (`/s /c`), which would
+ *     otherwise split the path at the space.
+ *
+ * No-op off Windows — POSIX resolves `.bin` directly with shell off. Reported
+ * by @2233admin (#378), reimplemented here.
+ *
+ * `platform` / `binDir` / `exists` are injectable so the Windows branch is
+ * unit-testable on any OS (it never runs on the POSIX boxes CI mostly uses).
+ */
+export function resolveWindowsBin(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  binDir: string = resolve(process.cwd(), 'node_modules', '.bin'),
+  exists: (p: string) => boolean = existsSync,
+): string {
+  if (platform !== 'win32') return command
+  const shim = `${binDir}\\${command}.CMD`
+  if (!exists(shim)) return command
+  return shim.includes(' ') ? `"${shim}"` : shim
+}
+
 export function spawnChild(spec: SpawnSpec): ChildProcess {
-  const child = spawn(spec.command, spec.args, {
+  const resolvedBin = resolveWindowsBin(spec.command)
+  const unquotedBin = resolvedBin.startsWith('"') && resolvedBin.endsWith('"')
+    ? resolvedBin.slice(1, -1)
+    : resolvedBin
+  const directNpm = process.platform === 'win32'
+    ? resolveStockNpmShim(unquotedBin, spec.args, process.execPath)
+    : null
+  const pathResolved = process.platform === 'win32' && directNpm === null
+    ? resolveLaunchCommand([spec.command, ...spec.args], { env: spec.env, nodeExecPath: process.execPath })
+    : null
+  const launch = directNpm ?? pathResolved?.argv ?? [resolvedBin, ...spec.args]
+  const command = launch[0]!
+  const args = launch.slice(1)
+  const child = spawn(command, args, {
     env: spec.env,
     stdio: spec.prefixLogs ? ['inherit', 'pipe', 'pipe'] : 'inherit',
     // On Windows the dev commands (`tsx`, `pnpm`) are `.cmd` shims in
     // node_modules/.bin. Node's spawn won't apply PATHEXT resolution to find
-    // them without a shell, so a bare `spawn('tsx', …)` throws ENOENT. POSIX
-    // resolves the bin dir directly, so keep shell off there. Args here have
-    // no spaces, so shell quoting isn't a concern.
-    shell: process.platform === 'win32',
+    // them without a shell, so a bare `spawn('tsx', …)` throws ENOENT — and a
+    // Git-Bash PATH may not even carry .bin, so the command is resolved to its
+    // absolute shim above. POSIX resolves the bin dir directly, so keep shell
+    // off there. Args here have no spaces, so shell quoting isn't a concern.
+    // Stock npm shims are parsed conservatively and run as
+    // `node <real-js-entry> ...args`, avoiding cmd.exe entirely. This keeps
+    // UTA/Vite descendants attached to the child Guardian tracks, so restart
+    // and teardown can reap the whole tree. Unknown/custom batch wrappers keep
+    // the legacy shell fallback.
+    shell: process.platform === 'win32' && directNpm === null && pathResolved?.viaShell === true,
   } satisfies SpawnOptions)
 
   if (spec.prefixLogs) {
@@ -242,14 +322,19 @@ export async function waitForHttp(url: string, opts: {
  *  twice on rapid SIGINT or child crash + signal race).
  *
  *  `children` is the initial set; `trackReplacement(old, next)` rewires
- *  exit-listeners when UTAController respawns its child. */
+ *  exit-listeners when an OptionalServiceController respawns its child. */
 export interface CascadeOpts {
   children: ChildProcess[]
   /** Grace period before SIGKILL fallback. */
   graceMs?: number
+  /** Children whose crash should not bring the whole app down. They are still
+   *  killed during Guardian shutdown. UTA uses this path in lite/offline mode. */
+  nonCriticalChildren?: Set<ChildProcess>
   /** Set true on children whose exit should NOT cascade — UTA during a
    *  Guardian-initiated restart. */
   expectedExits?: Set<ChildProcess>
+  /** Release process-wide ownership only after all children have been stopped. */
+  onShutdown?: () => void | Promise<void>
 }
 
 export interface CascadeControl {
@@ -257,6 +342,8 @@ export interface CascadeControl {
   /** Mark this child's upcoming exit as expected — Guardian is intentionally
    *  killing it (UTA restart). Call before sending SIGTERM. */
   expectExit: (child: ChildProcess) => void
+  /** Track a child that did not exist when cascade was installed. */
+  trackChild: (child: ChildProcess, opts?: { nonCritical?: boolean }) => void
   /** Track a freshly-spawned replacement so its unexpected exit cascades. */
   trackReplacement: (old: ChildProcess, next: ChildProcess) => void
 }
@@ -265,6 +352,7 @@ export function installCascadeShutdown(opts: CascadeOpts): CascadeControl {
   let stopping = false
   const graceMs = opts.graceMs ?? 5_000
   const expected = opts.expectedExits ?? new Set<ChildProcess>()
+  const nonCritical = opts.nonCriticalChildren ?? new Set<ChildProcess>()
   const children = [...opts.children]
 
   const shutdown = (): void => {
@@ -281,7 +369,9 @@ export function installCascadeShutdown(opts: CascadeOpts): CascadeControl {
           killTree(c, 'SIGKILL')
         }
       }
-      process.exit(0)
+      void Promise.resolve(opts.onShutdown?.())
+        .catch((err) => console.error('[guardian] shutdown cleanup failed:', err))
+        .finally(() => process.exit(0))
     }, graceMs).unref()
   }
 
@@ -290,6 +380,10 @@ export function installCascadeShutdown(opts: CascadeOpts): CascadeControl {
       if (stopping) return
       if (expected.has(child)) {
         expected.delete(child)
+        return
+      }
+      if (nonCritical.has(child)) {
+        console.warn(`[guardian] ${childTag(child, children)} exited (code=${code}, signal=${signal}) — optional service offline, continuing`)
         return
       }
       console.log(`[guardian] ${childTag(child, children)} exited (code=${code}, signal=${signal}) — cascading shutdown`)
@@ -305,10 +399,19 @@ export function installCascadeShutdown(opts: CascadeOpts): CascadeControl {
   return {
     shutdown,
     expectExit: (child) => { expected.add(child) },
+    trackChild: (child, childOpts) => {
+      if (!children.includes(child)) children.push(child)
+      if (childOpts?.nonCritical) nonCritical.add(child)
+      attachExitListener(child)
+    },
     trackReplacement: (old, next) => {
       const idx = children.indexOf(old)
       if (idx >= 0) children[idx] = next
       else children.push(next)
+      if (nonCritical.has(old)) {
+        nonCritical.delete(old)
+        nonCritical.add(next)
+      }
       attachExitListener(next)
     },
   }
@@ -331,7 +434,7 @@ function childTag(c: ChildProcess, _all: ChildProcess[]): string {
  * Restart path = startup path: SIGTERM the old, wait exit, re-spawn with
  * same spec, gate Alice's BFF on the new health endpoint.
  */
-export class UTAController {
+export class OptionalServiceController {
   private child: ChildProcess
   private restarting = false
   /** Optional cascade hooks. UTA respawn must inform cascade so SIGINT
@@ -353,12 +456,12 @@ export class UTAController {
 
   async restart(): Promise<void> {
     if (this.restarting) {
-      console.log(`[guardian] UTA restart already in progress, skipping`)
+      console.log(`[guardian] ${this.spec.name} restart already in progress, skipping`)
       return
     }
     this.restarting = true
     try {
-      console.log(`[guardian] restarting UTA`)
+      console.log(`[guardian] restarting ${this.spec.name}`)
       const old = this.child
       this.cascade?.expectExit(old)
       const exited = new Promise<void>((resolve) => old.once('exit', () => resolve()))
@@ -375,13 +478,23 @@ export class UTAController {
 
       const ready = await waitForHttp(this.healthUrl, { timeoutMs: 15_000 })
       if (!ready) {
-        console.error(`[guardian] UTA failed to come back up after restart`)
+        console.error(`[guardian] ${this.spec.name} failed to come back up after restart`)
         return
       }
-      console.log(`[guardian] UTA back online`)
+      console.log(`[guardian] ${this.spec.name} back online`)
     } finally {
       this.restarting = false
     }
+  }
+}
+
+export async function readConnectorServiceEnabled(userDataHome: string): Promise<boolean> {
+  const filePath = resolve(userDataHome, 'data', 'config', 'connector-service.json')
+  try {
+    const value = JSON.parse(await readFile(filePath, 'utf8')) as { enabled?: unknown }
+    return value.enabled === true
+  } catch {
+    return false
   }
 }
 
@@ -409,6 +522,17 @@ export async function startFlagWatcher(opts: FlagWatchOpts): Promise<() => void>
 
   const abort = new AbortController()
   let pending: NodeJS.Timeout | undefined
+  let checking = false
+
+  const fingerprint = async (): Promise<string | null> => {
+    try {
+      const info = await stat(opts.flagPath)
+      return `${info.mtimeMs}:${info.size}`
+    } catch {
+      return null
+    }
+  }
+  let lastFingerprint = await fingerprint()
 
   const fire = (): void => {
     if (pending) clearTimeout(pending)
@@ -420,11 +544,29 @@ export async function startFlagWatcher(opts: FlagWatchOpts): Promise<() => void>
     }, debounceMs)
   }
 
+  const checkForChange = async (): Promise<void> => {
+    if (checking) return
+    checking = true
+    try {
+      const next = await fingerprint()
+      if (next !== lastFingerprint) {
+        lastFingerprint = next
+        fire()
+      }
+    } finally {
+      checking = false
+    }
+  }
+
   ;(async () => {
     try {
+      // Node 24/libuv can native-assert (not throw) when fs.watch observes a
+      // Windows 8.3 short-path temp directory. Windows file events are also
+      // the least reliable here, so polling below is the primary Win32 path.
+      if (process.platform === 'win32') return
       const watcher = watch(dirname(opts.flagPath), { signal: abort.signal })
       for await (const evt of watcher) {
-        if (evt.filename === basename(opts.flagPath)) fire()
+        if (evt.filename === basename(opts.flagPath)) await checkForChange()
       }
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return
@@ -432,5 +574,15 @@ export async function startFlagWatcher(opts: FlagWatchOpts): Promise<() => void>
     }
   })().catch(() => { /* swallow — already logged */ })
 
-  return () => abort.abort()
+  // Poll the file signature as the Windows primary path and a POSIX backstop;
+  // the shared fingerprint keeps an fs.watch event and the subsequent poll
+  // from triggering two restarts for the same write.
+  const poll = setInterval(() => { void checkForChange() }, 1_000)
+  poll.unref()
+
+  return () => {
+    abort.abort()
+    clearInterval(poll)
+    if (pending) clearTimeout(pending)
+  }
 }

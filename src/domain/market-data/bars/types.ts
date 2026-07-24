@@ -2,8 +2,8 @@
  * Federated bar layer — types.
  *
  * The bar layer is the *operational* identity namespace for K-lines (vs the
- * *reference* namespace — fundamentals/macro — which stays provider-first in
- * OpenTypeBB). A bar source is identified by a `barId`:
+ * *reference* namespace for fundamentals/macro). A bar source is identified by
+ * a `barId`:
  *
  *   barId = "{sourceId}|{nativeSymbol}"
  *
@@ -36,7 +36,7 @@ export interface BarRef {
 /** Split a barId on the FIRST `|` (nativeKey may itself contain separators). */
 export function parseBarId(barId: string): BarRef | null {
   const idx = barId.indexOf('|')
-  if (idx <= 0) return null
+  if (idx <= 0 || idx === barId.length - 1) return null
   return { sourceId: barId.slice(0, idx), nativeSymbol: barId.slice(idx + 1) }
 }
 
@@ -71,6 +71,17 @@ export interface BarMeta {
   barId?: string
   provider?: string
   barCapability?: BarCapability
+  // ---- freshness contract ----
+  // The point-in-time the request was anchored to (opts.end ?? asOf ?? today),
+  // and whether the data actually REACHES it. A delayed vendor silently
+  // stopping a day behind "now" is the failure mode this makes loud: never let
+  // a stale `to` masquerade as the current price.
+  /** Effective anchor of the request (YYYY-MM-DD): explicit end/asOf, else today. */
+  asOf?: string
+  /** True when the last bar reaches `asOf` (no trading-day gap); false = stale. */
+  isLatestActual?: boolean
+  /** Trading-day gap between the last bar and `asOf` (0 when current). */
+  staleTradingDays?: number
 }
 
 export interface BarSourceCandidate {
@@ -132,6 +143,11 @@ export interface UtaBarGateway {
   get(id: string): Promise<UtaBarAccount | undefined>
   /** Flat contract-search hits across all accounts (for searchBarSources). */
   searchContracts(pattern: string): Promise<ContractSearchHit[]>
+  /** sourceId → declared historical-bar quality, so the federated layer reports
+   *  the BROKER's honest entitlement (Alpaca free = 'iex', CCXT = 'realtime')
+   *  instead of blanket-labeling every broker source 'realtime'. Optional: a
+   *  gateway that can't surface it falls back to 'realtime'. */
+  getBarCapabilities?(): Promise<Record<string, BarCapability>>
 }
 
 export interface BarServiceDeps {

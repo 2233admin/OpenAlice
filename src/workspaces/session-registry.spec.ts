@@ -26,13 +26,14 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-// Hex/UUID wsId so the on-disk `<wsId>.json` matches SESSION_FILE_RE and
-// bootFixup actually scans it on reload.
-const WS = 'a1b2c3d4-e5f6-7890-abcd-ef0123456789'
+// Petname wsId so bootFixup proves it scans the new human-readable file shape.
+const WS = 'chat-calm-amber-river'
+const LEGACY_UUID_WS = '4894ef8b-66e1-4a41-a222-ba564e51a8c0'
 
 function rec(over: Partial<SessionRecord> = {}): SessionRecord {
   return {
-    id: 'sess-1',
+    id: 'claude-calm-amber-river',
+    resumeId: 'resume-calm-amber-river-a1b2c3',
     wsId: WS,
     agent: 'claude',
     name: 'c1',
@@ -49,25 +50,40 @@ describe('SessionRegistry persistence', () => {
   // server restart / registry reload even though flush had written it to disk.
   it('round-trips the session title across a reload', async () => {
     const reg = await SessionRegistry.load(root, noopLogger)
-    await reg.create(rec({ id: 'sess-1', title: "What's moving in semiconductors today?" }))
-    await reg.create(rec({ id: 'sess-2', name: 'c2', title: '解释一下美债收益率曲线倒挂' }))
-    await reg.create(rec({ id: 'sess-3', name: 'c3' })) // unseeded — no title
+    await reg.create(rec({
+      id: 'claude-calm-amber-river',
+      title: "What's moving in semiconductors today?",
+    }))
+    await reg.create(rec({
+      id: 'claude-clear-copper-harbor',
+      name: 'c2',
+      title: '解释一下美债收益率曲线倒挂',
+    }))
+    await reg.create(rec({ id: 'claude-quiet-silver-meadow', name: 'c3' })) // unseeded — no title
 
     // A fresh instance over the same dir = a server restart.
     const reloaded = await SessionRegistry.load(root, noopLogger)
     await reloaded.ensureLoaded(WS)
     const byId = new Map(reloaded.listFor(WS).map((r) => [r.id, r]))
 
-    expect(byId.get('sess-1')?.title).toBe("What's moving in semiconductors today?")
-    expect(byId.get('sess-2')?.title).toBe('解释一下美债收益率曲线倒挂') // CJK survives
-    expect(byId.get('sess-3')?.title).toBeUndefined() // unseeded stays nameless
+    expect(byId.get('claude-calm-amber-river')?.title).toBe(
+      "What's moving in semiconductors today?",
+    )
+    expect(byId.get('claude-clear-copper-harbor')?.title).toBe(
+      '解释一下美债收益率曲线倒挂',
+    ) // CJK survives
+    expect(byId.get('claude-quiet-silver-meadow')?.title).toBeUndefined() // unseeded stays nameless
   })
 
   // The exact path the user hit: a reload both flips orphaned running→paused
   // (bootFixup) AND must keep the title — they share the load codepath.
   it('keeps the title when bootFixup flips an orphaned running session to paused', async () => {
     const reg = await SessionRegistry.load(root, noopLogger)
-    await reg.create(rec({ id: 'sess-1', state: 'running', title: 'Build a thesis on NVDA' }))
+    await reg.create(rec({
+      id: 'claude-calm-amber-river',
+      state: 'running',
+      title: 'Build a thesis on NVDA',
+    }))
 
     const reloaded = await SessionRegistry.load(root, noopLogger)
     await reloaded.ensureLoaded(WS)
@@ -75,5 +91,42 @@ describe('SessionRegistry persistence', () => {
 
     expect(r?.state).toBe('paused') // orphaned running flipped on reload
     expect(r?.title).toBe('Build a thesis on NVDA') // …and the title is intact
+  })
+
+  it('keeps loading legacy UUID workspace files without a migration', async () => {
+    const reg = await SessionRegistry.load(root, noopLogger)
+    await reg.create(rec({
+      id: 'claude-clear-copper-harbor',
+      wsId: LEGACY_UUID_WS,
+      state: 'paused',
+      title: 'Legacy workspace still opens',
+    }))
+
+    const reloaded = await SessionRegistry.load(root, noopLogger)
+    await reloaded.ensureLoaded(LEGACY_UUID_WS)
+
+    expect(reloaded.get(LEGACY_UUID_WS, 'claude-clear-copper-harbor')?.title).toBe(
+      'Legacy workspace still opens',
+    )
+  })
+
+  it('round-trips and indexes the headless run that produced a session', async () => {
+    const reg = await SessionRegistry.load(root, noopLogger)
+    await reg.create(rec({
+      id: 'codex-steady-copper-harbor',
+      agent: 'codex',
+      name: 'x1',
+      sourceRunId: 'run-2026-07-11',
+      resumeHint: { kind: 'agent-session-id', value: '019eb75e-0b1b-7fa2' },
+    }))
+
+    const reloaded = await SessionRegistry.load(root, noopLogger)
+    await reloaded.ensureLoaded(WS)
+
+    expect(reloaded.findBySourceRunId(WS, 'run-2026-07-11')).toMatchObject({
+      id: 'codex-steady-copper-harbor',
+      sourceRunId: 'run-2026-07-11',
+      resumeHint: { kind: 'agent-session-id', value: '019eb75e-0b1b-7fa2' },
+    })
   })
 })

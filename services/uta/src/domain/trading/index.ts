@@ -14,7 +14,9 @@ export type {
   SnapshotHooks,
 } from './uta-manager.js'
 
-// Brokers (types + implementations + factory)
+// Brokers (types + async factory). Live implementations are optional packs and
+// must never be re-exported from the UTA composition root: a static re-export
+// would eagerly evaluate every vendor SDK at process startup.
 export type {
   IBroker,
   Position,
@@ -28,11 +30,7 @@ export type {
 } from './brokers/index.js'
 export {
   createBroker,
-  AlpacaBroker,
-  CcxtBroker,
-  createCcxtProviderTools,
 } from './brokers/index.js'
-export type { AlpacaBrokerConfig, CcxtBrokerConfig } from './brokers/index.js'
 
 // Trading-as-Git
 export { TradingGit } from './git/index.js'

@@ -18,7 +18,9 @@ export interface ProbeResult {
 }
 
 const DEFAULT_ANTHROPIC_BASE = 'https://api.anthropic.com';
+const DEFAULT_GOOGLE_GENERATIVE_AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1';
+export const PROBE_TIMEOUT_MS = 20_000;
 
 export interface ClaudeProbeInput {
   baseUrl: string;
@@ -41,6 +43,12 @@ export interface CodexProbeInput {
   wireApi: 'chat' | 'responses';
 }
 
+export interface GoogleProbeInput {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 /** Does this error mean the model MANDATES extended thinking? Some reasoning
  *  models (e.g. Kimi k2.7) 400 with "invalid thinking: only type=enabled is
  *  allowed for this model" when the request omits thinking — they can't run it
@@ -56,8 +64,8 @@ export async function probeAnthropic(input: ClaudeProbeInput): Promise<ProbeResu
   // send `x-api-key`. Pick exactly one — sending both can trip gateways that
   // reject ambiguous auth, and Anthropic's own API now 401s OAuth-via-Bearer.
   const client = input.authMode === 'bearer'
-    ? new Anthropic({ authToken: input.apiKey, baseURL: input.baseUrl })
-    : new Anthropic({ apiKey: input.apiKey, baseURL: input.baseUrl });
+    ? new Anthropic({ authToken: input.apiKey, baseURL: input.baseUrl, timeout: PROBE_TIMEOUT_MS, maxRetries: 0 })
+    : new Anthropic({ apiKey: input.apiKey, baseURL: input.baseUrl, timeout: PROBE_TIMEOUT_MS, maxRetries: 0 });
 
   const extract = (msg: Anthropic.Message): string => msg.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -89,7 +97,12 @@ export async function probeAnthropic(input: ClaudeProbeInput): Promise<ProbeResu
 }
 
 export async function probeOpenAI(input: CodexProbeInput): Promise<ProbeResult> {
-  const client = new OpenAI({ apiKey: input.apiKey, baseURL: input.baseUrl });
+  const client = new OpenAI({
+    apiKey: input.apiKey,
+    baseURL: input.baseUrl,
+    timeout: PROBE_TIMEOUT_MS,
+    maxRetries: 0,
+  });
   if (input.wireApi === 'responses') {
     const resp = await client.responses.create({
       model: input.model,
@@ -107,6 +120,57 @@ export async function probeOpenAI(input: CodexProbeInput): Promise<ProbeResult> 
   // Prefer the final answer; fall back to the reasoning trace so a reasoning
   // model that returned only thinking still shows it spoke (not "(empty reply)").
   const text = choice?.content?.trim() || choice?.reasoning_content?.trim() || '';
+  return { text };
+}
+
+/**
+ * Probe Google's native Generative Language API. New Google AI Studio keys use
+ * the `AQ.` authorization-key format and must be sent as `x-goog-api-key`;
+ * routing them through the OpenAI compatibility layer turns them into Bearer
+ * tokens and can fail with ACCESS_TOKEN_TYPE_UNSUPPORTED. This request mirrors
+ * the native wire Pi and opencode use after credential injection.
+ */
+export async function probeGoogleGenerativeAi(input: GoogleProbeInput): Promise<ProbeResult> {
+  const baseUrl = input.baseUrl.replace(/\/+$/, '');
+  const model = input.model.replace(/^models\//, '');
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': input.apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Hi' }] }],
+        generationConfig: { maxOutputTokens: 64 },
+      }),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error(`Connection timed out after ${PROBE_TIMEOUT_MS / 1000}s`);
+    }
+    throw error;
+  }
+
+  const raw = await response.text();
+  let payload: {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    error?: { message?: string };
+  } = {};
+  try {
+    payload = JSON.parse(raw) as typeof payload;
+  } catch {
+    // Preserve a short non-JSON response below without leaking request data.
+  }
+  if (!response.ok) {
+    const detail = payload.error?.message?.trim() || raw.trim().slice(0, 500) || response.statusText;
+    throw new Error(`Google Gemini ${response.status}: ${detail}`);
+  }
+  const text = payload.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text ?? '')
+    .join('') ?? '';
   return { text };
 }
 
@@ -129,6 +193,12 @@ export async function probeByWireShape(
         apiKey: input.apiKey,
         model: input.model,
         authMode: input.authMode ?? 'x-api-key',
+      });
+    case 'google-generative-ai':
+      return probeGoogleGenerativeAi({
+        baseUrl: input.baseUrl?.trim() || DEFAULT_GOOGLE_GENERATIVE_AI_BASE,
+        apiKey: input.apiKey,
+        model: input.model,
       });
     case 'openai-chat':
       return probeOpenAI({ baseUrl: input.baseUrl?.trim() || DEFAULT_OPENAI_BASE, apiKey: input.apiKey, model: input.model, wireApi: 'chat' });

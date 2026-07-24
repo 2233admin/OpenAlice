@@ -10,7 +10,13 @@
  */
 
 import { z } from 'zod'
-import { PRESET_CATALOG, type PresetDef, type WireShape } from './preset-catalog.js'
+import {
+  PRESET_CATALOG,
+  type CredentialSetupGuide,
+  type ModelOption,
+  type PresetDef,
+  type WireShape,
+} from './preset-catalog.js'
 
 // ==================== Serialized Preset (sent to frontend) ====================
 
@@ -29,9 +35,13 @@ export interface SerializedPreset {
   hint?: string
   defaultName: string
   schema: Record<string, unknown>
+  /** Rich model suggestions, including registered semantics when known. */
+  models?: ModelOption[]
   /** Regions × their per-shape endpoints — the form's region picker + the wire
    *  capabilities a credential created here will declare. */
   regions?: SerializedRegion[]
+  /** Provider-specific copy that explains the account, key, and model fields. */
+  setup?: CredentialSetupGuide
 }
 
 // ==================== Schema post-processing ====================
@@ -67,5 +77,7 @@ export const BUILTIN_PRESETS: SerializedPreset[] = PRESET_CATALOG.map(def => ({
   hint: def.hint,
   defaultName: def.defaultName,
   schema: buildJsonSchema(def),
+  ...(def.models ? { models: def.models } : {}),
   ...(def.regions ? { regions: def.regions } : {}),
+  ...(def.setup ? { setup: def.setup } : {}),
 }))

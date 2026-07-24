@@ -28,7 +28,7 @@ const UNSET_DECIMAL_RE = /^1\.?70141183460469/
  *  it's an UNSET sentinel / empty. */
 export function val(v: unknown): string | undefined {
   if (v == null) return undefined
-  const s = v instanceof Decimal ? v.toFixed()
+  const s = Decimal.isDecimal(v) ? v.toFixed()
     : typeof v === 'object' && 'toFixed' in (v as object) ? (v as Decimal).toFixed()
     : String(v)
   if (s === '' || s === UNSET_DOUBLE_STR || s === UNSET_I32_STR) return undefined

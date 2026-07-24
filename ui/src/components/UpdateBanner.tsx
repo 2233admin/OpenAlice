@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { VersionInfo } from '../api/types'
 
 const SKIP_STORAGE_KEY = 'openalice.update.skipVersion'
+type RuntimeMode = 'browser' | 'electron-dev' | 'electron-packaged'
 
 /**
  * Top-of-app banner shown when GitHub Releases reports a version newer
@@ -15,17 +16,19 @@ const SKIP_STORAGE_KEY = 'openalice.update.skipVersion'
  *    when a newer version is released.
  *  - "×" close — session-only dismiss (until next page load).
  *
- * Self-hosted source distribution: when the user wants to actually
- * update, they run `git pull && pnpm build && restart` in their
- * terminal. We don't auto-execute (Electron auto-update will
- * eventually handle that path natively).
+ * The action text is runtime-aware: source/Docker installs update from git,
+ * while packaged Electron is handled by the native auto-updater.
  */
 export function UpdateBanner() {
   const [info, setInfo] = useState<VersionInfo | null>(null)
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>('browser')
   const [sessionDismissed, setSessionDismissed] = useState(false)
 
   useEffect(() => {
     api.version.get().then(setInfo).catch(() => {})
+    window.openAlice?.runtime.info()
+      .then((runtime) => setRuntimeMode(runtime.mode))
+      .catch(() => setRuntimeMode('browser'))
   }, [])
 
   if (!info || !info.hasUpdate || !info.latest) return null
@@ -45,44 +48,53 @@ export function UpdateBanner() {
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-accent-dim/30 border-b border-accent/40 text-[12px] text-text">
+    <div className="flex items-center gap-3 px-4 py-2 bg-primary-muted/30 border-b border-primary/40 text-[12px] text-foreground">
       <span className="shrink-0">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="7 10 12 15 17 10" />
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
       </span>
       <span className="flex-1 min-w-0 truncate">
-        <span className="font-semibold">v{info.latest}</span> is available
-        {' '}<span className="text-text-muted">(you have v{info.current})</span>
+        <span className="font-semibold">v{info.latest}</span> available
+        {' '}<span className="text-muted-foreground hidden sm:inline">(you have v{info.current})</span>
         {info.publishedAt && (
-          <span className="text-text-muted"> · released {info.publishedAt.slice(0, 10)}</span>
+          <span className="text-muted-foreground hidden lg:inline"> · released {info.publishedAt.slice(0, 10)}</span>
         )}
       </span>
-      <span className="text-text-muted shrink-0 hidden md:inline">
-        Run <code className="text-accent bg-bg-tertiary px-1 rounded">git pull &amp;&amp; pnpm build</code> to update
-      </span>
+      {runtimeMode === 'electron-packaged' ? (
+        <span className="text-muted-foreground shrink-0 hidden md:inline">
+          Desktop updater will prompt when the download is ready
+        </span>
+      ) : (
+        <span className="text-muted-foreground shrink-0 hidden md:inline">
+          Run <code className="text-primary bg-muted px-1 rounded">git pull &amp;&amp; pnpm build</code> to update
+        </span>
+      )}
       {info.releaseUrl && (
         <a
           href={info.releaseUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-accent hover:underline shrink-0"
+          className="text-primary hover:underline shrink-0"
         >
-          Release notes →
+          <span className="hidden sm:inline">Release notes</span>
+          <span className="sm:hidden">Notes</span>
+          {' '}→
         </a>
       )}
       <button
         onClick={handleSkip}
-        className="text-text-muted hover:text-text shrink-0 text-[11px]"
+        className="text-muted-foreground hover:text-foreground shrink-0 text-[11px]"
         title="Don't show this update again"
       >
-        Skip this version
+        <span className="hidden sm:inline">Skip this version</span>
+        <span className="sm:hidden">Skip</span>
       </button>
       <button
         onClick={handleDismiss}
-        className="text-text-muted hover:text-text shrink-0"
+        className="text-muted-foreground hover:text-foreground shrink-0"
         title="Dismiss until next reload"
         aria-label="Dismiss"
       >
@@ -94,4 +106,3 @@ export function UpdateBanner() {
     </div>
   )
 }
-

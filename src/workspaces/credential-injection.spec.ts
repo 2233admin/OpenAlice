@@ -18,6 +18,14 @@ const minimaxIntl: Credential = {
 }
 const openaiKey: Credential = { vendor: 'openai', authType: 'api-key', apiKey: 'sk-oa', wires: { 'openai-responses': '', 'openai-chat': '' } }
 const chatOnlyGateway: Credential = { vendor: 'custom', authType: 'api-key', apiKey: 'k', wires: { 'openai-chat': 'https://gw.example.com/v1' } }
+const googleKey: Credential = {
+  vendor: 'google', authType: 'api-key', apiKey: 'AQ.google',
+  wires: { 'google-generative-ai': 'https://generativelanguage.googleapis.com/v1beta' },
+}
+const longcatKey: Credential = {
+  vendor: 'longcat', authType: 'api-key', apiKey: 'lc-key',
+  wires: { 'openai-chat': 'https://api.longcat.chat/openai' },
+}
 
 describe('credentialToWorkspaceAiCred', () => {
   it('picks the agent\'s wire (claude → anthropic) + apiKey; model from overrides', () => {
@@ -71,17 +79,128 @@ describe('credentialToWorkspaceAiCred', () => {
     })
   })
 
-  describe('opencode / pi → prefers chat, no adapter-specific knobs', () => {
+  describe('opencode / pi → supports selectable provider wires', () => {
     for (const agent of ['opencode', 'pi']) {
-      it(`${agent}: picks openai-chat, sets neither authMode nor wireApi`, () => {
+      it(`${agent}: leaves an unknown model's context to the native runtime`, () => {
         const cred = credentialToWorkspaceAiCred(chatOnlyGateway, agent, { model: 'some-model' })!
         expect(cred.wireShape).toBe('openai-chat')
         expect(cred.authMode).toBeUndefined()
         expect(cred.wireApi).toBeUndefined()
+        expect(cred.contextWindow).toBeUndefined()
         expect(cred.apiKey).toBe('k')
         expect(cred.baseUrl).toBe('https://gw.example.com/v1')
       })
+
+      it(`${agent}: uses the complete registered context instead of a cross-model cap`, () => {
+        const cred = credentialToWorkspaceAiCred(openaiKey, agent, { model: 'gpt-5.6' })!
+        expect(cred.contextWindow).toBe(1_050_000)
+      })
+
+      it(`${agent}: defaults MiniMax to its Anthropic coding-agent wire`, () => {
+        const cred = credentialToWorkspaceAiCred(minimaxIntl, agent, { model: 'MiniMax-M2.5' })!
+        expect(cred).toMatchObject({
+          wireShape: 'anthropic',
+          baseUrl: 'https://api.minimax.io/anthropic',
+          authMode: 'bearer',
+          contextWindow: 204_800,
+          reasoning: true,
+        })
+      })
+
+      it(`${agent}: upgrades an old official MiniMax OpenAI-only credential`, () => {
+        const legacyOpenAIOnly: Credential = {
+          vendor: 'minimax',
+          authType: 'api-key',
+          apiKey: 'old-mm-key',
+          wires: { 'openai-chat': 'https://api.minimaxi.com/v1' },
+        }
+        expect(credentialToWorkspaceAiCred(legacyOpenAIOnly, agent, {
+          model: 'MiniMax-M2.5',
+          wireShape: 'openai-chat',
+        })).toMatchObject({
+          wireShape: 'anthropic',
+          baseUrl: 'https://api.minimaxi.com/anthropic',
+          authMode: 'bearer',
+        })
+      })
     }
+  })
+
+  it('repairs legacy MiniMax OpenAI selections and rejects other incompatible wires', () => {
+    for (const agent of ['opencode', 'pi']) {
+      const repaired = credentialToWorkspaceAiCred(minimaxIntl, agent, {
+        model: 'MiniMax-M3',
+        wireShape: 'openai-chat',
+      })!
+      expect(repaired).toMatchObject({
+        wireShape: 'anthropic',
+        baseUrl: 'https://api.minimax.io/anthropic',
+        authMode: 'bearer',
+      })
+    }
+    expect(credentialToWorkspaceAiCred(minimaxIntl, 'codex', { wireShape: 'anthropic' })).toBeNull()
+  })
+
+  it('lets unknown opencode/Pi models override reasoning and context explicitly', () => {
+    const cred = credentialToWorkspaceAiCred(chatOnlyGateway, 'pi', {
+      model: 'some-model',
+      contextWindow: 256_000,
+      reasoning: true,
+    })!
+    expect(cred.contextWindow).toBe(256_000)
+    expect(cred.reasoning).toBe(true)
+    expect(credentialToWorkspaceAiCred(chatOnlyGateway, 'opencode', { reasoning: true })?.reasoning)
+      .toBe(true)
+  })
+
+  it('auto-registers known model reasoning and caps context at the provider limit', () => {
+    expect(credentialToWorkspaceAiCred(googleKey, 'pi', {
+      model: 'gemini-3.1-flash-lite',
+      contextWindow: 1_000_000,
+      reasoning: false,
+    })).toMatchObject({
+      contextWindow: 1_000_000,
+      reasoning: true,
+      reasoningEffort: 'minimal',
+    })
+
+    expect(credentialToWorkspaceAiCred(minimaxIntl, 'opencode', {
+      model: 'MiniMax-M2.7',
+      contextWindow: 1_000_000,
+    })).toMatchObject({
+      contextWindow: 204_800,
+      reasoning: true,
+    })
+  })
+
+  it('projects a known model default effort into every compatible runtime', () => {
+    for (const agent of ['claude', 'opencode', 'pi']) {
+      expect(credentialToWorkspaceAiCred(anthropicKey, agent, {
+        model: 'claude-sonnet-4-6',
+      })).toMatchObject({ reasoningEffort: 'high' })
+    }
+    expect(credentialToWorkspaceAiCred(openaiKey, 'codex', {
+      model: 'gpt-5.6',
+    })).toMatchObject({ reasoningEffort: 'medium' })
+  })
+
+  it('does not fabricate an effort tier for a provider with only a thinking switch', () => {
+    expect(credentialToWorkspaceAiCred(longcatKey, 'pi', {
+      model: 'LongCat-2.0',
+    })).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('injects Google through the native wire for opencode and Pi only', () => {
+    for (const agent of ['opencode', 'pi']) {
+      expect(credentialToWorkspaceAiCred(googleKey, agent, { model: 'gemini-3.1-flash-lite' })).toMatchObject({
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'AQ.google',
+        model: 'gemini-3.1-flash-lite',
+        wireShape: 'google-generative-ai',
+      })
+    }
+    expect(credentialToWorkspaceAiCred(googleKey, 'claude')).toBeNull()
+    expect(credentialToWorkspaceAiCred(googleKey, 'codex')).toBeNull()
   })
 })
 
@@ -144,6 +263,52 @@ describe('injectWorkspaceCredentials', () => {
     expect(claudeCall.cred).toMatchObject({ apiKey: 'sk-ant', model: 'claude-opus-4-8', authMode: 'x-api-key' })
     const codexCall = calls.find((c) => c.id === 'codex')!
     expect(codexCall.cred).toMatchObject({ apiKey: 'sk-oa', model: 'gpt-5.5' })
+  })
+
+  it('resolves the credential model when a creation default does not pin one', async () => {
+    const calls: WriteCall[] = []
+    const reg = new AdapterRegistry()
+    reg.register(stubAdapter('opencode', calls))
+    const { logger } = fakeLogger()
+
+    await injectWorkspaceCredentials({
+      dir: '/ws',
+      agents: ['opencode'],
+      agentCredentials: { opencode: { credentialSlug: 'openai-1' } },
+      adapterRegistry: reg,
+      credentials: {
+        'openai-1': { ...openaiKey, lastModel: 'gpt-5.5' },
+      },
+      logger,
+    })
+
+    expect(calls[0]?.cred).toMatchObject({ model: 'gpt-5.5', reasoning: true })
+  })
+
+  it('applies an unknown-model override only to the model it was decided for', async () => {
+    const calls: WriteCall[] = []
+    const reg = new AdapterRegistry()
+    reg.register(stubAdapter('pi', calls))
+    const { logger } = fakeLogger()
+    const custom = { ...chatOnlyGateway, lastModel: 'current-model' }
+
+    await injectWorkspaceCredentials({
+      dir: '/ws',
+      agents: ['pi'],
+      agentCredentials: {
+        pi: {
+          credentialSlug: 'custom-1',
+          reasoning: false,
+          reasoningModel: 'previous-model',
+        },
+      },
+      adapterRegistry: reg,
+      credentials: { 'custom-1': custom },
+      logger,
+    })
+
+    expect(calls[0]?.cred).toMatchObject({ model: 'current-model' })
+    expect(calls[0]?.cred.reasoning).toBeUndefined()
   })
 
   it('skips (loud warn) an agent declared but not enabled on the workspace', async () => {
@@ -210,11 +375,12 @@ describe('compatibleCredentials', () => {
     'anthropic-1': anthropicKey,
     'openai-1': openaiKey,
     'custom-1': chatOnlyGateway,
+    'google-1': googleKey,
   }
 
-  it('opencode/pi accept any wire — all three creds are compatible', () => {
-    expect(compatibleCredentials(vault, 'opencode').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1'])
-    expect(compatibleCredentials(vault, 'pi').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1'])
+  it('opencode/pi accept every supported wire including native Google', () => {
+    expect(compatibleCredentials(vault, 'opencode').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1', 'google-1'])
+    expect(compatibleCredentials(vault, 'pi').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1', 'google-1'])
   })
 
   it('claude needs an anthropic wire — only the anthropic key qualifies', () => {
@@ -252,11 +418,14 @@ describe('matchCredentialByApiKey', () => {
 describe('resolveInjectionModel', () => {
   it('prefers the credential\'s remembered lastModel', () => {
     expect(resolveInjectionModel({ vendor: 'openai', lastModel: 'gpt-5.5-custom' })).toBe('gpt-5.5-custom')
+    expect(resolveInjectionModel({ vendor: 'openai', lastModel: 'gpt-5.5' })).toBe('gpt-5.5')
   })
 
-  it('falls back to the vendor flagship when no lastModel', () => {
+  it('falls back to the vendor recommendation when no lastModel', () => {
     expect(resolveInjectionModel({ vendor: 'anthropic' })).toBe('claude-opus-4-8')
+    expect(resolveInjectionModel({ vendor: 'openai' })).toBe('gpt-5.6')
     expect(resolveInjectionModel({ vendor: 'glm' })).toBe('glm-5.2')
+    expect(resolveInjectionModel({ vendor: 'longcat' })).toBe('LongCat-2.0')
   })
 
   it('returns null for a vendor with no catalog default (custom)', () => {

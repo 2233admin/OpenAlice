@@ -1,0 +1,36 @@
+{
+  "name": "@traderalice/openalice-cli",
+  "version": "0.2.0",
+  "description": "OpenAlice local runtime and remote connection CLI",
+  "type": "module",
+  "bin": {
+    "openalice": "./bin/openalice.mjs"
+  },
+  "files": [
+    "bin/openalice.mjs",
+    "src/install-source.mjs",
+    "src/local-start.mjs",
+    "src/remote.mjs",
+    "src/runtime-deps.mjs",
+    "src/runtime-client.mjs",
+    "src/server.mjs",
+    "src/server-control.mjs",
+    "src/ssh-connect.mjs"
+  ],
+  "scripts": {
+    "build": "node --check bin/openalice.mjs && node --check src/install-source.mjs && node --check src/local-start.mjs && node --check src/remote.mjs && node --check src/runtime-deps.mjs && node --check src/runtime-client.mjs && node --check src/server.mjs && node --check src/server-control.mjs && node --check src/ssh-connect.mjs",
+    "test": "vitest run --root ../.. --config vitest.config.ts --project node packages/cli/src"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "license": "AGPL-3.0-only",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TraderAlice/OpenAlice.git",
+    "directory": "packages/cli"
+  }
+}

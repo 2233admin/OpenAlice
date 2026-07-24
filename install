@@ -1,0 +1,912 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPOSITORY="TraderAlice/OpenAlice"
+DEFAULT_BRANCH="master"
+PUBLIC_INSTALLER_URL="https://openalice.ai/install"
+VERSION=""
+REF_KIND=""
+REF_OPTION=""
+MINIMUM_NODE_VERSION="22.19.0"
+PI_VERSION="0.80.6"
+PI_RELEASE_BASE="${OPENALICE_PI_RELEASE_BASE_URL:-https://github.com/earendil-works/pi/releases/download/v${PI_VERSION}}"
+PI_RELEASE_BASE="${PI_RELEASE_BASE%/}"
+PI_PACKAGE_SHA256="ee080db64c3732daea5547bd6d9809465ffa236ef6099051e64a16753e48b795"
+PI_LOCK_SHA256="0f409bf498507f93bfbde3dc6f2b4c83bc58bdea2e2f5eabf3053cc2a81568d4"
+PI_ASSET_SOURCE_DIR="${OPENALICE_PI_SOURCE_DIR:-}"
+NPM_BIN="${OPENALICE_NPM_BIN:-npm}"
+SOURCE_DIR=""
+MODIFY_PATH=1
+ASSUME_YES=0
+PLAN_ONLY=0
+WITH_RUNTIME_DEPS=0
+INSTALL_ROOT="${OPENALICE_INSTALL_DIR:-${HOME}/.openalice}"
+INSTALL_CONTEXT="${OPENALICE_INSTALL_CONTEXT:-local}"
+
+case "$INSTALL_CONTEXT" in
+  local|remote) ;;
+  *)
+    printf 'Error: OPENALICE_INSTALL_CONTEXT must be local or remote.\n' >&2
+    exit 1
+    ;;
+esac
+
+BOLD=""
+DIM=""
+CYAN=""
+GREEN=""
+YELLOW=""
+RED=""
+RESET=""
+
+STAGING=""
+LOCK_DIR=""
+LOCK_HELD=0
+TTY_OPEN=0
+SHELL_LAUNCHER_TEMP=""
+CMD_LAUNCHER_TEMP=""
+PI_SHELL_LAUNCHER_TEMP=""
+PI_CMD_LAUNCHER_TEMP=""
+RUNTIME_DEPS_MANAGER=""
+RUNTIME_DEPS_COMMAND=""
+RUNTIME_DEPS_BLOCKER=""
+RUNTIME_MISSING=()
+ELEVATE=()
+
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  CYAN=$'\033[36m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  RED=$'\033[31m'
+  RESET=$'\033[0m'
+fi
+
+cleanup() {
+  local status=$?
+  [[ -z "$STAGING" ]] || rm -rf "$STAGING"
+  [[ -z "$SHELL_LAUNCHER_TEMP" ]] || rm -f "$SHELL_LAUNCHER_TEMP"
+  [[ -z "$CMD_LAUNCHER_TEMP" ]] || rm -f "$CMD_LAUNCHER_TEMP"
+  [[ -z "$PI_SHELL_LAUNCHER_TEMP" ]] || rm -f "$PI_SHELL_LAUNCHER_TEMP"
+  [[ -z "$PI_CMD_LAUNCHER_TEMP" ]] || rm -f "$PI_CMD_LAUNCHER_TEMP"
+  if [[ "$LOCK_HELD" -eq 1 && -n "$LOCK_DIR" ]]; then
+    rm -rf "$LOCK_DIR"
+  fi
+  if [[ "$TTY_OPEN" -eq 1 ]]; then
+    exec 3>&- 3<&-
+  fi
+  return "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
+
+die() {
+  printf '\n%bError:%b %s\n' "${RED}${BOLD}" "$RESET" "$*" >&2
+  exit 1
+}
+
+step() {
+  printf '\n%b[%s/6]%b %s\n' "$CYAN" "$1" "$RESET" "$2"
+}
+
+ok() {
+  printf '      %b✓%b %s\n' "$GREEN" "$RESET" "$1"
+}
+
+warn() {
+  printf '      %b!%b %s\n' "$YELLOW" "$RESET" "$1"
+}
+
+usage() {
+  cat <<'EOF'
+OpenAlice CLI installer
+
+Usage:
+  ./install
+  ./install --branch dev
+  ./install --version <tag-or-commit>
+  curl -fsSL https://openalice.ai/install | bash
+
+Options:
+  --branch <name>       Git branch to install (default: master)
+  --version <git-ref>   Git tag or commit to install
+  --install-dir <path>  OpenAlice user root (default: ~/.openalice)
+  --source <path>       Install CLI files from a local checkout (development)
+  --with-runtime-deps   Install missing Linux source-build tools after consent
+  --no-modify-path      Do not update the shell profile
+  --plan                Show the install plan and exit without changing files
+  -y, --yes             Accept the install plan without an interactive prompt
+  -h, --help            Show this help
+EOF
+}
+
+open_tty() {
+  if { exec 3<>/dev/tty; } 2>/dev/null; then
+    TTY_OPEN=1
+    return 0
+  fi
+  return 1
+}
+
+prompt_yes_no() {
+  local message="$1"
+  local reply=""
+
+  while true; do
+    printf '\n%b%s%b [y/N] ' "$BOLD" "$message" "$RESET" >&3
+    if ! IFS= read -r reply <&3; then
+      return 2
+    fi
+    case "$reply" in
+      y|Y|yes|YES|Yes)
+        return 0
+        ;;
+      ""|n|N|no|NO|No)
+        return 1
+        ;;
+      *)
+        printf 'Please answer y or n. Press Enter to choose no.\n' >&3
+        ;;
+    esac
+  done
+}
+
+acquire_install_lock() {
+  local owner=""
+
+  mkdir -p "$INSTALL_ROOT"
+  LOCK_DIR="$INSTALL_ROOT/.cli-install.lock"
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCK_DIR/pid"
+    LOCK_HELD=1
+    return
+  fi
+
+  if [[ -r "$LOCK_DIR/pid" ]]; then
+    IFS= read -r owner < "$LOCK_DIR/pid" || owner=""
+  fi
+  if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
+    die "Another OpenAlice CLI installer is running (pid $owner)."
+  fi
+
+  warn "Removing a stale CLI installer lock"
+  rm -rf "$LOCK_DIR"
+  mkdir "$LOCK_DIR" || die "Could not acquire the CLI installer lock at $LOCK_DIR"
+  printf '%s\n' "$$" > "$LOCK_DIR/pid"
+  LOCK_HELD=1
+}
+
+release_install_lock() {
+  if [[ "$LOCK_HELD" -eq 1 ]]; then
+    rm -rf "$LOCK_DIR"
+    LOCK_HELD=0
+  fi
+}
+
+content_id() {
+  local root="$1"
+  shift
+  node - "$root" "$@" <<'NODE'
+const { createHash } = require('node:crypto')
+const { readFileSync } = require('node:fs')
+const { join } = require('node:path')
+
+const [, , root, ...files] = process.argv
+const hash = createHash('sha256')
+for (const file of files) {
+  hash.update(file)
+  hash.update('\0')
+  hash.update(readFileSync(join(root, file)))
+  hash.update('\0')
+}
+process.stdout.write(hash.digest('hex').slice(0, 16))
+NODE
+}
+
+file_sha256() {
+  node - "$1" <<'NODE'
+const { createHash } = require('node:crypto')
+const { createReadStream } = require('node:fs')
+
+const hash = createHash('sha256')
+const input = createReadStream(process.argv[2])
+input.on('data', (chunk) => hash.update(chunk))
+input.on('end', () => process.stdout.write(hash.digest('hex')))
+input.on('error', (error) => {
+  console.error(error.message)
+  process.exitCode = 1
+})
+NODE
+}
+
+node_version_supported() {
+  node - "$MINIMUM_NODE_VERSION" <<'NODE'
+const minimum = process.argv[2].split('.').map(Number)
+const current = process.versions.node.split('.').map(Number)
+for (let index = 0; index < 3; index += 1) {
+  if (current[index] > minimum[index]) process.exit(0)
+  if (current[index] < minimum[index]) process.exit(1)
+}
+NODE
+}
+
+update_path_profile() {
+  local begin_marker="# >>> OpenAlice CLI >>>"
+  local end_marker="# <<< OpenAlice CLI <<<"
+  local temporary="${profile}.openalice.$$"
+
+  mkdir -p "$(dirname "$profile")" || return 1
+  touch "$profile" || return 1
+  awk -v begin="$begin_marker" -v end="$end_marker" -v legacy="$path_line" '
+    $0 == begin { skipping = 1; next }
+    $0 == end { skipping = 0; next }
+    !skipping && $0 != legacy { print }
+  ' "$profile" > "$temporary" || return 1
+  if [[ -s "$temporary" ]]; then
+    printf '\n' >> "$temporary" || return 1
+  fi
+  printf '%s\n%s\n%s\n' "$begin_marker" "$path_line" "$end_marker" >> "$temporary" || return 1
+
+  if [[ -L "$profile" ]]; then
+    command cat "$temporary" > "$profile" || return 1
+    rm -f "$temporary" || return 1
+  else
+    mv -f "$temporary" "$profile" || return 1
+  fi
+}
+
+find_openalice_checkout() {
+  node - "$PWD" <<'NODE'
+const { readFileSync } = require('node:fs')
+const { dirname, join, resolve } = require('node:path')
+
+let current = resolve(process.argv[2])
+while (true) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(current, 'package.json'), 'utf8'))
+    if (manifest?.name === 'open-alice' && manifest?.scripts?.['build:server']) {
+      process.stdout.write(current)
+      process.exit(0)
+    }
+  } catch {
+    // Walking up from an arbitrary install directory normally encounters no manifest.
+  }
+  const parent = dirname(current)
+  if (parent === current) process.exit(1)
+  current = parent
+}
+NODE
+}
+
+probe_runtime_deps() {
+  RUNTIME_MISSING=()
+  command -v git >/dev/null 2>&1 || RUNTIME_MISSING+=("git")
+  command -v python3 >/dev/null 2>&1 || RUNTIME_MISSING+=("python3")
+  command -v make >/dev/null 2>&1 || RUNTIME_MISSING+=("make")
+  if ! command -v c++ >/dev/null 2>&1 \
+    && ! command -v g++ >/dev/null 2>&1 \
+    && ! command -v clang++ >/dev/null 2>&1; then
+    RUNTIME_MISSING+=("cxx")
+  fi
+}
+
+runtime_missing_text() {
+  local dependency
+  local label
+  local output=""
+  for dependency in "${RUNTIME_MISSING[@]}"; do
+    case "$dependency" in
+      git) label="Git" ;;
+      python3) label="Python 3" ;;
+      make) label="make" ;;
+      cxx) label="a C++ compiler" ;;
+    esac
+    [[ -z "$output" ]] || output+=", "
+    output+="$label"
+  done
+  printf '%s' "$output"
+}
+
+resolve_runtime_deps_plan() {
+  RUNTIME_DEPS_MANAGER=""
+  RUNTIME_DEPS_COMMAND=""
+  RUNTIME_DEPS_BLOCKER=""
+  ELEVATE=()
+  [[ ${#RUNTIME_MISSING[@]} -gt 0 ]] || return 0
+
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    RUNTIME_DEPS_BLOCKER='Automatic source Runtime prerequisite setup is currently supported on Linux. On macOS, run "xcode-select --install" in a local session, then retry.'
+    return 1
+  fi
+  if [[ "$EUID" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then
+      ELEVATE=(sudo)
+    else
+      RUNTIME_DEPS_BLOCKER="Installing source Runtime prerequisites requires root or sudo on this Linux host."
+      return 1
+    fi
+  fi
+
+  local prefix=""
+  [[ ${#ELEVATE[@]} -eq 0 ]] || prefix="sudo "
+  if command -v apt-get >/dev/null 2>&1; then
+    RUNTIME_DEPS_MANAGER="apt-get"
+    RUNTIME_DEPS_COMMAND="${prefix}apt-get update && ${prefix}apt-get install -y git python3 make g++"
+  elif command -v dnf >/dev/null 2>&1; then
+    RUNTIME_DEPS_MANAGER="dnf"
+    RUNTIME_DEPS_COMMAND="${prefix}dnf install -y git python3 make gcc-c++"
+  elif command -v yum >/dev/null 2>&1; then
+    RUNTIME_DEPS_MANAGER="yum"
+    RUNTIME_DEPS_COMMAND="${prefix}yum install -y git python3 make gcc-c++"
+  elif command -v apk >/dev/null 2>&1; then
+    RUNTIME_DEPS_MANAGER="apk"
+    RUNTIME_DEPS_COMMAND="${prefix}apk add --no-cache git python3 make g++"
+  elif command -v pacman >/dev/null 2>&1; then
+    RUNTIME_DEPS_MANAGER="pacman"
+    RUNTIME_DEPS_COMMAND="${prefix}pacman -Sy --needed --noconfirm git python make gcc"
+  else
+    RUNTIME_DEPS_BLOCKER="No supported Linux package manager was found (apt-get, dnf, yum, apk, or pacman)."
+    return 1
+  fi
+}
+
+install_runtime_deps() {
+  case "$RUNTIME_DEPS_MANAGER" in
+    apt-get)
+      "${ELEVATE[@]}" apt-get update
+      "${ELEVATE[@]}" apt-get install -y git python3 make g++
+      ;;
+    dnf) "${ELEVATE[@]}" dnf install -y git python3 make gcc-c++ ;;
+    yum) "${ELEVATE[@]}" yum install -y git python3 make gcc-c++ ;;
+    apk) "${ELEVATE[@]}" apk add --no-cache git python3 make g++ ;;
+    pacman) "${ELEVATE[@]}" pacman -Sy --needed --noconfirm git python make gcc ;;
+    *) die "No source Runtime prerequisite install command is available." ;;
+  esac
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --branch)
+      [[ $# -ge 2 ]] || { echo "openalice install: --branch requires a value" >&2; exit 1; }
+      [[ -z "$REF_OPTION" ]] || die "Use only one of --branch or --version."
+      VERSION="$2"
+      REF_KIND="branch"
+      REF_OPTION="--branch"
+      shift 2
+      ;;
+    --version)
+      [[ $# -ge 2 ]] || { echo "openalice install: --version requires a value" >&2; exit 1; }
+      [[ -z "$REF_OPTION" ]] || die "Use only one of --branch or --version."
+      VERSION="$2"
+      REF_KIND="version"
+      REF_OPTION="--version"
+      shift 2
+      ;;
+    --install-dir)
+      [[ $# -ge 2 ]] || { echo "openalice install: --install-dir requires a value" >&2; exit 1; }
+      INSTALL_ROOT="$2"
+      shift 2
+      ;;
+    --source)
+      [[ $# -ge 2 ]] || { echo "openalice install: --source requires a value" >&2; exit 1; }
+      SOURCE_DIR="$2"
+      shift 2
+      ;;
+    --no-modify-path)
+      MODIFY_PATH=0
+      shift
+      ;;
+    --with-runtime-deps)
+      WITH_RUNTIME_DEPS=1
+      shift
+      ;;
+    --plan)
+      PLAN_ONLY=1
+      shift
+      ;;
+    -y|--yes)
+      ASSUME_YES=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "openalice install: unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$VERSION" ]]; then
+  VERSION="$DEFAULT_BRANCH"
+  REF_KIND="branch"
+fi
+
+if [[ ${#VERSION} -gt 128 || "$VERSION" == *".."* || ! "$VERSION" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+  die "Unsupported version/ref: $VERSION"
+fi
+
+DEFAULT_INSTALLER_URL="https://raw.githubusercontent.com/$REPOSITORY/$VERSION/install"
+if [[ "$REF_KIND" == "branch" && "$VERSION" == "$DEFAULT_BRANCH" ]]; then
+  DEFAULT_INSTALLER_URL="$PUBLIC_INSTALLER_URL"
+fi
+INSTALLER_URL="${OPENALICE_INSTALL_URL:-$DEFAULT_INSTALLER_URL}"
+
+INSTALL_ROOT="${INSTALL_ROOT/#\~/$HOME}"
+BIN_DIR="$INSTALL_ROOT/bin"
+VERSIONS_DIR="$INSTALL_ROOT/cli-versions"
+SAFE_VERSION="${VERSION//\//_}"
+
+if [[ -n "$SOURCE_DIR" ]]; then
+  source_argument="$SOURCE_DIR"
+  if ! SOURCE_DIR="$(cd "$SOURCE_DIR" 2>/dev/null && pwd)"; then
+    die "Local source checkout not found: $source_argument"
+  fi
+fi
+
+path_present=0
+case ":$PATH:" in
+  *":$BIN_DIR:"*) path_present=1 ;;
+esac
+
+profile=""
+path_line=""
+printf -v quoted_bin '%q' "$BIN_DIR"
+current_path_command="export PATH=$quoted_bin:\$PATH"
+if [[ "$MODIFY_PATH" -eq 0 ]]; then
+  shell_setup="Skip (--no-modify-path)"
+elif [[ "$path_present" -eq 1 ]]; then
+  shell_setup="Already available on PATH"
+else
+  case "${SHELL:-}" in
+    */zsh)
+      if [[ "$(uname -s)" == "Darwin" ]]; then profile="$HOME/.zprofile"; else profile="$HOME/.zshrc"; fi
+      path_line="export PATH=$quoted_bin:\$PATH"
+      ;;
+    */bash)
+      if [[ "$(uname -s)" == "Darwin" ]]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi
+      path_line="export PATH=$quoted_bin:\$PATH"
+      ;;
+    */fish)
+      profile="$HOME/.config/fish/config.fish"
+      path_line="fish_add_path $quoted_bin"
+      current_path_command="fish_add_path $quoted_bin"
+      ;;
+  esac
+  if [[ -n "$profile" ]]; then
+    shell_setup="Manage OpenAlice PATH in $profile"
+  else
+    shell_setup="Manual PATH setup (shell profile not detected)"
+  fi
+fi
+
+existing_command="$(command -v openalice 2>/dev/null || true)"
+install_action="Install a new command"
+if [[ -e "$BIN_DIR/openalice" || -e "$BIN_DIR/openalice.cmd" ]]; then
+  install_action="Update the installed command"
+fi
+
+printf '\n%bOpenAlice%b\n' "${BOLD}${CYAN}" "$RESET"
+if [[ "$INSTALL_CONTEXT" == "remote" ]]; then
+  printf '%bRemote Runtime CLI installer%b\n\n' "$BOLD" "$RESET"
+  printf 'Install the matching OpenAlice command and ready-to-use Pi agent on this SSH host.\n'
+else
+  printf '%bLocal Runtime CLI installer%b\n\n' "$BOLD" "$RESET"
+  printf 'Install the OpenAlice command and its ready-to-use Pi agent, then run locally in your browser.\n'
+fi
+printf '%bPi stays inside the OpenAlice install root. System build tools are optional and listed before consent; your checkout, Electron app, credentials, and services otherwise stay untouched.%b\n' "$DIM" "$RESET"
+
+step 1 "Checking your system"
+if ! command -v node >/dev/null 2>&1; then
+  die "Node.js $MINIMUM_NODE_VERSION or newer is required. Install Node.js 22 LTS, then run this installer again."
+fi
+
+if ! node_version_supported; then
+  die "Node.js $MINIMUM_NODE_VERSION or newer is required for OpenAlice and managed Pi (found $(node --version))."
+fi
+ok "Node.js $(node --version)"
+
+if ! node -e '
+  const url = new URL(process.argv[1]);
+  if (url.protocol !== "https:" && url.protocol !== "http:") process.exit(1);
+' "$INSTALLER_URL" >/dev/null 2>&1; then
+  die "OPENALICE_INSTALL_URL must be an HTTP(S) URL."
+fi
+
+if [[ "$NPM_BIN" == *[[:space:]]* ]]; then
+  die "OPENALICE_NPM_BIN must name one executable without arguments."
+fi
+if [[ "$NPM_BIN" == */* ]]; then
+  [[ -x "$NPM_BIN" ]] || die "npm is required to install managed Pi (not executable: $NPM_BIN)."
+elif ! command -v "$NPM_BIN" >/dev/null 2>&1; then
+  die "npm is required to install managed Pi. Install the complete Node.js 22 LTS distribution, then retry."
+fi
+ok "npm is available for managed Pi"
+
+if [[ ( -z "$SOURCE_DIR" || -z "$PI_ASSET_SOURCE_DIR" ) ]] && ! command -v curl >/dev/null 2>&1; then
+  die "curl is required to download the OpenAlice and managed Pi files."
+fi
+if [[ -n "$SOURCE_DIR" ]]; then
+  [[ -f "$SOURCE_DIR/packages/cli/package.json" ]] || die "OpenAlice CLI sources are missing under $SOURCE_DIR"
+  ok "Local checkout is readable"
+  install_source="Local checkout: $SOURCE_DIR"
+else
+  ok "curl is available"
+  BASE_URL="${OPENALICE_INSTALL_BASE_URL:-https://raw.githubusercontent.com/$REPOSITORY/$VERSION/packages/cli}"
+  BASE_URL="${BASE_URL%/}"
+  if [[ -n "${OPENALICE_INSTALL_BASE_URL:-}" ]]; then
+    install_source="Download URL: $BASE_URL"
+  elif [[ "$REF_KIND" == "branch" ]]; then
+    install_source="GitHub branch: $REPOSITORY@$VERSION"
+  else
+    install_source="GitHub ref: $REPOSITORY@$VERSION"
+  fi
+fi
+
+if [[ -n "$PI_ASSET_SOURCE_DIR" ]]; then
+  pi_source_argument="$PI_ASSET_SOURCE_DIR"
+  if ! PI_ASSET_SOURCE_DIR="$(cd "$PI_ASSET_SOURCE_DIR" 2>/dev/null && pwd)"; then
+    die "Managed Pi asset directory not found: $pi_source_argument"
+  fi
+  [[ -f "$PI_ASSET_SOURCE_DIR/package.json" ]] || die "Managed Pi package.json is missing under $PI_ASSET_SOURCE_DIR"
+  [[ -f "$PI_ASSET_SOURCE_DIR/package-lock.json" ]] || die "Managed Pi package-lock.json is missing under $PI_ASSET_SOURCE_DIR"
+  pi_install_source="Local verified assets: $PI_ASSET_SOURCE_DIR"
+else
+  pi_install_source="Pinned release: $PI_RELEASE_BASE"
+fi
+
+probe_runtime_deps
+runtime_deps_ready=0
+[[ ${#RUNTIME_MISSING[@]} -gt 0 ]] || runtime_deps_ready=1
+resolve_runtime_deps_plan || true
+if [[ "$runtime_deps_ready" -eq 1 ]]; then
+  ok "Source Runtime build tools are available"
+else
+  warn "Source Runtime build tools are missing: $(runtime_missing_text)"
+fi
+
+if [[ "$WITH_RUNTIME_DEPS" -eq 0 && "$PLAN_ONLY" -eq 0 && "$ASSUME_YES" -eq 0 \
+  && "$runtime_deps_ready" -eq 0 && -z "$RUNTIME_DEPS_BLOCKER" ]]; then
+  if open_tty; then
+    printf '\nThe CLI can prepare a source checkout later, but native Node modules may need these tools.\n' >&3
+    runtime_choice=0
+    prompt_yes_no "Also install the missing source Runtime build tools?" || runtime_choice=$?
+    if [[ "$runtime_choice" -eq 0 ]]; then
+      WITH_RUNTIME_DEPS=1
+    fi
+  fi
+fi
+
+if [[ "$runtime_deps_ready" -eq 1 ]]; then
+  runtime_setup="Already ready"
+elif [[ "$WITH_RUNTIME_DEPS" -eq 1 && -z "$RUNTIME_DEPS_BLOCKER" ]]; then
+  runtime_setup="Install $(runtime_missing_text)"
+elif [[ -n "$RUNTIME_DEPS_BLOCKER" ]]; then
+  runtime_setup="Manual setup required"
+else
+  runtime_setup="Skip (use --with-runtime-deps)"
+fi
+
+printf '\n%bInstall plan%b\n' "$BOLD" "$RESET"
+printf '  %-14s %s\n' "Action" "$install_action"
+printf '  %-14s %s\n' "Source" "$install_source"
+if [[ "$REF_KIND" == "branch" ]]; then
+  printf '  %-14s %s\n' "Branch" "$VERSION"
+else
+  printf '  %-14s %s\n' "Version" "$VERSION"
+fi
+printf '  %-14s %s\n' "Install root" "$INSTALL_ROOT"
+printf '  %-14s %s\n' "Command" "$BIN_DIR/openalice"
+printf '  %-14s %s\n' "Managed agent" "Pi $PI_VERSION -> $BIN_DIR/pi"
+printf '  %-14s %s\n' "Pi source" "$pi_install_source"
+printf '  %-14s %s\n' "Pi install" "$NPM_BIN ci --omit=dev --ignore-scripts --no-audit --no-fund"
+printf '  %-14s %s\n' "Shell setup" "$shell_setup"
+printf '  %-14s %s\n' "Runtime tools" "$runtime_setup"
+if [[ "$WITH_RUNTIME_DEPS" -eq 1 && "$runtime_deps_ready" -eq 0 && -n "$RUNTIME_DEPS_COMMAND" ]]; then
+  printf '  %-14s %s\n' "System command" "$RUNTIME_DEPS_COMMAND"
+elif [[ "$runtime_deps_ready" -eq 0 && -n "$RUNTIME_DEPS_BLOCKER" ]]; then
+  printf '  %-14s %s\n' "Runtime note" "$RUNTIME_DEPS_BLOCKER"
+fi
+if [[ -n "$existing_command" && "$existing_command" != "$BIN_DIR/openalice" ]]; then
+  printf '  %-14s %s\n' "PATH warning" "$existing_command currently resolves first"
+fi
+
+if [[ "$PLAN_ONLY" -eq 1 ]]; then
+  if [[ "$WITH_RUNTIME_DEPS" -eq 1 && "$runtime_deps_ready" -eq 0 && -n "$RUNTIME_DEPS_BLOCKER" ]]; then
+    printf '\n%bBlocked:%b %s\n' "${RED}${BOLD}" "$RESET" "$RUNTIME_DEPS_BLOCKER" >&2
+    exit 1
+  fi
+  printf '\n%bPlan complete.%b No files were changed.\n\n' "$BOLD" "$RESET"
+  exit 0
+fi
+
+if [[ "$WITH_RUNTIME_DEPS" -eq 1 && "$runtime_deps_ready" -eq 0 && -n "$RUNTIME_DEPS_BLOCKER" ]]; then
+  die "$RUNTIME_DEPS_BLOCKER"
+fi
+
+if [[ "$ASSUME_YES" -eq 0 ]]; then
+  if ! open_tty; then
+    printf '\n%bNo interactive terminal is available.%b\n' "${RED}${BOLD}" "$RESET" >&2
+    printf 'Review the install plan above, then re-run with %b--yes%b to approve it.\n' "$BOLD" "$RESET" >&2
+    exit 2
+  fi
+  confirmation_status=0
+  prompt_yes_no "Continue with this install?" || confirmation_status=$?
+  case "$confirmation_status" in
+    0) ;;
+    1)
+      printf '\nNo changes made. You can run the installer again whenever you are ready.\n'
+      exit 0
+      ;;
+    *)
+      printf '\nNo confirmation received. No changes made.\n' >&2
+      exit 2
+      ;;
+  esac
+fi
+
+step 2 "Preparing source Runtime tools"
+if [[ "$WITH_RUNTIME_DEPS" -eq 1 && "$runtime_deps_ready" -eq 0 ]]; then
+  install_runtime_deps
+  probe_runtime_deps
+  if [[ ${#RUNTIME_MISSING[@]} -gt 0 ]]; then
+    die "The package manager finished, but source Runtime build tools are still missing: $(runtime_missing_text)"
+  fi
+  runtime_deps_ready=1
+  ok "Source Runtime build tools are ready"
+else
+  printf '      No system packages were changed.\n'
+fi
+
+FILES=(
+  "package.json"
+  "bin/openalice.mjs"
+  "src/install-source.mjs"
+  "src/local-start.mjs"
+  "src/remote.mjs"
+  "src/runtime-deps.mjs"
+  "src/runtime-client.mjs"
+  "src/server.mjs"
+  "src/server-control.mjs"
+  "src/ssh-connect.mjs"
+)
+
+step 3 "Downloading OpenAlice and managed Pi"
+acquire_install_lock
+STAGING="$(mktemp -d "${TMPDIR:-/tmp}/openalice-cli.XXXXXX")"
+mkdir -p "$STAGING/bin" "$STAGING/src" "$STAGING/managed/pi"
+
+if [[ -n "$SOURCE_DIR" ]]; then
+  for file in "${FILES[@]}"; do
+    cp "$SOURCE_DIR/packages/cli/$file" "$STAGING/$file"
+  done
+else
+  for file in "${FILES[@]}"; do
+    curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 \
+      "$BASE_URL/$file" --output "$STAGING/$file"
+  done
+fi
+ok "CLI files are ready"
+
+if [[ -n "$PI_ASSET_SOURCE_DIR" ]]; then
+  cp "$PI_ASSET_SOURCE_DIR/package.json" "$STAGING/managed/pi/package.json"
+  cp "$PI_ASSET_SOURCE_DIR/package-lock.json" "$STAGING/managed/pi/package-lock.json"
+else
+  curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 \
+    "$PI_RELEASE_BASE/pi-coding-agent-install-package.json" \
+    --output "$STAGING/managed/pi/package.json"
+  curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 \
+    "$PI_RELEASE_BASE/pi-coding-agent-install-package-lock.json" \
+    --output "$STAGING/managed/pi/package-lock.json"
+fi
+[[ "$(file_sha256 "$STAGING/managed/pi/package.json")" == "$PI_PACKAGE_SHA256" ]] \
+  || die "Managed Pi package.json failed SHA-256 verification"
+[[ "$(file_sha256 "$STAGING/managed/pi/package-lock.json")" == "$PI_LOCK_SHA256" ]] \
+  || die "Managed Pi package-lock.json failed SHA-256 verification"
+ok "Pinned Pi $PI_VERSION assets passed SHA-256 verification"
+
+step 4 "Installing the managed Pi runtime"
+(
+  cd "$STAGING/managed/pi"
+  npm_config_update_notifier=false "$NPM_BIN" ci \
+    --omit=dev \
+    --ignore-scripts \
+    --no-audit \
+    --no-fund
+)
+PI_RELATIVE_ENTRY="managed/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+PI_STAGED_ENTRY="$STAGING/$PI_RELATIVE_ENTRY"
+[[ -f "$PI_STAGED_ENTRY" ]] || die "npm completed without the managed Pi CLI"
+PI_STAGED_VERSION="$(node "$PI_STAGED_ENTRY" --version)"
+[[ "$PI_STAGED_VERSION" == "$PI_VERSION" ]] || die "Managed Pi reported $PI_STAGED_VERSION instead of $PI_VERSION"
+ok "Managed Pi $PI_VERSION is ready"
+
+step 5 "Verifying the OpenAlice CLI"
+chmod +x "$STAGING/bin/openalice.mjs"
+node --check "$STAGING/bin/openalice.mjs"
+node --check "$STAGING/src/install-source.mjs"
+node --check "$STAGING/src/local-start.mjs"
+node --check "$STAGING/src/remote.mjs"
+node --check "$STAGING/src/runtime-deps.mjs"
+node --check "$STAGING/src/runtime-client.mjs"
+node --check "$STAGING/src/server.mjs"
+node --check "$STAGING/src/server-control.mjs"
+node --check "$STAGING/src/ssh-connect.mjs"
+
+CLI_VERSION="$(node -e '
+  const manifest = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+  if (manifest.name !== "@traderalice/openalice-cli" || typeof manifest.version !== "string") process.exit(1);
+  process.stdout.write(manifest.version);
+' "$STAGING/package.json")" || die "The downloaded package manifest is not an OpenAlice CLI package"
+STAGED_VERSION="$(node "$STAGING/bin/openalice.mjs" --version)"
+[[ "$STAGED_VERSION" == "$CLI_VERSION" ]] || die "The downloaded CLI did not report its package version"
+node -e '
+  const { writeFileSync } = require("node:fs");
+  const [path, repository, cliVersion, kind, value, installerUrl] = process.argv.slice(1);
+  writeFileSync(path, `${JSON.stringify({
+    schemaVersion: 1,
+    repository,
+    cliVersion,
+    selector: { kind, value },
+    installerUrl,
+  }, null, 2)}\n`, { mode: 0o644 });
+' "$STAGING/install-source.json" "$REPOSITORY" "$CLI_VERSION" "$REF_KIND" "$VERSION" "$INSTALLER_URL"
+node "$STAGING/bin/openalice.mjs" version --json | node -e '
+  let input = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { input += chunk; });
+  process.stdin.on("end", () => {
+    const [kind, value, installerUrl, cliVersion] = process.argv.slice(1);
+    const info = JSON.parse(input);
+    if (info.version !== cliVersion
+      || info.installSource?.cliVersion !== cliVersion
+      || info.installSource?.selector?.kind !== kind
+      || info.installSource?.selector?.value !== value
+      || info.installSource?.installerUrl !== installerUrl) process.exit(1);
+  });
+' "$REF_KIND" "$VERSION" "$INSTALLER_URL" "$CLI_VERSION" \
+  || die "The downloaded CLI did not preserve its installation source"
+CONTENT_FILES=("${FILES[@]}" "install-source.json" "managed/pi/package.json" "managed/pi/package-lock.json")
+CONTENT_ID="$(content_id "$STAGING" "${CONTENT_FILES[@]}")"
+ok "OpenAlice CLI $CLI_VERSION passed validation ($CONTENT_ID)"
+
+step 6 "Installing the commands"
+mkdir -p "$BIN_DIR" "$VERSIONS_DIR"
+DESTINATION="$VERSIONS_DIR/${SAFE_VERSION}-${CONTENT_ID}"
+if [[ -e "$DESTINATION" ]]; then
+  destination_pi_version="$(node "$DESTINATION/$PI_RELATIVE_ENTRY" --version 2>/dev/null || true)"
+  if [[ -d "$DESTINATION" \
+    && "$(content_id "$DESTINATION" "${CONTENT_FILES[@]}" 2>/dev/null || true)" == "$CONTENT_ID" \
+    && "$destination_pi_version" == "$PI_VERSION" ]]; then
+    rm -rf "$STAGING"
+    STAGING=""
+    ok "Reusing the already-verified OpenAlice and Pi release"
+  else
+    damaged_destination="${DESTINATION}.damaged.$$"
+    warn "Preserving a damaged prior release at $damaged_destination"
+    mv "$DESTINATION" "$damaged_destination"
+    mv "$STAGING" "$DESTINATION"
+    STAGING=""
+  fi
+else
+  mv "$STAGING" "$DESTINATION"
+  STAGING=""
+fi
+
+CLI_ENTRY="$DESTINATION/bin/openalice.mjs"
+PI_ENTRY="$DESTINATION/$PI_RELATIVE_ENTRY"
+printf -v quoted_cli_entry '%q' "$CLI_ENTRY"
+printf -v quoted_pi_entry '%q' "$PI_ENTRY"
+SHELL_LAUNCHER_TEMP="$BIN_DIR/.openalice.$$.tmp"
+CMD_LAUNCHER_TEMP="$BIN_DIR/.openalice.$$.cmd.tmp"
+PI_SHELL_LAUNCHER_TEMP="$BIN_DIR/.pi.$$.tmp"
+PI_CMD_LAUNCHER_TEMP="$BIN_DIR/.pi.$$.cmd.tmp"
+printf '#!/usr/bin/env bash\n# OpenAlice CLI launcher with managed Pi\nnode_binary="$(command -v node)" || { printf "OpenAlice requires Node.js.\\n" >&2; exit 1; }\nexport OPENALICE_MANAGED_PI_PATH=%s\nexport OPENALICE_MANAGED_PI_NODE_PATH="$node_binary"\nexec "$node_binary" %s "$@"\n' \
+  "$quoted_pi_entry" "$quoted_cli_entry" > "$SHELL_LAUNCHER_TEMP"
+chmod +x "$SHELL_LAUNCHER_TEMP"
+printf '#!/usr/bin/env bash\n# OpenAlice-managed Pi launcher\nnode_binary="$(command -v node)" || { printf "Pi requires Node.js.\\n" >&2; exit 1; }\nexec "$node_binary" %s "$@"\n' \
+  "$quoted_pi_entry" > "$PI_SHELL_LAUNCHER_TEMP"
+chmod +x "$PI_SHELL_LAUNCHER_TEMP"
+
+WINDOWS_CLI_ENTRY="$CLI_ENTRY"
+WINDOWS_PI_ENTRY="$PI_ENTRY"
+if command -v cygpath >/dev/null 2>&1; then
+  WINDOWS_CLI_ENTRY="$(cygpath -w "$CLI_ENTRY")"
+  WINDOWS_PI_ENTRY="$(cygpath -w "$PI_ENTRY")"
+fi
+WINDOWS_CLI_ENTRY="${WINDOWS_CLI_ENTRY//%/%%}"
+WINDOWS_PI_ENTRY="${WINDOWS_PI_ENTRY//%/%%}"
+printf '@echo off\r\nrem OpenAlice CLI launcher with managed Pi\r\nwhere node >nul 2>nul || (echo OpenAlice requires Node.js. 1>&2 & exit /b 1)\r\nfor %%%%I in (node.exe) do set "OPENALICE_MANAGED_PI_NODE_PATH=%%%%~$PATH:I"\r\nset "OPENALICE_MANAGED_PI_PATH=%s"\r\n"%%OPENALICE_MANAGED_PI_NODE_PATH%%" "%s" %%*\r\n' \
+  "$WINDOWS_PI_ENTRY" "$WINDOWS_CLI_ENTRY" > "$CMD_LAUNCHER_TEMP"
+printf '@echo off\r\nrem OpenAlice-managed Pi launcher\r\nnode "%s" %%*\r\n' \
+  "$WINDOWS_PI_ENTRY" > "$PI_CMD_LAUNCHER_TEMP"
+
+LAUNCHER_VERSION="$("$SHELL_LAUNCHER_TEMP" --version)"
+[[ "$LAUNCHER_VERSION" == "$CLI_VERSION" ]] || die "The staged OpenAlice launcher is not runnable"
+PI_LAUNCHER_VERSION="$("$PI_SHELL_LAUNCHER_TEMP" --version)"
+[[ "$PI_LAUNCHER_VERSION" == "$PI_VERSION" ]] || die "The staged managed Pi launcher is not runnable"
+
+# Every launcher points to an immutable, validated release before any visible
+# command is replaced. A failed update therefore leaves each visible launcher
+# pointing to a complete old or new release rather than a half-written tree.
+mv -f "$PI_CMD_LAUNCHER_TEMP" "$BIN_DIR/pi.cmd"
+PI_CMD_LAUNCHER_TEMP=""
+mv -f "$CMD_LAUNCHER_TEMP" "$BIN_DIR/openalice.cmd"
+CMD_LAUNCHER_TEMP=""
+mv -f "$PI_SHELL_LAUNCHER_TEMP" "$BIN_DIR/pi"
+PI_SHELL_LAUNCHER_TEMP=""
+mv -f "$SHELL_LAUNCHER_TEMP" "$BIN_DIR/openalice"
+SHELL_LAUNCHER_TEMP=""
+
+path_updated=0
+if [[ "$MODIFY_PATH" -eq 1 && "$path_present" -eq 0 && -n "$profile" ]]; then
+  if update_path_profile; then
+    path_updated=1
+  else
+    rm -f "${profile}.openalice.$$"
+    warn "Could not update $profile; the command is installed and can be added to PATH manually"
+  fi
+fi
+
+INSTALLED_VERSION="$("$BIN_DIR/openalice" --version)"
+[[ "$INSTALLED_VERSION" == "$CLI_VERSION" ]] || die "The installed OpenAlice command failed its version check"
+INSTALLED_PI_VERSION="$("$BIN_DIR/pi" --version)"
+[[ "$INSTALLED_PI_VERSION" == "$PI_VERSION" ]] || die "The installed Pi command failed its version check"
+ok "Installed and verified $BIN_DIR/openalice"
+ok "Installed and verified $BIN_DIR/pi"
+release_install_lock
+
+printf '\n%bOpenAlice and Pi are ready.%b\n' "${GREEN}${BOLD}" "$RESET"
+printf '  %-12s %s\n' "Command" "$BIN_DIR/openalice"
+printf '  %-12s %s\n' "CLI version" "$CLI_VERSION"
+printf '  %-12s %s\n' "Agent" "$BIN_DIR/pi"
+printf '  %-12s %s\n' "Pi version" "$PI_VERSION"
+if [[ "$REF_KIND" == "branch" ]]; then
+  printf '  %-12s %s\n' "Branch" "$VERSION"
+else
+  printf '  %-12s %s\n' "Source ref" "$VERSION"
+fi
+if [[ "$path_updated" -eq 1 ]]; then
+  printf '  %-12s %s\n' "Shell" "Future terminals will load the managed block in $profile"
+fi
+if [[ "$path_present" -eq 0 ]]; then
+  printf '\nFor this terminal, run:\n  %s\n' "$current_path_command"
+fi
+if [[ -n "$existing_command" && "$existing_command" != "$BIN_DIR/openalice" ]]; then
+  printf '\n%bPATH note:%b this terminal still resolves %s first.\n' "$YELLOW" "$RESET" "$existing_command"
+  printf 'Use %s now, or apply the PATH command above.\n' "$BIN_DIR/openalice"
+fi
+
+checkout=""
+if [[ "$INSTALL_CONTEXT" == "remote" ]]; then
+  printf '\nReturning to the approved remote setup plan.\n\n'
+else
+  checkout="$(find_openalice_checkout 2>/dev/null || true)"
+fi
+if [[ -n "$checkout" ]]; then
+  printf '\n%bReady to launch%b\n' "$BOLD" "$RESET"
+  printf '  Checkout     %s\n' "$checkout"
+  printf '  Local UI     http://127.0.0.1:47331\n'
+  printf '  Runtime      Stays attached to this terminal; Ctrl+C stops it\n'
+  if [[ "$TTY_OPEN" -eq 1 ]]; then
+    start_status=0
+    prompt_yes_no "Start OpenAlice now? Dependency preparation may take a few minutes." || start_status=$?
+    if [[ "$start_status" -eq 0 ]]; then
+      exec 3>&- 3<&-
+      TTY_OPEN=0
+      printf '\nStarting OpenAlice...\n\n'
+      exec "$BIN_DIR/openalice" start "$checkout"
+    fi
+  fi
+  printf '\nStart it when you are ready:\n  cd %q\n  %s\n\n' "$checkout" "$BIN_DIR/openalice"
+elif [[ "$INSTALL_CONTEXT" != "remote" ]]; then
+  printf '\n%bNext: launch from an OpenAlice checkout%b\n' "$BOLD" "$RESET"
+  printf '  git clone https://github.com/TraderAlice/OpenAlice.git\n'
+  printf '  cd OpenAlice\n'
+  printf '  %s\n\n' "$BIN_DIR/openalice"
+fi

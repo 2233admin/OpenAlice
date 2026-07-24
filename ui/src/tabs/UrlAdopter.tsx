@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from './store'
-import { specEquals, type ActivitySection, type ViewSpec } from './types'
+import { isDevTab, specEquals, type ActivitySection, type ViewSpec } from './types'
 import { getView } from './registry'
 
 /**
@@ -30,15 +30,24 @@ export function UrlAdopter() {
             chat front door), not an information summary (Inbox is task sync, à
             la Linear — but Linear's comms live in Slack; ours live here). */}
         <Route path="/" element={<Navigate to="/chat" replace />} />
+        <Route path="/onboarding" element={<AdoptStatic spec={{ kind: 'onboarding', params: {} }} />} />
+        <Route path="/design/:project" element={<AdoptDesignProject />} />
 
         {/* Activities */}
         {/* /chat → the "Ask Alice" quick-chat landing (composer). Legacy
             /chat/:channelId (the retired traditional-chat channels) still
             redirects to Inbox so stale bookmarks land on a live surface. */}
         <Route path="/chat" element={<AdoptStatic spec={{ kind: 'chat-landing', params: {} }} />} />
+        <Route path="/chat/manager" element={<AdoptStatic spec={{ kind: 'workspace-manager', params: {} }} />} />
+        <Route path="/chat/manager/s/:sessionId" element={<AdoptWorkspaceManager />} />
+        <Route path="/chat/workspaces/:wsId/view/:path" element={<AdoptChatFileViewer />} />
+        <Route path="/chat/workspaces/:wsId" element={<AdoptChatWorkspace />} />
+        <Route path="/chat/workspaces/:wsId/s/:sessionId" element={<AdoptChatWorkspace />} />
         <Route path="/chat/:channelId" element={<Navigate to="/inbox" replace />} />
         <Route path="/portfolio" element={<AdoptStatic spec={{ kind: 'portfolio', params: {} }} />} />
-        <Route path="/automation" element={<Navigate to="/automation/schedules" replace />} />
+        <Route path="/issues" element={<AdoptStatic spec={{ kind: 'issue', params: {} }} />} />
+        <Route path="/issues/:wsId/:id" element={<AdoptIssueDetail />} />
+        <Route path="/automation" element={<Navigate to="/automation/runs" replace />} />
         <Route path="/automation/:section" element={<AdoptAutomation />} />
         <Route path="/news" element={<AdoptStatic spec={{ kind: 'news', params: {} }} />} />
         <Route path="/market" element={<AdoptStatic spec={{ kind: 'market-list', params: {} }} />} />
@@ -48,16 +57,19 @@ export function UrlAdopter() {
             but keep it above the dynamic route for readability. */}
         <Route path="/market/boards/:board" element={<AdoptMarketBoard />} />
         <Route path="/market/:assetClass/:symbol" element={<AdoptMarketDetail />} />
-        {/* /trading-as-git no longer creates a tab — sidebar-only activity. */}
-        <Route path="/trading-as-git" element={<SetSidebarOnly section="trading-as-git" />} />
+        <Route path="/trading-as-git" element={<AdoptStatic spec={{ kind: 'trading-as-git', params: {} }} />} />
+        <Route path="/connectors" element={<AdoptStatic spec={{ kind: 'connectors', params: {} }} />} />
 
         {/* Settings — one entry per category */}
         <Route path="/settings" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'general' } }} />} />
         <Route path="/settings/ai-provider" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'ai-provider' } }} />} />
+        <Route path="/settings/agent-permissions" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'agent-permissions' } }} />} />
         <Route path="/settings/trading" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'trading' } }} />} />
+        <Route path="/settings/issues" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'issues' } }} />} />
         <Route path="/settings/mcp" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'mcp' } }} />} />
         <Route path="/settings/market-data" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'market-data' } }} />} />
         <Route path="/settings/news-collector" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'news-collector' } }} />} />
+        <Route path="/settings/connectors" element={<AdoptStatic spec={{ kind: 'settings', params: { category: 'connectors' } }} />} />
         <Route path="/settings/uta/:id" element={<AdoptUtaDetail />} />
 
         {/* Dev */}
@@ -73,24 +85,27 @@ export function UrlAdopter() {
 
         {/* Tracked (entity index) */}
         <Route path="/tracked" element={<AdoptStatic spec={{ kind: 'tracked', params: {} }} />} />
+        <Route path="/tracked/issues/:wsId/:id" element={<AdoptTrackedIssueDetail />} />
 
         {/* Workspaces */}
         <Route path="/workspaces" element={<AdoptStatic spec={{ kind: 'workspace-list', params: {} }} />} />
         {/* Template catalog routes must come before /workspaces/:wsId so the
-            static `templates` segment wins the match (it would otherwise
-            never collide — wsIds are UUIDs — but route specificity is the
-            defensive default). */}
+            static `templates` segment wins the match even if a workspace id is
+            a human-readable slug. */}
         <Route path="/workspaces/templates" element={<AdoptStatic spec={{ kind: 'template-catalog', params: {} }} />} />
         <Route path="/workspaces/templates/:name" element={<AdoptTemplateDetail />} />
         <Route path="/workspaces/:wsId/view/:path" element={<AdoptFileViewer />} />
         <Route path="/workspaces/:wsId" element={<AdoptWorkspace />} />
         <Route path="/workspaces/:wsId/s/:sessionId" element={<AdoptWorkspace />} />
 
-        {/* Legacy redirects — preserved from sections.tsx */}
+        {/* Legacy redirects */}
         <Route path="/logs" element={<Navigate to="/dev/logs" replace />} />
         <Route path="/events" element={<Navigate to="/dev/logs" replace />} />
         <Route path="/agent-status" element={<Navigate to="/dev/logs" replace />} />
-        <Route path="/scheduler" element={<Navigate to="/automation/schedules" replace />} />
+        {/* Schedules were absorbed into the Issue board — scheduled issues now
+            live there (carrying a cadence pill). */}
+        <Route path="/scheduler" element={<Navigate to="/issues" replace />} />
+        <Route path="/automation/schedules" element={<Navigate to="/issues" replace />} />
         <Route path="/ai-provider" element={<Navigate to="/settings/ai-provider" replace />} />
         <Route path="/trading" element={<Navigate to="/settings/trading" replace />} />
         <Route path="/trading-accounts" element={<Navigate to="/settings/trading" replace />} />
@@ -154,6 +169,18 @@ function AdoptMarketBoard() {
   )
 }
 
+function AdoptIssueDetail() {
+  const { wsId, id } = useParams<{ wsId: string; id: string }>()
+  if (!wsId || !id) return <Navigate to="/issues" replace />
+  return <AdoptStatic spec={{ kind: 'issue-detail', params: { wsId, id } }} />
+}
+
+function AdoptTrackedIssueDetail() {
+  const { wsId, id } = useParams<{ wsId: string; id: string }>()
+  if (!wsId || !id) return <Navigate to="/tracked" replace />
+  return <AdoptStatic spec={{ kind: 'tracked-issue-detail', params: { wsId, id } }} />
+}
+
 function AdoptUtaDetail() {
   const { id } = useParams<{ id: string }>()
   if (!id) return <Navigate to="/settings/trading" replace />
@@ -162,8 +189,7 @@ function AdoptUtaDetail() {
 
 function AdoptDev() {
   const { tab } = useParams<{ tab: string }>()
-  const valid: ReadonlyArray<string> = ['tools', 'snapshots', 'logs', 'simulator']
-  if (!tab || !valid.includes(tab)) return <Navigate to="/dev/tools" replace />
+  if (!tab || !isDevTab(tab)) return <Navigate to="/dev/tools" replace />
   return (
     <AdoptStatic
       spec={{
@@ -176,8 +202,8 @@ function AdoptDev() {
 
 function AdoptAutomation() {
   const { section } = useParams<{ section: string }>()
-  const valid: ReadonlyArray<string> = ['schedules', 'runs', 'api', 'flow', 'webhook']
-  if (!section || !valid.includes(section)) return <Navigate to="/automation/schedules" replace />
+  const valid: ReadonlyArray<string> = ['runs', 'api']
+  if (!section || !valid.includes(section)) return <Navigate to="/automation/runs" replace />
   return (
     <AdoptStatic
       spec={{
@@ -191,9 +217,23 @@ function AdoptAutomation() {
 function AdoptWorkspace() {
   const { wsId, sessionId } = useParams<{ wsId: string; sessionId?: string }>()
   if (!wsId) return <Navigate to="/workspaces" replace />
-  const params: { wsId: string; sessionId?: string } = { wsId }
+  const params: Extract<ViewSpec, { kind: 'workspace' }>['params'] = { wsId }
   if (sessionId) params.sessionId = sessionId
   return <AdoptStatic spec={{ kind: 'workspace', params }} />
+}
+
+function AdoptChatWorkspace() {
+  const { wsId, sessionId } = useParams<{ wsId: string; sessionId?: string }>()
+  if (!wsId) return <Navigate to="/chat" replace />
+  const params: Extract<ViewSpec, { kind: 'workspace' }>['params'] = { wsId, source: 'chat' }
+  if (sessionId) params.sessionId = sessionId
+  return <AdoptStatic spec={{ kind: 'workspace', params }} />
+}
+
+function AdoptWorkspaceManager() {
+  const { sessionId } = useParams<{ sessionId: string }>()
+  if (!sessionId) return <Navigate to="/chat/manager" replace />
+  return <AdoptStatic spec={{ kind: 'workspace-manager', params: { sessionId } }} />
 }
 
 function AdoptTemplateDetail() {
@@ -204,10 +244,49 @@ function AdoptTemplateDetail() {
 
 function AdoptFileViewer() {
   const { wsId, path } = useParams<{ wsId: string; path: string }>()
+  const [search] = useSearchParams()
   if (!wsId || !path) return <Navigate to="/workspaces" replace />
+  const returnSessionId = search.get('sessionId') ?? undefined
   // `path` arrives already URL-decoded by react-router (toUrl encodes it as
   // a single segment), so it may contain slashes — pass through verbatim.
-  return <AdoptStatic spec={{ kind: 'file-viewer', params: { wsId, path } }} />
+  return (
+    <AdoptStatic
+      spec={{
+        kind: 'file-viewer',
+        params: {
+          wsId,
+          path,
+          ...(returnSessionId ? { returnSessionId } : {}),
+        },
+      }}
+    />
+  )
+}
+
+function AdoptChatFileViewer() {
+  const { wsId, path } = useParams<{ wsId: string; path: string }>()
+  const [search] = useSearchParams()
+  if (!wsId || !path) return <Navigate to="/chat" replace />
+  const returnSessionId = search.get('sessionId') ?? undefined
+  return (
+    <AdoptStatic
+      spec={{
+        kind: 'file-viewer',
+        params: {
+          wsId,
+          path,
+          source: 'chat',
+          ...(returnSessionId ? { returnSessionId } : {}),
+        },
+      }}
+    />
+  )
+}
+
+function AdoptDesignProject() {
+  const { project } = useParams<{ project: string }>()
+  if (!project) return <Navigate to="/dev/tools" replace />
+  return <AdoptStatic spec={{ kind: 'design-project', params: { project } }} />
 }
 
 function RedirectUtaDetail() {
@@ -216,23 +295,9 @@ function RedirectUtaDetail() {
 }
 
 /**
- * Some activities have no tab kind (e.g. trading-as-git is sidebar-only).
- * Visiting their URL should just open the sidebar; no tab gets created.
- */
-function SetSidebarOnly({ section }: { section: import('./types').ActivitySection }) {
-  const setSidebar = useWorkspace((state) => state.setSidebar)
-  useEffect(() => {
-    setSidebar(section)
-  }, [section, setSidebar])
-  return null
-}
-
-/**
- * Map a ViewSpec to the ActivitySection whose sidebar should accompany
- * it. URL adoption uses this so a fresh page load / deep link / browser
- * back-forward lands on a screen with the matching sidebar already
- * open — otherwise `selectedSidebar` stays at whatever was persisted
- * (or null on first run), and the page renders without left context.
+ * Map a ViewSpec to the ActivitySection highlighted in the ActivityBar.
+ * Page-owned sidebars keep the highlight in sync while the app shell stays
+ * unaware of each surface's local navigation.
  *
  * `uta-detail` is intentionally Portfolio's sidebar: the URL lives
  * under /settings/uta/:id for historical reasons but the page is a
@@ -242,21 +307,29 @@ function specToSection(spec: ViewSpec): ActivitySection {
   switch (spec.kind) {
     case 'inbox':              return 'inbox'
     case 'tracked':            return 'tracked'
+    case 'tracked-issue-detail': return 'tracked'
     case 'chat-landing':       return 'chat'
-    case 'workspace':
+    case 'workspace-manager':  return 'chat'
+    case 'workspace':          return spec.params.source === 'chat' ? 'chat' : 'workspaces'
+    case 'file-viewer':        return spec.params.source === 'chat' ? 'chat' : 'workspaces'
     case 'workspace-list':
     case 'template-catalog':
-    case 'template-detail':
-    case 'file-viewer':        return 'workspaces'
+    case 'template-detail':    return 'workspaces'
+    case 'trading-as-git':     return 'trading-as-git'
+    case 'connectors':         return 'connectors'
     case 'portfolio':
     case 'uta-detail':         return 'portfolio'
+    case 'issue':
+    case 'issue-detail':       return 'issue'
     case 'automation':         return 'automation'
     case 'news':               return 'news'
     case 'market-list':
     case 'market-rotation':
     case 'market-board':
     case 'market-detail':      return 'market'
-    case 'settings':           return 'settings'
+    case 'settings':
+    case 'onboarding':         return 'settings'
+    case 'design-project':     return 'dev'
     case 'dev':                return 'dev'
   }
 }
@@ -264,8 +337,8 @@ function specToSection(spec: ViewSpec): ActivitySection {
 /**
  * Compare focused tab against `spec` and openOrFocus only if different —
  * skips redundant store updates on every render. Also activates the
- * matching sidebar so URL-driven navigation (fresh load, deep link,
- * back-forward) lands with the expected left-rail context, not blank.
+ * matching ActivityBar section so URL-driven navigation (fresh load,
+ * deep link, back-forward) lands with the expected navigation context.
  */
 function useAdopt(spec: ViewSpec) {
   const openOrFocus = useWorkspace((state) => state.openOrFocus)

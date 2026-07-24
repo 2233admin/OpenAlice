@@ -32,15 +32,5 @@ export type {
   SerializedBrokerPreset,
 } from '@traderalice/uta-protocol'
 
-// Alpaca
-export { AlpacaBroker } from './alpaca/index.js'
-export type { AlpacaBrokerConfig } from './alpaca/index.js'
-
-// CCXT
-export { CcxtBroker } from './ccxt/index.js'
-export { createCcxtProviderTools } from './ccxt/index.js'
-export type { CcxtBrokerConfig } from './ccxt/index.js'
-
-// IBKR
-export { IbkrBroker } from './ibkr/index.js'
-export type { IbkrBrokerConfig } from './ibkr/index.js'
+// Live broker implementations intentionally are not re-exported here. They
+// are built and loaded as optional broker packs by registry.ts.

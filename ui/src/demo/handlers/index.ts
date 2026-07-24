@@ -1,11 +1,12 @@
 import { authHandlers } from './auth'
 import { tradingHandlers } from './trading'
 import { workspacesHandlers } from './workspaces'
-import { eventsHandlers } from './events'
 import { inboxHandlers } from './inbox'
 import { entitiesHandlers } from './entities'
 import { personaHeartbeatHandlers } from './personaHeartbeat'
 import { scheduleHandlers } from './schedule'
+import { issuesHandlers } from './issues'
+import { wikilinkHandlers } from './wikilink'
 import { toolsSimulatorHandlers } from './toolsSimulator'
 import { marketHandlers } from './market'
 import { configKeysHandlers } from './configKeys'
@@ -13,6 +14,9 @@ import { agentStatusHandlers } from './agentStatus'
 import { newsListHandlers } from './newsList'
 import { devMiscHandlers } from './devMisc'
 import { headlessHandlers } from './headless'
+import { preferencesHandlers } from './preferences'
+import { inquiryHandlers } from './inquiries'
+import { connectorsHandlers } from './connectors'
 import { catchAllHandlers } from './catchAll'
 
 // Order matters: catchAll must be LAST. MSW resolves handlers in registration
@@ -22,11 +26,12 @@ export const handlers = [
   ...authHandlers,
   ...tradingHandlers,
   ...workspacesHandlers,
-  ...eventsHandlers,
   ...inboxHandlers,
   ...entitiesHandlers,
   ...personaHeartbeatHandlers,
   ...scheduleHandlers,
+  ...issuesHandlers,
+  ...wikilinkHandlers,
   ...toolsSimulatorHandlers,
   ...marketHandlers,
   ...configKeysHandlers,
@@ -34,5 +39,8 @@ export const handlers = [
   ...newsListHandlers,
   ...devMiscHandlers,
   ...headlessHandlers,
+  ...preferencesHandlers,
+  ...inquiryHandlers,
+  ...connectorsHandlers,
   ...catchAllHandlers,
 ]

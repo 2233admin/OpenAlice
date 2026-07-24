@@ -29,7 +29,7 @@ import {
   SIMULATOR_PRESET,
   BUILTIN_BROKER_PRESETS,
 } from '@traderalice/uta-protocol'
-import { BROKER_ENGINE_REGISTRY } from './registry.js'
+import { loadBrokerEngine } from './registry.js'
 
 // ==================== Sample data per preset ====================
 
@@ -79,10 +79,10 @@ describe.each(BROKER_PRESET_CATALOG)('preset $id', (preset) => {
     expect(() => preset.zodSchema.parse(sample)).not.toThrow()
   })
 
-  it('toEngineConfig output is accepted by the target engine schema', () => {
+  it('toEngineConfig output is accepted by the target engine schema', async () => {
     const parsed = preset.zodSchema.parse(sample) as Record<string, unknown>
     const engineConfig = preset.toEngineConfig(parsed)
-    const engineEntry = BROKER_ENGINE_REGISTRY[preset.engine]
+    const engineEntry = await loadBrokerEngine(preset.engine)
     expect(() => engineEntry.configSchema.parse(engineConfig)).not.toThrow()
   })
 })

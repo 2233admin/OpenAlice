@@ -19,8 +19,9 @@ import { dirname } from 'node:path'
 
 import type { Logger } from '../logger.js'
 
-// A wsId is a uuid (no spaces), so a space cleanly delimits the wsId prefix from
-// an agent-authored taskId - the composite is an injective, opaque map key.
+// A wsId is a route-safe slug (no spaces), so a space cleanly delimits the wsId
+// prefix from an agent-authored taskId - the composite is an injective, opaque
+// map key.
 const SEP = ' '
 const composite = (wsId: string, taskId: string): string => `${wsId}${SEP}${taskId}`
 

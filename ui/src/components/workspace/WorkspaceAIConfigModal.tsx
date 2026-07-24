@@ -1,14 +1,17 @@
 /**
- * Per-workspace AI provider config modal.
+ * Per-workspace settings modal.
  *
  * Workspaces are VS-Code-style "open folders" — each owns its CLI config
  * files (.claude/settings.local.json, .codex/config.toml + env.json). This
- * modal is the visual editor for those files. Files are the source of
- * truth; the modal reads + writes via the workspace API. Restart any open
- * sessions for changes to take effect (env is read at CLI startup).
+ * modal is the visual editor for those files plus the workspace's
+ * self-describing metadata. Files are the source of truth; the modal reads +
+ * writes via the workspace API. Restart any open sessions for AI-provider
+ * changes to take effect (env is read at CLI startup).
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Bot, GitMerge, Info, Layers3, Settings, X } from 'lucide-react'
 import {
   getAgentConfig,
   listCredentials,
@@ -20,10 +23,26 @@ import {
   type AgentId,
   type SavedCredential,
 } from './api'
-import { api, type Preset, type WireShape } from '../../api'
-import { baseUrlToVendor, vendorPreset, presetModels, pickAgentWire } from '../../lib/presetHelpers'
+import { api, type ModelReasoningEffort, type Preset, type WireShape } from '../../api'
+import {
+  AGENT_WIRE_PREFERENCE,
+  WIRE_SHAPE_GUIDANCE,
+  agentWireShapes,
+  anthropicAuthModeForBaseUrl,
+  baseUrlToVendor,
+  describeModelSemantics,
+  presetModel,
+  savedCredentialModel,
+  vendorPreset,
+  presetModels,
+  pickAgentWire,
+} from '../../lib/presetHelpers'
 import { ModelCombobox } from '../credentials/PresetFields'
 import { useTestGate } from '../../lib/useTestGate'
+import { useWorkspaces } from '../../contexts/workspaces-context'
+import { notifyWorkspaceAgentConfigChanged } from '../../lib/workspaceAiEvents'
+import { WorkspaceTemplateUpgradePanel } from './WorkspaceTemplateUpgradePanel'
+import { WorkspaceAbsorbPanel } from './WorkspaceAbsorbPanel'
 
 // The agent tab implies a default vendor when the baseUrl alone can't say:
 // claude → Anthropic, codex → OpenAI; opencode/pi run anything so they have no
@@ -35,29 +54,52 @@ const TAB_FALLBACK_VENDOR: Record<Tab, string | null> = {
   pi: null,
 }
 
+export type Tab = 'claude' | 'codex' | 'opencode' | 'pi'
+type Section = 'general' | 'ai' | 'template' | 'absorb'
+
 interface Props {
   wsId: string
   onClose: () => void
+  onAiSaved?: (result: WorkspaceAiSaveResult) => void
+  initialAgent?: Tab
+  initialSection?: Section
+}
+
+export interface WorkspaceAiSaveResult {
+  readonly agent: Tab
+  readonly runtimeLabel: string
+  readonly model: string | null
+  readonly workspaceLabel: string
 }
 
 const inputClass =
-  'w-full bg-bg-secondary border border-border rounded-md px-3 py-2 text-[13px] text-text placeholder:text-text-muted/60 focus:outline-none focus:border-accent'
-
-type Tab = 'claude' | 'codex' | 'opencode' | 'pi'
+  'w-full bg-secondary border border-border rounded-md px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary'
 
 const TAB_LABEL: Record<Tab, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'opencode', pi: 'Pi' }
+const CONTEXT_WINDOW_OPTIONS = [
+  { value: 128_000, label: '128K' },
+  { value: 256_000, label: '256K' },
+  { value: 512_000, label: '512K' },
+  { value: 1_000_000, label: '1M' },
+] as const
 
-interface FormState {
+export interface FormState {
   baseUrl: string
   apiKey: string
   model: string
+  /** Null lets registered model semantics or the native runtime decide. */
+  contextWindow: number | null
+  /** null = let registry/runtime decide; boolean = unknown-model override. */
+  reasoning: boolean | null
+  /** null = fill from the registered model default when one is known. */
+  reasoningEffort: ModelReasoningEffort | null
   /** The wire protocol — drives the test + how the adapter is configured. */
   wireShape: WireShape
   wireApi: 'chat' | 'responses'
-  // Claude-only: which header carries the key. 'x-api-key' is Anthropic's
+  // Anthropic-wire only: which header carries the key. 'x-api-key' is Anthropic's
   // first-party default; 'bearer' (Authorization: Bearer) is what most
-  // anthropic-compatible gateways want — MiniMax's international endpoint
-  // (api.minimax.io) only accepts Bearer, which is why x-api-key 401s there.
+  // anthropic-compatible gateways want — MiniMax documents Bearer for both
+  // regional endpoints and the international endpoint rejects x-api-key.
   authMode: 'x-api-key' | 'bearer'
 }
 
@@ -69,26 +111,58 @@ const DEFAULT_WIRE_BY_TAB: Record<Tab, WireShape> = {
   pi: 'openai-chat',
 }
 
-const EMPTY_FORM: FormState = { baseUrl: '', apiKey: '', model: '', wireShape: 'anthropic', wireApi: 'responses', authMode: 'x-api-key' }
+const EMPTY_FORM: FormState = {
+  baseUrl: '',
+  apiKey: '',
+  model: '',
+  contextWindow: null,
+  reasoning: null,
+  reasoningEffort: null,
+  wireShape: 'anthropic',
+  wireApi: 'responses',
+  authMode: 'x-api-key',
+}
 
-function configToForm(cfg: AgentConfig | null, tab: Tab): FormState {
+function normalizeContextWindow(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+}
+
+function formatContextWindow(value: number): string {
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(2))}M`
+  if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}K`
+  return String(value)
+}
+
+export function configToForm(cfg: AgentConfig | null, tab: Tab): FormState {
   if (!cfg) return { ...EMPTY_FORM, wireShape: DEFAULT_WIRE_BY_TAB[tab] }
   return {
     baseUrl: cfg.baseUrl ?? '',
     apiKey: cfg.apiKey ?? '',
     model: cfg.model ?? '',
+    contextWindow: normalizeContextWindow(cfg.contextWindow),
+    reasoning: typeof cfg.reasoning === 'boolean' ? cfg.reasoning : null,
+    reasoningEffort: cfg.reasoningEffort ?? null,
     wireShape: cfg.wireShape ?? DEFAULT_WIRE_BY_TAB[tab],
     wireApi: 'responses',
     authMode: cfg.authMode === 'bearer' ? 'bearer' : 'x-api-key',
   }
 }
 
-function formToConfig(form: FormState, agent: AgentId): AgentConfig {
+export function formToConfig(form: FormState, agent: AgentId): AgentConfig {
   const cfg: AgentConfig = {
     baseUrl: form.baseUrl.trim() || null,
     apiKey: form.apiKey.trim() || null,
     model: form.model.trim() || null,
     wireShape: form.wireShape,
+    ...(form.reasoningEffort ? { reasoningEffort: form.reasoningEffort } : {}),
+  }
+  if (agent === 'opencode' || agent === 'pi') {
+    return {
+      ...cfg,
+      ...(form.contextWindow !== null ? { contextWindow: form.contextWindow } : {}),
+      ...(typeof form.reasoning === 'boolean' ? { reasoning: form.reasoning } : {}),
+      ...(form.wireShape === 'anthropic' ? { authMode: form.authMode } : {}),
+    }
   }
   if (agent === 'codex') {
     return { ...cfg, wireApi: form.wireApi }
@@ -105,19 +179,47 @@ function formToConfig(form: FormState, agent: AgentId): AgentConfig {
 // a result to the `key` it was tested against; editing any tested field changes
 // the key, so the result stops matching and Save re-locks. `testKey` lists
 // exactly the fields the probe covers (agent-specific: wireApi for codex,
-// authMode for claude).
-function testKey(form: FormState, agent: AgentId): string {
+// authMode for every Anthropic-wire request).
+function testKey(form: FormState): string {
   return [
     form.baseUrl.trim(),
     form.apiKey.trim(),
     form.model.trim(),
     form.wireShape,
-    agent === 'claude' ? form.authMode : '',
+    form.wireShape === 'anthropic' ? form.authMode : '',
   ].join('|')
 }
 
-export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
-  const [tab, setTab] = useState<Tab>('claude')
+/** Connection probes cover only transport/auth/model fields. Local runtime
+ * metadata such as context-window size and unknown-model reasoning capability
+ * is written into the Workspace config without changing the HTTP request that
+ * was already verified. */
+export function connectionFieldsChanged(
+  saved: AgentConfig | null,
+  form: FormState,
+  tab: Tab,
+): boolean {
+  return testKey(configToForm(saved, tab)) !== testKey(form)
+}
+
+export function WorkspaceAIConfigModal({
+  wsId,
+  onClose,
+  onAiSaved,
+  initialAgent = 'claude',
+  initialSection = 'general',
+}: Props) {
+  const { t } = useTranslation()
+  const { workspaces, refresh, saveWorkspaceMetadata } = useWorkspaces()
+  const workspace = workspaces.find((w) => w.id === wsId) ?? null
+  const workspaceLabel = workspace?.displayName?.trim() || workspace?.tag || wsId
+  const [section, setSection] = useState<Section>(initialSection)
+  const [tab, setTab] = useState<Tab>(initialAgent)
+  const [metadataFormWsId, setMetadataFormWsId] = useState<string | null>(null)
+  const [displayName, setDisplayName] = useState('')
+  const [description, setDescription] = useState('')
+  const [metadataSaving, setMetadataSaving] = useState(false)
+  const [metadataSavedFlash, setMetadataSavedFlash] = useState(false)
   const [credentials, setCredentials] = useState<SavedCredential[]>([])
   const [bundle, setBundle] = useState<AgentConfigBundle | null>(null)
   const [claudeForm, setClaudeForm] = useState<FormState>(EMPTY_FORM)
@@ -125,13 +227,14 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
   const [opencodeForm, setOpencodeForm] = useState<FormState>(EMPTY_FORM)
   const [piForm, setPiForm] = useState<FormState>(EMPTY_FORM)
   const [pickedCredential, setPickedCredential] = useState<string>('')
+  const [pickedWireShape, setPickedWireShape] = useState<WireShape | ''>('')
   const [showKey, setShowKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedFlash, setSavedFlash] = useState(false)
-  // Push-back prompt: shown after a successful Save when the just-saved key
-  // isn't already in Alice's central store — offers to solidify it for reuse.
-  const [offerSaveCred, setOfferSaveCred] = useState(false)
+  // A Workspace-only hand-entered key can still be promoted to Alice's vault,
+  // but the choice must happen before the primary Save closes the dialog.
+  const [dismissedCredentialKey, setDismissedCredentialKey] = useState<string | null>(null)
   const [savingCred, setSavingCred] = useState(false)
   const [credFlash, setCredFlash] = useState<string | null>(null)
   // One test-gate per tab (hooks are unconditional + fixed-count).
@@ -140,6 +243,21 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
   const opencodeGate = useTestGate()
   const piGate = useTestGate()
   const [presets, setPresets] = useState<Preset[]>([])
+
+  useEffect(() => {
+    setSection(initialSection)
+    setTab(initialAgent)
+    setPickedCredential('')
+    setPickedWireShape('')
+  }, [initialAgent, initialSection, wsId])
+
+  useEffect(() => {
+    if (metadataFormWsId === wsId) return
+    if (!workspace) return
+    setDisplayName(workspace.displayName ?? '')
+    setDescription(workspace.description ?? '')
+    setMetadataFormWsId(wsId)
+  }, [metadataFormWsId, workspace, wsId])
 
   useEffect(() => {
     void Promise.all([listCredentials(), getAgentConfig(wsId)])
@@ -158,19 +276,70 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
 
   const form = { claude: claudeForm, codex: codexForm, opencode: opencodeForm, pi: piForm }[tab]
   const setForm = { claude: setClaudeForm, codex: setCodexForm, opencode: setOpencodeForm, pi: setPiForm }[tab]
+  const formCredentialByKey = useMemo(() => credentials.find((credential) => (
+    !!credential.apiKey && credential.apiKey === form.apiKey.trim()
+  )) ?? null, [credentials, form.apiKey])
+  const formCredentialVendor = useMemo(() => {
+    const selected = credentials.find((credential) => credential.slug === pickedCredential)
+    return selected?.vendor ?? formCredentialByKey?.vendor ?? null
+  }, [credentials, formCredentialByKey, pickedCredential])
+  const formWireOptions = useMemo(() => {
+    if (tab !== 'opencode' && tab !== 'pi') return []
+    return formCredentialByKey?.vendor === 'minimax'
+      ? agentWireShapes(formCredentialByKey.wires, tab, formCredentialByKey.vendor)
+      : AGENT_WIRE_PREFERENCE[tab] ?? []
+  }, [formCredentialByKey, tab])
+
+  useEffect(() => {
+    if (
+      (tab !== 'opencode' && tab !== 'pi') ||
+      formCredentialByKey?.vendor !== 'minimax'
+    ) return
+    if (formWireOptions.includes(form.wireShape)) return
+    const repaired = pickAgentWire(
+      formCredentialByKey.wires,
+      tab,
+      form.wireShape,
+      formCredentialByKey.vendor,
+    )
+    if (!repaired || repaired.shape === form.wireShape) return
+    setForm({
+      ...form,
+      wireShape: repaired.shape,
+      baseUrl: repaired.baseUrl,
+      ...(repaired.shape === 'anthropic'
+        ? { authMode: anthropicAuthModeForBaseUrl(repaired.baseUrl) }
+        : {}),
+    })
+  }, [form, formCredentialByKey, formWireOptions, setForm, tab])
   // Model-id suggestions for the current field: infer the provider vendor from
-  // the entered baseUrl (api.z.ai → glm, …) with the tab as fallback, then pull
-  // that vendor's enumerated models. Empty for custom/local endpoints → the
-  // combobox is just a free-text input. This is vendor-axis, not agent-axis, so
-  // it works when any tab is pointed at any gateway.
+  // the matched vault credential first, then its entered baseUrl (api.z.ai →
+  // glm, …), with the tab as fallback. Official endpoints may intentionally be
+  // empty, so key identity is the only reliable vendor signal for opencode/Pi.
   const modelSuggestions = useMemo(() => {
-    const vendor = baseUrlToVendor(form.baseUrl, TAB_FALLBACK_VENDOR[tab])
+    const vendor = formCredentialVendor
+      ?? baseUrlToVendor(form.baseUrl, TAB_FALLBACK_VENDOR[tab])
     if (!vendor) return []
     const p = vendorPreset(vendor, presets)
     return p ? presetModels(p) : []
-  }, [form.baseUrl, tab, presets])
+  }, [form.baseUrl, formCredentialVendor, tab, presets])
+  const selectedModelSemantics = useMemo(() => {
+    const vendor = formCredentialVendor
+      ?? baseUrlToVendor(form.baseUrl, TAB_FALLBACK_VENDOR[tab])
+    if (!vendor) return null
+    return presetModel(vendorPreset(vendor, presets), form.model)?.semantics ?? null
+  }, [form.baseUrl, form.model, formCredentialVendor, tab, presets])
+  const supportedReasoningEfforts = useMemo(() => {
+    const efforts = selectedModelSemantics?.reasoning?.efforts ?? []
+    // Claude Code project settings support these persisted values. `max` is a
+    // session-only CLI choice, so do not offer a value the injector cannot own.
+    return tab === 'claude'
+      ? efforts.filter((effort) => effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh')
+      : efforts
+  }, [selectedModelSemantics, tab])
+  const semanticsSummary = describeModelSemantics(selectedModelSemantics)
   const gate = { claude: claudeGate, codex: codexGate, opencode: opencodeGate, pi: piGate }[tab]
-  const key = testKey(form, tab)
+  const key = testKey(form)
   const testing = gate.testing
   const result = gate.result
   const resultMatchesCurrent = gate.matchesCurrent(key)
@@ -184,35 +353,48 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
       savedForm.apiKey !== form.apiKey ||
       savedForm.model !== form.model ||
       savedForm.wireShape !== form.wireShape ||
-      (tab === 'claude' && savedForm.authMode !== form.authMode)
+      ((tab === 'opencode' || tab === 'pi') && savedForm.contextWindow !== form.contextWindow) ||
+      ((tab === 'opencode' || tab === 'pi') && savedForm.reasoning !== form.reasoning) ||
+      savedForm.reasoningEffort !== form.reasoningEffort ||
+      (form.wireShape === 'anthropic' && savedForm.authMode !== form.authMode)
     )
   }, [bundle, form, tab])
+  const enteredApiKey = form.apiKey.trim()
+  const offerSaveCred = !!enteredApiKey &&
+    !credentials.some((credential) => credential.apiKey === enteredApiKey) &&
+    dismissedCredentialKey !== enteredApiKey
+  const connectionDirty = useMemo(
+    () => !!bundle && connectionFieldsChanged(bundle[tab], form, tab),
+    [bundle, form, tab],
+  )
   // The primary footer button morphs Test → Save off this: an unsaved change
-  // has to clear the connection test before it can be saved, so the lit button
-  // is always the next action to take.
-  const needsTest = dirty && !testPassedForCurrent
+  // to connection fields has to clear the probe before it can be saved. Local
+  // model metadata (context/reasoning) can be saved without another API call.
+  const needsTest = dirty && connectionDirty && !testPassedForCurrent
 
   const applyCredential = () => {
     const cred = credentials.find((x) => x.slug === pickedCredential)
     if (!cred) return
     // Pick the wire this tab's agent speaks from the credential's capabilities.
     // (The picker only lists compatible credentials, so this is non-null.)
-    const picked = pickAgentWire(cred.wires, tab)
+    const picked = pickAgentWire(cred.wires, tab, pickedWireShape || undefined, cred.vendor)
     if (!picked) return
-    // A credential carries no model, so default it to the matched provider's
-    // first model — a stale model from a previous provider (e.g. minimax-m3 left
-    // on a GLM endpoint) would 404. The user can still pick another below.
+    // Prefer the model this credential last used. A newly-created credential
+    // falls back to the catalog's explicit default, not list order: catalogs
+    // put the newest models first for discovery while retaining a conservative
+    // default for first use (notably Gemini Flash-Lite vs 3.5 Flash).
     const vendorP = vendorPreset(cred.vendor, presets)
-    const defaultModel = vendorP ? (presetModels(vendorP)[0]?.id ?? '') : ''
-    // Auth mode: api.minimax.io needs Bearer; default x-api-key otherwise.
-    const bearer = /api\.minimax\.io/i.test(picked.baseUrl)
+    const defaultModel = savedCredentialModel(cred, vendorP)
     setForm({
       ...form,
       baseUrl: picked.baseUrl,
       apiKey: cred.apiKey ?? '',
       model: defaultModel,
+      contextWindow: null,
+      reasoning: null,
+      reasoningEffort: null,
       wireShape: picked.shape,
-      authMode: bearer ? 'bearer' : 'x-api-key',
+      authMode: anthropicAuthModeForBaseUrl(picked.baseUrl),
     })
     gate.reset() // a new provider invalidates any prior test verdict
   }
@@ -222,19 +404,17 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
     setSaving(true)
     try {
       await saveAgentConfig(wsId, tab, formToConfig(form, tab))
-      const fresh = await getAgentConfig(wsId)
-      setBundle(fresh)
-      setSavedFlash(true)
-      setTimeout(() => setSavedFlash(false), 1800)
-      // Offer to solidify a hand-entered key into Alice's central store — but
-      // only when that key isn't already there (one key = one account; dedup is
-      // by key, so a known key shouldn't re-prompt).
-      const key = form.apiKey.trim()
-      const known = credentials.some((c) => c.apiKey === key)
-      setOfferSaveCred(!!key && !known)
+      notifyConfigChanged()
+      onAiSaved?.({
+        agent: tab,
+        runtimeLabel: TAB_LABEL[tab],
+        model: form.model.trim() || null,
+        workspaceLabel,
+      })
+      setSaving(false)
+      onClose()
     } catch (err) {
       setError((err as Error).message)
-    } finally {
       setSaving(false)
     }
   }
@@ -250,8 +430,8 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
         wireShape: form.wireShape,
       })
       setCredentials(await listCredentials())
-      setOfferSaveCred(false)
-      setCredFlash(`Saved to Alice as “${slug}” — reusable in any workspace.`)
+      setDismissedCredentialKey(null)
+      setCredFlash(t('workspaceSettings.ai.savedReusable', { slug }))
       setTimeout(() => setCredFlash(null), 2600)
     } catch (err) {
       setError((err as Error).message)
@@ -268,6 +448,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
       const fresh = await getAgentConfig(wsId)
       setBundle(fresh)
       setForm({ ...EMPTY_FORM, wireShape: DEFAULT_WIRE_BY_TAB[tab] })
+      notifyConfigChanged()
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1800)
     } catch (err) {
@@ -277,8 +458,41 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
     }
   }
 
+  const notifyConfigChanged = () => {
+    notifyWorkspaceAgentConfigChanged({ wsId, agent: tab })
+    window.dispatchEvent(new CustomEvent('openalice:credentials-changed'))
+  }
+
   const canTest =
     !!form.baseUrl.trim() && !!form.apiKey.trim() && !!form.model.trim()
+
+  const stableTag = workspace?.tag || wsId
+  const savedDisplayName = workspace?.displayName ?? ''
+  const savedDescription = workspace?.description ?? ''
+  const normalizedDisplayName = displayName.trim()
+  const normalizedDescription = description.trim()
+  const metadataDirty =
+    normalizedDisplayName !== savedDisplayName ||
+    normalizedDescription !== savedDescription
+
+  const handleSaveMetadata = async () => {
+    setError(null)
+    setMetadataSaving(true)
+    try {
+      await saveWorkspaceMetadata(wsId, {
+        displayName: normalizedDisplayName || null,
+        description: normalizedDescription || null,
+      })
+      setDisplayName(normalizedDisplayName)
+      setDescription(normalizedDescription)
+      setMetadataSavedFlash(true)
+      setTimeout(() => setMetadataSavedFlash(false), 1800)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setMetadataSaving(false)
+    }
+  }
 
   const handleTest = () => {
     if (!canTest) return
@@ -290,7 +504,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
         apiKey: form.apiKey.trim(),
         model: form.model.trim(),
         wireShape: form.wireShape,
-        ...(tab === 'claude' ? { authMode: form.authMode } : {}),
+        ...(form.wireShape === 'anthropic' ? { authMode: form.authMode } : {}),
       }),
     )
   }
@@ -305,33 +519,188 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-backdrop backdrop-blur-sm"
       onMouseDown={handleBackdropMouseDown}
     >
       <div
-        className="bg-bg border border-border rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col"
+        className="bg-background border border-border rounded-xl shadow-2xl w-[calc(100vw-24px)] max-w-3xl max-h-[85vh] flex flex-col"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-[15px] font-semibold text-text">Workspace AI Provider</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text transition-colors">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-foreground">{t('workspaceSettings.title')}</h2>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{workspaceLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            aria-label={t('workspaceSettings.close')}
+            title={t('common.close')}
+          >
+            <X size={18} />
           </button>
         </div>
 
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+          <aside className="flex w-full shrink-0 gap-1 border-b border-border bg-secondary/25 p-2 sm:block sm:w-40 sm:border-b-0 sm:border-r">
+            <button
+              type="button"
+              onClick={() => setSection('general')}
+              className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium transition-colors sm:w-full ${
+                section === 'general'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <Settings size={15} />
+              <span>{t('workspaceSettings.section.general')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSection('ai')}
+              className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium transition-colors sm:mt-1 sm:w-full ${
+                section === 'ai'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <Bot size={15} />
+              <span>{t('workspaceSettings.section.aiProvider')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSection('template')}
+              className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium transition-colors sm:mt-1 sm:w-full ${
+                section === 'template'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <Layers3 size={15} />
+              <span>{t('workspaceSettings.section.template')}</span>
+              {workspace?.upgradeAvailable && (
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" aria-label="Update available" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSection('absorb')}
+              className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-medium transition-colors sm:mt-1 sm:w-full ${
+                section === 'absorb'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <GitMerge size={15} />
+              <span>{t('workspaceSettings.section.consolidate')}</span>
+            </button>
+          </aside>
+
+          <div className="min-w-0 flex flex-1 flex-col">
+            {section === 'general' && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="max-w-xl space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.general.displayName')}</label>
+                    <input
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      maxLength={80}
+                      placeholder={stableTag}
+                      className={inputClass}
+                    />
+                    <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-muted-foreground/70">
+                      <span>{t('workspaceSettings.general.displayNameHelp')}</span>
+                      <span>{displayName.length}/80</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.general.description')}</label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      maxLength={240}
+                      rows={5}
+                      placeholder={t('workspaceSettings.general.descriptionPlaceholder')}
+                      className={`${inputClass} min-h-28 resize-y leading-relaxed`}
+                    />
+                    <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-muted-foreground/70">
+                      <span>{t('workspaceSettings.general.descriptionHelp')}</span>
+                      <span>{description.length}/240</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                    <div className="flex items-start gap-2">
+                      <Info size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('workspaceSettings.general.stableTag')}</div>
+                        <div className="mt-1 truncate font-mono text-[12px] text-foreground">{stableTag}</div>
+                        <p className="mt-1 text-[11px] leading-snug text-muted-foreground/75">
+                          {t('workspaceSettings.general.stableTagHelp')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 text-destructive text-[12px] px-3 py-2">
+                      {error}
+                    </div>
+                  )}
+                  {metadataSavedFlash && (
+                    <div className="rounded-md border border-success/40 bg-success/10 text-success text-[12px] px-3 py-2">
+                      {t('workspaceSettings.general.saved')}
+                    </div>
+                  )}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 border-t border-border bg-secondary/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[11px] text-muted-foreground/75">
+                    {t('workspaceSettings.general.storedIn')}
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      disabled={metadataSaving}
+                      className="px-3 py-2 rounded-md text-muted-foreground hover:text-foreground text-[13px] disabled:opacity-40"
+                    >
+                      {t('common.cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveMetadata}
+                      disabled={metadataSaving || !metadataDirty}
+                      className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
+                    >
+                      {metadataSaving ? t('common.saving') : t('common.save')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {section === 'ai' && (
+              <>
         {/* Tabs */}
-        <div className="flex border-b border-border bg-bg-secondary/50">
+        <div className="flex border-b border-border bg-secondary/50">
           {(['claude', 'codex', 'opencode', 'pi'] as const).map((id) => (
             <button
               key={id}
-              onClick={() => setTab(id)}
+              onClick={() => {
+                setTab(id)
+                setPickedCredential('')
+                setPickedWireShape('')
+              }}
               className={`flex-1 px-4 py-2.5 text-[13px] font-medium transition-colors ${
                 tab === id
-                  ? 'text-accent border-b-2 border-accent -mb-px'
-                  : 'text-text-muted hover:text-text'
+                  ? 'text-primary border-b-2 border-primary -mb-px'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {TAB_LABEL[id]}
@@ -342,48 +711,72 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Quick pick — load a saved credential into the form */}
-          <div className="rounded-lg border border-border bg-bg-secondary/30 p-3">
-            <label className="block text-xs font-medium text-text-muted mb-2">
-              Load from saved credential
+          <div className="rounded-lg border border-border bg-secondary/30 p-3">
+            <label className="block text-xs font-medium text-muted-foreground mb-2">
+              {t('workspaceSettings.ai.loadSaved')}
             </label>
             {(() => {
               // Only credentials that declare a wire THIS agent speaks. Codex is
               // Responses-only, so most credentials won't list here — the funnel
               // toward pi/opencode is by design.
-              const compatible = credentials.filter((c) => pickAgentWire(c.wires, tab))
+              const compatible = credentials.filter((c) => pickAgentWire(c.wires, tab, undefined, c.vendor))
+              const selectedCredential = compatible.find((c) => c.slug === pickedCredential)
+              const selectedWireOptions = selectedCredential
+                ? agentWireShapes(selectedCredential.wires, tab, selectedCredential.vendor)
+                : []
               return (
                 <>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <select
+                      aria-label={t('workspaceSettings.ai.savedCredentialLabel', { agent: TAB_LABEL[tab] })}
                       value={pickedCredential}
-                      onChange={(e) => setPickedCredential(e.target.value)}
+                      onChange={(e) => {
+                        const slug = e.target.value
+                        const cred = compatible.find((candidate) => candidate.slug === slug)
+                        setPickedCredential(slug)
+                        setPickedWireShape(cred ? (agentWireShapes(cred.wires, tab, cred.vendor)[0] ?? '') : '')
+                      }}
                       className={inputClass + ' flex-1'}
                       disabled={compatible.length === 0}
                     >
                       <option value="">
-                        {compatible.length === 0 ? `— no ${TAB_LABEL[tab]}-compatible credential —` : '— select a credential —'}
+                        {compatible.length === 0
+                          ? t('workspaceSettings.ai.noCompatibleCredential', { agent: TAB_LABEL[tab] })
+                          : t('workspaceSettings.ai.selectCredential')}
                       </option>
                       {compatible.map((cred) => {
-                        const picked = pickAgentWire(cred.wires, tab)
+                        const shapes = agentWireShapes(cred.wires, tab, cred.vendor)
                         return (
                           <option key={cred.slug} value={cred.slug}>
-                            {cred.slug}{picked?.baseUrl ? ` · ${picked.baseUrl}` : ''}
+                            {(cred.label?.trim() || cred.slug)}{shapes.length > 1 ? ` · ${t('workspaceSettings.ai.protocolCount', { count: shapes.length })}` : ''}
                           </option>
                         )
                       })}
                     </select>
+                    {selectedWireOptions.length > 1 && (
+                      <select
+                        aria-label={t('workspaceSettings.ai.savedCredentialProtocolLabel')}
+                        value={pickedWireShape}
+                        onChange={(e) => setPickedWireShape(e.target.value as WireShape)}
+                        className={inputClass + ' sm:max-w-[210px]'}
+                      >
+                        {selectedWireOptions.map((shape) => (
+                          <option key={shape} value={shape}>{WIRE_SHAPE_GUIDANCE[shape]}</option>
+                        ))}
+                      </select>
+                    )}
                     <button
                       onClick={applyCredential}
                       disabled={!pickedCredential}
-                      className="px-3 py-2 rounded-md bg-accent text-bg text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent/90 transition-colors"
+                      className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
                     >
-                      Load
+                      {t('workspaceSettings.ai.load')}
                     </button>
                   </div>
-                  <p className="text-[11px] text-text-muted/80 leading-snug mt-1.5">
+                  <p className="text-[11px] text-muted-foreground/80 leading-snug mt-1.5">
                     {compatible.length === 0 && credentials.length > 0
-                      ? `None of your saved credentials speak a wire ${TAB_LABEL[tab]} supports — add one for this provider, or use a runtime that matches (pi / opencode).`
-                      : 'Fills base URL + key from a credential Alice already holds, using the wire this runtime speaks. Pick a model below. Or type a new one; you\'ll be offered to save it after Test + Save.'}
+                      ? t('workspaceSettings.ai.incompatibleHelp', { agent: TAB_LABEL[tab] })
+                      : t('workspaceSettings.ai.loadHelp')}
                   </p>
                 </>
               )
@@ -391,13 +784,52 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
           </div>
 
           {/* Manual fields */}
+          {(tab === 'opencode' || tab === 'pi') && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.ai.apiProtocol')}</label>
+              <select
+                aria-label={t('workspaceSettings.ai.apiProtocolLabel', { agent: TAB_LABEL[tab] })}
+                value={form.wireShape}
+                onChange={(e) => {
+                  const wireShape = e.target.value as WireShape
+                  const selected = credentials.find((candidate) => candidate.slug === pickedCredential)
+                  const selectedBaseUrl = selected?.wires[wireShape]
+                  setForm({
+                    ...form,
+                    wireShape,
+                    ...(selectedBaseUrl !== undefined ? { baseUrl: selectedBaseUrl } : {}),
+                    ...(wireShape === 'anthropic'
+                      ? { authMode: anthropicAuthModeForBaseUrl(selectedBaseUrl ?? form.baseUrl) }
+                      : {}),
+                  })
+                  gate.reset()
+                }}
+                className={inputClass}
+              >
+                {formWireOptions.map((shape) => (
+                  <option key={shape} value={shape}>{WIRE_SHAPE_GUIDANCE[shape]}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground/80 leading-snug mt-1">
+                {t('workspaceSettings.ai.apiProtocolHelp')}
+              </p>
+            </div>
+          )}
+
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Base URL</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.ai.baseUrl')}</label>
             <input
               value={form.baseUrl}
-              onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+              onChange={(e) => setForm({
+                ...form,
+                baseUrl: e.target.value,
+                reasoning: null,
+                reasoningEffort: null,
+              })}
               placeholder={
-                tab === 'claude'
+                form.wireShape === 'google-generative-ai'
+                  ? 'https://generativelanguage.googleapis.com/v1beta'
+                  : tab === 'claude'
                   ? 'https://api.anthropic.com (default)'
                   : tab === 'opencode' || tab === 'pi'
                   ? 'https://api.deepseek.com/v1'
@@ -411,13 +843,13 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">API Key</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.ai.apiKey')}</label>
             <div className="flex gap-2">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={form.apiKey}
                 onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-                placeholder="sk-..."
+                placeholder={form.wireShape === 'google-generative-ai' ? 'AQ... or AIza...' : 'sk-...'}
                 className={inputClass + ' flex-1'}
                 spellCheck={false}
                 autoCapitalize="off"
@@ -425,217 +857,341 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
               />
               <button
                 onClick={() => setShowKey(!showKey)}
-                className="px-3 rounded-md border border-border text-text-muted hover:text-text text-[12px]"
+                className="px-3 rounded-md border border-border text-muted-foreground hover:text-foreground text-[12px]"
                 type="button"
               >
-                {showKey ? 'Hide' : 'Show'}
+                {showKey ? t('common.hide') : t('common.show')}
               </button>
             </div>
           </div>
 
-          {tab === 'claude' && (
+          {form.wireShape === 'anthropic' && (
             <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Auth header</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.ai.authHeader')}</label>
               <select
+                aria-label={t('workspaceSettings.ai.authHeaderLabel', { agent: TAB_LABEL[tab] })}
                 value={form.authMode}
                 onChange={(e) => setForm({ ...form, authMode: e.target.value as FormState['authMode'] })}
                 className={inputClass}
               >
                 <option value="x-api-key">x-api-key — Anthropic default</option>
-                <option value="bearer">Authorization: Bearer — gateways (MiniMax intl, proxies)</option>
+                <option value="bearer">Authorization: Bearer — gateways (MiniMax, LongCat, proxies)</option>
               </select>
-              <p className="text-[11px] text-text-muted/80 leading-snug mt-1">
-                Anthropic first-party uses <code className="font-mono text-[10.5px]">x-api-key</code>.
-                Switch to <code className="font-mono text-[10.5px]">Bearer</code> for
-                anthropic-compatible gateways that authenticate via{' '}
-                <code className="font-mono text-[10.5px]">Authorization: Bearer</code> — e.g.
-                MiniMax's international endpoint (<code className="font-mono text-[10.5px]">api.minimax.io</code>),
-                which rejects x-api-key. Written as{' '}
-                <code className="font-mono text-[10.5px]">ANTHROPIC_AUTH_TOKEN</code> instead of{' '}
-                <code className="font-mono text-[10.5px]">ANTHROPIC_API_KEY</code>.
+              <p className="text-[11px] text-muted-foreground/80 leading-snug mt-1">
+                {t('workspaceSettings.ai.authHeaderHelp')}
               </p>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Model</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.ai.model')}</label>
             <ModelCombobox
               value={form.model}
               suggestions={modelSuggestions}
-              onChange={(v) => setForm({ ...form, model: v })}
+              onChange={(v) => setForm({
+                ...form,
+                model: v,
+                contextWindow: v === form.model ? form.contextWindow : null,
+                reasoning: v === form.model ? form.reasoning : null,
+                reasoningEffort: v === form.model ? form.reasoningEffort : null,
+              })}
               placeholder={tab === 'claude' ? 'claude-opus-4-8' : tab === 'opencode' || tab === 'pi' ? 'deepseek-chat' : 'gpt-5.5'}
             />
             {modelSuggestions.length > 0 && (
-              <p className="text-[11px] text-text-muted/70 mt-1">Suggestions from the matched provider — or type any model id.</p>
+              <p className="text-[11px] text-muted-foreground/70 mt-1">{t('workspaceSettings.ai.modelSuggestions')}</p>
             )}
+
+            {semanticsSummary && (
+              <div className="mt-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                <strong className="text-foreground">{t('workspaceSettings.ai.registeredAutomatically')}</strong>{' '}
+                {semanticsSummary}.
+              </div>
+            )}
+
+            {supportedReasoningEfforts.length > 0 && (
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  {t('workspaceSettings.ai.reasoningEffort')}
+                </label>
+                <select
+                  aria-label={t('workspaceSettings.ai.reasoningEffortLabel', { agent: TAB_LABEL[tab] })}
+                  value={form.reasoningEffort ?? selectedModelSemantics?.reasoning?.defaultEffort ?? ''}
+                  onChange={(event) => setForm({
+                    ...form,
+                    reasoningEffort: event.target.value
+                      ? event.target.value as ModelReasoningEffort
+                      : null,
+                  })}
+                  className={inputClass}
+                >
+                  {!selectedModelSemantics?.reasoning?.defaultEffort && (
+                    <option value="">{t('workspaceSettings.ai.runtimeDefaultOption')}</option>
+                  )}
+                  {supportedReasoningEfforts.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {effort}{effort === selectedModelSemantics?.reasoning?.defaultEffort
+                        ? ` — ${t('workspaceSettings.ai.registeredDefault')}`
+                        : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10.5px] leading-snug text-muted-foreground/80 mt-1">
+                  {selectedModelSemantics?.reasoning?.defaultEffort
+                    ? t('workspaceSettings.ai.reasoningEffortHelp', {
+                      runtime: TAB_LABEL[tab],
+                      defaultEffort: selectedModelSemantics.reasoning.defaultEffort,
+                      effort: form.reasoningEffort ?? selectedModelSemantics.reasoning.defaultEffort,
+                    })
+                    : t('workspaceSettings.ai.reasoningEffortUnknownHelp', { runtime: TAB_LABEL[tab] })}
+                </p>
+              </div>
+            )}
+
+            {selectedModelSemantics?.reasoning &&
+              selectedModelSemantics.reasoning.mode !== 'none' &&
+              supportedReasoningEfforts.length === 0 && (
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    {t('workspaceSettings.ai.thinkingPolicy')}
+                  </label>
+                  <div className={`${inputClass} cursor-default`}>
+                    {selectedModelSemantics.reasoning.mode === 'required'
+                      ? t('workspaceSettings.ai.thinkingAlwaysOn')
+                      : selectedModelSemantics.reasoning.defaultEnabled === true
+                        ? t('workspaceSettings.ai.thinkingEnabled')
+                        : selectedModelSemantics.reasoning.defaultEnabled === false
+                          ? t('workspaceSettings.ai.thinkingDisabled')
+                          : t('workspaceSettings.ai.thinkingUnknown')}
+                  </div>
+                  <p className="text-[10.5px] leading-snug text-muted-foreground/80 mt-1">
+                    {t('workspaceSettings.ai.thinkingPolicyHelp')}
+                  </p>
+                </div>
+              )}
+
+            {(tab === 'opencode' || tab === 'pi') && !selectedModelSemantics?.reasoning && (
+              <details className="mt-2 rounded-md border border-border bg-secondary/40 px-3 py-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                  {t('aiProvider.advancedReasoning')}
+                </summary>
+                <div className="mt-2 space-y-1.5">
+                  <select
+                    aria-label={t('workspaceSettings.ai.reasoningOverrideLabel', { agent: TAB_LABEL[tab] })}
+                    className={inputClass}
+                    value={form.reasoning === null ? 'auto' : form.reasoning ? 'enabled' : 'disabled'}
+                    onChange={(event) => setForm({
+                      ...form,
+                      reasoning: event.target.value === 'auto' ? null : event.target.value === 'enabled',
+                    })}
+                  >
+                    <option value="auto">{t('aiProvider.useRuntimeDefault')}</option>
+                    <option value="enabled">{t('aiProvider.supportsReasoning')}</option>
+                    <option value="disabled">{t('aiProvider.noReasoning')}</option>
+                  </select>
+                  <p className="text-[10.5px] leading-snug text-muted-foreground/80">
+                    {t('workspaceSettings.ai.unknownReasoningHelp')}
+                  </p>
+                </div>
+              </details>
+            )}
+
           </div>
 
-          {tab === 'codex' && (
-            <div className="rounded-md border border-border bg-bg-secondary/50 px-3 py-2.5 space-y-2">
-              <p className="text-[12px] text-text-muted leading-relaxed">
-                <strong className="text-text">Wire format is locked to <code className="font-mono text-[11.5px]">responses</code>.</strong>{' '}
-                Codex 0.130+ hard-rejects <code className="font-mono text-[11.5px]">wire_api = "chat"</code> and only speaks the OpenAI Responses API.
-              </p>
-              <p className="text-[12px] text-text-muted leading-relaxed">
-                <strong className="text-text">Chat-only providers</strong> (DeepSeek, Qwen, Moonshot, GLM, LM Studio, vLLM, llama.cpp, etc.) don't expose a Responses endpoint and won't work here directly.
-                Run a translation proxy and point Base URL at it — e.g.{' '}
-                <strong className="text-text">OpenRouter</strong> (hosted, BYOK) or{' '}
-                <strong className="text-text">VibeAround</strong> (local) both speak Responses on the wire and forward to Chat Completions backends.
-              </p>
+          {(tab === 'opencode' || tab === 'pi') && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">{t('workspaceSettings.ai.contextWindow')}</label>
+              <select
+                aria-label={t('workspaceSettings.ai.contextWindowLabel', { agent: TAB_LABEL[tab] })}
+                value={form.contextWindow ?? ''}
+                onChange={(e) => setForm({
+                  ...form,
+                  contextWindow: e.target.value ? Number(e.target.value) : null,
+                })}
+                className={inputClass}
+              >
+                <option value="">
+                  {selectedModelSemantics?.contextWindow
+                    ? t('workspaceSettings.ai.contextAutomatic', {
+                      limit: formatContextWindow(selectedModelSemantics.contextWindow),
+                    })
+                    : t('workspaceSettings.ai.runtimeDefaultOption')}
+                </option>
+                {CONTEXT_WINDOW_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </div>
           )}
 
-          {tab === 'opencode' && (
-            <div className="rounded-md border border-border bg-bg-secondary/50 px-3 py-2.5">
-              <p className="text-[12px] text-text-muted leading-relaxed">
-                <strong className="text-text">Speaks OpenAI Chat Completions</strong> (via{' '}
-                <code className="font-mono text-[11.5px]">@ai-sdk/openai-compatible</code>), so it
-                connects <strong className="text-text">directly</strong> to Chat-only providers —
-                DeepSeek, Qwen, Moonshot/Kimi, GLM, MiniMax — and local runtimes (Ollama, vLLM,
-                LM Studio). No translation proxy needed. Base URL is the provider's
-                OpenAI-compatible endpoint; Model is the bare model id.
-              </p>
-            </div>
-          )}
-
-          {tab === 'pi' && (
-            <div className="rounded-md border border-border bg-bg-secondary/50 px-3 py-2.5">
-              <p className="text-[12px] text-text-muted leading-relaxed">
-                <strong className="text-text">OpenAI Chat Completions wire</strong> — connects
-                directly to DeepSeek, Qwen, Kimi, GLM, MiniMax and local runtimes; Base URL is the
-                provider's OpenAI-compatible endpoint, Model is the bare model id. Written to a
-                per-workspace <code className="font-mono text-[11.5px]">.pi-agent/models.json</code>.
-                Trading tools reach Pi through the <code className="font-mono text-[11.5px]">alice-uta</code>{' '}
-                CLI on PATH (the <code className="font-mono text-[11.5px]">alice-uta</code> skill),
-                not MCP — Pi has no native MCP.
-              </p>
-            </div>
+          {(tab === 'codex' || tab === 'opencode' || tab === 'pi') && (
+            <details className="rounded-md border border-border bg-secondary/40 px-3 py-2.5">
+              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                {t('workspaceSettings.ai.protocolDetails')}
+              </summary>
+              <div className="mt-2 space-y-2 border-t border-border/60 pt-2 text-[11px] leading-relaxed text-muted-foreground">
+                {tab === 'codex' ? (
+                  <p>{t('workspaceSettings.ai.codexResponsesOnly')}</p>
+                ) : (
+                  <p>
+                    {form.wireShape === 'google-generative-ai'
+                      ? t('workspaceSettings.ai.googleWire')
+                      : form.wireShape === 'anthropic'
+                        ? t('workspaceSettings.ai.anthropicWire')
+                        : form.wireShape === 'openai-responses'
+                          ? t('workspaceSettings.ai.responsesWire')
+                          : t('workspaceSettings.ai.chatWire')}
+                  </p>
+                )}
+                {tab === 'pi' && <p>{t('workspaceSettings.ai.piInjection')}</p>}
+                {tab === 'opencode' && <p>{t('workspaceSettings.ai.opencodeInjection')}</p>}
+              </div>
+            </details>
           )}
 
           {error && (
-            <div className="rounded-md border border-red/40 bg-red/10 text-red text-[12px] px-3 py-2">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 text-destructive text-[12px] px-3 py-2">
               {error}
             </div>
           )}
           {savedFlash && (
-            <div className="rounded-md border border-green/40 bg-green/10 text-green text-[12px] px-3 py-2">
-              Saved. Pause + resume any open session to reload.
+            <div className="rounded-md border border-success/40 bg-success/10 text-success text-[12px] px-3 py-2">
+              {t('workspaceSettings.ai.saved')}
             </div>
           )}
           {offerSaveCred && (
-            <div className="rounded-md border border-accent/40 bg-accent/10 text-text text-[12px] px-3 py-2.5 flex items-center justify-between gap-3">
+            <div className="rounded-md border border-primary/40 bg-primary/10 text-foreground text-[12px] px-3 py-2.5 flex items-center justify-between gap-3">
               <span className="leading-snug">
-                Save this provider to Alice so other workspaces can reuse it?
+                {t('workspaceSettings.ai.saveCredentialPrompt')}
               </span>
               <div className="flex gap-2 shrink-0">
                 <button
-                  onClick={() => setOfferSaveCred(false)}
+                  onClick={() => setDismissedCredentialKey(enteredApiKey)}
                   disabled={savingCred}
-                  className="px-2.5 py-1 rounded-md border border-border text-text-muted hover:text-text text-[12px] disabled:opacity-40"
+                  className="px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground text-[12px] disabled:opacity-40"
                 >
-                  Not now
+                  {t('workspaceSettings.ai.notNow')}
                 </button>
                 <button
                   onClick={handleSaveCredential}
                   disabled={savingCred}
-                  className="px-2.5 py-1 rounded-md bg-accent text-bg text-[12px] font-medium disabled:opacity-40 hover:bg-accent/90"
+                  className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[12px] font-medium disabled:opacity-40 hover:bg-primary/90"
                 >
-                  {savingCred ? 'Saving…' : 'Save to Alice'}
+                  {savingCred ? t('common.saving') : t('workspaceSettings.ai.saveToAlice')}
                 </button>
               </div>
             </div>
           )}
           {credFlash && (
-            <div className="rounded-md border border-green/40 bg-green/10 text-green text-[12px] px-3 py-2">
+            <div className="rounded-md border border-success/40 bg-success/10 text-success text-[12px] px-3 py-2">
               {credFlash}
             </div>
           )}
           {testing && (
-            <div className="rounded-md border border-border bg-bg-secondary text-text-muted text-[12px] px-3 py-2">
-              Testing…
+            <div className="rounded-md border border-border bg-secondary text-muted-foreground text-[12px] px-3 py-2">
+              {t('workspaceSettings.ai.testingConnection')}
             </div>
           )}
           {!testing && result?.ok && resultMatchesCurrent && (
-            <div className="rounded-md border border-green/40 bg-green/10 text-green text-[12px] px-3 py-2">
+            <div className="rounded-md border border-success/40 bg-success/10 text-success text-[12px] px-3 py-2">
               {result.response?.trim() ? (
                 <>
                   <div className="font-medium mb-0.5">
-                    Test passed — {tab === 'claude' ? 'Anthropic' : tab === 'opencode' || tab === 'pi' ? 'the provider' : 'OpenAI'} replied:
+                    {t('workspaceSettings.ai.testPassed', {
+                      provider: tab === 'claude'
+                        ? t('workspaceSettings.ai.providerReplyClaude')
+                        : tab === 'opencode' || tab === 'pi'
+                          ? t('workspaceSettings.ai.providerReplyGeneric')
+                          : t('workspaceSettings.ai.providerReplyOpenAi'),
+                    })}
                   </div>
-                  <div className="text-text whitespace-pre-wrap break-words font-mono text-[11.5px]">
+                  <div className="text-foreground whitespace-pre-wrap break-words font-mono text-[11.5px]">
                     {result.response.trim()}
                   </div>
                 </>
               ) : (
-                <div className="font-medium">Test passed — provider reachable (returned no text).</div>
+                <div className="font-medium">{t('workspaceSettings.ai.testPassedNoText')}</div>
               )}
             </div>
           )}
           {!testing && result && !result.ok && resultMatchesCurrent && (
-            <div className="rounded-md border border-red/40 bg-red/10 text-red text-[12px] px-3 py-2">
-              <div className="font-medium mb-0.5">Test failed:</div>
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 text-destructive text-[12px] px-3 py-2">
+              <div className="font-medium mb-0.5">{t('workspaceSettings.ai.testFailed')}</div>
               <div className="whitespace-pre-wrap break-words font-mono text-[11.5px]">
                 {result.error}
               </div>
             </div>
           )}
           {!testing && result && !resultMatchesCurrent && (
-            <div className="rounded-md border border-yellow-400/30 bg-yellow-400/5 text-yellow-400/90 text-[12px] px-3 py-2">
-              Form changed since last test — re-test before saving.
+            <div className="rounded-md border border-warning/30 bg-warning/5 text-warning/90 text-[12px] px-3 py-2">
+              {t('workspaceSettings.ai.formChanged')}
             </div>
           )}
 
-          <p className="text-[11px] text-text-muted/80 leading-snug pt-1">
-            Empty fields fall back to the CLI's global default. Changes apply to
-            <strong className="text-text"> new sessions</strong>; pause and resume
-            any open session to re-load.
-            {tab === 'claude' && ' Claude reads `.claude/settings.local.json` from the workspace cwd.'}
-            {tab === 'codex' && ' Codex reads `.codex/config.toml` + `.codex/env.json` (via CODEX_HOME).'}
-            {tab === 'opencode' && ' opencode reads `opencode.json` from the workspace cwd; OpenAlice injects its MCP servers at spawn.'}
-            {tab === 'pi' && ' Pi reads `.pi-agent/models.json` (via PI_CODING_AGENT_DIR); tools reach it via the `alice` CLI on PATH.'}
+          <p className="text-[11px] text-muted-foreground/80 leading-snug pt-1">
+            {t('workspaceSettings.ai.changesHelp')}
           </p>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-2 p-3 border-t border-border bg-bg-secondary/30">
+        <div className="flex flex-col gap-2 p-3 border-t border-border bg-secondary/30 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-2">
             <button
               onClick={handleReset}
               disabled={saving}
-              className="px-3 py-2 rounded-md border border-border text-text-muted hover:text-text text-[12px] disabled:opacity-40"
+              className="px-3 py-2 rounded-md border border-border text-muted-foreground hover:text-foreground text-[12px] disabled:opacity-40"
             >
-              Reset to global default
+              {t('workspaceSettings.ai.reset')}
             </button>
           </div>
-          <div className="flex gap-2">
+          <div className="flex justify-end gap-2">
             <button
               onClick={onClose}
               disabled={saving}
-              className="px-3 py-2 rounded-md text-text-muted hover:text-text text-[13px]"
+              className="px-3 py-2 rounded-md text-muted-foreground hover:text-foreground text-[13px]"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
-            {/* Single primary CTA that walks the gate: an unverified change
-                shows Test, and only a passing reply morphs it into Save. The
-                action you can take is the one that's lit — no hidden rule that
-                Save needs a prior Test. */}
+            {/* Single primary CTA that walks the connection gate. Transport,
+                auth, or model changes show Test first; local runtime metadata
+                changes can be saved directly. */}
             {needsTest ? (
               <button
                 onClick={handleTest}
                 disabled={!canTest || testing || saving}
-                title={!canTest ? 'Fill base URL, API key, and model first' : undefined}
-                className="px-4 py-2 rounded-md bg-accent text-bg text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent/90 transition-colors"
+                title={!canTest ? t('workspaceSettings.ai.fillRequired') : undefined}
+                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
               >
-                {testing ? 'Testing…' : 'Test'}
+                {testing ? t('common.testing') : t('common.test')}
               </button>
             ) : (
               <button
                 onClick={handleSave}
                 disabled={saving || !dirty}
-                className="px-4 py-2 rounded-md bg-accent text-bg text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent/90 transition-colors"
+                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
               >
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('common.saving') : t('common.save')}
               </button>
+            )}
+          </div>
+        </div>
+              </>
+            )}
+
+            {section === 'template' && (
+              <WorkspaceTemplateUpgradePanel
+                wsId={wsId}
+                onWorkspaceChanged={refresh}
+                onClose={onClose}
+              />
+            )}
+
+            {section === 'absorb' && workspace && (
+              <WorkspaceAbsorbPanel
+                target={workspace}
+                workspaces={workspaces}
+                onWorkspaceChanged={refresh}
+                onClose={onClose}
+              />
             )}
           </div>
         </div>

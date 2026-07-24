@@ -5,12 +5,19 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import type { Plugin, EngineContext } from '../core/types.js'
 import type { ToolCenter } from '../core/tool-center.js'
-import { type WorkspaceToolCenter, makeWorkspaceResolver } from '../core/workspace-tool-center.js'
+import {
+  type WorkspaceToolCenter,
+  makeInboxEntryOriginResolver,
+  makeWorkspaceResolver,
+} from '../core/workspace-tool-center.js'
 import type { IInboxStore } from '../core/inbox-store.js'
 import type { IEntityStore } from '../core/entity-store.js'
 import type { WorkspaceService } from '../workspaces/service.js'
+import type { InboxOrigin } from '../core/inbox-store.js'
 import { extractMcpShape, wrapToolExecute } from '../core/mcp-export.js'
 import { registerCliRoutes } from './cli.js'
+import { resolveInboxOrigin } from './inbox-origin.js'
+import { createWorkspaceConversationControl } from '../workspaces/conversation-control.js'
 
 /**
  * MCP Plugin — exposes OpenAlice tools via Streamable HTTP, plus the CLI gateway.
@@ -86,15 +93,78 @@ export class McpPlugin implements Plugin {
     /** Build a per-request McpServer scoped to a specific workspace.
      *  Each WorkspaceToolFactory is invoked with the URL's wsId so its
      *  tools' execute() closes over that identity. */
-    const createWorkspaceMcpServer = (wsId: string, wsLabel: string) => {
+    const createWorkspaceMcpServer = (wsId: string, wsLabel: string, origin?: InboxOrigin) => {
+      // GLOBAL issue-board reader, backed by the live WorkspaceService — parity
+      // with the CLI gateway so issue_list / issue_show read EVERY workspace's
+      // issues here too. Absent when the service isn't up → tools self-read.
+      const svc = getWorkspaceService()
       const tools = workspaceToolCenter.build({
         workspaceId: wsId,
         workspaceLabel: wsLabel,
         inboxStore,
         entityStore,
+        ...(svc ? { provenanceStore: svc.provenanceStore } : {}),
+        ...(svc ? { conversation: createWorkspaceConversationControl(svc) } : {}),
+        ...(svc ? { templateUpgrades: svc.templateUpgrades } : {}),
         // Parity with the CLI gateway so external MCP consumers get the same
         // workspace_path resolution — shared helper, so the two can't drift.
         resolveWorkspace: makeWorkspaceResolver(getWorkspaceService),
+        ...(svc ? {
+          workspaceInventory: async () => Promise.all(svc.registry.list().map(async (meta) => {
+            await svc.sessionRegistry.ensureLoaded(meta.id)
+            const sessions = svc.sessionRegistry.listFor(meta.id)
+            const activity = svc.workspaceRuntimeActivity(meta.id)
+            return {
+              id: meta.id,
+              tag: meta.tag,
+              ...(meta.template ? { template: meta.template } : {}),
+              agents: meta.agents,
+              createdAt: meta.createdAt,
+              sessions: {
+                total: sessions.length,
+                running: activity.sessions.length,
+                recent: sessions
+                  .slice()
+                  .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+                  .slice(0, 4)
+                  .map((session) => ({
+                    resumeId: session.resumeId,
+                    agent: session.agent,
+                    title: session.title?.trim() || session.name,
+                    state: session.state,
+                    lastActiveAt: session.lastActiveAt,
+                  })),
+              },
+              headlessRunning: activity.headless.length,
+            }
+          })),
+        } : {}),
+        resolveInboxOrigin: makeInboxEntryOriginResolver(getWorkspaceService),
+        ...(svc ? { sessionDirectory: (id: string, limit?: number) => svc.sessionDirectory(id, limit) } : {}),
+        ...(svc ? {
+          resolveSessionIdentity: (resumeId: string) => {
+            const identity = svc.resumeRegistry.get(resumeId)
+            return identity
+              ? {
+                  workspaceId: identity.wsId,
+                  agent: identity.agent,
+                  resumable: identity.lifecycle !== 'retired' && Boolean(identity.agentSessionId),
+                }
+              : null
+          },
+        } : {}),
+        ...(svc
+          ? {
+              board: {
+                snapshot: () => svc.issuesSnapshot(),
+                detail: (w: string, i: string) => svc.issueDetail(w, i),
+                resolveByName: (n: string) => svc.resolveIssuesByName(n),
+              },
+            }
+          : {}),
+        // Agent-invisible run provenance from the out-of-band header (resolved
+        // server-side from the authoritative registry). Absent → undefined.
+        ...(origin ? { origin } : {}),
       })
       const mcp = new McpServer({ name: 'open-alice-workspace', version: '1.0.0' })
       for (const [name, t] of Object.entries(tools)) {
@@ -112,7 +182,7 @@ export class McpPlugin implements Plugin {
     app.use('*', cors({
       origin: '*',
       allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'mcp-session-id', 'Last-Event-ID', 'mcp-protocol-version'],
+      allowHeaders: ['Content-Type', 'mcp-session-id', 'Last-Event-ID', 'mcp-protocol-version', 'x-openalice-run', 'x-openalice-session'],
       exposeHeaders: ['mcp-session-id', 'mcp-protocol-version'],
     }))
 
@@ -134,8 +204,22 @@ export class McpPlugin implements Plugin {
       const meta = svc.registry.get(wsId)
       if (!meta) return c.text('unknown workspace', 404)
 
+      // Out-of-band identity (agent never sees it): the spawn-injected AQ_RUN_ID
+      // (headless) / AQ_SESSION_ID (interactive) rides these mutually-exclusive
+      // headers, resolved server-side to an authoritative origin and baked into
+      // the tools. The session header is validated against THIS workspace's
+      // session registry.
+      const origin = resolveInboxOrigin(
+        {
+          run: c.req.header('x-openalice-run'),
+          session: c.req.header('x-openalice-session'),
+          wsId: meta.id,
+        },
+        getWorkspaceService,
+      )
+
       const transport = new WebStandardStreamableHTTPServerTransport()
-      const mcp = createWorkspaceMcpServer(meta.id, meta.tag)
+      const mcp = createWorkspaceMcpServer(meta.id, meta.tag, origin)
       await mcp.connect(transport)
       return transport.handleRequest(c.req.raw)
     })

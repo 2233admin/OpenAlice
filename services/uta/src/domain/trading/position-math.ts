@@ -35,7 +35,7 @@ export interface PositionMathOutput {
 /** Coerce a numeric-ish input to Decimal; defaults to 0 on falsy/empty. */
 function toDecimal(v: Decimal | string | number | undefined | null): Decimal {
   if (v == null || v === '') return new Decimal(0)
-  return v instanceof Decimal ? v : new Decimal(v)
+  return Decimal.isDecimal(v) ? v : new Decimal(v)
 }
 
 /** Coerce multiplier string to Decimal; empty → 1 (the canonical default). */

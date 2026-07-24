@@ -1,39 +1,58 @@
 @import "tailwindcss";
+@import "./theme/palette.css";
 
-/* ============================================================
-   Theme tokens — two palettes, one identity. Alice-blue (her dress)
-   is the brand accent in BOTH modes. @theme below is Daybreak (light)
-   and the DEFAULT; the [data-theme="dark"] block + the prefers-color-
-   scheme block flip the same token names, so every `bg-bg`/`text-accent`/
-   `border-border` utility follows the active theme with zero component
-   changes. Living color card: ui/design/theme-study.html. The toggle lives in the
-   ActivityBar footer (light / dark / auto), persisted by the theme store
-   (ui/src/theme) and mirrored pre-paint by the inline script in index.html.
-   ============================================================ */
-@theme {
-  /* Daybreak — light (default). Cream paper · engraved navy · alice-blue. */
-  --color-bg: #f7f4ec;
-  --color-bg-secondary: #f0ebdd;
-  --color-bg-tertiary: #e5decb;
-  --color-border: #d8d0bc;
-  --color-text: #1c2a41;
-  --color-text-muted: #5e6573;
-  --color-accent: #2f62b0;
-  --color-accent-dim: rgba(47, 98, 176, 0.14);
-  --color-user-bubble: #2f62b0;
-  --color-assistant-bubble: #fbf8f0;
-  --color-notification-bg: #fbf1d6;
-  --color-notification-border: #c99a2e;
-  --color-green: #2e8b6f;
-  --color-red: #be4138;
-  --color-purple: #6b5bc2;
-  --color-purple-dim: rgba(107, 91, 194, 0.14);
+/* Tailwind aliases for the semantic color card. The core names intentionally
+   mirror Orca/shadcn; this does not import or require the shadcn component
+   library. `inline` keeps utilities connected to the active runtime palette. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 
-  /* Elevation overlays — theme-aware "subtle wash on hover / active".
-     Light darkens with navy ink; dark lightens with white. Components use
-     `bg-overlay` / `bg-overlay-strong`; raw CSS uses `var(--color-overlay)`. */
-  --color-overlay: rgba(28, 42, 65, 0.05);
-  --color-overlay-strong: rgba(28, 42, 65, 0.085);
+  --color-accent-strong: var(--accent-strong);
+  --color-primary-muted: var(--primary-muted);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-background: var(--warning-background);
+  --color-warning-border: var(--warning-border);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-ai-action: var(--ai-action);
+  --color-ai-action-foreground: var(--ai-action-foreground);
+  --color-backdrop: var(--backdrop);
+  --color-code-background: var(--code-background);
+  --color-report-canvas: var(--report-canvas);
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
@@ -43,63 +62,11 @@
 
 /* Base resolution (no attribute / explicit light). */
 :root {
-  color-scheme: light;
-  --app-bg-wash: radial-gradient(circle at 50% 24%, rgba(47, 98, 176, 0.045), transparent 38rem);
-}
-
-/* ---- Midnight — dark (neutral charcoal-black) ----
-   Reverted to the #353 neutral-black palette: a navy-tinted dark read as
-   "too blue" once the full shell (rail + sidebar + tabs) was on screen — a
-   large neutral surface is calmer. Alice-blue survives ONLY as small brand
-   highlights (accent + the user's own bubble), so the large-area blue tint
-   is gone while the brand stays consistent with Daybreak.
-   Forced via data-theme="dark", AND the resolution for data-theme="auto"
-   when the OS is in dark mode (media block below). KEEP THE TWO IN SYNC. */
-:root[data-theme="dark"] {
-  --color-bg: #0b0c0e;
-  --color-bg-secondary: #0e0f12;
-  --color-bg-tertiary: #1a1b21;
-  --color-border: #24262c;
-  --color-text: #dfe1e6;
-  --color-text-muted: #8f929b;
-  --color-accent: #3b82f6;
-  --color-accent-dim: rgba(59, 130, 246, 0.16);
-  --color-user-bubble: #2f62b0;
-  --color-assistant-bubble: #141519;
-  --color-notification-bg: #1d1610;
-  --color-notification-border: #8a5b2f;
-  --color-green: #23b99a;
-  --color-red: #e5484d;
-  --color-purple: #8f72ff;
-  --color-purple-dim: rgba(143, 114, 255, 0.16);
-  --color-overlay: rgba(255, 255, 255, 0.04);
-  --color-overlay-strong: rgba(255, 255, 255, 0.07);
-  color-scheme: dark;
-  --app-bg-wash: radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.02), transparent 34rem);
-}
-@media (prefers-color-scheme: dark) {
-  :root[data-theme="auto"] {
-    --color-bg: #0b0c0e;
-    --color-bg-secondary: #0e0f12;
-    --color-bg-tertiary: #1a1b21;
-    --color-border: #24262c;
-    --color-text: #dfe1e6;
-    --color-text-muted: #8f929b;
-    --color-accent: #3b82f6;
-    --color-accent-dim: rgba(59, 130, 246, 0.16);
-    --color-user-bubble: #2f62b0;
-    --color-assistant-bubble: #141519;
-    --color-notification-bg: #1d1610;
-    --color-notification-border: #8a5b2f;
-    --color-green: #23b99a;
-    --color-red: #e5484d;
-    --color-purple: #8f72ff;
-    --color-purple-dim: rgba(143, 114, 255, 0.16);
-    --color-overlay: rgba(255, 255, 255, 0.04);
-    --color-overlay-strong: rgba(255, 255, 255, 0.07);
-    color-scheme: dark;
-    --app-bg-wash: radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.02), transparent 34rem);
-  }
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-slow: 260ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* Japanese gets a JP-first sans stack so shared Han characters render in
@@ -129,14 +96,166 @@ body,
 }
 
 body {
-  background: var(--app-bg-wash), var(--color-bg);
-  color: var(--color-text);
+  background: var(--app-background-wash), var(--background);
+  color: var(--foreground);
+  overflow: hidden;
   transition: background-color 0.4s ease, color 0.4s ease;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
-  color: var(--color-text);
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  color: var(--foreground);
+}
+
+/* ==================== Interaction + motion foundation ====================
+   Motion explains hierarchy and confirms intent; it should not turn the shell
+   into a moving background. Keep transforms on explicitly marked controls and
+   reserve ambient loops for real live/loading state. Pointer cursors are global
+   because a clickable control should never make the user guess. */
+
+:where(button, [role="button"], summary, a[href], select):not(:disabled):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+:where(button:disabled, [role="button"][aria-disabled="true"]) {
+  cursor: default;
+}
+
+.oa-pressable {
+  transition:
+    transform var(--motion-fast) var(--motion-ease-standard),
+    border-color var(--motion-standard) var(--motion-ease-standard),
+    background-color var(--motion-standard) var(--motion-ease-standard),
+    color var(--motion-standard) var(--motion-ease-standard),
+    box-shadow var(--motion-standard) var(--motion-ease-standard);
+}
+
+.oa-icon-action,
+.oa-icon-action > svg,
+.oa-nav-icon {
+  transition:
+    transform var(--motion-fast) var(--motion-ease-out),
+    color var(--motion-standard) var(--motion-ease-standard),
+    background-color var(--motion-standard) var(--motion-ease-standard),
+    opacity var(--motion-standard) var(--motion-ease-standard);
+}
+
+.oa-nav-item,
+.oa-nav-row {
+  transition:
+    transform var(--motion-fast) var(--motion-ease-out),
+    color var(--motion-standard) var(--motion-ease-standard),
+    background-color var(--motion-standard) var(--motion-ease-standard);
+}
+
+.oa-status-surface {
+  transition:
+    border-color var(--motion-slow) var(--motion-ease-standard),
+    background-color var(--motion-slow) var(--motion-ease-standard),
+    box-shadow var(--motion-slow) var(--motion-ease-standard);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .oa-pressable:hover:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px color-mix(in srgb, var(--foreground) 9%, transparent);
+  }
+
+  .oa-pressable:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(0) scale(0.98);
+    box-shadow: none;
+  }
+
+  .oa-icon-action:hover:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(-1px);
+  }
+
+  .oa-icon-action:hover:not(:disabled):not([aria-disabled="true"]) > svg {
+    transform: scale(1.1);
+  }
+
+  .oa-icon-action:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(0) scale(0.92);
+  }
+
+  .oa-nav-item:hover .oa-nav-icon {
+    transform: translateX(1px) scale(1.04);
+  }
+
+  .oa-nav-row:hover {
+    transform: translateX(1px);
+  }
+}
+
+@keyframes oa-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes oa-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes oa-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes oa-disclosure-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes oa-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.oa-view-enter {
+  animation: oa-view-enter var(--motion-standard) var(--motion-ease-out) both;
+}
+
+.oa-dialog-surface {
+  animation: oa-dialog-enter var(--motion-slow) var(--motion-ease-out) both;
+}
+
+.oa-dialog-backdrop {
+  animation: oa-backdrop-enter var(--motion-standard) ease-out both;
+}
+
+.oa-disclosure-enter {
+  transform-origin: top;
+  animation: oa-disclosure-enter var(--motion-standard) var(--motion-ease-out) both;
+}
+
+.oa-popover-enter {
+  transform-origin: top;
+  animation: oa-popover-enter var(--motion-standard) var(--motion-ease-out) both;
 }
 
 /* ==================== Typography scale ====================
@@ -189,49 +308,293 @@ body {
   position: absolute;
   inset: -3px;
   border-radius: 9999px;
-  background: var(--color-green);
+  background: var(--success);
   opacity: 0.3;
   animation: live-pulse 2.4s ease-in-out infinite;
   animation-delay: 0.3s;
+}
+
+@keyframes onboarding-slide-forward {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes onboarding-slide-back {
+  from {
+    opacity: 0;
+    transform: translateX(-22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes onboarding-completion-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.76);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes onboarding-completion-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  45% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+@keyframes onboarding-completion-line {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+.oa-onboarding-slide-forward {
+  animation: onboarding-slide-forward 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.oa-onboarding-slide-back {
+  animation: onboarding-slide-back 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.oa-onboarding-step-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 0%;
+  gap: 1rem;
+  align-content: start;
+  overflow-y: auto;
+  padding-bottom: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.oa-onboarding-title {
+  overflow-wrap: normal;
+  text-wrap: balance;
+  word-break: keep-all;
+}
+
+html[lang="ja"] .oa-onboarding-title {
+  line-break: strict;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.oa-onboarding-completion {
+  position: relative;
+  width: 5rem;
+  height: 5rem;
+  margin-bottom: 1.25rem;
+}
+
+.oa-onboarding-completion-ring {
+  position: relative;
+  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--success) 38%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 12%, var(--background));
+  box-shadow: inset 0 0 0 0.5rem color-mix(in srgb, var(--success) 7%, transparent);
+  animation: onboarding-completion-pop 0.58s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.oa-onboarding-completion-ring::after {
+  position: absolute;
+  inset: -0.5rem;
+  content: "";
+  border: 1px solid var(--success);
+  border-radius: inherit;
+  animation: onboarding-completion-ring 0.72s 0.12s ease-out both;
+}
+
+.oa-onboarding-completion-line {
+  position: absolute;
+  width: 1.25rem;
+  height: 1px;
+  border-radius: 999px;
+  background: var(--success);
+  opacity: 0;
+  transform-origin: center;
+  animation: onboarding-completion-line 0.62s ease-out both;
+}
+
+.oa-onboarding-completion-line-a {
+  top: 0.55rem;
+  left: 3.85rem;
+  transform: rotate(-22deg) scaleX(0);
+  animation-delay: 0.16s;
+}
+
+.oa-onboarding-completion-line-b {
+  top: 3.55rem;
+  left: 4.2rem;
+  transform: rotate(16deg) scaleX(0);
+  animation-delay: 0.23s;
+}
+
+.oa-onboarding-completion-line-c {
+  top: 1.15rem;
+  left: -0.25rem;
+  transform: rotate(18deg) scaleX(0);
+  animation-delay: 0.2s;
+}
+
+@media (min-width: 768px) {
+  .oa-onboarding-step-layout {
+    grid-template-columns: minmax(0, 360px) minmax(300px, 340px);
+    gap: 1.5rem;
+    align-items: start;
+    justify-content: center;
+    padding-top: clamp(3rem, 10vh, 5rem);
+  }
+}
+
+@media (min-width: 900px) {
+  .oa-onboarding-step-layout {
+    grid-template-columns: minmax(0, 420px) minmax(320px, 350px);
+  }
+}
+
+@media (min-width: 1024px) {
+  .oa-onboarding-step-layout {
+    grid-template-columns: minmax(0, 540px) minmax(340px, 360px);
+  }
+}
+
+/* Skeleton placeholder — theme-aware shimmer for first-load states. The block
+   is the tertiary surface (reads on both the page bg and bg-secondary cards); a
+   soft overlay band sweeps across at an ambient cadence (sibling to live-pulse's
+   2.4s, a touch quicker so it reads as "loading" without feeling anxious). Size
+   + radius come from the element's own utility classes. Honors reduced motion. */
+@keyframes skeleton-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton {
+  background-color: var(--muted);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent-strong) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .oa-onboarding-slide-forward,
+  .oa-onboarding-slide-back,
+  .oa-onboarding-completion-ring,
+  .oa-onboarding-completion-ring::after,
+  .oa-onboarding-completion-line {
+    animation: none;
+  }
+  .skeleton {
+    animation: none;
+    background-image: none;
+    opacity: 0.7;
+  }
+  .live-pulse,
+  .live-pulse::after,
+  .thinking-dot,
+  .message-enter,
+  .page-fade-in,
+  .oa-view-enter,
+  .oa-dialog-surface,
+  .oa-dialog-backdrop,
+  .oa-disclosure-enter,
+  .oa-popover-enter {
+    animation: none;
+  }
+  .oa-pressable,
+  .oa-icon-action,
+  .oa-icon-action > svg,
+  .oa-nav-item,
+  .oa-nav-row,
+  .oa-nav-icon,
+  .oa-status-surface {
+    transition-duration: 0.01ms;
+  }
+  .oa-pressable:hover,
+  .oa-pressable:active,
+  .oa-icon-action:hover,
+  .oa-icon-action:active,
+  .oa-nav-row:hover,
+  .oa-nav-item:hover .oa-nav-icon {
+    transform: none;
+  }
 }
 
 /* ==================== Button utility classes ==================== */
 
 .btn-primary {
   @apply px-4 py-2 text-[13px] font-medium rounded-lg
-    bg-bg-tertiary border border-border text-text
-    hover:border-accent/40 hover:bg-bg-tertiary/80 transition-all active:scale-[0.98]
+    bg-primary border border-primary text-primary-foreground
+    hover:bg-primary/90 transition-all active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
 .btn-secondary {
-  @apply px-4 py-2 text-[13px] font-medium rounded-lg border border-border text-text-muted
-    hover:bg-bg-tertiary hover:text-text transition-all active:scale-[0.98]
+  @apply px-4 py-2 text-[13px] font-medium rounded-lg border border-border text-muted-foreground
+    hover:bg-muted hover:text-foreground transition-all active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
 .btn-danger {
-  @apply px-4 py-2 text-[13px] font-medium rounded-lg border border-red/30 text-red
-    hover:bg-red/10 transition-all active:scale-[0.98]
+  @apply px-4 py-2 text-[13px] font-medium rounded-lg border border-destructive/30 text-destructive
+    hover:bg-destructive/10 transition-all active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
 .btn-primary-sm {
   @apply px-3 py-1.5 text-xs font-medium rounded-md
-    bg-bg-tertiary border border-border text-text
-    hover:border-accent/40 hover:bg-bg-tertiary/80 transition-all active:scale-[0.98]
+    bg-primary border border-primary text-primary-foreground
+    hover:bg-primary/90 transition-all active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-bg;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background;
 }
 
 .btn-secondary-sm {
-  @apply px-3 py-1.5 text-xs font-medium rounded-md border border-border text-text-muted
-    hover:bg-bg-tertiary hover:text-text transition-all active:scale-[0.98]
+  @apply px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground
+    hover:bg-muted hover:text-foreground transition-all active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 focus-visible:ring-offset-bg;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background;
 }
 
 /* Scrollbar styling */
@@ -242,7 +605,7 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: var(--border);
   border-radius: 3px;
 }
 
@@ -265,9 +628,11 @@ body {
    tuned empirically; candidate prose tier for the semantic scale. */
 .markdown-content {
   font-size: 15px;
+  overflow-wrap: break-word;
 }
 .markdown-content p {
   margin: 0.5em 0;
+  text-wrap: pretty;
 }
 .markdown-content p:first-child {
   margin-top: 0;
@@ -276,8 +641,8 @@ body {
   margin-bottom: 0;
 }
 .markdown-content pre {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--background);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px;
   overflow-x: auto;
@@ -289,9 +654,12 @@ body {
   font-size: 13px;
 }
 .markdown-content :not(pre) > code {
-  background: var(--color-bg-tertiary);
+  background: var(--muted);
   padding: 2px 6px;
   border-radius: 4px;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .markdown-content ul,
 .markdown-content ol {
@@ -307,24 +675,43 @@ body {
 }
 .markdown-content li {
   margin: 0.25em 0;
+  text-wrap: pretty;
 }
 .markdown-content li::marker {
-  color: var(--color-text-muted);
+  color: var(--muted-foreground);
 }
 /* Obsidian-style [[name]] wikilinks → clickable entity references. */
 .markdown-content a.wikilink {
-  color: var(--color-accent);
+  display: inline-block;
+  max-width: 100%;
+  color: var(--primary);
   cursor: pointer;
   text-decoration: none;
-  border-bottom: 1px dashed color-mix(in srgb, var(--color-accent) 45%, transparent);
+  vertical-align: baseline;
+  overflow-wrap: anywhere;
+  border-bottom: 1px dashed color-mix(in srgb, var(--primary) 45%, transparent);
 }
 .markdown-content a.wikilink:hover {
   border-bottom-style: solid;
 }
+
+.markdown-content a.session-signature {
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.markdown-content a.session-signature:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  text-decoration: underline;
+}
 .markdown-content blockquote {
-  border-left: 3px solid var(--color-accent);
+  border-left: 3px solid var(--primary);
   padding-left: 12px;
-  color: var(--color-text-muted);
+  color: var(--muted-foreground);
   margin: 0.5em 0;
 }
 .markdown-content table {
@@ -334,12 +721,12 @@ body {
 }
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   padding: 6px 12px;
   text-align: left;
 }
 .markdown-content th {
-  background: var(--color-bg-tertiary);
+  background: var(--muted);
 }
 .markdown-content img {
   max-width: 100%;
@@ -347,8 +734,9 @@ body {
   margin: 8px 0;
 }
 .markdown-content a {
-  color: var(--color-accent);
+  color: var(--primary);
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 .markdown-content a:hover {
   text-decoration: underline;
@@ -372,6 +760,36 @@ body {
 .markdown-content h2:first-child,
 .markdown-content h3:first-child {
   margin-top: 0;
+}
+
+/* Issue What visual editor. Tiptap owns the editable DOM, while these rules
+   deliberately reuse read-mode typography so the always-editable body still
+   feels like part of the Issue rather than a separate source application. */
+.what-editor-content .ProseMirror {
+  min-height: 12rem;
+  padding: 0.75rem 1rem;
+  outline: none;
+  cursor: text;
+}
+.what-editor-content .ProseMirror > *:first-child {
+  margin-top: 0;
+}
+.what-editor-content .ProseMirror > *:last-child {
+  margin-bottom: 0;
+}
+.what-editor-content .ProseMirror-focused {
+  background: transparent;
+}
+.what-editor-content .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  border-radius: 4px;
+}
+.what-editor-content .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+  content: 'Describe what this Issue should accomplish…';
+  float: left;
+  height: 0;
+  pointer-events: none;
 }
 
 /* Thinking animation */
@@ -436,13 +854,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
+  background: var(--muted);
+  border: 1px solid var(--border);
   border-bottom: none;
   border-radius: 6px 6px 0 0;
   padding: 4px 8px 4px 12px;
   font-size: 12px;
-  color: var(--color-text-muted);
+  color: var(--muted-foreground);
   font-family: var(--font-mono);
 }
 .code-block-wrapper .code-copy-btn {
@@ -451,7 +869,7 @@ body {
   gap: 4px;
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--muted-foreground);
   cursor: pointer;
   font-size: 12px;
   padding: 2px 6px;
@@ -460,13 +878,13 @@ body {
   font-family: var(--font-sans);
 }
 .code-block-wrapper .code-copy-btn:hover {
-  color: var(--color-text);
+  color: var(--foreground);
   /* Theme-aware wash — navy in Daybreak, white in Midnight. The old
      hardcoded rgba(255,255,255,…) was invisible in light mode. */
-  background: var(--color-overlay-strong);
+  background: var(--accent-strong);
 }
 .code-block-wrapper .code-copy-btn.copied {
-  color: var(--color-green);
+  color: var(--success);
 }
 .code-block-wrapper pre {
   margin-top: 0 !important;
@@ -474,165 +892,57 @@ body {
   border-top-right-radius: 0 !important;
 }
 
-/* ==================== Automation Flow (React Flow) ==================== */
-
-/* Producer nodes (leftmost column — pure event sources) */
-.react-flow__node.flow-producer-node {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text);
-  border: 1px solid #a371f7;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  min-width: 180px;
-  text-align: center;
-  box-shadow: 0 0 0 1px rgba(163, 113, 247, 0.12);
+/* Workspace Manager lives beside both the activity rail and the Ask Alice
+   sidebar, so viewport breakpoints overestimate the width it can actually use.
+   Size the layout against the page container and keep every grid track
+   shrinkable so long conversation titles cannot force horizontal overflow. */
+.workspace-manager-layout {
+  container: workspace-manager-layout / inline-size;
 }
 
-/* Wildcard producer — directional halo on the right (toward events) */
-.react-flow__node.flow-producer-emit-wildcard {
-  position: relative;
-}
-.react-flow__node.flow-producer-emit-wildcard::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 100%;
-  width: 80px;
-  height: 120%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse at left center,
-    rgba(163, 113, 247, 0.45) 0%,
-    rgba(163, 113, 247, 0.15) 40%,
-    rgba(163, 113, 247, 0) 75%
-  );
-  animation: flow-wildcard-breath 2.4s ease-in-out infinite;
+.workspace-manager-suggestions {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-/* Event-type nodes (inputs + outputs) */
-.react-flow__node.flow-event-node {
-  background: var(--color-bg-secondary);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 8px 14px;
-  font-size: 12px;
-  font-family: var(--font-mono);
-  min-width: 140px;
-  text-align: center;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+.workspace-manager-suggestions-section {
+  container: workspace-manager-suggestions / inline-size;
 }
 
-/* Listener nodes (middle column) */
-.react-flow__node.flow-listener-node {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text);
-  border: 1px solid var(--color-accent);
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  min-width: 200px;
-  text-align: center;
-  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.1);
-}
-
-/* Pulse animation when an event of this type fires */
-.react-flow__node.flow-pulse {
-  animation: flow-pulse 800ms ease-out;
-  border-color: var(--color-accent);
-}
-@keyframes flow-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.6);
-    border-color: var(--color-accent);
-  }
-  100% {
-    box-shadow: 0 0 0 14px rgba(88, 166, 255, 0);
-    border-color: var(--color-border);
+@container workspace-manager-layout (min-width: 34rem) {
+  .workspace-manager-composer-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
   }
 }
 
-/* React Flow background + controls theming */
-.react-flow__controls {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.react-flow__controls-button {
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-}
-.react-flow__controls-button:hover {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text);
-}
-.react-flow__controls-button svg {
-  fill: currentColor;
+@container workspace-manager-layout (min-width: 48rem) {
+  .workspace-manager-hero {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .workspace-manager-stats {
+    width: 18rem;
+  }
 }
 
-/* External events (webhook-reachable) get a dashed teal outline */
-.react-flow__node.flow-event-external {
-  border-color: var(--color-accent);
-  border-style: dashed;
+@container workspace-manager-suggestions (min-width: 34rem) {
+  .workspace-manager-suggestions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-/* ==================== Wildcard listener auras ====================
-   A listener declared with `subscribes: '*'` or `emits: '*'` gets a
-   soft directional halo instead of N individual edges. Emit-side is
-   green (matches emit edge color), subscribe-side is blue (matches
-   subscribe edge color). Breathing animation is slower and softer
-   than the event-pulse animation to stay ambient. */
-
-.react-flow__node.flow-listener-emit-wildcard {
-  /* ensure absolutely-positioned pseudo-elements are anchored here */
-  position: relative;
-}
-.react-flow__node.flow-listener-emit-wildcard::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 100%;
-  width: 80px;
-  height: 120%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse at left center,
-    rgba(63, 185, 80, 0.45) 0%,
-    rgba(63, 185, 80, 0.15) 40%,
-    rgba(63, 185, 80, 0) 75%
-  );
-  animation: flow-wildcard-breath 2.4s ease-in-out infinite;
-}
-
-.react-flow__node.flow-listener-sub-wildcard {
-  position: relative;
-}
-.react-flow__node.flow-listener-sub-wildcard::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: 100%;
-  width: 80px;
-  height: 120%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse at right center,
-    rgba(88, 166, 255, 0.45) 0%,
-    rgba(88, 166, 255, 0.15) 40%,
-    rgba(88, 166, 255, 0) 75%
-  );
-  animation: flow-wildcard-breath 2.4s ease-in-out infinite;
-}
-
-@keyframes flow-wildcard-breath {
-  0%, 100% { opacity: 0.55; transform: translateY(-50%) scale(1); }
-  50%      { opacity: 1;    transform: translateY(-50%) scale(1.08); }
+/* Final cascade-level safety net. Several domain animations are declared
+   below the first reduced-motion block, so this lives at EOF on purpose. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

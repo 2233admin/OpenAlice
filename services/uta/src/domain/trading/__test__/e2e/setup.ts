@@ -118,7 +118,7 @@ async function initAll(): Promise<TestAccount[]> {
       }
     }
 
-    const broker = createBroker(acct)
+    const broker = await createBroker(acct)
 
     try {
       await initWithTimeout(broker, BROKER_INIT_TIMEOUT_MS)

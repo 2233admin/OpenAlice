@@ -13,7 +13,7 @@
  */
 
 import type { IBroker } from './types.js'
-import { BROKER_ENGINE_REGISTRY } from './registry.js'
+import { loadBrokerEngine } from './registry.js'
 import { getBrokerPreset } from '@traderalice/uta-protocol'
 import type { UTAConfig } from '@/core/config.js'
 import type { FxService } from '../fx-service.js'
@@ -24,16 +24,14 @@ export interface BrokerServices {
 }
 
 /** Create an IBroker from account config via preset resolution. */
-export function createBroker(config: UTAConfig, services?: BrokerServices): IBroker {
+export async function createBroker(config: UTAConfig, services?: BrokerServices): Promise<IBroker> {
   const preset = getBrokerPreset(config.presetId)
   const presetData = preset.zodSchema.parse(config.presetConfig) as Record<string, unknown>
   const engineConfig = preset.toEngineConfig(presetData)
 
-  const entry = BROKER_ENGINE_REGISTRY[preset.engine]
-  if (!entry) {
-    throw new Error(`Unknown broker engine "${preset.engine}" referenced by preset "${preset.id}"`)
-  }
-  const broker = entry.fromConfig({
+  const entry = await loadBrokerEngine(preset.engine)
+  entry.configSchema.parse(engineConfig)
+  const broker = entry.createBroker({
     id: config.id,
     label: config.label,
     // keyless flows through brokerConfig so engines that support public-data-only

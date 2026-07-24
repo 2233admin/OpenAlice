@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatRelativeTime } from '../../lib/intl';
 import type { ReactElement } from 'react';
-import { Bot, ChevronDown, ChevronRight, Code2, Cpu, LayoutGrid, Library, Play, Plus, Settings as SettingsIcon, Sparkles, Square, Terminal, X, type LucideIcon } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, Code2, Cpu, LayoutGrid, Library, Pencil, Play, Plus, Settings as SettingsIcon, Sparkles, Square, Terminal, X, type LucideIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { headlessApi, type HeadlessTaskRecord } from '../../api/headless';
 import {
-  deleteWorkspace,
   type AgentInfo,
   type SessionRecord,
   type TemplateInfo,
   type Workspace,
 } from './api';
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
+import { WorkspaceOffboardingDialog } from './WorkspaceOffboardingDialog';
+import { Skeleton } from '../StateViews';
+import { workspaceDisplayName, workspaceDisplayTitle } from './display';
+import { orderSessionsForSidebar, orderWorkspacesForSidebar } from './sidebar-order';
+import { useReorderMotion } from './useReorderMotion';
 
 /**
  * Workspace launcher sidebar.
@@ -42,15 +47,26 @@ export interface SidebarProps {
   readonly workspaces: readonly Workspace[];
   readonly templates: readonly TemplateInfo[];
   readonly agents: readonly AgentInfo[];
+  readonly defaultAgent: string | null;
   readonly listError: string | null;
+  /** True once the first workspaces-list fetch has resolved — gates the empty
+   *  state vs. a cold-load skeleton. */
+  readonly hasLoaded: boolean;
   readonly selection: Selection | null;
   readonly onSelectWorkspace: (wsId: string) => void;
   readonly onSelectSession: (wsId: string, sessionId: string) => void;
   readonly onSpawn: (wsId: string, opts?: SpawnOpts) => void;
+  readonly onOpenHeadlessRun: (
+    wsId: string,
+    resumeId: string,
+    opts: { title?: string },
+  ) => void;
+  readonly onSetDefaultAgent: (agent: string | null) => void;
   readonly onPauseSession: (wsId: string, sessionId: string) => void;
   readonly onResumeSession: (wsId: string, sessionId: string) => void;
   readonly onDeleteSession: (wsId: string, sessionId: string) => void;
   readonly onChanged: () => void;
+  readonly onRenameWorkspace?: (wsId: string, displayName: string) => void;
   /** Optional: open the per-workspace AI-provider config modal. */
   readonly onConfigureWorkspace?: (wsId: string) => void;
   /** Open the Workspaces Overview dashboard tab (card view of all workspaces). */
@@ -64,7 +80,17 @@ export interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps): ReactElement {
+  const { t } = useTranslation();
   const [showCreate, setShowCreate] = useState(false);
+  const [pendingOffboard, setPendingOffboard] = useState<Workspace | null>(null);
+  const showListError = Boolean(props.listError && props.workspaces.length === 0);
+  const orderedWorkspaces = useMemo(
+    () => orderWorkspacesForSidebar(props.workspaces),
+    [props.workspaces],
+  );
+  const workspaceListRef = useReorderMotion<HTMLDivElement>(
+    orderedWorkspaces.map((workspace) => workspace.id),
+  );
 
   // Headless runs, polled once for the whole tree (not per-workspace) and
   // grouped client-side. Low-frequency passive surface → plain polling.
@@ -97,12 +123,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
   }, [headlessTasks]);
 
   const onDelete = async (id: string): Promise<void> => {
-    if (!window.confirm('Delete workspace? (registry only — files on disk are kept.)')) return;
-    const ok = await deleteWorkspace(id);
-    if (ok) {
-      props.onChanged();
-      if (props.selection?.wsId === id) props.onSelectWorkspace('');
-    }
+    const workspace = props.workspaces.find((candidate) => candidate.id === id);
+    if (workspace) setPendingOffboard(workspace);
   };
 
   return (
@@ -114,10 +136,10 @@ export function Sidebar(props: SidebarProps): ReactElement {
         <button
           type="button"
           onClick={() => setShowCreate(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-bg-tertiary/30 text-[13px] font-medium text-text-muted transition-colors hover:text-text hover:border-accent/50 hover:bg-bg-tertiary/60"
+          className="oa-pressable w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/30 text-[13px] font-medium text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-muted/60"
         >
           <Plus size={15} strokeWidth={2.25} className="shrink-0" />
-          <span className="truncate">New workspace</span>
+          <span className="truncate">{t('workspace.newWorkspace')}</span>
         </button>
       </div>
 
@@ -132,45 +154,73 @@ export function Sidebar(props: SidebarProps): ReactElement {
         />
       )}
 
+      {pendingOffboard && (
+        <WorkspaceOffboardingDialog
+          workspace={pendingOffboard}
+          onOffboarded={() => {
+            const id = pendingOffboard.id;
+            setPendingOffboard(null);
+            props.onChanged();
+            if (props.selection?.wsId === id) props.onSelectWorkspace('');
+          }}
+          onClose={() => setPendingOffboard(null)}
+        />
+      )}
+
       {props.onOpenOverview && (
         <NavRow
           icon={LayoutGrid}
-          label="Overview"
+          label={t('workspace.overview')}
           active={!!props.overviewActive}
           onClick={props.onOpenOverview}
-          title="Card-based dashboard of all workspaces"
+          title={t('workspace.overviewNavTitle')}
         />
       )}
       {props.onOpenTemplates && (
         <NavRow
           icon={Library}
-          label="Templates"
+          label={t('workspace.templates')}
           active={!!props.templatesActive}
           onClick={props.onOpenTemplates}
-          title="Browse workspace templates"
+          title={t('workspace.templatesNavTitle')}
         />
       )}
 
-      {props.workspaces.length === 0 && !props.listError && (
-        <div className="px-3 py-2 text-[12px] text-text-muted/60">No workspaces yet</div>
+      {!props.hasLoaded && !showListError && (
+        <div className="flex flex-col mt-0.5" aria-hidden="true">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2">
+              <Skeleton className="h-4 w-4 rounded" />
+              <Skeleton className={`h-3 ${i % 2 === 0 ? 'w-32' : 'w-24'}`} />
+            </div>
+          ))}
+        </div>
       )}
-      {props.listError && <div className="px-3 py-2 text-[12px] text-red">{props.listError}</div>}
+      {props.hasLoaded && props.workspaces.length === 0 && !showListError && (
+        <div className="px-3 py-2 text-[12px] text-muted-foreground/60">{t('workspace.emptySidebar')}</div>
+      )}
+      {showListError && <div className="px-3 py-2 text-[12px] text-destructive">{props.listError}</div>}
 
-      <div className="flex flex-col mt-0.5">
-        {props.workspaces.map((w) => (
+      <div ref={workspaceListRef} className="flex flex-col mt-0.5">
+        {orderedWorkspaces.map((w) => (
           <WorkspaceRow
             key={w.id}
+            reorderId={w.id}
             workspace={w}
             agents={props.agents}
+            defaultAgent={props.defaultAgent}
             selection={props.selection}
             headlessTasks={headlessByWs.get(w.id) ?? []}
             onSelectWorkspace={props.onSelectWorkspace}
             onSelectSession={props.onSelectSession}
             onSpawn={props.onSpawn}
+            onOpenHeadlessRun={props.onOpenHeadlessRun}
+            onSetDefaultAgent={props.onSetDefaultAgent}
             onPauseSession={props.onPauseSession}
             onResumeSession={props.onResumeSession}
             onDeleteSession={props.onDeleteSession}
             onDelete={onDelete}
+            onRenameWorkspace={props.onRenameWorkspace}
             onConfigureWorkspace={props.onConfigureWorkspace}
           />
         ))}
@@ -195,30 +245,35 @@ function NavRow({
       type="button"
       onClick={onClick}
       title={title}
-      className={`relative flex items-center gap-2.5 w-full px-3 py-1.5 text-[13px] text-left transition-colors ${
-        active ? 'bg-bg-tertiary text-text' : 'text-text hover:bg-bg-tertiary/50'
+      className={`oa-nav-row relative flex items-center gap-2.5 w-full px-3 py-1.5 text-[13px] text-left ${
+        active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
       }`}
     >
-      {active && <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent" />}
-      <Icon size={14} strokeWidth={2} className="shrink-0 text-text-muted/70" aria-hidden="true" />
+      {active && <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary" />}
+      <Icon size={14} strokeWidth={2} className="shrink-0 text-muted-foreground/70" aria-hidden="true" />
       <span className="truncate">{label}</span>
     </button>
   );
 }
 
 export interface WorkspaceRowProps {
+  readonly reorderId?: string;
   readonly workspace: Workspace;
   readonly agents: readonly AgentInfo[];
+  readonly defaultAgent: string | null;
   readonly selection: Selection | null;
   /** This workspace's headless (automation) runs, newest-first. */
   readonly headlessTasks?: readonly HeadlessTaskRecord[];
   readonly onSelectWorkspace: (wsId: string) => void;
   readonly onSelectSession: (wsId: string, sessionId: string) => void;
   readonly onSpawn: (wsId: string, opts?: SpawnOpts) => void;
+  readonly onOpenHeadlessRun: SidebarProps['onOpenHeadlessRun'];
+  readonly onSetDefaultAgent: (agent: string | null) => void;
   readonly onPauseSession: (wsId: string, sessionId: string) => void;
   readonly onResumeSession: (wsId: string, sessionId: string) => void;
   readonly onDeleteSession: (wsId: string, sessionId: string) => void;
   readonly onDelete: (id: string) => Promise<void>;
+  readonly onRenameWorkspace?: (wsId: string, displayName: string) => void;
   readonly onConfigureWorkspace?: (wsId: string) => void;
 }
 
@@ -257,26 +312,43 @@ function AgentBadgeGlyph({ agentId }: { agentId: string }): ReactElement {
 
 /** Hover-revealed square action button used for the per-row controls. */
 function rowAction(danger = false): string {
-  return `shrink-0 w-5 h-5 rounded flex items-center justify-center text-text-muted/70 transition-colors ${
-    danger ? 'hover:text-red hover:bg-red/10' : 'hover:text-text hover:bg-bg-secondary'
+  return `oa-icon-action shrink-0 w-5 h-5 rounded flex items-center justify-center text-muted-foreground/70 transition-colors ${
+    danger ? 'hover:text-destructive hover:bg-destructive/10' : 'hover:text-foreground hover:bg-secondary'
   }`;
 }
 
 export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
+  const { t } = useTranslation();
   const w = props.workspace;
+  const label = workspaceDisplayName(w);
   const isSelected = props.selection?.wsId === w.id && props.selection.sessionId === null;
   const hasRunning = w.sessions.some((s) => s.state === 'running');
   const runningCount = w.sessions.filter((s) => s.state === 'running').length;
+  const orderedSessions = useMemo(
+    () => orderSessionsForSidebar(w.sessions),
+    [w.sessions],
+  );
+  const sessionListRef = useReorderMotion<HTMLDivElement>(
+    orderedSessions.map((session) => session.id),
+  );
 
   const [spawnMenuOpen, setSpawnMenuOpen] = useState(false);
-  const plusBtnRef = useRef<HTMLButtonElement | null>(null);
+  const spawnControlsRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLUListElement | null>(null);
+  const enabledAgents = w.agents
+    .map((id) => props.agents.find((a) => a.id === id))
+    .filter((a): a is AgentInfo => !!a);
+  const runtimeAgents = enabledAgents.filter((a) => a.kind !== 'utility');
+  const utilityAgents = enabledAgents.filter((a) => a.kind === 'utility');
+  const defaultAgentEnabled =
+    props.defaultAgent !== null &&
+    runtimeAgents.some((a) => a.id === props.defaultAgent);
 
   useEffect(() => {
     if (!spawnMenuOpen) return;
     const onDocClick = (e: MouseEvent): void => {
       const t = e.target as Node | null;
-      if (plusBtnRef.current?.contains(t)) return;
+      if (spawnControlsRef.current?.contains(t)) return;
       if (menuRef.current?.contains(t)) return;
       setSpawnMenuOpen(false);
     };
@@ -293,8 +365,8 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
   }, [spawnMenuOpen]);
 
   const onPlusClick = (): void => {
-    if (w.agents.length <= 1) {
-      props.onSpawn(w.id, { agent: w.agents[0] ?? 'claude' });
+    if (defaultAgentEnabled && props.defaultAgent) {
+      props.onSpawn(w.id, { agent: props.defaultAgent });
       return;
     }
     setSpawnMenuOpen((v) => !v);
@@ -302,71 +374,122 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
 
   const onMenuPick = (agentId: string): void => {
     setSpawnMenuOpen(false);
+    const agent = props.agents.find((a) => a.id === agentId);
+    if (agent && agent.kind !== 'utility') props.onSetDefaultAgent(agentId);
     props.onSpawn(w.id, { agent: agentId });
   };
 
   const plusTitle =
-    w.agents.length === 1
-      ? `spawn a new ${agentLabel(w.agents[0]!, props.agents)} session`
-      : 'spawn a new session…';
+    defaultAgentEnabled && props.defaultAgent
+      ? t('workspace.spawnAgent', { agent: agentLabel(props.defaultAgent, props.agents) })
+      : t('workspace.spawn');
+  const chooserTitle = t('workspace.chooseAgent');
 
   const statusClass = hasRunning
-    ? 'bg-green'
+    ? 'bg-success'
     : w.sessions.length > 0
-      ? 'bg-text-muted/40'
+      ? 'bg-muted-foreground/40'
       : 'border border-border';
 
   return (
-    <div>
+    <div data-reorder-id={props.reorderId}>
       <div
         className={`group relative flex items-center gap-1 pl-3 pr-2 py-1.5 text-[12px] transition-colors ${
-          isSelected ? 'bg-bg-tertiary text-text' : 'text-text hover:bg-bg-tertiary/50'
+          isSelected ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
         }`}
       >
-        {isSelected && <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent" />}
+        {isSelected && <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary" />}
         <button
           type="button"
           onClick={() => props.onSelectWorkspace(w.id)}
-          title={w.tag}
+          title={workspaceDisplayTitle(w)}
           className="flex-1 min-w-0 flex items-center gap-2 text-left"
         >
           <span
             className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusClass}`}
-            title={hasRunning ? `${runningCount} running` : 'idle'}
+            title={hasRunning ? t('workspace.runningCount', { count: runningCount }) : t('workspace.idle')}
           />
-          <span className="truncate font-medium">{w.tag}</span>
-          <span className="text-[10px] text-text-muted/50 tabular-nums shrink-0">{formatRelativeTime(w.createdAt)}</span>
+          <span className="truncate font-medium">{label}</span>
+          <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">{formatRelativeTime(w.createdAt)}</span>
         </button>
-        {w.agents.length > 0 && (
-          <div className="relative shrink-0">
+        {props.onRenameWorkspace && (
+          <button
+            type="button"
+            className={`${rowAction()} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
+            title={t('workspace.rename')}
+            onClick={() => {
+              const next = window.prompt(t('workspace.displayNamePrompt'), label);
+              if (next === null) return;
+              const trimmed = next.trim();
+              if (trimmed.length === 0 || trimmed === label) return;
+              props.onRenameWorkspace?.(w.id, trimmed);
+            }}
+          >
+            <Pencil size={12} strokeWidth={2} />
+          </button>
+        )}
+        {enabledAgents.length > 0 && (
+          <div ref={spawnControlsRef} className="relative flex shrink-0 items-center">
             <button
-              ref={plusBtnRef}
               type="button"
               className={rowAction()}
               title={plusTitle}
-              aria-haspopup={w.agents.length > 1}
-              aria-expanded={spawnMenuOpen}
+              aria-label={plusTitle}
+              aria-haspopup={defaultAgentEnabled ? undefined : 'menu'}
+              aria-expanded={defaultAgentEnabled ? undefined : spawnMenuOpen}
               onClick={onPlusClick}
             >
               <Plus size={13} strokeWidth={2.25} />
             </button>
+            {defaultAgentEnabled && (
+              <button
+                type="button"
+                className={`${rowAction()} -ml-0.5 w-4`}
+                title={chooserTitle}
+                aria-label={chooserTitle}
+                aria-haspopup="menu"
+                aria-expanded={spawnMenuOpen}
+                onClick={() => setSpawnMenuOpen((open) => !open)}
+              >
+                <ChevronDown size={11} strokeWidth={2.25} />
+              </button>
+            )}
             {spawnMenuOpen && (
               <ul
                 ref={menuRef}
                 role="menu"
-                className="absolute right-0 top-full mt-1 min-w-[170px] py-1 bg-bg-secondary border border-border/70 rounded-lg shadow-lg z-10"
+                className="oa-popover-enter absolute right-0 top-full mt-1 min-w-[170px] py-1 bg-secondary border border-border/70 rounded-lg shadow-lg z-10"
               >
-                {w.agents.map((agentId) => (
-                  <li key={agentId}>
+                {runtimeAgents.map((agent) => (
+                  <li key={agent.id}>
                     <button
                       type="button"
                       role="menuitem"
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left text-text transition-colors hover:bg-bg-tertiary"
-                      onClick={() => onMenuPick(agentId)}
+                      aria-label={`${agent.displayName} (${agentPrefix(agent.id)})`}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left text-foreground transition-colors hover:bg-muted"
+                      onClick={() => onMenuPick(agent.id)}
                     >
-                      <Plus size={12} strokeWidth={2.25} className="shrink-0 text-text-muted" />
-                      <span className="flex-1 truncate">{agentLabel(agentId, props.agents)}</span>
-                      <span className="text-[10px] font-mono text-text-muted/60">{agentPrefix(agentId)}</span>
+                      <Plus size={12} strokeWidth={2.25} className="shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate">{agent.displayName}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground/60">{agentPrefix(agent.id)}</span>
+                    </button>
+                  </li>
+                ))}
+                {runtimeAgents.length > 0 && utilityAgents.length > 0 && (
+                  <li aria-hidden="true" className="my-1 border-t border-border/70" />
+                )}
+                {utilityAgents.map((agent) => (
+                  <li key={agent.id}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label={`${agent.displayName} (${agentPrefix(agent.id)})`}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      onClick={() => onMenuPick(agent.id)}
+                    >
+                      <Terminal size={12} strokeWidth={2.25} className="shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate">{agent.displayName}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground/60">{agentPrefix(agent.id)}</span>
                     </button>
                   </li>
                 ))}
@@ -378,7 +501,7 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
           <button
             type="button"
             className={`${rowAction()} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
-            title="configure AI provider for this workspace"
+            title={t('workspace.configure')}
             onClick={() => props.onConfigureWorkspace?.(w.id)}
           >
             <SettingsIcon size={12} strokeWidth={2} />
@@ -387,18 +510,19 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
         <button
           type="button"
           className={`${rowAction(true)} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
-          title="delete workspace"
+          title={t('workspace.deleteWorkspace')}
           onClick={() => void props.onDelete(w.id)}
         >
           <X size={12} strokeWidth={2.5} />
         </button>
       </div>
 
-      {w.sessions.length > 0 && (
-        <div className="ml-[18px] border-l border-border/50">
-          {w.sessions.map((s) => (
+      {orderedSessions.length > 0 && (
+        <div ref={sessionListRef} className="ml-[18px] border-l border-border/50">
+          {orderedSessions.map((s) => (
             <SessionRow
               key={s.id}
+              reorderId={s.id}
               session={s}
               isActive={props.selection?.wsId === w.id && props.selection.sessionId === s.id}
               onSelect={() => props.onSelectSession(w.id, s.id)}
@@ -413,7 +537,9 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
       {(props.headlessTasks?.length ?? 0) > 0 && (
         <HeadlessGroup
           tasks={props.headlessTasks!}
-          onOpenAsSession={(t) => props.onSpawn(w.id, { resume: t.agentSessionId!, agent: t.agent })}
+          onOpenAsSession={(task) => props.onOpenHeadlessRun(w.id, task.resumeId, {
+            title: task.prompt,
+          })}
         />
       )}
     </div>
@@ -424,10 +550,10 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
 
 /** status → token-driven dot colour. */
 const HEADLESS_DOT_CLASS: Record<HeadlessTaskRecord['status'], string> = {
-  running: 'bg-accent',
-  done: 'bg-text-muted/40',
-  failed: 'bg-red',
-  interrupted: 'bg-yellow',
+  running: 'bg-primary',
+  done: 'bg-muted-foreground/40',
+  failed: 'bg-destructive',
+  interrupted: 'bg-warning',
 };
 
 /**
@@ -444,6 +570,7 @@ function HeadlessGroup(props: {
   readonly tasks: readonly HeadlessTaskRecord[];
   readonly onOpenAsSession: (t: HeadlessTaskRecord) => void;
 }): ReactElement {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false); // collapsed by default, by design
   const runningCount = props.tasks.filter((t) => t.status === 'running').length;
 
@@ -455,18 +582,18 @@ function HeadlessGroup(props: {
         aria-expanded={open}
         title={
           runningCount > 0
-            ? `headless runs — ${runningCount} running`
-            : 'headless runs (automation)'
+            ? t('workspace.headlessRunning', { count: runningCount })
+            : t('workspace.headlessAutomation')
         }
-        className="group flex items-center gap-1 w-full pl-3 pr-2 py-1 text-[10px] font-medium uppercase tracking-wider text-text-muted/60 hover:text-text-muted transition-colors select-none"
+        className="group flex items-center gap-1 w-full pl-3 pr-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-muted-foreground transition-colors select-none"
       >
         {open ? <ChevronDown size={11} strokeWidth={2.25} aria-hidden="true" /> : <ChevronRight size={11} strokeWidth={2.25} aria-hidden="true" />}
-        <span>headless</span>
-        <span className="text-text-muted/45 tabular-nums">{props.tasks.length}</span>
-        {runningCount > 0 && <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-accent" />}
+        <span>{t('workspace.headless')}</span>
+        <span className="text-muted-foreground/45 tabular-nums">{props.tasks.length}</span>
+        {runningCount > 0 && <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-primary" />}
       </button>
       {open && (
-        <div className="ml-[7px] border-l border-border/50">
+        <div className="oa-disclosure-enter ml-[7px] border-l border-border/50">
           {props.tasks.map((t) => (
             <HeadlessTaskRow key={t.taskId} task={t} onOpenAsSession={props.onOpenAsSession} />
           ))}
@@ -480,27 +607,28 @@ function HeadlessTaskRow(props: {
   readonly task: HeadlessTaskRecord;
   readonly onOpenAsSession: (t: HeadlessTaskRecord) => void;
 }): ReactElement {
-  const t = props.task;
-  const openable = t.status !== 'running' && !!t.agentSessionId;
-  const titleParts = [`${t.agent} · ${t.status}`, formatRelativeTime(t.startedAt)];
-  if (t.error) titleParts.push(t.error);
-  titleParts.push(t.prompt);
+  const { t } = useTranslation();
+  const task = props.task;
+  const openable = task.status !== 'running' && task.resumable;
+  const titleParts = [`${task.agent} · ${task.status}`, formatRelativeTime(task.startedAt)];
+  if (task.error) titleParts.push(task.error);
+  titleParts.push(task.prompt);
 
   return (
     <div className="group flex items-center gap-1.5 pl-3 pr-2 py-1 text-[11px]" title={titleParts.join('\n')}>
-      <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${HEADLESS_DOT_CLASS[t.status]}`} aria-label={t.status} />
-      <span className="shrink-0 flex items-center justify-center w-3.5 text-text-muted/50">
-        <AgentBadgeGlyph agentId={t.agent} />
+      <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${HEADLESS_DOT_CLASS[task.status]}`} aria-label={task.status} />
+      <span className="shrink-0 flex items-center justify-center w-3.5 text-muted-foreground/50">
+        <AgentBadgeGlyph agentId={task.agent} />
       </span>
-      <span className="flex-1 truncate text-text-muted">{t.prompt}</span>
+      <span className="flex-1 truncate text-muted-foreground">{task.prompt}</span>
       {openable && (
         <button
           type="button"
           className={`${rowAction()} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
-          title="open this run as an interactive session"
+          title={t('workspace.openRun')}
           onClick={(e) => {
             e.stopPropagation();
-            props.onOpenAsSession(t);
+            props.onOpenAsSession(task);
           }}
         >
           <ChevronRight size={12} strokeWidth={2.25} />
@@ -511,6 +639,7 @@ function HeadlessTaskRow(props: {
 }
 
 export interface SessionRowProps {
+  reorderId?: string;
   session: SessionRecord;
   isActive: boolean;
   onSelect: () => void;
@@ -520,36 +649,37 @@ export interface SessionRowProps {
 }
 
 export function SessionRow(props: SessionRowProps): ReactElement {
+  const { t } = useTranslation();
   const s = props.session;
   const isPaused = s.state === 'paused';
   // Title: the captured first message (seeded sessions), else the sticky name.
   const display = s.title?.trim() || s.name;
-  const tidShort = s.agentSessionId ? s.agentSessionId.slice(0, 8) : null;
   const metaParts: string[] = [`agent ${s.agent}`];
   if (s.pid !== null) metaParts.push(`pid ${s.pid}`);
-  if (tidShort) metaParts.push(tidShort);
-  if (isPaused) metaParts.push('paused');
+  if (s.resumeId) metaParts.push(s.resumeId);
+  if (isPaused) metaParts.push(t('workspace.paused'));
   const meta = metaParts.join(' · ');
   // Full message on hover when it's been truncated, then the technical meta.
   const tooltip = s.title?.trim() ? `${s.title.trim()}\n${meta}` : meta;
 
   return (
     <div
+      data-reorder-id={props.reorderId}
       className={`group relative flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-[12px] transition-colors ${
-        props.isActive ? 'bg-bg-tertiary' : 'hover:bg-bg-tertiary/50'
+        props.isActive ? 'bg-muted' : 'hover:bg-muted/50'
       }`}
     >
-      {props.isActive && <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent" />}
+      {props.isActive && <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary" />}
       <button
         type="button"
         className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
         onClick={props.onSelect}
         title={tooltip}
       >
-        <span className={`shrink-0 flex items-center justify-center w-3.5 ${isPaused ? 'text-text-muted/40' : 'text-text-muted/70'}`}>
+        <span className={`shrink-0 flex items-center justify-center w-3.5 ${isPaused ? 'text-muted-foreground/40' : 'text-muted-foreground/70'}`}>
           <AgentBadgeGlyph agentId={s.agent} />
         </span>
-        <span className={`truncate ${isPaused ? 'text-text-muted' : 'text-text'}`}>{display}</span>
+        <span className={`truncate ${isPaused ? 'text-muted-foreground' : 'text-foreground'}`}>{display}</span>
       </button>
       {/* Right-aligned, always-visible state-as-action: a running session shows
           STOP (■, click to pause it); a paused one shows PLAY (▶, click to
@@ -558,8 +688,8 @@ export function SessionRow(props: SessionRowProps): ReactElement {
         <button
           type="button"
           className={rowAction()}
-          title="resume this session"
-          aria-label="resume this session"
+          title={t('workspace.resumeSession')}
+          aria-label={t('workspace.resumeSession')}
           onClick={(e) => {
             e.stopPropagation();
             props.onResume();
@@ -571,8 +701,8 @@ export function SessionRow(props: SessionRowProps): ReactElement {
         <button
           type="button"
           className={rowAction()}
-          title="stop this session"
-          aria-label="stop this session"
+          title={t('workspace.stopSession')}
+          aria-label={t('workspace.stopSession')}
           onClick={(e) => {
             e.stopPropagation();
             props.onPause();
@@ -584,8 +714,8 @@ export function SessionRow(props: SessionRowProps): ReactElement {
       <button
         type="button"
         className={`${rowAction(true)} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
-        title="delete this session"
-        aria-label="delete this session"
+        title={t('workspace.deleteSession')}
+        aria-label={t('workspace.deleteSession')}
         onClick={(e) => {
           e.stopPropagation();
           props.onDelete();

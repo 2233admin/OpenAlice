@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import type { Logger } from './logger.js';
+import type { CredentialWireShape } from '@/core/config.js';
 
 /**
  * A template's declaration that an enabled agent should be seeded, at
@@ -14,6 +15,14 @@ import type { Logger } from './logger.js';
 export interface AgentCredentialDecl {
   readonly credentialSlug: string;
   readonly model?: string;
+  /** Explicit protocol for credentials that expose multiple compatible wires. */
+  readonly wireShape?: CredentialWireShape;
+  /** Explicit custom-model context limit for opencode/Pi. */
+  readonly contextWindow?: number;
+  /** Unknown-model reasoning override for Pi/opencode; known models auto-resolve. */
+  readonly reasoning?: boolean;
+  /** Model id the unknown-model override was decided for. */
+  readonly reasoningModel?: string;
   /** Claude only. */
   readonly authMode?: 'x-api-key' | 'bearer';
   /** Codex only. */
@@ -87,6 +96,14 @@ export interface TemplateMeta {
   readonly injectPersona: boolean;
   readonly bundledSkills: readonly string[];
   /**
+   * Opt-in lifecycle policy for merging launcher-managed assets into older
+   * Workspaces. `managed-context` means README/persona/skill files can use the
+   * three-way Template Upgrade flow. Absence deliberately means recreate or
+   * migrate with template-specific tooling; bootstrap output is never guessed
+   * to be safely mergeable.
+   */
+  readonly upgradeStrategy?: 'managed-context';
+  /**
    * Optional per-agent credential seeding. When present, the launcher writes
    * each declared agent's workspace AI config at create time from the named
    * central credential — so a workspace boots ready-to-run without a manual
@@ -155,6 +172,9 @@ export class TemplateRegistry {
         injectTools: tplMeta.injectTools,
         injectPersona: tplMeta.injectPersona,
         bundledSkills: tplMeta.bundledSkills,
+        ...(tplMeta.upgradeStrategy !== undefined
+          ? { upgradeStrategy: tplMeta.upgradeStrategy }
+          : {}),
         ...(tplMeta.agentCredentials !== undefined ? { agentCredentials: tplMeta.agentCredentials } : {}),
       };
       reg.byName.set(name, meta);
@@ -203,6 +223,7 @@ interface ParsedTemplateMeta {
   readonly injectTools: boolean;
   readonly injectPersona: boolean;
   readonly bundledSkills: readonly string[];
+  readonly upgradeStrategy?: 'managed-context';
   readonly agentCredentials?: Readonly<Record<string, AgentCredentialDecl>>;
 }
 
@@ -287,6 +308,9 @@ async function readTemplateMeta(path: string): Promise<ParsedTemplateMeta> {
           (s): s is string => typeof s === 'string' && !s.includes('/') && !s.includes('..'),
         )
       : [];
+    const upgradeStrategy = obj['upgradeStrategy'] === 'managed-context'
+      ? 'managed-context' as const
+      : undefined;
     const agentCredentials = parseAgentCredentials(obj['agentCredentials']);
     return {
       ...(description !== undefined ? { description } : {}),
@@ -297,6 +321,7 @@ async function readTemplateMeta(path: string): Promise<ParsedTemplateMeta> {
       injectTools,
       injectPersona,
       bundledSkills,
+      ...(upgradeStrategy !== undefined ? { upgradeStrategy } : {}),
       ...(agentCredentials !== undefined ? { agentCredentials } : {}),
     };
   } catch {
@@ -320,6 +345,23 @@ function parseAgentCredentials(raw: unknown): Record<string, AgentCredentialDecl
     if (typeof v['credentialSlug'] !== 'string' || v['credentialSlug'].length === 0) continue;
     const decl: AgentCredentialDecl = { credentialSlug: v['credentialSlug'] };
     if (typeof v['model'] === 'string') (decl as { model?: string }).model = v['model'];
+    if (
+      v['wireShape'] === 'anthropic' ||
+      v['wireShape'] === 'google-generative-ai' ||
+      v['wireShape'] === 'openai-chat' ||
+      v['wireShape'] === 'openai-responses'
+    ) {
+      (decl as { wireShape?: CredentialWireShape }).wireShape = v['wireShape'];
+    }
+    if (typeof v['contextWindow'] === 'number' && Number.isFinite(v['contextWindow']) && v['contextWindow'] > 0) {
+      (decl as { contextWindow?: number }).contextWindow = v['contextWindow'];
+    }
+    if (typeof v['reasoning'] === 'boolean') {
+      (decl as { reasoning?: boolean }).reasoning = v['reasoning'];
+    }
+    if (typeof v['reasoningModel'] === 'string' && v['reasoningModel'].length > 0) {
+      (decl as { reasoningModel?: string }).reasoningModel = v['reasoningModel'];
+    }
     if (v['authMode'] === 'x-api-key' || v['authMode'] === 'bearer') {
       (decl as { authMode?: 'x-api-key' | 'bearer' }).authMode = v['authMode'];
     }
@@ -330,4 +372,3 @@ function parseAgentCredentials(raw: unknown): Record<string, AgentCredentialDecl
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
-

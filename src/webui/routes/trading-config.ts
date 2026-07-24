@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { EngineContext } from '../../core/types.js'
 import {
   readUTAsConfig, writeUTAsConfig,
-  utaConfigSchema, wipeUTATradingData,
+  utaConfigSchema, wipeUTATradingData, loadConfig,
 } from '../../core/config.js'
 import {
   BUILTIN_BROKER_PRESETS,
@@ -11,6 +11,16 @@ import {
   mintInstanceId,
 } from '@traderalice/uta-protocol'
 import { triggerUTARestart } from '../../services/uta-supervisor/restart-trigger.js'
+import { resolveUTAUrl } from '../../services/uta-supervisor/url.js'
+import { describeTradingMode } from '../../services/trading-mode.js'
+import {
+  INSTALLABLE_BROKER_ENGINES,
+  isInstallableBrokerEngine,
+} from '../../core/broker-packs.js'
+import {
+  getBrokerPackLocalStatus,
+  installBrokerPack,
+} from '../../services/broker-packs/installer.js'
 
 /** Fire-and-forget UTA restart after a config mutation. Logs but doesn't
  *  block the HTTP response — UI returns immediately and Guardian flips
@@ -77,6 +87,60 @@ export function createTradingConfigRoutes(ctx: EngineContext) {
     return c.json({ presets: BUILTIN_BROKER_PRESETS })
   })
 
+  // ==================== Optional broker packs ====================
+
+  app.get('/broker-packs', async (c) => {
+    try {
+      const [accounts, config, statuses] = await Promise.all([
+        readUTAsConfig(),
+        loadConfig(),
+        Promise.all(INSTALLABLE_BROKER_ENGINES.map((engine) => getBrokerPackLocalStatus(engine))),
+      ])
+      const requiredBy = new Map<string, string[]>()
+      for (const account of accounts) {
+        if (account.enabled === false) continue
+        let engine: string
+        try {
+          engine = getBrokerPreset(account.presetId).engine
+        } catch (err) {
+          console.warn(
+            `[trading-config] unable to map UTA ${account.id} to a Broker Pack:`,
+            err instanceof Error ? err.message : err,
+          )
+          continue
+        }
+        const rows = requiredBy.get(engine) ?? []
+        rows.push(account.label ?? account.id)
+        requiredBy.set(engine, rows)
+      }
+      if (config.trading.keylessDataSources.length > 0) {
+        const rows = requiredBy.get('ccxt') ?? []
+        rows.push(...config.trading.keylessDataSources.map((source) => `${source} K-line vendor`))
+        requiredBy.set('ccxt', rows)
+      }
+      return c.json({
+        packs: [
+          { ...(await getBrokerPackLocalStatus('mock')), requiredBy: requiredBy.get('mock') ?? [] },
+          ...statuses.map((status) => ({ ...status, requiredBy: requiredBy.get(status.engine) ?? [] })),
+        ],
+      })
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
+    }
+  })
+
+  app.post('/broker-packs/:engine/install', async (c) => {
+    const rawEngine = c.req.param('engine')
+    if (!isInstallableBrokerEngine(rawEngine)) return c.json({ error: `Unknown broker pack: ${rawEngine}` }, 404)
+    try {
+      const status = await installBrokerPack(rawEngine)
+      notifyUTAReload()
+      return c.json(status)
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
   // ==================== Read all ====================
 
   app.get('/', async (c) => {
@@ -140,6 +204,8 @@ export function createTradingConfigRoutes(ctx: EngineContext) {
         enabled: body.enabled !== false,
         guards: Array.isArray(body.guards) ? body.guards : [],
         presetConfig,
+        readOnly: body.readOnly === true,
+        asVendor: body.asVendor !== false,
         ...(body.ephemeral === true ? { ephemeral: true as const } : {}),
       }
       const validated = utaConfigSchema.parse(candidate)
@@ -245,10 +311,11 @@ export function createTradingConfigRoutes(ctx: EngineContext) {
   // (it owns broker code). Alice forwards the wizard's payload over.
 
   app.post('/test-connection', async (c) => {
-    const utaUrl = process.env['OPENALICE_UTA_URL']
-    if (!utaUrl) {
-      return c.json({ success: false, error: 'UTA URL not set' }, 500)
+    const policy = ctx.tradingModePolicy()
+    if (policy.mode === 'lite') {
+      return c.json({ success: false, error: describeTradingMode('lite') }, 503)
     }
+    const utaUrl = resolveUTAUrl()
     try {
       const body = await c.req.json()
       const res = await fetch(`${utaUrl.replace(/\/$/, '')}/api/trading/test-connection`, {
@@ -259,7 +326,7 @@ export function createTradingConfigRoutes(ctx: EngineContext) {
       const data = await res.json()
       return c.json(data, res.status as 200 | 400 | 500)
     } catch (err) {
-      return c.json({ success: false, error: err instanceof Error ? err.message : String(err) }, 500)
+      return c.json({ success: false, error: err instanceof Error ? err.message : String(err) }, 503)
     }
   })
 

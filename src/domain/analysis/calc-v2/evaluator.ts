@@ -28,6 +28,14 @@ export interface CalcOutput {
   value: CalcValue
   /** Sources actually fetched, keyed by barId. */
   dataRange: Record<string, DataSourceMeta>
+  /** Per-source date axis (ascending), keyed by barId — only when withDates. Lets
+   *  the caller map a dumped series back to dates without a second snapshot call. */
+  dates?: Record<string, string[]>
+}
+
+export interface EvalOpts {
+  /** Attach each source's date axis to the output (opt-in; off by default). */
+  withDates?: boolean
 }
 
 // ---- runtime values ----
@@ -44,17 +52,23 @@ type V =
 
 const SERIES_COLUMNS = ['open', 'high', 'low', 'close', 'volume'] as const
 /** A panel (list/dict result) batches many computations in one call — but each
- *  entry is still a single value, so the output stays small. Cap the count. */
-const MAX_PANEL = 50
+ *  entry is still a single value, so the output stays small. Cap the count.
+ *  Raised from 50: dumping a multi-bar axis (one entry per bar) shouldn't have to
+ *  split into two calls for a few months of dailies. */
+const MAX_PANEL = 200
 
-export async function evaluate(program: Program, deps: CalcDeps): Promise<CalcOutput> {
+export async function evaluate(program: Program, deps: CalcDeps, opts: EvalOpts = {}): Promise<CalcOutput> {
   const env = new Map<string, V>()
   const dataRange: Record<string, DataSourceMeta> = {}
+  const dates: Record<string, string[]> = {}
 
-  const fetchBars = async (barId: string, opts: GetBarsOpts, assetClass: AssetClass | undefined): Promise<BarsResult> => {
+  const fetchBars = async (barId: string, fetchOpts: GetBarsOpts, assetClass: AssetClass | undefined): Promise<BarsResult> => {
     const ref = assetClass ? { barId, assetClass } : { barId }
-    const r = await deps.barService.getBars(ref, opts)
-    if (r.meta.barId) dataRange[r.meta.barId] = r.meta
+    const r = await deps.barService.getBars(ref, fetchOpts)
+    if (r.meta.barId) {
+      dataRange[r.meta.barId] = r.meta
+      if (opts.withDates) dates[r.meta.barId] = r.bars.map((b) => b.date)
+    }
     return r
   }
 
@@ -169,12 +183,13 @@ export async function evaluate(program: Program, deps: CalcDeps): Promise<CalcOu
     env.set(b.name, await evalExpr(b.value))
   }
   const out = await evalExpr(program.result)
+  const tail = opts.withDates ? { dataRange, dates } : { dataRange }
   switch (out.k) {
-    case 'num': return { value: out.v, dataRange }
-    case 'str': return { value: out.v, dataRange }
-    case 'rec': return { value: out.v, dataRange }
-    case 'list': return { value: out.items, dataRange }
-    case 'dict': return { value: out.map, dataRange }
+    case 'num': return { value: out.v, ...tail }
+    case 'str': return { value: out.v, ...tail }
+    case 'rec': return { value: out.v, ...tail }
+    case 'list': return { value: out.items, ...tail }
+    case 'dict': return { value: out.map, ...tail }
     default: {
       const what = out.k === 'series' ? 'a series' : 'a series column'
       throw new CalcError({ kind: 'type', message: `The result is ${what}, not a value — reduce it with [-1] or an indicator (e.g. sma(s.close, 50)), or return a panel like { "1h": rsi(s.close, 14) }`, line: program.result.pos.line })

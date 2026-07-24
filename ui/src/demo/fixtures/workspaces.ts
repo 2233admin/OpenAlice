@@ -10,13 +10,14 @@ export const DEMO_SESSION_ID = 'demo-session'
 
 const demoSession: SessionRecord = {
   id: DEMO_SESSION_ID,
+  resumeId: 'demo-resume-main',
   wsId: DEMO_WORKSPACE_ID,
-  agent: 'claude',
-  name: 'c1',
+  agent: 'pi',
+  name: 'p1',
   createdAt: new Date().toISOString(),
   lastActiveAt: new Date().toISOString(),
   state: 'running',
-  agentSessionId: null,
+  surface: 'webpi',
   pid: 0,
   startedAt: Date.now(),
   title: "What jumped out from Apple's Q1 earnings?",
@@ -25,21 +26,22 @@ const demoSession: SessionRecord = {
 export const demoWorkspace: Workspace = {
   id: DEMO_WORKSPACE_ID,
   tag: 'aapl-q1',
+  displayName: 'AAPL Q1 review',
   dir: '/demo/workspaces/aapl-q1',
   createdAt: new Date().toISOString(),
   template: 'chat',
   spawnedFromVersion: '0.1.0',
   currentVersion: '0.1.0',
-  upgradeAvailable: null,
-  agents: ['claude'],
+  upgradeAvailable: { from: '0.1.0', to: '0.2.0' },
+  agents: ['pi'],
   sessions: [demoSession],
   agentOverride: { claude: false, codex: false, opencode: false, pi: false },
 }
 
 // Chat workspace — populates the Chat activity sidebar (which filters
-// `template === 'chat'`). No transcript registered, so its session pane
-// falls back to DemoTerminalStub — that's the right "this is a live PTY
-// in real OpenAlice" placeholder for demo mode.
+// `template === 'chat'`). Its featured Session uses the real WebPi renderer
+// over recorded native Pi messages; the remaining rows keep the multi-runtime
+// history visible.
 export const DEMO_CHAT_WORKSPACE_ID = 'demo-chat-ws'
 export const DEMO_CHAT_SESSION_ID = 'demo-chat-session'
 
@@ -49,52 +51,53 @@ export const DEMO_CHAT_SESSION_ID = 'demo-chat-session'
 const demoChatSessions: SessionRecord[] = [
   {
     id: DEMO_CHAT_SESSION_ID,
+    resumeId: 'demo-resume-chat',
     wsId: DEMO_CHAT_WORKSPACE_ID,
-    agent: 'claude',
-    name: 'c1',
+    agent: 'pi',
+    name: 'p1',
     createdAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
     state: 'running',
-    agentSessionId: null,
+    surface: 'webpi',
     pid: 0,
     startedAt: Date.now(),
     title: "What's moving in semiconductors today?",
   },
   {
     id: 'demo-chat-x1',
+    resumeId: 'demo-resume-x1',
     wsId: DEMO_CHAT_WORKSPACE_ID,
     agent: 'codex',
     name: 'x1',
     createdAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
     state: 'running',
-    agentSessionId: '019eb75e-0b1b-7fa2',
     pid: 0,
     startedAt: Date.now(),
     title: 'Build a thesis on NVDA',
   },
   {
     id: 'demo-chat-o1',
+    resumeId: 'demo-resume-o1',
     wsId: DEMO_CHAT_WORKSPACE_ID,
     agent: 'opencode',
     name: 'o1',
     createdAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
     state: 'paused',
-    agentSessionId: 'ses_148a17c1bffe',
     pid: null,
     startedAt: null,
     title: 'Scan the EV supply chain for bottlenecks',
   },
   {
     id: 'demo-chat-p1',
+    resumeId: 'demo-resume-p1',
     wsId: DEMO_CHAT_WORKSPACE_ID,
     agent: 'pi',
-    name: 'p1',
+    name: 'p2',
     createdAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
     state: 'paused',
-    agentSessionId: '6850b4d0-1c2e',
     pid: null,
     startedAt: null,
     title: '解释一下美债收益率曲线倒挂意味着什么',
@@ -104,6 +107,7 @@ const demoChatSessions: SessionRecord[] = [
 export const demoChatWorkspace: Workspace = {
   id: DEMO_CHAT_WORKSPACE_ID,
   tag: 'chat-may26',
+  displayName: 'Semis and supply chain',
   dir: '/demo/workspaces/chat-may26',
   createdAt: new Date().toISOString(),
   template: 'chat',
@@ -126,8 +130,8 @@ export const chatTemplate: TemplateInfo = {
   description:
     "General-purpose Alice workspace — Alice's full tool surface (market/research data + trading) via the alice*/traderhub CLIs on PATH.",
   groupOrder: 10,
-  defaultAgents: ['claude', 'codex'],
-  version: '0.1.0',
+  defaultAgents: ['pi'],
+  version: '0.2.0',
   hasReadme: false,
 }
 

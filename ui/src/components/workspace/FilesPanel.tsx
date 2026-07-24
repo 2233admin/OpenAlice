@@ -3,12 +3,16 @@ import { formatRelativeTime } from '../../lib/intl';
 import type { ReactElement } from 'react';
 
 import { listFiles, type DirListing, type FileEntry } from './api';
+import { Skeleton } from '../StateViews';
 import { useWorkspace } from '../../tabs/store';
+import type { WorkspaceSource } from '../../tabs/types';
 
 const POLL_MS = 5000;
 
 interface FilesPanelProps {
   readonly wsId: string;
+  readonly sessionId: string | null;
+  readonly source?: WorkspaceSource;
 }
 
 export function FilesPanel(props: FilesPanelProps): ReactElement {
@@ -55,7 +59,15 @@ export function FilesPanel(props: FilesPanelProps): ReactElement {
     if (entry.kind === 'file') {
       // Open the file in the dedicated viewer tab (VS Code-style).
       const rel = path ? `${path}/${entry.name}` : entry.name;
-      openOrFocus({ kind: 'file-viewer', params: { wsId: props.wsId, path: rel } });
+      openOrFocus({
+        kind: 'file-viewer',
+        params: {
+          wsId: props.wsId,
+          path: rel,
+          ...(props.source ? { source: props.source } : {}),
+          ...(props.sessionId ? { returnSessionId: props.sessionId } : {}),
+        },
+      });
     }
   };
 
@@ -93,6 +105,17 @@ export function FilesPanel(props: FilesPanelProps): ReactElement {
       {error && <div className="panel-error">{error}</div>}
 
       <ul className="files-list">
+        {!listing && !error &&
+          Array.from({ length: 6 }).map((_, i) => (
+            <li key={i} className="files-row" aria-hidden="true">
+              <span className="files-icon">
+                <Skeleton className="h-4 w-4 rounded" />
+              </span>
+              <span className="files-name">
+                <Skeleton className="h-3.5 w-32 rounded" />
+              </span>
+            </li>
+          ))}
         {listing?.entries.length === 0 && !error && (
           <li className="panel-empty">empty</li>
         )}
@@ -130,4 +153,3 @@ function formatSize(n: number): string {
   if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}M`;
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)}G`;
 }
-

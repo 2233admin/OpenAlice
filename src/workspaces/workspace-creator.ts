@@ -1,17 +1,23 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { rm } from 'node:fs/promises';
+import { resolveBashPath } from '@/core/shell-resolver.js';
+import { existsSync } from 'node:fs';
+import { mkdir, rename, rm, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { exec as gitExec } from 'dugite';
 
-import { readCredentials } from '@/core/config.js';
+import {
+  readCredentials,
+  readWorkspaceCredentialDefaults,
+} from '@/core/config.js';
 
-import type { AdapterRegistry } from './cli-adapter.js';
+import { prepareAgentRuntimeWorkspace, type AdapterRegistry } from './cli-adapter.js';
 import { injectWorkspaceContext } from './context-injector.js';
 import { injectWorkspaceCredentials } from './credential-injection.js';
 import type { Logger } from './logger.js';
-import type { TemplateRegistry } from './template-registry.js';
+import { generatePetnameId } from './petname-id.js';
+import type { AgentCredentialDecl, TemplateRegistry } from './template-registry.js';
+import { initializeWorkspaceTemplateState } from './template-upgrade.js';
 import type { WorkspaceMeta, WorkspaceRegistry } from './workspace-registry.js';
 
 export interface BootstrapEnv {
@@ -32,6 +38,10 @@ export interface CreatorOptions {
   readonly bootstrapEnv: BootstrapEnv;
   readonly bootstrapTimeoutMs: number;
   readonly registry: WorkspaceRegistry;
+  /** Catalog keeps ids reserved after departure/purge; active registry cannot. */
+  readonly isWorkspaceIdReserved?: (id: string) => boolean;
+  /** Persist the new active row in the complete lifecycle catalog. */
+  readonly onWorkspaceCreated?: (workspace: WorkspaceMeta) => Promise<void>;
   readonly logger: Logger;
 }
 
@@ -42,6 +52,7 @@ export type CreateResult =
       readonly code:
         | 'invalid_tag'
         | 'tag_in_use'
+        | 'insufficient_storage'
         | 'bootstrap_failed'
         | 'injection_failed'
         | 'unknown_template'
@@ -52,6 +63,7 @@ export type CreateResult =
     };
 
 const TAG_RE = /^[a-z0-9][a-z0-9_-]{0,32}$/;
+export const MIN_WORKSPACE_FREE_BYTES = 64 * 1024 * 1024;
 
 /**
  * Resolve the adapter set a new workspace is created with. This is the single
@@ -61,9 +73,9 @@ const TAG_RE = /^[a-z0-9][a-z0-9_-]{0,32}$/;
  * - An explicit `agentsRequested` (a caller pinning a subset) wins verbatim.
  * - Otherwise a workspace gets EVERY registered adapter enabled; restricting
  *   it was a create-time decision with no first-action basis. The template's
- *   `defaultAgents` is honored only as the HEAD of the list (first-wins
- *   dedupe), so `agents[0]` — the "spawn a new session" default — follows
- *   template intent without limiting what's available.
+ *   `defaultAgents` is honored as an ordering hint for agent runtimes, while
+ *   utility adapters such as `shell` are kept at the tail so they never become
+ *   an implicit workload.
  *
  * This used to live in the frontend create hook alone, which silently left
  * backend-only callers (quick-chat) on the bare-`defaultAgents` set.
@@ -74,7 +86,12 @@ export function resolveCreateAgents(
   allAdapterIds: readonly string[],
 ): readonly string[] {
   if (agentsRequested && agentsRequested.length > 0) return agentsRequested;
-  return [...new Set([...templateDefaultAgents, ...allAdapterIds])];
+  const utility = new Set(['shell']);
+  const ordered = [...new Set([...templateDefaultAgents, ...allAdapterIds])];
+  return [
+    ...ordered.filter((id) => !utility.has(id)),
+    ...ordered.filter((id) => utility.has(id)),
+  ];
 }
 
 /**
@@ -132,7 +149,16 @@ export class WorkspaceCreator {
       }
     }
 
-    const id = randomUUID();
+    const storage = await inspectWorkspaceStorage(this.opts.workspacesRoot);
+    if (!storage.ok) return insufficientStorageResult(storage.availableBytes);
+
+    const id = generatePetnameId(templateName, {
+      fallbackPrefix: 'workspace',
+      isTaken: (candidate) =>
+        this.opts.registry.hasId(candidate) ||
+        this.opts.isWorkspaceIdReserved?.(candidate) === true ||
+        existsSync(join(this.opts.workspacesRoot, candidate)),
+    });
     const dir = join(this.opts.workspacesRoot, id);
     const log = this.opts.logger.child({ tag, id, dir, template: templateName, agents });
 
@@ -159,6 +185,8 @@ export class WorkspaceCreator {
         exitCode: result.exitCode,
         stderr: result.stderr.slice(0, 4000),
       });
+      await cleanupIncompleteWorkspace(dir, log);
+      if (isInsufficientStorageFailure(result)) return insufficientStorageResult();
       // Surface the actual reason in the message, not just the exit code —
       // a null exit code (spawn failure: bash-not-found on Windows, timeout)
       // rendered as "code unknown" tells the user nothing, while result.stderr
@@ -184,7 +212,8 @@ export class WorkspaceCreator {
       await injectWorkspaceContext({ template, wsId: id, dir });
     } catch (err) {
       log.warn('inject.failed', { err });
-      await rm(dir, { recursive: true, force: true });
+      await cleanupIncompleteWorkspace(dir, log);
+      if (isInsufficientStorageError(err)) return insufficientStorageResult();
       return {
         ok: false,
         code: 'injection_failed',
@@ -195,7 +224,8 @@ export class WorkspaceCreator {
       await commitInitial(dir, `${templateName}: ${tag}`);
     } catch (err) {
       log.warn('initial_commit.failed', { err });
-      await rm(dir, { recursive: true, force: true });
+      await cleanupIncompleteWorkspace(dir, log);
+      if (isInsufficientStorageError(err)) return insufficientStorageResult();
       return {
         ok: false,
         code: 'injection_failed',
@@ -203,42 +233,51 @@ export class WorkspaceCreator {
       };
     }
 
-    // Per-adapter technical bootstrap (MCP wiring, trust entries, …). Each
-    // adapter is responsible for idempotency. We log but don't fail the
-    // workspace create on a single adapter's bootstrap failure — the user
-    // can still use it manually, the launcher just won't have prepped it.
+    // Run the same per-runtime preparation hook used before later process
+    // launches. Hooks are idempotent. A single adapter failure does not fail
+    // Workspace creation; another enabled runtime can still be used.
     for (const a of agents) {
       const adapter = this.opts.adapterRegistry.get(a);
-      if (!adapter?.bootstrap) continue;
+      if (!adapter) continue;
       try {
-        await adapter.bootstrap({
+        await prepareAgentRuntimeWorkspace(adapter, {
           wsId: id,
           cwd: dir,
           launcherRepoRoot: this.opts.bootstrapEnv.launcherRepoRoot,
         });
       } catch (err) {
-        log.warn('adapter.bootstrap_failed', { agent: a, err });
+        log.warn('adapter.prepare_workspace_failed', { agent: a, err });
       }
     }
 
-    // Template-declared credential seeding — runs POST-commit so the secret
-    // never lands in the initial commit (the adapter config files are kept out
-    // of git by `_common.sh`'s excludes; post-commit is the belt-and-braces).
-    // Best-effort: a miss warns + skips, the workspace stays usable.
-    if (template.agentCredentials) {
-      try {
+    // Credential seeding — runs POST-commit so the secret never lands in the
+    // initial commit (the adapter config files are kept out of git by
+    // `_common.sh`'s excludes; post-commit is the belt-and-braces). The source
+    // is the user's per-agent workspace defaults (Settings › AI Provider) merged
+    // with any template-declared `agentCredentials` — the template wins per agent
+    // (explicit per-template intent), though in practice no in-repo template
+    // declares them, so the user defaults are the effective source. Best-effort:
+    // a miss (disabled agent, dangling slug, incompatible wire) warns + skips,
+    // the workspace stays usable.
+    try {
+      const userDefaults = await readWorkspaceCredentialDefaults();
+      const effective: Record<string, AgentCredentialDecl> = {
+        ...userDefaults,
+        ...(template.agentCredentials ?? {}),
+      };
+      if (Object.keys(effective).length > 0) {
         const credentials = await readCredentials();
         await injectWorkspaceCredentials({
           dir,
           agents,
-          agentCredentials: template.agentCredentials,
+          agentCredentials: effective,
           adapterRegistry: this.opts.adapterRegistry,
           credentials,
           logger: log,
         });
-      } catch (err) {
-        log.warn('cred_inject.failed', { err });
       }
+    } catch (err) {
+      log.warn('cred_inject.failed', { err });
     }
 
     const workspace: WorkspaceMeta = {
@@ -250,10 +289,111 @@ export class WorkspaceCreator {
       spawnedFromVersion: template.version,
       agents,
     };
-    await this.opts.registry.add(workspace);
+    try {
+      // The first commit is the exact Base for every future Template Upgrade.
+      // Store it outside Git now; legacy Workspaces reconstruct the same Base
+      // from their root commit on first upgrade.
+      await initializeWorkspaceTemplateState(workspace, template);
+    } catch (err) {
+      log.warn('template_state.initialize_failed', { err });
+      await cleanupIncompleteWorkspace(dir, log);
+      if (isInsufficientStorageError(err)) return insufficientStorageResult();
+      return {
+        ok: false,
+        code: 'injection_failed',
+        message: `template baseline initialization failed: ${(err as Error).message}`,
+      };
+    }
+    try {
+      await this.opts.registry.add(workspace);
+    } catch (err) {
+      await cleanupIncompleteWorkspace(dir, log);
+      log.error('registry.register_failed', { err });
+      if (isInsufficientStorageError(err)) return insufficientStorageResult();
+      return {
+        ok: false,
+        code: 'injection_failed',
+        message: `workspace registry update failed: ${(err as Error).message}`,
+      };
+    }
+    try {
+      await this.opts.onWorkspaceCreated?.(workspace);
+    } catch (err) {
+      await this.opts.registry.remove(workspace.id).catch(() => undefined);
+      await cleanupIncompleteWorkspace(dir, log);
+      log.error('catalog.register_failed', { err });
+      if (isInsufficientStorageError(err)) return insufficientStorageResult();
+      return {
+        ok: false,
+        code: 'injection_failed',
+        message: `workspace catalog update failed: ${(err as Error).message}`,
+      };
+    }
     log.info('bootstrap.ok', { stdout: result.stdout.slice(-400) });
     return { ok: true, workspace };
   }
+}
+
+export async function inspectWorkspaceStorage(
+  workspacesRoot: string,
+  options: {
+    readonly minimumFreeBytes?: number;
+    readonly mkdirImpl?: typeof mkdir;
+    readonly statfsImpl?: typeof statfs;
+  } = {},
+): Promise<{ readonly ok: boolean; readonly availableBytes: number | null }> {
+  try {
+    await (options.mkdirImpl ?? mkdir)(workspacesRoot, { recursive: true });
+    const stats = await (options.statfsImpl ?? statfs)(workspacesRoot);
+    const availableBytes = Number(stats.bavail) * Number(stats.bsize);
+    return {
+      ok: !Number.isFinite(availableBytes)
+        || availableBytes >= (options.minimumFreeBytes ?? MIN_WORKSPACE_FREE_BYTES),
+      availableBytes: Number.isFinite(availableBytes) ? availableBytes : null,
+    };
+  } catch (error) {
+    if (isInsufficientStorageError(error)) return { ok: false, availableBytes: 0 };
+    // Some virtual/network filesystems do not implement statfs. Creation still
+    // has stage-specific ENOSPC handling below, so do not reject them blindly.
+    return { ok: true, availableBytes: null };
+  }
+}
+
+async function cleanupIncompleteWorkspace(dir: string, log: Logger): Promise<void> {
+  try {
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    return;
+  } catch (cleanupError) {
+    const quarantine = `${dir}.bootstrap-failed-${Date.now()}`;
+    try {
+      await rename(dir, quarantine);
+      log.warn('bootstrap.quarantined', { dir, quarantine, cleanupError });
+      return;
+    } catch (quarantineError) {
+      log.error('bootstrap.cleanup_failed', { dir, cleanupError, quarantineError });
+    }
+  }
+}
+
+function isInsufficientStorageFailure(result: RunResult): boolean {
+  return result.errorCode === 'ENOSPC' || /\bENOSPC\b|no space left on device/i.test(result.stderr);
+}
+
+function isInsufficientStorageError(error: unknown): boolean {
+  const candidate = error as NodeJS.ErrnoException;
+  return candidate?.code === 'ENOSPC'
+    || /\bENOSPC\b|no space left on device/i.test(candidate?.message ?? String(error));
+}
+
+function insufficientStorageResult(availableBytes: number | null = null): CreateResult {
+  const available = availableBytes === null
+    ? ''
+    : ` (${Math.max(0, Math.floor(availableBytes / 1024 / 1024))} MiB available)`;
+  return {
+    ok: false,
+    code: 'insufficient_storage',
+    message: `Not enough free space to create this Workspace${available}. Free disk space or choose another OpenAlice data location, then retry.`,
+  };
 }
 
 /**
@@ -289,6 +429,7 @@ interface RunResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number | null;
+  readonly errorCode?: string;
 }
 
 const WINDOWS_BASH_HINT =
@@ -303,9 +444,8 @@ const WINDOWS_BASH_HINT =
  * On macOS / Linux the script is invoked directly — the kernel reads the
  * `#!/usr/bin/env bash` shebang and launches bash. On Windows the kernel
  * doesn't read shebangs and there's no native bash, so we invoke bash
- * explicitly with the script as its first argument. This requires `bash`
- * to be on PATH, which Git for Windows provides under its default install
- * options (WSL also works if OpenAlice itself is run from inside WSL).
+ * explicitly with the script as its first argument. Git for Windows commonly
+ * puts only `git.exe` on PATH, so resolve its sibling `bin/bash.exe` as well.
  *
  * Exported for unit testing — the platform branch needs coverage that
  * doesn't depend on which OS the tests happen to run on.
@@ -324,9 +464,13 @@ export function runScript(
   // flips it to pure-Node mode (a harmless no-op for a plain `node` execPath in
   // dev). No bash, no shebang reliance → works on a bare Windows/Mac box.
   // `.sh` (third-party fallback): unix reads the `#!/usr/bin/env bash` shebang;
-  // Windows has no native bash, so we invoke `bash <script>` explicitly, which
-  // requires bash on PATH (Git for Windows / WSL).
-  const cmd = isMjs ? process.execPath : isWindows ? 'bash' : script;
+  // Windows has no native bash, so invoke the Git-for-Windows executable we
+  // resolved above (with a final bare-name fallback for WSL/custom PATHs).
+  const cmd = isMjs
+    ? process.execPath
+    : isWindows
+      ? resolveBashPath(process.env, 'win32') ?? 'bash'
+      : script;
   const cmdArgs = isMjs || isWindows ? [script, ...args] : args;
   const env = isMjs
     ? { ...process.env, ...extraEnv, ELECTRON_RUN_AS_NODE: '1' }
@@ -367,6 +511,9 @@ export function runScript(
         stdout: Buffer.concat(stdoutChunks).toString('utf8'),
         stderr: `${hinted}\n${Buffer.concat(stderrChunks).toString('utf8')}`,
         exitCode: null,
+        ...((err as NodeJS.ErrnoException).code
+          ? { errorCode: (err as NodeJS.ErrnoException).code }
+          : {}),
       });
     });
 

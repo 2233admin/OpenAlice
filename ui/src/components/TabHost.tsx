@@ -1,25 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useWorkspace } from '../tabs/store'
 import { type Tab } from '../tabs/types'
-import { getView } from '../tabs/registry'
-import { TabStrip } from './TabStrip'
+import { getView, getViewShell } from '../tabs/registry'
 import { EmptyEditor } from './EmptyEditor'
+import { ChatPageShell } from '../pages/ChatPageShell'
 
 /**
- * The main editor area — replaces the old `<Routes>` block.
+ * Main content host.
  *
- * Renders every open tab in the focused group concurrently, hiding all but
- * the active one via CSS `display: none`. Reasoning:
- *
- * - Tabs that hold long-lived state (ChatPage's SSE / message buffers,
- *   in-progress charts) survive switching without re-fetch or re-mount.
- * - Components don't need to be aware of "tab-hosted vs route-hosted" —
- *   they just render normally; the host controls visibility.
- *
- * The `visible` prop threaded into each tab's component lets surfaces that
- * care (ChatPage's catch-up scroll) react to becoming visible.
- *
- * Mobile (< md): single-tab mode. Only the active tab renders, no strip.
+ * Tabs are now lightweight navigation history, not VS-Code-style runtime
+ * containers. By default only the active tab is mounted; inactive tabs keep
+ * their ViewSpec in the tab store but release component state, timers, charts,
+ * terminals, and other DOM-owned resources. A view can opt into
+ * `lifecycle: 'keep-mounted'` in tabs/registry when it genuinely needs a live
+ * background DOM. Those keep-mounted hidden frames use `visibility: hidden`
+ * so size-sensitive children keep a real layout box.
  */
 export function TabHost() {
   const tabIds = useWorkspace((state) =>
@@ -30,45 +25,69 @@ export function TabHost() {
   )
   const tabsMap = useWorkspace((state) => state.tabs)
   const isDesktop = useIsDesktop()
+  const activeTab = activeTabId ? tabsMap[activeTabId] ?? null : null
+  const activeView = activeTab ? getView(activeTab.spec.kind) : null
+  const activeUsesPersistentFrame = activeView?.lifecycle === 'keep-mounted' && isDesktop
+  const persistentTabs = isDesktop
+    ? tabIds
+      .map((id) => tabsMap[id])
+      .filter((tab): tab is Tab => tab != null && getView(tab.spec.kind).lifecycle === 'keep-mounted')
+    : []
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <TabStrip />
-      <div className="relative flex-1 min-h-0">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative min-h-0 min-w-0 flex-1">
         {tabIds.length === 0 ? (
           <EmptyEditor />
         ) : (
-          tabIds.map((id) => {
-            const tab = tabsMap[id]
-            if (!tab) return null
-            const isActive = id === activeTabId
-            // Mobile: only render the active tab to avoid blowing memory and
-            // because we don't even have a strip to switch tabs from.
-            if (!isDesktop && !isActive) return null
-            return <TabFrame key={id} tab={tab} visible={isActive} />
-          })
+          <>
+            {/* Active-only views share one unkeyed slot. Moving between two
+                views with the same product shell replaces only the content;
+                the shell (notably Ask Alice's navigator) stays mounted. */}
+            {activeTab && !activeUsesPersistentFrame && (
+              <TabFrame tab={activeTab} visible />
+            )}
+            {/* Desktop keep-mounted views retain their keyed frame across
+                focus changes. Mobile still renders only its active view. */}
+            {persistentTabs.map((tab) => (
+              <TabFrame key={tab.id} tab={tab} visible={tab.id === activeTabId} />
+            ))}
+          </>
         )}
       </div>
     </div>
   )
 }
 
-/** One mounted tab. Hidden frames are kept in the DOM but `display: none`. */
+/** One mounted view frame. Hidden frames exist only for keep-mounted views. */
 function TabFrame({ tab, visible }: { tab: Tab; visible: boolean }) {
   const view = getView(tab.spec.kind)
+  const shell = getViewShell(tab.spec)
   // Cast: each ViewModule has a Component constrained to its spec kind. The
   // map lookup loses that narrowing; the runtime type matches by construction.
   const Component = view.Component as React.ComponentType<{ spec: typeof tab.spec; visible: boolean }>
   return (
     <div
-      className="absolute inset-0 flex flex-col min-h-0"
-      style={{ display: visible ? 'flex' : 'none' }}
+      data-view-frame={tab.spec.kind}
+      data-view-visible={visible ? 'true' : 'false'}
+      className={`absolute inset-0 flex min-h-0 min-w-0 flex-col ${visible ? 'oa-view-enter' : ''}`}
+      style={{
+        visibility: visible ? 'visible' : 'hidden',
+        pointerEvents: visible ? 'auto' : 'none',
+        zIndex: visible ? 1 : 0,
+      }}
       aria-hidden={!visible}
       // `inert` keeps focusable elements in hidden frames out of tab order.
       // React 19 supports it as a JSX attribute.
       inert={!visible}
     >
-      <Component spec={tab.spec} visible={visible} />
+      {shell === 'chat' ? (
+        <ChatPageShell>
+          <Component key={tab.id} spec={tab.spec} visible={visible} />
+        </ChatPageShell>
+      ) : (
+        <Component key={tab.id} spec={tab.spec} visible={visible} />
+      )}
     </div>
   )
 }

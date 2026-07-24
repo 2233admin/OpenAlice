@@ -1,5 +1,8 @@
 # UTA Live Testing — the self-bootstrapped scenario catalog
 
+This guide owns live broker/demo acceptance. Architecture and delivery context:
+[[docs/project-structure.md]] and [[docs/development-workflow.md]].
+
 This guide exists because five dogfood rounds (2026-06-12) surfaced ~20 real
 bugs that **no unit test and no human UI session would ever catch** — they
 only appear on the real usage path, through the agent surface, against real
@@ -14,6 +17,91 @@ demo accounts, exclusively through the agent surface (`alice-uta` CLI),
 fixing what it hits and adding a regression spec per fix. Run it after any
 change to trading paths, and as the acceptance gate for new broker
 integrations.
+
+The automated account-trading suite is deliberately separate from ordinary
+product E2E. It will not start unless both its explicit script and acknowledgement
+are present:
+
+```bash
+OPENALICE_UTA_LIVE_PAPER=1 pnpm test:uta:live-paper
+```
+
+`pnpm test:e2e` never submits broker orders. It contains only local product
+integration tests and read-only network/provider checks.
+
+## Choose the verification layer
+
+Do not jump from a unit change straight to an account-trading sweep. Start at
+the lowest layer that can disprove the change, then move outward only when the
+touched contract requires it.
+
+| Change surface | Minimum verification | When live-paper is required |
+|---|---|---|
+| UTA staging, commit, ledger, reconciliation, or state transitions | Targeted unit specs, then `pnpm test:e2e` (`uta-lifecycle` uses `MockBroker`) | Only when venue behavior or a real execution response is part of the claim |
+| Public market loading or read-only provider integration | Targeted read-only E2E; failures from DNS/TLS/provider downtime must be reported separately from product failures | Not required when no configured account or private endpoint is used |
+| Broker account parsing, order ids, status mapping, modify/cancel, permissions, TP/SL, or venue-specific parameters | Targeted broker spec against one verified demo/paper account | Required: these semantics cannot be proven by `MockBroker` |
+| Alice-to-UTA protocol or `alice-uta` CLI changes | Protocol/unit specs, then the relevant scenario through a real Workspace CLI | Required if the changed command reaches an order write or approval boundary |
+| New broker or new traded market type | Full applicable S1-S14 catalog for that venue | Always required before claiming support |
+| UTA health/restart/supervision without trading changes | Health and restart smoke with a broker disabled or read-only | Only if recovery of pending/open orders is part of the change |
+
+The commands are intentionally asymmetric:
+
+```bash
+# Ordinary product E2E: safe for routine local development and CI.
+pnpm test:e2e
+
+# One explicitly selected account-trading spec. Invoke Vitest directly so
+# pnpm does not forward a literal `--` that defeats Vitest's file filter.
+OPENALICE_UTA_LIVE_PAPER=1 pnpm exec vitest run \
+  --config vitest.uta-live.config.ts \
+  services/uta/src/domain/trading/__test__/e2e/uta-bybit.e2e.spec.ts
+
+# Full configured demo/paper account suite. Use only for a deliberate sweep.
+OPENALICE_UTA_LIVE_PAPER=1 pnpm test:uta:live-paper
+```
+
+The environment variable is an acknowledgement, not proof that an account is
+safe. Before setting it, inspect the selected account configuration and confirm
+its resolved preset is paper/demo/sandbox. Never print credentials while doing
+that inspection.
+
+## Live-paper run record and cleanup
+
+For every live-paper run, record enough evidence to distinguish a product bug
+from venue or network behavior:
+
+1. Account id, provider/venue, resolved paper/demo mode, scenario/spec, and
+   current Git commit.
+2. Pre-run positions and open orders. These are the cleanup baseline, not an
+   assumption that the account starts empty.
+3. Submitted order ids as strings, relevant Alice/UTA logs, and raw venue
+   status for any disputed transition.
+4. Post-run positions and open orders compared with the baseline.
+
+Automated cancellation is helpful but not a safety boundary: a process can be
+interrupted between submit and cleanup. After success **and after failure**,
+query the venue again, cancel new open orders, close only positions created by
+the test, reject leftover Alice staging, and confirm the account returned to
+its baseline. If that cannot be proven, stop the development lane and report
+the account as requiring manual cleanup.
+
+IBKR routing smoke uses
+`services/uta/src/domain/trading/__test__/e2e/live-paper-evidence.ts` to append
+a small JSONL run record under ignored `data/uta-live-paper-runs/` by default.
+Set `OPENALICE_UTA_LIVE_RECORD_DIR` to choose another local destination. The
+record format deliberately excludes account ids, balances, credentials, and
+position payloads. When live contract data should become an offline regression
+input, manually review and copy only stable canonical contract fields into a
+tracked fixture; never make a test overwrite tracked fixtures directly.
+
+When selecting a test by name, keep the same direct invocation pattern:
+
+```bash
+OPENALICE_UTA_LIVE_PAPER=1 pnpm exec vitest run \
+  --config vitest.uta-live.config.ts \
+  services/uta/src/domain/trading/__test__/e2e/ibkr-paper.e2e.spec.ts \
+  -t 'canonical conId routing'
+```
 
 ## Ground rules
 
@@ -41,13 +129,14 @@ integrations.
   bybit 170193/170194). For marketable orders use quote ±0.3%; for hangers
   use deep prices the band allows (~15-30% away worked on okx/bybit demo).
   Re-quote right before pushing — the band moves with the market.
-- Every bug found: fix in place if in scope, else Linear (`TODO from AI
-  Code`). Every fix gets a regression spec before the round continues.
+- Every bug found: fix in place if in scope, otherwise file a GitHub issue with
+  the scenario, venue, evidence, and suspected path. Every fix gets a
+  regression spec before the round continues.
 
 ## Setup
 
 ```bash
-export OPENALICE_MCP_URL=http://127.0.0.1:47332/mcp
+export OPENALICE_TOOL_URL=http://127.0.0.1:47331/cli
 export AQ_WS_ID=<any live workspace id>     # from ~/.openalice/workspaces/workspaces.json
 BIN=src/workspaces/cli/bin/alice-uta
 node $BIN                                    # discover groups/verbs
@@ -55,16 +144,62 @@ node $BIN order place --help                 # flags come from the manifest
 # "user approves": curl -s -X POST http://127.0.0.1:47333/api/trading/uta/<id>/wallet/push
 ```
 
+Running inside a real OpenAlice Workspace is preferred: the launcher injects
+`OPENALICE_TOOL_URL` or `OPENALICE_TOOL_SOCKET` plus `AQ_WS_ID` automatically.
+For a manual repo-root run, use Guardian's printed Alice web port rather than
+assuming 47331 if `data/config/ports.json` overrides it.
+
 Probe scripts (external orders, raw venue checks) live as throwaway `.mts`
 files under `data/` (gitignored), run with
 `NODE_OPTIONS='--conditions=openalice-source' npx tsx data/<file>.mts`,
 importing `readUTAsConfig` + `createBroker` by absolute/relative path.
 Delete after use.
 
+## IBKR half-open and option-mark acceptance
+
+These two read-only checks cover the failure modes from issues #294 and #314.
+They do not authorize an order submission and are safe to run with the UTA and
+Gateway both configured read-only.
+
+### Silent half-open recovery
+
+Freeze the Gateway process/container without closing its TCP socket (for a
+Docker Gateway, `docker pause <container>` is deterministic). Always install a
+shell trap or otherwise guarantee `docker unpause <container>` on exit.
+
+Acceptance:
+
+1. Before the drop, `/api/trading/uta` reports `healthy/readable` and account
+   reads succeed.
+2. Within the heartbeat interval plus timeout (currently at most about 50s),
+   UTA moves directly to `offline/down`; it must not require six caller-driven
+   cache-read failures.
+3. While dead, account/position reads refuse rather than serving stale cache.
+4. After unpause, recovery reconnects and passes a private account read before
+   returning to `healthy/readable`.
+5. The unit-level write boundary separately proves place/modify/cancel performs
+   `reqCurrentTime` before the client send and never calls the send method when
+   that probe times out. Do not submit a live order merely to test this gate.
+
+### Option position mark overlay
+
+With an `OPT` or `FOP` paper position and an entitled or delayed quote:
+
+1. Positive snapshot bid+ask produces midpoint `(bid + ask) / 2`.
+2. `marketValue` and `unrealizedPnL` are recomputed through
+   `derivePositionMath`, including quantity, side, and contract multiplier.
+3. The broker-owned `updatePortfolio()` cache is not mutated.
+4. Missing entitlement, incomplete bid/ask, or timeout returns the cached row;
+   it must not fail the whole portfolio read.
+5. Requests use `regulatorySnapshot=false`; this acceptance must never opt the
+   account into paid per-request regulatory snapshots.
+
 ## Scenario catalog
 
-Run S1–S12 for a trading-path change; run ALL of them per venue for a new
-broker integration. Each scenario names the bug class it guards against.
+Run the relevant S1–S14 scenarios for a trading-path change; run the full
+applicable catalog per venue for a new broker integration. S13/S14 apply only
+to venues with the corresponding directory/derivatives surfaces. Each scenario
+names the bug class it guards against.
 
 **S1 — Read-state agreement.** `account info`, `account portfolio`,
 `/equity`: account-level unrealizedPnL must equal the positions sum;
@@ -137,7 +272,7 @@ history shows `user-rejected` with the reason; a `--commitMessage` one-step
 ends in `awaitingApproval` and rejects cleanly too. *Guards: approval-flow
 dead ends.*
 
-## New-broker acceptance checklist (beyond S1–S12)
+## New-broker acceptance checklist (beyond the core lifecycle scenarios)
 
 - `getOpenOrders` must SEE a real open order you placed — empty-without-
   error is the silent failure mode (bybit returned [] for spot under
@@ -212,7 +347,7 @@ Round 7 (2026-06-12, IBKR paper first acceptance run): 5 findings, 2
 pre-located by reading the adapter BEFORE connecting (do this for every
 new broker). (1) `placeOrder(_tpsl)` silently ignored TP/SL — the okx
 naked-entry species, gated with a loud refusal pre-test (native bracket =
-parent/child + `legs`, ANG-103 batch). (2) `getOpenOrders` unwired despite
+parent/child + `legs`). (2) `getOpenOrders` unwired despite
 the bridge primitive existing — 5-line wire-up; NOTE reqOpenOrders only
 sees THIS clientId's orders, manual TWS-UI orders need reqAllOpenOrders +
 permId identity (deferred). (3) By-conId quote → TWS error 321: reqMktData
@@ -231,6 +366,6 @@ Alpaca); stops sit `PreSubmitted` (not terminal); paper quotes need
 delayed data — full-protobuf REQ_MARKET_DATA_TYPE(3) + REQ_MKT_DATA still
 got 10089 (entitlement question parked, price oracle = Alpaca AAPL quote
 meanwhile); multi-currency books (HKD+USD) blind-sum at the BROKER layer
-(getAccount + aggregateAccountFromPositions) — the live numbers for
-ANG-101. S2/S4/S6/S8/S9/S11/S12 green; restart survival incl. TWS
+(`getAccount` + `aggregateAccountFromPositions`) remained a deferred
+follow-up. S2/S4/S6/S8/S9/S11/S12 green; restart survival incl. TWS
 reconnect verified.

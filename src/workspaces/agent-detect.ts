@@ -23,11 +23,51 @@
 import { existsSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
+import { runtimeProfileFromEnv } from '@/core/runtime-profile.js';
+
 export interface AgentAvailability {
   /** True iff the binary resolved to a real file on PATH. */
   readonly installed: boolean;
   /** Absolute path the binary resolved to, or null when not found. */
   readonly path: string | null;
+}
+
+export function detectAgentBinary(
+  id: string,
+  binary: string,
+  opts: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
+): AgentAvailability {
+  const env = opts.env ?? process.env;
+  const managed = id === 'pi' ? runtimeProfileFromEnv(env).managedPiPath : null;
+  if (managed && isFile(managed)) return { installed: true, path: managed };
+  return detectBinary(binary, opts);
+}
+
+export function runtimeInstallOverride(
+  id: string,
+  env: NodeJS.ProcessEnv = process.env,
+): AgentAvailability | null {
+  if (env['OPENALICE_ONBOARDING_TEST'] !== '1') return null;
+  const raw = env['OPENALICE_AGENT_RUNTIME_INSTALLS']?.trim().toLowerCase();
+  if (!raw || raw === 'real') return null;
+  if (raw === 'none') return { installed: false, path: null };
+  if (raw === 'all') return { installed: true, path: null };
+
+  const parseList = (prefix: string): Set<string> | null => {
+    if (!raw.startsWith(prefix)) return null;
+    return new Set(
+      raw.slice(prefix.length)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  };
+
+  const only = parseList('only:');
+  if (only) return { installed: only.has(id), path: null };
+  const missing = parseList('missing:');
+  if (missing) return { installed: !missing.has(id), path: null };
+  return null;
 }
 
 /** Windows' default executable-extension search order (PATH × PATHEXT). */

@@ -8,12 +8,22 @@
  */
 
 import { z } from 'zod'
+import { resolveModelSemantics, type ModelSemantics } from './model-semantics.js'
 
 // ==================== Types ====================
 
 export interface ModelOption {
   id: string
   label: string
+  /** Registered facts for this exact vendor/model pair. Absent means unknown. */
+  semantics?: ModelSemantics
+}
+
+function withModelSemantics(vendor: string, models: ModelOption[]): ModelOption[] {
+  return models.map((model) => {
+    const semantics = resolveModelSemantics(vendor, model.id)
+    return semantics ? { ...model, semantics } : model
+  })
 }
 
 /**
@@ -23,7 +33,7 @@ export interface ModelOption {
  * each at a different endpoint URL. A credential captures every shape its region
  * offers (see `RegionOption.wires`) as its "wire capabilities".
  */
-export type WireShape = 'anthropic' | 'openai-chat' | 'openai-responses'
+export type WireShape = 'anthropic' | 'google-generative-ai' | 'openai-chat' | 'openai-responses'
 
 /**
  * A region (or "the official endpoint") a provider's key can authenticate
@@ -36,6 +46,20 @@ export interface RegionOption {
   id: string
   label: string
   wires: Partial<Record<WireShape, string>>
+}
+
+/**
+ * Provider-aware copy for the credential form. The storage shape stays
+ * vendor-neutral, but users should not have to infer whether a subscription
+ * login belongs here, whether a key is region-bound, or what the model field
+ * will be used for.
+ */
+export interface CredentialSetupGuide {
+  apiKeyLabel: string
+  apiKeyPlaceholder?: string
+  apiKeyHelp: string
+  modelHelp: string
+  regionHelp?: string
 }
 
 export interface PresetDef {
@@ -54,6 +78,8 @@ export interface PresetDef {
    * (free-form).
    */
   regions?: RegionOption[]
+  /** User-facing guidance for the API-key credential form. */
+  setup?: CredentialSetupGuide
   writeOnlyFields?: string[]
 }
 
@@ -65,16 +91,20 @@ export const CLAUDE_OAUTH: PresetDef = {
   description: 'Use your Claude Pro/Max subscription',
   category: 'official',
   defaultName: 'Claude (Pro/Max)',
-  hint: 'Requires Claude Code CLI login — run `claude login` in your terminal first. Model is switchable here or from the profile list anytime; Opus is most capable but burns subscription quota faster, so consider Sonnet for routine work.',
+  hint: 'Requires Claude Code CLI login — run `claude login` in your terminal first. Native aliases follow the models available to that account: keep Default for the plan recommendation, use Best/Opus for difficult work, or Sonnet for routine work.',
   zodSchema: z.object({
     backend: z.literal('agent-sdk'),
     loginMethod: z.literal('claudeai'),
-    model: z.string().default('claude-opus-4-8').describe('Model'),
+    model: z.string().default('default').describe('Model'),
   }),
-  models: [
-    { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  ],
+  models: withModelSemantics('anthropic', [
+    { id: 'default', label: 'Default (Recommended for your account)' },
+    { id: 'best', label: 'Best (Most capable available)' },
+    { id: 'opus', label: 'Opus (Latest available)' },
+    { id: 'sonnet', label: 'Sonnet (Latest available)' },
+    { id: 'haiku', label: 'Haiku (Fastest available)' },
+    { id: 'opusplan', label: 'Opus planning → Sonnet execution' },
+  ]),
 }
 
 export const CLAUDE_API: PresetDef = {
@@ -83,18 +113,27 @@ export const CLAUDE_API: PresetDef = {
   description: 'Pay per token via Anthropic API',
   category: 'official',
   defaultName: 'Claude (API Key)',
-  hint: 'Model is switchable here or from the profile list anytime. Opus is ~5× the cost of Sonnet.',
+  hint: 'Model is switchable here or from the profile list anytime. Opus is the recommended complex-agent default; Sonnet balances capability and cost, while Fable is the highest-capability premium tier.',
   zodSchema: z.object({
     backend: z.literal('agent-sdk'),
     loginMethod: z.literal('api-key'),
     model: z.string().default('claude-opus-4-8').describe('Model'),
     apiKey: z.string().min(1).describe('Anthropic API key'),
   }),
-  models: [
-    { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  ],
+  models: withModelSemantics('anthropic', [
+    { id: 'claude-fable-5', label: 'Claude Fable 5 (Highest capability)' },
+    { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (Complex agents)' },
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (Balanced)' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 (Fastest)' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Previous generation)' },
+  ]),
   regions: [{ id: 'official', label: 'Official (api.anthropic.com)', wires: { anthropic: '' } }],
+  setup: {
+    apiKeyLabel: 'Anthropic API key',
+    apiKeyPlaceholder: 'sk-ant-...',
+    apiKeyHelp: 'Use a key from Anthropic Console. Claude Pro/Max is a separate Claude Code login and does not belong in this field.',
+    modelHelp: 'Choose an Anthropic API model ID, or paste another exact ID. Opus 4.8 stays the complex-agent default; Fable 5 is the premium capability tier and Sonnet 5 is the balanced tier.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -110,12 +149,15 @@ export const CODEX_OAUTH: PresetDef = {
   zodSchema: z.object({
     backend: z.literal('codex'),
     loginMethod: z.literal('codex-oauth'),
-    model: z.string().default('gpt-5.5').describe('Model'),
+    model: z.string().default('gpt-5.6').describe('Model'),
   }),
-  models: [
-    { id: 'gpt-5.5', label: 'GPT 5.5' },
-    { id: 'gpt-5.4', label: 'GPT 5.4' },
-  ],
+  models: withModelSemantics('openai', [
+    { id: 'gpt-5.6', label: 'GPT 5.6 (Power · Sol)' },
+    { id: 'gpt-5.6-terra', label: 'GPT 5.6 Terra (Balanced)' },
+    { id: 'gpt-5.6-luna', label: 'GPT 5.6 Luna (Fastest)' },
+    { id: 'gpt-5.5', label: 'GPT 5.5 (Previous generation)' },
+    { id: 'gpt-5.4', label: 'GPT 5.4 (Previous generation)' },
+  ]),
 }
 
 export const CODEX_API: PresetDef = {
@@ -127,42 +169,62 @@ export const CODEX_API: PresetDef = {
   zodSchema: z.object({
     backend: z.literal('codex'),
     loginMethod: z.literal('api-key'),
-    model: z.string().default('gpt-5.5').describe('Model'),
+    model: z.string().default('gpt-5.6').describe('Model'),
     apiKey: z.string().min(1).describe('OpenAI API key'),
   }),
-  models: [
-    { id: 'gpt-5.5', label: 'GPT 5.5' },
-    { id: 'gpt-5.4', label: 'GPT 5.4' },
-  ],
+  models: withModelSemantics('openai', [
+    { id: 'gpt-5.6', label: 'GPT 5.6 (Sol alias)' },
+    { id: 'gpt-5.6-terra', label: 'GPT 5.6 Terra (Balanced)' },
+    { id: 'gpt-5.6-luna', label: 'GPT 5.6 Luna (Cost-efficient)' },
+    { id: 'gpt-5.5', label: 'GPT 5.5 (Previous generation)' },
+    { id: 'gpt-5.4', label: 'GPT 5.4 (Previous generation)' },
+  ]),
   // Same key + base; the shape is how you call it. Responses is OpenAI's
   // current API (what codex speaks); Chat Completions is the legacy shape
   // opencode/pi use.
   regions: [{ id: 'official', label: 'OpenAI (api.openai.com)', wires: { 'openai-responses': '', 'openai-chat': '' } }],
+  setup: {
+    apiKeyLabel: 'OpenAI API key',
+    apiKeyPlaceholder: 'sk-...',
+    apiKeyHelp: 'Use an OpenAI Platform API key. A ChatGPT subscription is a separate Codex CLI login and does not belong in this field.',
+    modelHelp: 'Choose a model enabled for this API project, or paste another exact ID. GPT 5.6 is the current Sol alias; Terra balances capability and cost, while Luna favors efficient high-volume work.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
-// ==================== Official: Gemini ====================
+// ==================== Third-party: Gemini ====================
 
 export const GEMINI: PresetDef = {
   id: 'gemini',
   label: 'Google Gemini',
   description: 'Google AI via API key',
-  category: 'official',
+  category: 'third-party',
   defaultName: 'Google Gemini',
+  hint: 'OpenAlice uses Google’s native Gemini API so both legacy AIza keys and current AQ authorization keys work. This credential can drive Pi and opencode, not Claude Code or Codex.',
   zodSchema: z.object({
     backend: z.literal('vercel-ai-sdk'),
     provider: z.literal('google'),
-    model: z.string().default('gemini-3.5-flash').describe('Model'),
+    model: z.string().default('gemini-3.1-flash-lite').describe('Model'),
     apiKey: z.string().min(1).describe('Google AI API key'),
   }),
-  models: [
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  ],
-  // Google's OpenAI-compatibility layer (the native google-generative-ai wire
-  // isn't a supported shape yet). Reachable by opencode/pi.
-  regions: [{ id: 'default', label: 'Google', wires: { 'openai-chat': 'https://generativelanguage.googleapis.com/v1beta/openai/' } }],
+  models: withModelSemantics('google', [
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Stable)' },
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview, paid)' },
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite (Stable)' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Previous generation)' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Previous generation)' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite (Previous generation)' },
+  ]),
+  // Google is moving newly-created keys from legacy AIza traffic keys to AQ
+  // authorization keys. The native wire sends x-goog-api-key and works for
+  // both formats; the OpenAI-compatibility layer's Bearer auth does not.
+  regions: [{ id: 'default', label: 'Google', wires: { 'google-generative-ai': 'https://generativelanguage.googleapis.com/v1beta' } }],
+  setup: {
+    apiKeyLabel: 'Google AI API key',
+    apiKeyPlaceholder: 'AQ... or AIza...',
+    apiKeyHelp: 'Use a Gemini API key from Google AI Studio. Current AQ authorization keys and legacy AIza keys are both supported.',
+    modelHelp: 'Choose a general-purpose Gemini model available to this project, or paste another exact model ID. Flash-Lite stays the conservative default; Gemini 3.5 Flash is the current stable agentic/coding tier and Gemini 3.1 Pro Preview requires paid access.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -174,7 +236,7 @@ export const MINIMAX: PresetDef = {
   description: 'MiniMax models via Claude Agent SDK (Anthropic-compatible)',
   category: 'third-party',
   defaultName: 'MiniMax',
-  hint: 'China console: minimaxi.com — International console: minimax.io. API keys are region-locked. MiniMax authenticates via Authorization: Bearer; the international endpoint (api.minimax.io) rejects x-api-key.',
+  hint: 'China console: minimaxi.com — International console: minimax.io. API keys are region-locked. Pi and opencode use MiniMax\'s Anthropic-compatible endpoint so thinking stays in native reasoning blocks; the OpenAI-compatible reasoning_details extension is not losslessly supported by their generic transports.',
   zodSchema: z.object({
     backend: z.literal('agent-sdk'),
     loginMethod: z.literal('api-key'),
@@ -195,10 +257,16 @@ export const MINIMAX: PresetDef = {
       anthropic: 'https://api.minimax.io/anthropic', 'openai-chat': 'https://api.minimax.io/v1',
     } },
   ],
-  models: [
+  models: withModelSemantics('minimax', [
     { id: 'MiniMax-M3', label: 'MiniMax M3' },
     { id: 'MiniMax-M2.7', label: 'MiniMax M2.7' },
-  ],
+  ]),
+  setup: {
+    apiKeyLabel: 'MiniMax API key',
+    apiKeyHelp: 'Use the API key issued by the MiniMax platform selected above. China and International keys are not interchangeable.',
+    modelHelp: 'MiniMax model IDs are case-sensitive. Pick a suggestion or paste the exact model ID shown by the selected platform.',
+    regionHelp: 'Choose the platform that issued this key. OpenAlice stores both provider endpoints, while current coding runtimes use the Anthropic-compatible path for complete reasoning capture and replay.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -226,9 +294,15 @@ export const GLM: PresetDef = {
       anthropic: 'https://api.z.ai/api/anthropic', 'openai-chat': 'https://api.z.ai/api/paas/v4',
     } },
   ],
-  models: [
+  models: withModelSemantics('glm', [
     { id: 'glm-5.2', label: 'GLM 5.2' },
-  ],
+  ]),
+  setup: {
+    apiKeyLabel: 'GLM API key',
+    apiKeyHelp: 'Use the API key issued by the Zhipu platform selected above. China and International keys are region-bound.',
+    modelHelp: 'Use the exact GLM model ID available to this account. OpenAlice remembers it as this credential’s default.',
+    regionHelp: 'Choose the platform that issued this key; it determines the endpoints OpenAlice injects.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -261,10 +335,16 @@ export const KIMI: PresetDef = {
       anthropic: 'https://api.moonshot.ai/anthropic', 'openai-chat': 'https://api.moonshot.ai/v1',
     } },
   ],
-  models: [
+  models: withModelSemantics('kimi', [
     { id: 'kimi-k2.7-code', label: 'Kimi K2.7 Code' },
     { id: 'kimi-k2.6', label: 'Kimi K2.6' },
-  ],
+  ]),
+  setup: {
+    apiKeyLabel: 'Moonshot API key',
+    apiKeyHelp: 'Use the API key issued by the Moonshot platform selected above. China and International keys are region-bound.',
+    modelHelp: 'Use the exact Moonshot model ID available on the selected platform; model IDs can differ by region and rollout.',
+    regionHelp: 'Choose the platform that issued this key; OpenAlice cannot use a China key against the International endpoint or vice versa.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -289,9 +369,49 @@ export const DEEPSEEK: PresetDef = {
       anthropic: 'https://api.deepseek.com/anthropic', 'openai-chat': 'https://api.deepseek.com',
     } },
   ],
-  models: [
+  models: withModelSemantics('deepseek', [
     { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro (flagship)' },
+  ]),
+  setup: {
+    apiKeyLabel: 'DeepSeek API key',
+    apiKeyHelp: 'Use a key from the DeepSeek API platform. This is separate from a consumer chat account.',
+    modelHelp: 'Choose a DeepSeek API model ID or paste another exact model ID enabled for the key.',
+  },
+  writeOnlyFields: ['apiKey'],
+}
+
+// ==================== Third-party: LongCat (Meituan) ====================
+
+export const LONGCAT: PresetDef = {
+  id: 'longcat',
+  label: 'LongCat (Meituan)',
+  description: 'Meituan LongCat via OpenAI-compatible and Anthropic APIs',
+  category: 'third-party',
+  defaultName: 'LongCat',
+  hint: 'Declares LongCat\'s OpenAI-compatible and Anthropic endpoints. Use Claude/OpenCode/Pi for this credential unless LongCat adds a Responses-compatible endpoint later.',
+  zodSchema: z.object({
+    backend: z.literal('vercel-ai-sdk'),
+    provider: z.literal('openai-compatible'),
+    baseUrl: z.string().default('https://api.longcat.chat/openai/v1').describe('API endpoint'),
+    model: z.string().default('LongCat-2.0').describe('Model'),
+    apiKey: z.string().min(1).describe('LongCat API key'),
+  }),
+  regions: [
+    { id: 'default', label: 'LongCat (api.longcat.chat)', wires: {
+      // The OpenAI SDK appends `/chat/completions` itself, so its base must
+      // include LongCat's required `/v1` segment.
+      'openai-chat': 'https://api.longcat.chat/openai/v1',
+      anthropic: 'https://api.longcat.chat/anthropic',
+    } },
   ],
+  models: withModelSemantics('longcat', [
+    { id: 'LongCat-2.0', label: 'LongCat 2.0' },
+  ]),
+  setup: {
+    apiKeyLabel: 'LongCat API key',
+    apiKeyHelp: 'Use a key accepted by api.longcat.chat. OpenAlice stores both LongCat-compatible protocol endpoints with this credential.',
+    modelHelp: 'Use the exact LongCat API model ID. The saved value is tested now and reused as the credential default.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -313,6 +433,11 @@ export const CUSTOM: PresetDef = {
   }),
   // No `regions` — Custom is free-form: the form lets the user pick any wire
   // shape and type the endpoint URL by hand.
+  setup: {
+    apiKeyLabel: 'Endpoint API key',
+    apiKeyHelp: 'Use a key accepted by this endpoint. Subscription logins and keyless local servers are configured in the agent CLI instead of this managed credential path.',
+    modelHelp: 'Enter the exact, case-sensitive model ID exposed by the endpoint. OpenAlice cannot discover custom model names automatically.',
+  },
   writeOnlyFields: ['apiKey'],
 }
 
@@ -323,29 +448,31 @@ export const PRESET_CATALOG: PresetDef[] = [
   CLAUDE_API,
   CODEX_OAUTH,
   CODEX_API,
-  GEMINI,
   MINIMAX,
   GLM,
   KIMI,
   DEEPSEEK,
+  LONGCAT,
+  GEMINI,
   CUSTOM,
 ]
 
 /**
- * The capable-flagship model to seed a fresh injection with when a credential
- * has no remembered `lastModel` yet (keyed by `CredentialVendor`). This is only
- * the very-first-run default — once a model is run it's remembered on the cred —
- * so it favors the most capable tier (a trading agent wants the flagship, not a
- * fast/cheap variant), mirroring the preset model lists. `custom` has no
- * canonical model (free-form), so it's absent and the caller falls back to
- * "let the runtime decide".
+ * The recommended model to seed a fresh injection with when a credential has
+ * no remembered `lastModel` yet (keyed by `CredentialVendor`). This is only the
+ * very-first-run default — once a model is run it's remembered on the cred — so
+ * each provider can balance agent capability, availability, and cost rather
+ * than inheriting whichever discovery suggestion happens to be listed first.
+ * `custom` has no canonical model (free-form), so it's absent and the caller
+ * falls back to "let the runtime decide".
  */
 export const DEFAULT_MODEL_BY_VENDOR: Record<string, string> = {
   anthropic: 'claude-opus-4-8',
-  openai: 'gpt-5.5',
-  google: 'gemini-2.5-pro',
+  openai: 'gpt-5.6',
+  google: 'gemini-3.1-flash-lite',
   minimax: 'MiniMax-M3',
   glm: 'glm-5.2',
   kimi: 'kimi-k2.7-code',
   deepseek: 'deepseek-v4-pro',
+  longcat: 'LongCat-2.0',
 }

@@ -15,6 +15,7 @@ import { Hono } from 'hono'
 import {
   createAuthMiddleware,
   isLoopbackIp,
+  isTrustedLocalOrigin,
   SESSION_COOKIE_NAME,
 } from './auth.js'
 import {
@@ -45,6 +46,7 @@ function makeApp(opts: Parameters<typeof createAuthMiddleware>[0]) {
   app.get('/api/trading/uta', (c) => c.json({ utas: [] }))
   app.post('/api/trading/uta/x/wallet/push', (c) => c.json({ ok: true }))
   app.get('/api/version', (c) => c.json({ ok: true }))
+  app.post('/api/version/check', (c) => c.json({ ok: true }))
   app.post('/api/auth/login', (c) => c.json({ ok: true }))
   return app
 }
@@ -82,6 +84,20 @@ describe('isLoopbackIp', () => {
   })
   it('rejects empty / undefined', () => {
     expect(isLoopbackIp('')).toBe(false)
+  })
+})
+
+describe('isTrustedLocalOrigin', () => {
+  it('accepts local browser origins on any port', () => {
+    expect(isTrustedLocalOrigin('http://127.0.0.1:47331')).toBe(true)
+    expect(isTrustedLocalOrigin('http://localhost:5173')).toBe(true)
+    expect(isTrustedLocalOrigin('https://[::1]:47331')).toBe(true)
+    expect(isTrustedLocalOrigin('app://openalice')).toBe(true)
+  })
+
+  it('rejects public and malformed origins', () => {
+    expect(isTrustedLocalOrigin('https://example.com')).toBe(false)
+    expect(isTrustedLocalOrigin('null')).toBe(false)
   })
 })
 
@@ -131,10 +147,34 @@ describe('auth middleware — playbook 01 (auth bypass)', () => {
     expect(res.status).toBe(200)
   })
 
+  it('loopback browser origin keeps the localhost bypass', async () => {
+    const app = makeApp({ trustedProxies: [], csrfTrustedOrigins: [] })
+    const res = await app.request('/api/trading/uta', {
+      headers: { origin: 'http://127.0.0.1:40123' },
+    }, envWithIp('127.0.0.1'))
+    expect(res.status).toBe(200)
+  })
+
+  it('public browser origin cannot inherit the localhost bypass', async () => {
+    const app = makeApp({ trustedProxies: [], csrfTrustedOrigins: [] })
+    const res = await app.request('/api/trading/uta', {
+      headers: { origin: 'https://evil.example' },
+    }, envWithIp('127.0.0.1'))
+    expect(res.status).toBe(401)
+  })
+
   it('public route /api/version is accessible without cookie or localhost', async () => {
     const app = makeApp({ trustedProxies: [], csrfTrustedOrigins: [] })
     const res = await app.request('/api/version', undefined, envWithIp('203.0.113.5'))
     expect(res.status).toBe(200)
+  })
+
+  it('forced version refresh remains behind the authenticated API gate', async () => {
+    const app = makeApp({ trustedProxies: [], csrfTrustedOrigins: [] })
+    const res = await app.request('/api/version/check', {
+      method: 'POST',
+    }, envWithIp('203.0.113.5'))
+    expect(res.status).toBe(401)
   })
 
   it('public route /api/auth/login accessible without cookie', async () => {

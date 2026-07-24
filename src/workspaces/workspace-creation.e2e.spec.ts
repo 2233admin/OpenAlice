@@ -8,7 +8,7 @@
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,7 +109,6 @@ describe('chat workspace create: bootstrap → inject → commit', () => {
       'CLAUDE.md', 'AGENTS.md', 'README.md',
       '.claude/skills/scan-value-chain/SKILL.md',
       '.agents/skills/scan-value-chain/SKILL.md',
-      '.pi/skills/scan-value-chain/SKILL.md',
       // per-CLI playbooks injected for every tool-bearing template
       '.claude/skills/alice/SKILL.md',
       '.claude/skills/alice-analysis/SKILL.md',
@@ -131,6 +130,11 @@ describe('chat workspace create: bootstrap → inject → commit', () => {
     // working tree is clean (injected files were committed, not left dangling)
     const status = await run('git', ['-C', dir, 'status', '--porcelain']);
     expect(status.trim()).toBe('');
+
+    const excludes = await readFile(join(dir, '.git/info/exclude'), 'utf8');
+    expect(excludes).toContain('.claude/openalice-provider.json\n');
+    expect(excludes).toContain('.opencode/openalice-provider.json\n');
+    expect(excludes).toContain('tui.json\n');
   });
 });
 
@@ -172,7 +176,8 @@ describe('chat workspace create — CLI-only injection (no MCP)', () => {
     expect(existsSync(join(dir, '.claude/skills/alice-uta/SKILL.md'))).toBe(true);   // trading skill discoverable
     expect(existsSync(join(dir, '.claude/skills/traderhub/SKILL.md'))).toBe(true);
     expect(existsSync(join(dir, '.claude/skills/scan-value-chain/SKILL.md'))).toBe(true);
-    expect(existsSync(join(dir, '.pi/skills/alice-uta/SKILL.md'))).toBe(true);  // Pi discovers .pi/skills
+    expect(existsSync(join(dir, '.agents/skills/alice-uta/SKILL.md'))).toBe(true); // Pi shares .agents/skills
+    expect(existsSync(join(dir, '.pi/skills'))).toBe(false);                       // avoid duplicate discovery
     expect((await run('git', ['-C', dir, 'status', '--porcelain'])).trim()).toBe('');
   });
 });

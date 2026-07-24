@@ -6,18 +6,28 @@
 
 import { tool } from 'ai'
 import { z } from 'zod'
+import type { Contract } from '@traderalice/ibkr'
 import type { UnifiedTradingAccount } from '../../UnifiedTradingAccount.js'
 import type { UTAManager } from '../../uta-manager.js'
-import { CcxtBroker } from './CcxtBroker.js'
 import '../../contract-ext.js'
+
+interface CcxtDataBroker {
+  brokerEngine?: string
+  getFundingRate(contract: Contract): Promise<Record<string, unknown>>
+  getOrderBook(contract: Contract, limit: number): Promise<Record<string, unknown>>
+}
 
 export function createCcxtProviderTools(manager: UTAManager) {
   /** Resolve to exactly one CCXT UTA. Returns error object if unable. */
   const resolveCcxtOne = (
     source?: string,
-  ): { uta: UnifiedTradingAccount; broker: CcxtBroker; id: string } | { error: string } => {
+  ): { uta: UnifiedTradingAccount; broker: CcxtDataBroker; id: string } | { error: string } => {
     const targets = manager.resolve(source)
-      .filter((uta): uta is typeof uta & { broker: CcxtBroker } => uta.broker instanceof CcxtBroker)
+      .filter((uta): uta is typeof uta & { broker: CcxtDataBroker } => (
+        uta.broker.brokerEngine === 'ccxt'
+        && typeof (uta.broker as Partial<CcxtDataBroker>).getFundingRate === 'function'
+        && typeof (uta.broker as Partial<CcxtDataBroker>).getOrderBook === 'function'
+      ))
     if (targets.length === 0) return { error: 'No CCXT account available.' }
     if (targets.length > 1) {
       return { error: `Multiple CCXT accounts: ${targets.map(t => t.id).join(', ')}. Specify source.` }

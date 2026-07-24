@@ -1,18 +1,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { AlertTriangle, CheckCircle2, Clock3, GitCommitHorizontal, GitPullRequest, History, XCircle } from 'lucide-react'
+import { EmptyState, Skeleton } from './StateViews'
 import { formatRelativeTime, getIntlLocale } from '../lib/intl'
 import { api } from '../api'
 import { isUnsetDecimal } from '../lib/format'
-import type { TradingAccount, WalletStatus, WalletPushResult, WalletCommitLog } from '../api/types'
+import { filterAccountTierUTAs } from '../lib/uta-account-filter'
+import type { UTASummary, WalletCommitLog, WalletOperation, WalletPushResult, WalletStatus } from '../api/types'
 
 // ==================== Types ====================
 
+type AccountRef = Pick<UTASummary, 'id' | 'label'>
+
 interface StagedAccount {
-  account: TradingAccount
+  account: AccountRef
   status: WalletStatus
 }
 
 interface PendingAccount {
-  account: TradingAccount
+  account: AccountRef
   status: WalletStatus
 }
 
@@ -22,23 +27,38 @@ interface AccountHistory {
   commits: WalletCommitLog[]
 }
 
-/** One commit lifted out of its per-account bucket, tagged with the
- *  account it belongs to, so the History view can present every account's
- *  commits as a single recency-sorted stream (the trade log is really one
- *  timeline; per-UTA grouping buried fresh commits below stale ones from
- *  another account). The UTA filter narrows this back to one account. */
 interface FlatCommit {
   accountId: string
   label: string
   commit: WalletCommitLog
 }
 
+type ReviewItem =
+  | { id: string; kind: 'pending'; account: AccountRef; status: WalletStatus }
+  | { id: string; kind: 'staged'; account: AccountRef; status: WalletStatus }
+  | { id: string; kind: 'history'; accountId: string; label: string; commit: WalletCommitLog }
+
+interface OperationDisplay {
+  marker: '+' | '-' | '~' | '?'
+  tone: 'buy' | 'sell' | 'modify' | 'neutral' | 'danger'
+  title: string
+  detail?: string
+  symbol?: string
+  status?: string
+}
+
 // ==================== Helpers ====================
 
-/** Extract symbol from operation. */
-function opSymbol(op: WalletStatus['staged'][number]): string {
+function accountLabel(account: AccountRef): string {
+  return account.label || account.id
+}
+
+function shortHash(hash: string | null | undefined): string {
+  return hash ? hash.slice(0, 8) : 'none'
+}
+
+function opSymbol(op: WalletOperation): string {
   const raw = op.contract?.aliceId || op.contract?.symbol || op.contract?.localSymbol || ''
-  // Strip "accountId|" prefix from aliceId
   const sep = raw.indexOf('|')
   return sep !== -1 ? raw.slice(sep + 1) : raw
 }
@@ -54,69 +74,161 @@ function fmtNum(n: number | string | undefined | null): string {
   return decPart ? `${withCommas}.${decPart}` : withCommas
 }
 
-/** Format operation for display — returns { text, isBuy } */
-function formatOp(op: WalletStatus['staged'][number]): { text: string; side?: 'buy' | 'sell' } {
+function orderTypeLabel(type: string | undefined): string {
+  const raw = (type || '').toUpperCase()
+  if (raw === 'MKT' || raw === 'MARKET') return 'MKT'
+  if (raw === 'LMT' || raw === 'LIMIT') return 'LMT'
+  return raw || 'ORDER'
+}
+
+function operationDisplay(op: WalletOperation): OperationDisplay {
   const symbol = opSymbol(op)
   switch (op.action) {
     case 'placeOrder': {
       const sideRaw = (op.order?.action || '').toUpperCase()
       const isBuy = sideRaw === 'BUY'
-      const type = (op.order?.orderType || '').toUpperCase()
-      const typeBadge = type === 'MKT' || type === 'MARKET' ? 'MKT' : type === 'LMT' || type === 'LIMIT' ? 'LMT' : type
-      const qtyStr = fmtNum(op.order?.totalQuantity ?? op.order?.cashQty)
-      const priceStr = fmtNum(op.order?.lmtPrice)
-      const price = priceStr ? ` @ ${priceStr}` : ''
+      const type = orderTypeLabel(op.order?.orderType)
+      const qty = fmtNum(op.order?.totalQuantity ?? op.order?.cashQty)
+      const price = fmtNum(op.order?.lmtPrice)
+      const aux = fmtNum(op.order?.auxPrice)
+      const detailParts = [
+        type,
+        qty ? `qty ${qty}` : null,
+        price ? `limit ${price}` : null,
+        aux ? `aux ${aux}` : null,
+      ].filter(Boolean)
       return {
-        text: `${sideRaw} ${qtyStr} ${symbol} ${typeBadge}${price}`.trim(),
-        side: isBuy ? 'buy' : 'sell',
+        marker: isBuy ? '+' : '-',
+        tone: isBuy ? 'buy' : 'sell',
+        title: `${sideRaw || 'ORDER'} ${symbol || 'unknown'}`.trim(),
+        detail: detailParts.join(' -> '),
+        symbol,
       }
     }
     case 'closePosition': {
-      const qtyStr = fmtNum(op.quantity)
-      return { text: `CLOSE ${symbol}${qtyStr ? ` (${qtyStr})` : ''}`, side: 'sell' }
+      const qty = fmtNum(op.quantity)
+      return {
+        marker: '-',
+        tone: 'sell',
+        title: `CLOSE ${symbol || 'position'}`,
+        detail: qty ? `quantity ${qty}` : undefined,
+        symbol,
+      }
     }
     case 'modifyOrder':
-      return { text: `MODIFY ${op.orderId || '?'}` }
+      return {
+        marker: '~',
+        tone: 'modify',
+        title: `MODIFY ${op.orderId || 'order'}`,
+        detail: symbol || undefined,
+        symbol,
+      }
     case 'cancelOrder':
-      return { text: `CANCEL ${op.orderId || '?'}` }
+      return {
+        marker: '-',
+        tone: 'danger',
+        title: `CANCEL ${op.orderId || 'order'}`,
+        detail: symbol || undefined,
+        symbol,
+      }
     case 'syncOrders':
-      return { text: 'SYNC' }
+      return {
+        marker: '~',
+        tone: 'neutral',
+        title: 'SYNC ORDERS',
+      }
     default:
-      return { text: op.action }
+      return {
+        marker: '?',
+        tone: 'neutral',
+        title: op.action,
+        symbol,
+      }
   }
 }
 
-/** Status badge color. */
-function statusColor(status: string): string {
-  switch (status) {
-    case 'submitted': return 'text-blue-400'
-    case 'filled': return 'text-green'
-    case 'rejected': return 'text-red'
-    case 'user-rejected': return 'text-orange-400'
-    case 'cancelled': return 'text-text-muted'
-    default: return 'text-text-muted'
+function historyOperationDisplay(op: WalletCommitLog['operations'][number]): OperationDisplay {
+  const action = op.action.toUpperCase()
+  const marker: OperationDisplay['marker'] =
+    action.includes('BUY') || action.includes('PLACE') ? '+'
+      : action.includes('SELL') || action.includes('CLOSE') || action.includes('CANCEL') ? '-'
+        : '~'
+  const tone: OperationDisplay['tone'] =
+    op.status === 'rejected' ? 'danger'
+      : marker === '+' ? 'buy'
+        : marker === '-' ? 'sell'
+          : 'modify'
+  return {
+    marker,
+    tone,
+    title: `${op.symbol !== 'unknown' ? op.symbol : op.action}`,
+    detail: op.change || op.action,
+    symbol: op.symbol,
+    status: op.status,
   }
+}
+
+function toneClass(tone: OperationDisplay['tone']): string {
+  switch (tone) {
+    case 'buy': return 'border-success/30 bg-success/5 text-success'
+    case 'sell': return 'border-destructive/30 bg-destructive/5 text-destructive'
+    case 'danger': return 'border-destructive/35 bg-destructive/10 text-destructive'
+    case 'modify': return 'border-warning/30 bg-warning/5 text-warning'
+    default: return 'border-border bg-muted text-muted-foreground'
+  }
+}
+
+function statusClass(status: string | undefined): string {
+  switch (status) {
+    case 'submitted': return 'text-info'
+    case 'filled': return 'text-success'
+    case 'rejected': return 'text-destructive'
+    case 'user-rejected': return 'text-warning'
+    case 'cancelled': return 'text-muted-foreground'
+    default: return 'text-muted-foreground'
+  }
+}
+
+function itemTimestamp(item: ReviewItem): string | null {
+  return item.kind === 'history' ? item.commit.timestamp : null
+}
+
+function itemTitle(item: ReviewItem): string {
+  if (item.kind === 'pending') return item.status.pendingMessage || 'Pending broker push'
+  if (item.kind === 'staged') return 'Staged operations'
+  return item.commit.message
+}
+
+function itemAccountLabel(item: ReviewItem): string {
+  if (item.kind === 'history') return item.label
+  return accountLabel(item.account)
+}
+
+function itemOperations(item: ReviewItem): OperationDisplay[] {
+  if (item.kind === 'history') return item.commit.operations.map(historyOperationDisplay)
+  return item.status.staged.map(operationDisplay)
 }
 
 // ==================== Component ====================
 
 export function PushApprovalPanel() {
-  const [accounts, setAccounts] = useState<TradingAccount[]>([])
+  const [accounts, setAccounts] = useState<AccountRef[]>([])
   const [staged, setStaged] = useState<StagedAccount[]>([])
   const [pending, setPending] = useState<PendingAccount[]>([])
   const [history, setHistory] = useState<AccountHistory[]>([])
   const [pushing, setPushing] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [confirmingPush, setConfirmingPush] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<{ accountId: string; data: WalletPushResult } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // History UTA filter — null = show every account's commits merged. Holds
-  // an accountId when narrowed to one account's log.
+  const [loaded, setLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<string | null>(null)
 
   const poll = useCallback(async () => {
     try {
-      const { utas: accts } = await api.trading.listUTAs()
+      const { utas } = await api.trading.listUTASummaries()
+      const accts = filterAccountTierUTAs(utas)
       setAccounts(accts)
 
       const stagedResults: StagedAccount[] = []
@@ -135,15 +247,21 @@ export function PushApprovalPanel() {
             stagedResults.push({ account, status })
           }
           if (commits.length > 0) {
-            historyResults.push({ accountId: account.id, label: account.label || account.id, commits })
+            historyResults.push({ accountId: account.id, label: accountLabel(account), commits })
           }
-        } catch { /* skip unreachable */ }
+        } catch {
+          /* skip unreachable account */
+        }
       }
 
       setStaged(stagedResults)
       setPending(pendingResults)
       setHistory(historyResults)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore list failures here; global API surfaces already show errors */
+    } finally {
+      setLoaded(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -181,21 +299,16 @@ export function PushApprovalPanel() {
     }
   }, [poll])
 
-  // Accounts that actually have commits — the filter chip set.
   const historyAccounts = useMemo(
     () => history.map((h) => ({ id: h.accountId, label: h.label })),
     [history],
   )
 
-  // Ignore a stale filter pointing at an account that dropped out of the
-  // log (e.g. its commits aged past the fetch window) — fall back to All
-  // rather than show an empty list.
   const effectiveFilter =
     historyFilter && historyAccounts.some((a) => a.id === historyFilter)
       ? historyFilter
       : null
 
-  // Single recency-sorted stream across every account (or the filtered one).
   const mergedHistory = useMemo(() => {
     const flat: FlatCommit[] = []
     for (const h of history) {
@@ -211,236 +324,478 @@ export function PushApprovalPanel() {
     return flat
   }, [history, effectiveFilter])
 
-  // No trading accounts configured — hide panel entirely
-  if (accounts.length === 0) return null
+  const reviewItems = useMemo<ReviewItem[]>(() => [
+    ...pending.map(({ account, status }) => ({
+      id: `pending:${account.id}`,
+      kind: 'pending' as const,
+      account,
+      status,
+    })),
+    ...staged.map(({ account, status }) => ({
+      id: `staged:${account.id}`,
+      kind: 'staged' as const,
+      account,
+      status,
+    })),
+    ...mergedHistory.map(({ accountId, label, commit }) => ({
+      id: `history:${accountId}:${commit.hash}`,
+      kind: 'history' as const,
+      accountId,
+      label,
+      commit,
+    })),
+  ], [mergedHistory, pending, staged])
 
-  const hasStaged = staged.length > 0
-  const hasPending = pending.length > 0
-  const hasHistory = history.length > 0
-  // Per-UTA filter only earns its space when there's more than one account.
-  const showHistoryFilter = historyAccounts.length > 1
+  useEffect(() => {
+    if (reviewItems.length === 0) {
+      setSelectedId(null)
+      return
+    }
+    if (!selectedId || !reviewItems.some((item) => item.id === selectedId)) {
+      setSelectedId(reviewItems[0].id)
+    }
+  }, [reviewItems, selectedId])
+
+  const selected = reviewItems.find((item) => item.id === selectedId) ?? null
+  const waitingCount = pending.length
+  const stagedCount = staged.length
+  const historyCount = mergedHistory.length
+  const statusLabel =
+    waitingCount > 0
+      ? `${waitingCount} commit${waitingCount === 1 ? '' : 's'} waiting for approval`
+      : stagedCount > 0
+        ? `${stagedCount} staged set${stagedCount === 1 ? '' : 's'} waiting for commit`
+        : 'Working tree clean'
+
+  if (!loaded) return <TradingReviewSkeleton />
+
+  if (accounts.length === 0) {
+    return (
+      <div className="h-full rounded-lg border border-border bg-secondary/30">
+        <EmptyState
+          title="No trading accounts"
+          description="Connect a broker account in Settings -> Trading before approving staged broker writes."
+        />
+      </div>
+    )
+  }
 
   return (
-    // No own header / bg tint — the shared Sidebar wrapper supplies the
-    // "Trading" title, and the ActivityBar nav badge already surfaces the
-    // staged-count attention signal. (Was a duplicate "Trading" header +
-    // a second bg-secondary/30 tint inside the wrapper.)
-    <div className="h-full flex flex-col min-h-0">
-      <div className="flex-1 overflow-y-auto">
-        {/* ==================== Staged (uncommitted) Section ==================== */}
-        {hasStaged && (
-          <div className="px-3 py-3 space-y-3">
-            {staged.map(({ account, status }) => (
-              <div key={account.id} className="space-y-2">
-                <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted/60">
-                  {account.label || account.id}
-                </div>
-
-                <div className="text-xs text-yellow-400/80 font-medium px-2 py-1.5 rounded bg-yellow-400/5 border border-yellow-400/20">
-                  Staged — waiting for AI to commit
-                </div>
-
-                <div className="space-y-0.5">
-                  {status.staged.map((op, i) => {
-                    const { text, side } = formatOp(op)
-                    return (
-                      <div
-                        key={i}
-                        className={`text-xs font-mono px-2 py-1 rounded bg-bg/50 ${
-                          side === 'buy' ? 'text-green' : side === 'sell' ? 'text-red' : 'text-text-muted'
-                        }`}
-                      >
-                        {text}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ==================== Pending Section ==================== */}
-        {hasPending ? (
-          <div className="px-3 py-3 space-y-3">
-            {pending.map(({ account, status }) => (
-              <div key={account.id} className="space-y-2">
-                <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted/60">
-                  {account.label || account.id}
-                </div>
-
-                {/* Commit message */}
-                <div className="text-xs text-text font-medium px-2 py-1.5 rounded bg-bg-secondary border border-border">
-                  {status.pendingMessage}
-                </div>
-
-                {/* Staged operations */}
-                <div className="space-y-0.5">
-                  {status.staged.map((op, i) => {
-                    const { text, side } = formatOp(op)
-                    return (
-                      <div
-                        key={i}
-                        className={`text-xs font-mono px-2 py-1 rounded bg-bg/50 ${
-                          side === 'buy' ? 'text-green' : side === 'sell' ? 'text-red' : 'text-text-muted'
-                        }`}
-                      >
-                        {text}
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Inline confirm or action buttons */}
-                {confirmingPush === account.id ? (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-text-muted">Execute {status.staged.length} op{status.staged.length > 1 ? 's' : ''}?</span>
-                    <button
-                      onClick={() => handlePush(account.id)}
-                      disabled={pushing !== null}
-                      className="btn-primary-sm"
-                    >
-                      {pushing === account.id ? '...' : 'Confirm'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmingPush(null)}
-                      className="px-2 py-1 rounded text-text-muted hover:text-text transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setConfirmingPush(account.id)}
-                      disabled={pushing !== null || rejecting !== null}
-                      className="flex-1 btn-primary-sm"
-                    >
-                      Approve & Push
-                    </button>
-                    <button
-                      onClick={() => handleReject(account.id)}
-                      disabled={pushing !== null || rejecting !== null}
-                      className="text-xs px-3 py-1.5 rounded font-medium border border-border text-text-muted hover:text-red hover:border-red/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {rejecting === account.id ? '...' : 'Reject'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Last push result feedback */}
-            {lastResult && (
-              <div className="space-y-1 pt-2 border-t border-border">
-                <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted/60">Last push</div>
-                <div className="text-xs text-text">
-                  {lastResult.data.submitted.length > 0 && (
-                    <span className="text-green">{lastResult.data.submitted.length} submitted</span>
-                  )}
-                  {lastResult.data.rejected.length > 0 && (
-                    <>
-                      {lastResult.data.submitted.length > 0 && ', '}
-                      <span className="text-red">{lastResult.data.rejected.length} rejected</span>
-                    </>
-                  )}
-                </div>
-                {lastResult.data.rejected.map((r, i) => (
-                  <div key={i} className="text-xs text-red/80 px-2">{r.error || 'Unknown error'}</div>
-                ))}
-                <button onClick={() => setLastResult(null)} className="text-[11px] text-text-muted hover:text-text">
-                  Dismiss
-                </button>
-              </div>
+    <div className="grid h-full min-h-0 min-w-0 overflow-hidden rounded-lg border border-border bg-secondary/30 md:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-secondary md:border-b-0 md:border-r">
+        <div className="shrink-0 border-b border-border/70 px-4 py-3">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
+            {waitingCount > 0 ? (
+              <AlertTriangle size={15} className="text-warning" aria-hidden />
+            ) : (
+              <CheckCircle2 size={15} className="text-success" aria-hidden />
             )}
-
-            {error && (
-              <div className="text-xs text-red pt-2 border-t border-border">
-                {error}
-                <button onClick={() => setError(null)} className="ml-2 text-text-muted hover:text-text">Dismiss</button>
-              </div>
-            )}
+            <span className="truncate">{statusLabel}</span>
           </div>
-        ) : !hasStaged ? (
-          <div className="px-3 py-4 text-[12px] text-text-muted/70 leading-relaxed">
-            No pending operations.
-            <div className="mt-1 text-text-muted/50">
-              Approvals appear here when the agent stages a broker write.
-            </div>
+          <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
+            <QueueStat label="Needs" value={waitingCount} tone={waitingCount > 0 ? 'warn' : 'muted'} />
+            <QueueStat label="Staged" value={stagedCount} tone={stagedCount > 0 ? 'warn' : 'muted'} />
+            <QueueStat label="Pushed" value={historyCount} tone="muted" />
           </div>
-        ) : null}
+        </div>
 
-        {/* ==================== History Section ==================== */}
-        {hasHistory && (
-          <div className="border-t border-border">
-            <div className="px-3 py-2">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted/60">History</div>
-            </div>
-
-            {/* Per-UTA filter chips — only shown with >1 account. */}
-            {showHistoryFilter && (
-              <div className="px-3 pb-2 flex flex-wrap gap-1">
+        {historyAccounts.length > 1 && (
+          <div className="shrink-0 border-b border-border/60 px-4 py-2">
+            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Account filter</div>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setHistoryFilter(null)}
+                className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                  effectiveFilter === null
+                    ? 'border-border bg-muted text-foreground'
+                    : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                }`}
+              >
+                All
+              </button>
+              {historyAccounts.map((account) => (
                 <button
-                  onClick={() => setHistoryFilter(null)}
-                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                    effectiveFilter === null
-                      ? 'bg-bg-tertiary text-text border-border'
-                      : 'text-text-muted border-border/50 hover:text-text hover:border-border'
+                  key={account.id}
+                  type="button"
+                  onClick={() => setHistoryFilter(account.id)}
+                  title={account.label}
+                  className={`max-w-[120px] truncate rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                    effectiveFilter === account.id
+                      ? 'border-border bg-muted text-foreground'
+                      : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
                   }`}
                 >
-                  All
+                  {account.label}
                 </button>
-                {historyAccounts.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => setHistoryFilter(a.id)}
-                    title={a.label}
-                    className={`text-[10px] px-2 py-0.5 rounded-full border max-w-[120px] truncate transition-colors ${
-                      effectiveFilter === a.id
-                        ? 'bg-bg-tertiary text-text border-border'
-                        : 'text-text-muted border-border/50 hover:text-text hover:border-border'
-                    }`}
-                  >
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="px-3 pb-3 space-y-1">
-              {mergedHistory.map(({ accountId, label, commit }) => (
-                <div
-                  key={`${accountId}:${commit.hash}`}
-                  className="group px-3 py-1.5 rounded hover:bg-bg-tertiary/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-text-muted/50">{commit.hash}</span>
-                    <span className="text-[10px] text-text-muted/40">{formatRelativeTime(commit.timestamp)}</span>
-                    {/* Account tag — needed now that commits aren't grouped;
-                     *  redundant (so hidden) when the list is already filtered
-                     *  to one account or there's only one. */}
-                    {effectiveFilter === null && historyAccounts.length > 1 && (
-                      <span className="ml-auto text-[10px] text-text-muted/40 truncate max-w-[90px]" title={label}>
-                        {label}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[12px] text-text mt-0.5 leading-snug">{commit.message}</div>
-                  {commit.operations.length > 0 && (
-                    <div className="flex flex-wrap gap-x-2 mt-0.5">
-                      {commit.operations.map((op, i) => (
-                        <span key={i} className={`text-[10px] ${statusColor(op.status)}`}>
-                          {op.symbol !== 'unknown' ? op.symbol : op.action} · {op.status}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
               ))}
             </div>
           </div>
         )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {reviewItems.length > 0 ? (
+            <div className="space-y-1">
+              {reviewItems.map((item) => (
+                <QueueRow
+                  key={item.id}
+                  item={item}
+                  active={item.id === selectedId}
+                  onClick={() => setSelectedId(item.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <CleanQueue />
+          )}
+        </div>
       </div>
+
+      <div className="min-h-0 min-w-0 overflow-y-auto">
+        <ReviewDetail
+          item={selected}
+          lastResult={lastResult}
+          error={error}
+          confirmingPush={confirmingPush}
+          pushing={pushing}
+          rejecting={rejecting}
+          onConfirmPush={setConfirmingPush}
+          onPush={handlePush}
+          onReject={handleReject}
+          onDismissError={() => setError(null)}
+          onDismissResult={() => setLastResult(null)}
+        />
+      </div>
+    </div>
+  )
+}
+
+function TradingReviewSkeleton() {
+  return (
+    <div className="grid h-full min-h-0 min-w-0 overflow-hidden rounded-lg border border-border bg-secondary/30 md:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="border-b border-border p-4 md:border-b-0 md:border-r">
+        <Skeleton className="h-4 w-40" />
+        <div className="mt-4 space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-md" />
+          ))}
+        </div>
+      </div>
+      <div className="p-5">
+        <Skeleton className="h-6 w-56" />
+        <Skeleton className="mt-4 h-24 w-full rounded-lg" />
+        <Skeleton className="mt-3 h-24 w-full rounded-lg" />
+      </div>
+    </div>
+  )
+}
+
+function QueueStat({ label, value, tone }: { label: string; value: number; tone: 'warn' | 'muted' }) {
+  return (
+    <div className={`rounded-md border px-2 py-1.5 ${tone === 'warn' ? 'border-warning/30 bg-warning/5' : 'border-border/60 bg-background/35'}`}>
+      <div className={`text-sm font-semibold tabular-nums ${tone === 'warn' ? 'text-warning' : 'text-foreground'}`}>{value}</div>
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground/55">{label}</div>
+    </div>
+  )
+}
+
+function QueueRow({ item, active, onClick }: { item: ReviewItem; active: boolean; onClick: () => void }) {
+  const ops = itemOperations(item)
+  const timestamp = itemTimestamp(item)
+  const icon =
+    item.kind === 'pending' ? <GitPullRequest size={14} aria-hidden />
+      : item.kind === 'staged' ? <Clock3 size={14} aria-hidden />
+        : <History size={14} aria-hidden />
+  const badge =
+    item.kind === 'pending' ? 'review'
+      : item.kind === 'staged' ? 'staged'
+        : shortHash(item.commit.hash)
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
+        active
+          ? 'border-primary/50 bg-primary-muted text-foreground'
+          : 'border-transparent text-muted-foreground hover:border-border/70 hover:bg-accent hover:text-foreground'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className={active ? 'text-primary' : 'text-muted-foreground/70'}>{icon}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{itemTitle(item)}</span>
+      </div>
+      <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground/65">
+        <span className="truncate">{itemAccountLabel(item)}</span>
+        <span className="text-muted-foreground/35">/</span>
+        <span>{ops.length} op{ops.length === 1 ? '' : 's'}</span>
+        <span className="ml-auto rounded border border-border/60 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground/60">{badge}</span>
+      </div>
+      {timestamp && (
+        <div className="mt-1 text-[10px] text-muted-foreground/45">{formatRelativeTime(timestamp)}</div>
+      )}
+    </button>
+  )
+}
+
+function CleanQueue() {
+  return (
+    <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-4 text-center">
+      <CheckCircle2 size={26} className="text-success/80" aria-hidden />
+      <div className="mt-3 text-[13px] font-medium text-foreground">Working tree clean</div>
+      <div className="mt-1 max-w-[190px] text-[12px] leading-relaxed text-muted-foreground/60">
+        No broker writes are waiting for approval.
+      </div>
+    </div>
+  )
+}
+
+function ReviewDetail({
+  item,
+  lastResult,
+  error,
+  confirmingPush,
+  pushing,
+  rejecting,
+  onConfirmPush,
+  onPush,
+  onReject,
+  onDismissError,
+  onDismissResult,
+}: {
+  item: ReviewItem | null
+  lastResult: { accountId: string; data: WalletPushResult } | null
+  error: string | null
+  confirmingPush: string | null
+  pushing: string | null
+  rejecting: string | null
+  onConfirmPush: (accountId: string | null) => void
+  onPush: (accountId: string) => void
+  onReject: (accountId: string) => void
+  onDismissError: () => void
+  onDismissResult: () => void
+}) {
+  if (!item) {
+    return (
+      <div className="flex min-h-full items-center justify-center p-6">
+        <EmptyState
+          icon={<CheckCircle2 size={24} aria-hidden />}
+          title="Working tree clean"
+          description="No broker writes are waiting for approval. Recent pushed commits will appear here."
+        />
+      </div>
+    )
+  }
+
+  const ops = itemOperations(item)
+  const isPending = item.kind === 'pending'
+  const isStaged = item.kind === 'staged'
+  const accountId = item.kind === 'history' ? item.accountId : item.account.id
+  const title = itemTitle(item)
+
+  return (
+    <div className="min-h-full p-4 md:p-5">
+      <div className="mx-auto max-w-[980px] space-y-4">
+        {lastResult && (
+          <ResultBanner result={lastResult.data} onDismiss={onDismissResult} />
+        )}
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+            <XCircle size={15} className="mt-0.5 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1">{error}</span>
+            <button type="button" onClick={onDismissError} className="text-muted-foreground hover:text-foreground">Dismiss</button>
+          </div>
+        )}
+
+        <div className="rounded-lg border border-border bg-background">
+          <div className="border-b border-border px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <StatusPill item={item} />
+                  <span className="text-[11px] text-muted-foreground">{itemAccountLabel(item)}</span>
+                  {item.kind === 'history' && (
+                    <span className="font-mono text-[11px] text-muted-foreground/60">{shortHash(item.commit.hash)}</span>
+                  )}
+                </div>
+                <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+                <div className="mt-1 text-[12px] text-muted-foreground">
+                  {item.kind === 'history'
+                    ? `Pushed ${formatRelativeTime(item.commit.timestamp)}`
+                    : `${ops.length} proposed broker operation${ops.length === 1 ? '' : 's'} on head ${shortHash(item.status.head)}`}
+                </div>
+              </div>
+              {isPending && (
+                <div className="flex shrink-0 items-center gap-2">
+                  {confirmingPush === accountId ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onPush(accountId)}
+                        disabled={pushing !== null}
+                        className="btn-primary-sm"
+                      >
+                        {pushing === accountId ? 'Pushing...' : 'Confirm push'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onConfirmPush(null)}
+                        className="rounded-md px-2.5 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onConfirmPush(accountId)}
+                        disabled={pushing !== null || rejecting !== null}
+                        className="btn-primary-sm"
+                      >
+                        Approve & Push
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onReject(accountId)}
+                        disabled={pushing !== null || rejecting !== null}
+                        className="rounded-md border border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {rejecting === accountId ? 'Rejecting...' : 'Reject'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+            <section className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                <GitCommitHorizontal size={14} aria-hidden />
+                Operation diff
+              </div>
+              <div className="space-y-2">
+                {ops.map((op, index) => (
+                  <OperationRow key={`${op.title}:${index}`} op={op} />
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <ReviewSummary item={item} operations={ops} />
+              {isStaged && (
+                <div className="rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-warning/80">
+                  These operations are staged but do not have a commit message yet. The agent still needs to commit before this can be pushed.
+                </div>
+              )}
+              {isPending && (
+                <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-[12px] leading-relaxed text-destructive/90">
+                  Approval pushes these operations to the broker account. Check account, side, quantity, and order type before confirming.
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatusPill({ item }: { item: ReviewItem }) {
+  if (item.kind === 'pending') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
+        <AlertTriangle size={12} aria-hidden />
+        Needs approval
+      </span>
+    )
+  }
+  if (item.kind === 'staged') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[11px] font-medium text-info">
+        <Clock3 size={12} aria-hidden />
+        Staged
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+      <CheckCircle2 size={12} aria-hidden />
+      Pushed
+    </span>
+  )
+}
+
+function OperationRow({ op }: { op: OperationDisplay }) {
+  return (
+    <div className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)] overflow-hidden rounded-md border border-border bg-secondary/50">
+      <div className={`flex items-center justify-center border-r font-mono text-sm font-semibold ${toneClass(op.tone)}`}>
+        {op.marker}
+      </div>
+      <div className="min-w-0 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 break-all font-mono text-[13px] font-medium text-foreground">{op.title}</span>
+          {op.status && (
+            <span className={`text-[11px] ${statusClass(op.status)}`}>{op.status}</span>
+          )}
+        </div>
+        {op.detail && (
+          <div className="mt-0.5 break-words text-[12px] text-muted-foreground">{op.detail}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ReviewSummary({ item, operations }: { item: ReviewItem; operations: OperationDisplay[] }) {
+  const symbols = Array.from(new Set(operations.map((op) => op.symbol).filter(Boolean)))
+  const buyCount = operations.filter((op) => op.tone === 'buy').length
+  const sellCount = operations.filter((op) => op.tone === 'sell' || op.tone === 'danger').length
+  const modifyCount = operations.length - buyCount - sellCount
+
+  return (
+    <div className="rounded-md border border-border bg-secondary/60 p-3">
+      <div className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">Review summary</div>
+      <dl className="mt-3 space-y-2 text-[12px]">
+        <SummaryRow label="Account" value={itemAccountLabel(item)} />
+        <SummaryRow label="Operations" value={String(operations.length)} />
+        <SummaryRow label="Symbols" value={symbols.length > 0 ? symbols.slice(0, 4).join(', ') : 'none'} />
+        <SummaryRow label="Buys" value={String(buyCount)} />
+        <SummaryRow label="Sells / cancels" value={String(sellCount)} />
+        <SummaryRow label="Modify / sync" value={String(modifyCount)} />
+        {item.kind !== 'history' && <SummaryRow label="Head" value={shortHash(item.status.head)} />}
+      </dl>
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-medium text-foreground" title={value}>{value}</dd>
+    </div>
+  )
+}
+
+function ResultBanner({ result, onDismiss }: { result: WalletPushResult; onDismiss: () => void }) {
+  const hasRejected = result.rejected.length > 0
+  return (
+    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] ${
+      hasRejected ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-success/25 bg-success/5 text-success'
+    }`}>
+      {hasRejected ? <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden /> : <CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />}
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">
+          {result.submitted.length} submitted, {result.rejected.length} rejected
+        </div>
+        {result.rejected.map((entry, index) => (
+          <div key={`${entry.action}:${index}`} className="mt-0.5 text-destructive/80">{entry.error || entry.action}</div>
+        ))}
+      </div>
+      <button type="button" onClick={onDismiss} className="text-muted-foreground hover:text-foreground">Dismiss</button>
     </div>
   )
 }

@@ -71,19 +71,19 @@ export async function injectWorkspaceContext(opts: {
     ]),
   ];
   if (skills.length > 0) {
-    // Each agent CLI discovers skills from its own dir: Claude Code reads
-    // `.claude/skills`, Codex reads `.agents/skills`, Pi reads `.pi/skills`.
-    // (opencode reads `.claude/skills` + `.agents/skills` by default via its
-    // Claude-Code compat, so the two below already cover it — no `.opencode`
-    // copy needed unless OPENCODE_DISABLE_CLAUDE_CODE is ever set.)
+    // Claude Code reads `.claude/skills`; Codex and current Pi both read the
+    // shared `.agents/skills` path. Do not also copy into `.pi/skills`: Pi
+    // discovers both locations and reports every duplicate as a startup
+    // collision, which can bury the first user prompt. Existing workspaces are
+    // intentionally left alone; this only defines the canonical layout for new
+    // workspaces. (OpenCode reads `.claude/skills` + `.agents/skills` through
+    // its Claude-Code compatibility layer, so no `.opencode` copy is needed.)
     await mkdir(join(dir, '.claude/skills'), { recursive: true });
     await mkdir(join(dir, '.agents/skills'), { recursive: true });
-    await mkdir(join(dir, '.pi/skills'), { recursive: true });
     for (const name of skills) {
       const src = defaultPath('skills', name);
       await cp(src, join(dir, '.claude/skills', name), { recursive: true });
       await cp(src, join(dir, '.agents/skills', name), { recursive: true });
-      await cp(src, join(dir, '.pi/skills', name), { recursive: true });
     }
   }
 }

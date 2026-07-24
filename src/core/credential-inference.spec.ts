@@ -11,11 +11,16 @@ describe('inferCredentialVendor', () => {
     expect(inferCredentialVendor({ baseUrl: 'https://api.minimax.io/anthropic' })).toBe('minimax')
     expect(inferCredentialVendor({ baseUrl: 'https://api.moonshot.cn/v1' })).toBe('kimi')
     expect(inferCredentialVendor({ baseUrl: 'https://api.deepseek.com' })).toBe('deepseek')
+    expect(inferCredentialVendor({ baseUrl: 'https://api.longcat.chat/openai' })).toBe('longcat')
   })
 
   it('falls back to the agent when the baseUrl is unrecognized', () => {
     expect(inferCredentialVendor({ agent: 'claude', baseUrl: 'https://proxy.example.com' })).toBe('anthropic')
     expect(inferCredentialVendor({ agent: 'codex' })).toBe('openai')
+  })
+
+  it('recognizes the vendor-specific Google wire without a base URL', () => {
+    expect(inferCredentialVendor({ agent: 'opencode', wireShape: 'google-generative-ai' })).toBe('google')
   })
 
   it('opencode/pi against an arbitrary endpoint → custom (no first-party guess)', () => {
@@ -38,8 +43,12 @@ describe('resolveAnthropicAuthMode', () => {
     expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.minimax.io/anthropic' })).toBe('bearer')
   })
 
-  it('does NOT infer bearer for MiniMax China (minimaxi.com tolerates x-api-key)', () => {
-    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.minimaxi.com/anthropic' })).toBe('x-api-key')
+  it('infers bearer for LongCat anthropic compatibility', () => {
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.longcat.chat/anthropic' })).toBe('bearer')
+  })
+
+  it('infers the documented bearer mode for MiniMax China too', () => {
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.minimaxi.com/anthropic' })).toBe('bearer')
   })
 
   it('defaults to x-api-key for first-party Anthropic and unconfirmed gateways', () => {

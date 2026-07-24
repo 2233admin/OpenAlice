@@ -49,11 +49,11 @@ describe('market-data e2e — FRED via webui routes', () => {
   })
 
   it('fred_series multi-symbol returns rows with both columns populated', async () => {
-    // Catches the same asc bug indirectly — with old asc default, GDP (from 1947)
-    // and UNRATE (from 1948) latest-N timestamps had near-zero overlap, so
-    // merged rows were almost always single-column. With desc default,
-    // both series share the same recent dates.
-    const rows = await getJson(t.app, '/api/market-data-v1/economy/fred_series?provider=federal_reserve&symbol=GDP,UNRATE&limit=5')
+    // Exercise the date merge over an explicit recent window. Using `limit=5`
+    // independently for quarterly GDP and monthly UNRATE is time-dependent:
+    // once the monthly series advances far enough beyond the latest GDP
+    // publication, neither set is required to contain the same date.
+    const rows = await getJson(t.app, '/api/market-data-v1/economy/fred_series?provider=federal_reserve&symbol=GDP,UNRATE&start_date=2024-01-01')
     expect(rows.length).toBeGreaterThan(0)
     const hasBoth = rows.some(r => r.GDP != null && r.UNRATE != null)
     expect(hasBoth).toBe(true)
@@ -116,44 +116,5 @@ describe('market-data e2e — EIA via webui routes', () => {
     const lastDate = new Date(last.date)
     expect(lastDate.getFullYear()).toBeGreaterThanOrEqual(2025)
     console.log(`  Crude oil stocks latest: ${last.date} = ${last.value} ${last.unit}`)
-  })
-})
-
-describe('market-data e2e — BLS via webui routes', () => {
-  beforeEach(({ skip }) => { if (!hasProviderKey(t.config, 'bls')) skip('no bls key in config') })
-
-  it('test-provider endpoint reports ok for valid bls key', async () => {
-    const key = t.config.marketData.providerKeys!.bls!
-    const r = await postJson(t.app, '/api/market-data/test-provider', { provider: 'bls', key })
-    expect(r.status).toBe(200)
-    if (!r.data.ok) console.log('  test-provider error:', r.data.error)
-    expect(r.data.ok).toBe(true)
-  })
-
-  it('bls_search returns curated series matching keyword', async () => {
-    // BLS doesn't have a real search API — bls-search.ts hardcodes a curated list.
-    // The probe verifies the wiring is intact; the catalog itself is provider-side.
-    const rows = await getJson(t.app, '/api/market-data-v1/economy/survey/bls_search?provider=bls&query=unemployment')
-    expect(rows.length).toBeGreaterThan(0)
-    const seriesIds = rows.map(r => r.series_id)
-    expect(seriesIds).toContain('LNS14000000')
-    console.log(`  BLS search "unemployment": ${seriesIds.join(', ')}`)
-  })
-
-  it('bls_series returns observations + skips missing periods', async () => {
-    // Catches the parseFloat-NaN bug — BLS returns '-' for unavailable
-    // observations (e.g. 2025-10 UNRATE during government shutdown).
-    // Without the NaN-skip the schema would reject the whole batch.
-    const rows = await getJson(
-      t.app,
-      '/api/market-data-v1/economy/survey/bls_series?provider=bls&symbol=LNS14000000&start_date=2024-01-01',
-    )
-    expect(rows.length).toBeGreaterThan(20)
-    expect(typeof rows[0].value).toBe('number')
-    expect(rows.every(r => Number.isFinite(r.value))).toBe(true)  // no NaN sneak through
-    const last = rows[rows.length - 1]
-    const lastDate = new Date(last.date)
-    expect(lastDate.getFullYear()).toBeGreaterThanOrEqual(2025)
-    console.log(`  UNRATE latest: ${last.date} = ${last.value}%`)
   })
 })

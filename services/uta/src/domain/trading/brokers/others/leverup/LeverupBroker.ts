@@ -97,6 +97,7 @@ export class LeverupBroker implements IBroker {
 
   // ---- Instance ----
 
+  readonly brokerEngine = 'leverup'
   readonly id: string
   readonly label: string
   readonly meta = { engine: 'leverup' as const }

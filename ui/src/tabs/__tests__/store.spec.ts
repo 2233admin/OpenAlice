@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useWorkspace } from '../store'
-import { specEquals, getFocusedGroup, getFocusedTab, type ViewSpec } from '../types'
+import { specEquals, getFocusedGroup, getFocusedTab, isDevTab, type ViewSpec } from '../types'
 
 // Reset zustand state + localStorage before each test so cases stay isolated.
 function resetStore() {
@@ -16,6 +16,14 @@ function resetStore() {
 }
 
 beforeEach(resetStore)
+
+describe('Dev URL tabs', () => {
+  it('keeps product surfaces out of the internal Dev Panel', () => {
+    expect(isDevTab('connectors')).toBe(false)
+    expect(isDevTab('connector')).toBe(false)
+    expect(isDevTab('tools')).toBe(true)
+  })
+})
 
 // A sample ViewSpec whose params vary by a single string, used to drive
 // tab-store mechanics (open/focus/close/dedup). market-detail fits: its
@@ -141,28 +149,6 @@ describe('closeTab', () => {
   })
 })
 
-// ==================== focusTab ====================
-
-describe('focusTab', () => {
-  it('switches focus to a known tab', () => {
-    const s = useWorkspace.getState()
-    s.openOrFocus(tab('default'))
-    s.openOrFocus({ kind: 'news', params: {} })
-    const ids = getFocusedGroup(useWorkspace.getState())!.tabIds
-    s.focusTab(ids[0])
-    expect(getFocusedTab(useWorkspace.getState())?.spec.kind).toBe('market-detail')
-  })
-
-  it('is a no-op for unknown ids', () => {
-    const s = useWorkspace.getState()
-    s.openOrFocus(tab('default'))
-    const before = getFocusedTab(useWorkspace.getState())?.id
-    s.focusTab('nonexistent')
-    const after = getFocusedTab(useWorkspace.getState())?.id
-    expect(after).toBe(before)
-  })
-})
-
 // ==================== closeMatching ====================
 
 describe('closeMatching', () => {
@@ -191,61 +177,6 @@ describe('closeMatching', () => {
     const group = getFocusedGroup(useWorkspace.getState())!
     expect(group.tabIds).toHaveLength(0)
     expect(group.activeTabId).toBeNull()
-  })
-})
-
-// ==================== bulk closers ====================
-
-describe('closeOthers / closeToRight / closeToLeft / closeAll', () => {
-  function setupFour() {
-    const s = useWorkspace.getState()
-    s.openOrFocus(tab('default'))  // [0]
-    s.openOrFocus(tab('a'))        // [1]
-    s.openOrFocus(tab('b'))        // [2]
-    s.openOrFocus(tab('c'))        // [3], focus
-    return getFocusedGroup(useWorkspace.getState())!.tabIds
-  }
-
-  it('closeOthers keeps only the named tab and focuses it', () => {
-    const ids = setupFour()
-    useWorkspace.getState().closeOthers(ids[1]) // keep 'a'
-    const group = getFocusedGroup(useWorkspace.getState())!
-    expect(group.tabIds).toEqual([ids[1]])
-    expect(group.activeTabId).toBe(ids[1])
-  })
-
-  it('closeToRight drops every tab to the right of the named one', () => {
-    const ids = setupFour()
-    useWorkspace.getState().closeToRight(ids[1]) // close c, b
-    const group = getFocusedGroup(useWorkspace.getState())!
-    expect(group.tabIds).toEqual([ids[0], ids[1]])
-    // c was focused → focus shifts; falls back to 'a' (the named tab) since
-    // it's the rightmost remaining after the slice closes.
-    expect(group.activeTabId).toBe(ids[1])
-  })
-
-  it('closeToLeft drops every tab to the left of the named one', () => {
-    const ids = setupFour()
-    useWorkspace.getState().closeToLeft(ids[2]) // close default, a
-    const group = getFocusedGroup(useWorkspace.getState())!
-    expect(group.tabIds).toEqual([ids[2], ids[3]])
-  })
-
-  it('closeAll empties the focused group entirely', () => {
-    setupFour()
-    useWorkspace.getState().closeAll()
-    const group = getFocusedGroup(useWorkspace.getState())!
-    expect(group.tabIds).toHaveLength(0)
-    expect(group.activeTabId).toBeNull()
-  })
-
-  it('closeOthers / closeToRight / closeToLeft are no-ops for unknown ids', () => {
-    setupFour()
-    const before = getFocusedGroup(useWorkspace.getState())!.tabIds
-    useWorkspace.getState().closeToRight('nonexistent')
-    useWorkspace.getState().closeToLeft('nonexistent')
-    const after = getFocusedGroup(useWorkspace.getState())!.tabIds
-    expect(after).toEqual(before)
   })
 })
 

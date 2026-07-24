@@ -2,49 +2,69 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
-  Code2,
-  Cpu,
   KeyRound,
+  LayoutGrid,
   Loader2,
   MessageSquare,
   Paperclip,
-  Sparkles,
-  type LucideIcon,
+  X,
 } from 'lucide-react'
 
-import { useWorkspaces } from '../contexts/WorkspacesContext'
+import { useWorkspaces } from '../contexts/workspaces-context'
 import { installHintFor } from '../components/workspace/agentInstall'
 import {
-  listAgentCredentials,
-  detectWorkspaceCredential,
   QuickChatError,
-  type SavedCredential,
+  type Workspace,
 } from '../components/workspace/api'
+import {
+  AgentLaunchDetails,
+  AgentLaunchSelectors,
+  type AgentLaunchSelectorsHandle,
+} from '../components/workspace/AgentLaunchControls'
+import { workspaceDisplayTitle } from '../components/workspace/display'
 import { useWorkspace } from '../tabs/store'
+import {
+  useAgentLaunchConfig,
+  useAgentLaunchPreferences,
+} from '../hooks/useAgentLaunchConfig'
+import { isWorkspaceAiAgent } from '../lib/agentRuntime'
 
-/** Agent runtimes with no login of their own — they need an injected AI config
- *  to start (claude/codex carry their own CLI login). Mirrors the backend's
- *  LOGINLESS_AGENTS; only these surface the credential picker. */
-const LOGINLESS_AGENTS = new Set(['opencode', 'pi'])
+export { resolveAgentRuntime as resolveChatAgent } from '../lib/agentRuntime'
+export {
+  formatContextWindow,
+  resolveAgentCredential as resolveChatCredential,
+  resolveAgentLaunchAiDetails as resolveQuickChatAiDetails,
+  resolveAgentLaunchCredentialSlug as resolveQuickChatCredentialSlug,
+} from '../hooks/useAgentLaunchConfig'
 
-/** Today's chat workspace tag — mirrors backend `todayChatTag` / `defaultTagFor`
- *  (`chat-<month><day>`, en-US short month) so the composer can find the
- *  workspace a send will reuse and detect its current credential. */
-function todayChatTag(): string {
-  const now = new Date()
-  const month = now.toLocaleString('en-US', { month: 'short' }).toLowerCase()
-  return `chat-${month}${now.getDate()}`
+function workspaceActivityMs(workspace: Pick<Workspace, 'createdAt' | 'sessions'>): number {
+  const sessionActivity = workspace.sessions
+    .map((session) => Date.parse(session.lastActiveAt))
+    .filter(Number.isFinite)
+  if (sessionActivity.length > 0) return Math.max(...sessionActivity)
+  const created = Date.parse(workspace.createdAt)
+  return Number.isFinite(created) ? created : 0
 }
 
-/** Glyph per agent CLI, for the runtime picker (claude/codex/opencode/pi). */
-const AGENT_ICONS: Record<string, LucideIcon> = {
-  claude: Sparkles,
-  codex: Cpu,
-  opencode: Code2,
-  pi: Bot,
+/** Resolve the visible global-composer target. Explicit selection wins, then
+ *  the persisted recent Chat workspace, then latest activity for upgrades. */
+export function resolveChatWorkspaceTarget(
+  workspaces: readonly Workspace[],
+  explicitWorkspaceId: string | null,
+  recentWorkspaceId: string | null,
+): Workspace | null {
+  const chats = workspaces.filter((workspace) => workspace.template === 'chat')
+  const explicit = explicitWorkspaceId
+    ? chats.find((workspace) => workspace.id === explicitWorkspaceId)
+    : undefined
+  if (explicit) return explicit
+  const recent = recentWorkspaceId
+    ? chats.find((workspace) => workspace.id === recentWorkspaceId)
+    : undefined
+  if (recent) return recent
+  return [...chats].sort((a, b) => workspaceActivityMs(b) - workspaceActivityMs(a))[0] ?? null
 }
 
 /**
@@ -54,161 +74,137 @@ const AGENT_ICONS: Record<string, LucideIcon> = {
  * session seeded with that message (the agent CLI opens already working on it),
  * and focuses into the session's terminal tab. No template/CLI pickers in the
  * way — the bottom row shows the workspace type (Chat) and a small runtime
- * picker (the four agent CLIs), defaulting to the workspace's default agent.
+ * picker for agent CLIs. Shell is not an agent runtime and is excluded here.
  */
-export function ChatLandingPage() {
+export function ChatLandingPage({ spec }: { spec: { params: { targetWsId?: string } } }) {
   const { t } = useTranslation()
-  const { quickChat, agents, workspaces } = useWorkspaces()
+  const { quickChat, agents, workspaces, defaultAgent, setDefaultAgent, openAgentConfig } = useWorkspaces()
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
+
+  // Targeted launch: the chat sidebar's Workspace row and per-workspace "+"
+  // route here with a targetWsId — "Ask Alice, but spawn the session in THIS
+  // workspace" rather than the recent Chat workspace. Same composer; the send
+  // just carries the target.
+  const targetWsId = spec.params.targetWsId
+  const targetWs = targetWsId ? workspaces.find((w) => w.id === targetWsId) : undefined
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+  const launchPreferences = useAgentLaunchPreferences()
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
+  const workspaceBoxRef = useRef<HTMLDivElement>(null)
+  const activeWorkspaceOptionRef = useRef<HTMLButtonElement>(null)
+  const selectedChatWorkspace = useMemo(
+    () => resolveChatWorkspaceTarget(
+      workspaces,
+      targetWsId ?? selectedWorkspaceId,
+      launchPreferences.recentChatWorkspaceId,
+    ),
+    [workspaces, targetWsId, selectedWorkspaceId, launchPreferences.recentChatWorkspaceId],
+  )
+  const workspaceTarget = targetWs ?? selectedChatWorkspace
+  const chatWorkspaceOptions = useMemo(
+    () => workspaces
+      .filter((workspace) => workspace.template === 'chat')
+      .sort((a, b) => workspaceActivityMs(b) - workspaceActivityMs(a)),
+    [workspaces],
+  )
 
   // The selectable agent runtimes = the agent CLIs (the bare shell has no agent
   // loop, so it can't be seeded with a first message).
-  const cliAgents = agents.filter((a) => a.id !== 'shell')
+  const cliAgents = agents.filter((a) => a.kind !== 'utility')
+  const targetCliAgents = workspaceTarget
+    ? cliAgents.filter((a) => workspaceTarget.agents.includes(a.id))
+    : cliAgents
 
   const [value, setValue] = useState('')
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
-  const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const agentBoxRef = useRef<HTMLDivElement>(null)
-
-  // Backend probes the host PATH and reports `installed` per agent. Treat a
-  // missing value as installed (older backend / don't gate on a stale shape).
-  const isInstalled = (a: { installed?: boolean }) => a.installed !== false
-  const anyInstalled = cliAgents.some(isInstalled)
-  // Whether the `/agents` fetch has actually landed. Before it does, `agents`
-  // is `[]` and `anyInstalled` is falsely false — which would flash the
-  // "nothing installed, go install something" nudge on every page load until
-  // the request resolves. The backend registers claude/codex/opencode/pi/shell
-  // unconditionally, so a loaded list always has ≥1 CLI agent; an empty
-  // `cliAgents` means "still loading" (or the fetch failed) — in both cases we
-  // must NOT assert that the host is missing its runtimes.
-  const agentsKnown = cliAgents.length > 0
-
-  // Default to the first INSTALLED CLI until the user picks one — so a fresh
-  // box that only has, say, codex doesn't silently default to a missing claude.
-  const firstInstalled = cliAgents.find(isInstalled)
-  const effectiveAgent = selectedAgent ?? firstInstalled?.id ?? cliAgents[0]?.id ?? null
-  const selectedInfo = cliAgents.find((a) => a.id === effectiveAgent) ?? null
-  const SelectedIcon = selectedInfo ? AGENT_ICONS[selectedInfo.id] : undefined
-  // Surface install guidance when the chosen runtime isn't on PATH.
-  const selectedMissing = selectedInfo != null && !isInstalled(selectedInfo)
+  const launchSelectorsRef = useRef<AgentLaunchSelectorsHandle>(null)
+  const credentialWorkspace = workspaceTarget
+  const launchConfig = useAgentLaunchConfig({
+    agents: targetCliAgents,
+    defaultAgent,
+    setDefaultAgent,
+    preferences: launchPreferences,
+    workspaceId: credentialWorkspace?.id ?? null,
+    hasWorkspace: credentialWorkspace !== null && credentialWorkspace !== undefined,
+  })
+  const effectiveAgent = launchConfig.effectiveAgent
+  const selectedInfo = launchConfig.selectedAgent
   const installHint = selectedInfo ? installHintFor(selectedInfo.id) : undefined
-
-  // ── Loginless-runtime credential picker (opencode/pi) ─────────────────────
-  // opencode/pi have no login of their own, so a quick-chat send must seed them
-  // with a vault credential. claude/codex skip all of this (own CLI login).
-  const needsCred = effectiveAgent !== null && LOGINLESS_AGENTS.has(effectiveAgent)
-  // The loginless-runtime credential set (null = not yet loaded). opencode and
-  // pi are both provider-agnostic and share one compatibility set (any wire), so
-  // a single preloaded list serves both — see the mount-time fetch below.
-  const [creds, setCreds] = useState<SavedCredential[] | null>(null)
-  // The cred the user explicitly picked (null = use the default below).
-  const [pickedCred, setPickedCred] = useState<string | null>(null)
-  // The cred today's chat workspace is already configured with, if it exists.
-  const [detectedCred, setDetectedCred] = useState<string | null>(null)
-  const [credMenuOpen, setCredMenuOpen] = useState(false)
-  const credBoxRef = useRef<HTMLDivElement>(null)
-
-  // Today's chat workspace (the one a send reuses), if already created.
-  const todaysChat = useMemo(
-    () => workspaces.find((w) => w.template === 'chat' && w.tag === todayChatTag()) ?? null,
-    [workspaces],
-  )
-
-  // Preload the loginless credential set ONCE on mount — NOT gated on the
-  // selected agent. Previously this fired only after the agents list resolved
-  // and the user landed on opencode/pi, so the dropdown's data was a second,
-  // late-starting request that visibly lagged behind the agent button (a
-  // request waterfall). Fetching at mount runs it in parallel with the agents
-  // load, so the picker is ready the instant opencode/pi is chosen. opencode and
-  // pi share the same compatibility (any configured wire), so one fetch covers
-  // both; claude/codex never show the picker.
-  useEffect(() => {
-    let live = true
-    listAgentCredentials('opencode')
-      .then((list) => { if (live) setCreds(list) })
-      .catch(() => { if (live) setCreds([]) })
-    return () => { live = false }
-  }, [])
-
-  // Detect today's workspace's current cred for this runtime (for the default
-  // selection + the overwrite notice). Only when the workspace already exists.
-  useEffect(() => {
-    if (!needsCred || effectiveAgent === null || todaysChat === null) {
-      setDetectedCred(null)
-      return
-    }
-    let live = true
-    detectWorkspaceCredential(todaysChat.id, effectiveAgent)
-      .then((r) => { if (live) setDetectedCred(r.slug) })
-      .catch(() => { if (live) setDetectedCred(null) })
-    return () => { live = false }
-  }, [needsCred, effectiveAgent, todaysChat])
-
-  const noCreds = needsCred && creds !== null && creds.length === 0
-  // Effective cred = explicit pick, else what the workspace already uses, else
-  // the first compatible one. Mirrors the backend's resolution order.
-  const effectiveCred =
-    pickedCred ??
-    (detectedCred && creds?.some((c) => c.slug === detectedCred) ? detectedCred : null) ??
-    creds?.[0]?.slug ??
-    null
-  const credInfo = creds?.find((c) => c.slug === effectiveCred) ?? null
-  // Warn when sending will overwrite the workspace's existing cred with a
-  // different one (only meaningful once today's workspace exists).
-  const willOverwrite =
-    needsCred && detectedCred !== null && effectiveCred !== null && effectiveCred !== detectedCred
-
-  useEffect(() => {
-    if (!credMenuOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (credBoxRef.current && !credBoxRef.current.contains(e.target as Node)) {
-        setCredMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [credMenuOpen])
 
   const goConfigureProvider = () => {
     openOrFocus({ kind: 'settings', params: { category: 'ai-provider' } })
   }
 
-  const canSend = value.trim().length > 0 && !launching && !noCreds
+  const adjustQuickChatAi = () => {
+    if (credentialWorkspace && isWorkspaceAiAgent(effectiveAgent)) {
+      openAgentConfig(credentialWorkspace.id, effectiveAgent, 'ai')
+      return
+    }
+    goConfigureProvider()
+  }
 
-  // Close the agent menu on an outside click.
+  // A missing runtime choice should open the picker, not leave a mysteriously
+  // disabled send button. submit() already handles that branch.
+  const canSend = value.trim().length > 0 && !launching && launchConfig.credentialSelectionReady
+  const effectiveTargetWorkspaceId = targetWsId ?? workspaceTarget?.id
+
   useEffect(() => {
-    if (!agentMenuOpen) return
+    if (!workspaceMenuOpen) return
     const onDown = (e: MouseEvent) => {
-      if (agentBoxRef.current && !agentBoxRef.current.contains(e.target as Node)) {
-        setAgentMenuOpen(false)
+      if (workspaceBoxRef.current && !workspaceBoxRef.current.contains(e.target as Node)) {
+        setWorkspaceMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [agentMenuOpen])
+  }, [workspaceMenuOpen])
+
+  // The picker opens upward from the composer. Keep the active option inside
+  // its own scroll viewport so a long Workspace history cannot push recent or
+  // currently selected targets beyond the top of the window.
+  useEffect(() => {
+    if (!workspaceMenuOpen) return
+    const frame = requestAnimationFrame(() => {
+      activeWorkspaceOptionRef.current?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [workspaceMenuOpen, workspaceTarget?.id])
 
   const submit = async () => {
     const prompt = value.trim()
     if (!prompt || launching) return
-    // A loginless runtime with no configured provider can't launch — send the
-    // user to set one up instead of spawning an agent that'll die immediately.
-    if (noCreds) {
-      goConfigureProvider()
+    if (!launchConfig.credentialSelectionReady) return
+    if (effectiveAgent === null) {
+      launchSelectorsRef.current?.openAgentMenu()
       return
     }
     setError(null)
     setLaunching(true)
     try {
+      const runtimeRow = await launchConfig.checkSelectedRuntime()
+      if (runtimeRow?.ready !== true) {
+        if (runtimeRow?.repairTarget === 'ai-provider' || launchConfig.needsProviderSetup) {
+          goConfigureProvider()
+          return
+        }
+        setError(runtimeRow?.message ?? t('chatLanding.runtimeNotReady'))
+        return
+      }
+      // A global OpenCode/Pi config is only a fallback when the user has not
+      // selected a vault credential for this launch. The provider pill is an
+      // explicit per-Workspace choice: always send it so the backend can write
+      // the selected provider/model before spawning the runtime.
       // On success this focuses the new session's terminal tab; the landing tab
       // stays open in the background, so clear it for next time.
-      await quickChat(
+      const workspaceId = await quickChat(
         prompt,
-        effectiveAgent ?? undefined,
-        needsCred ? (effectiveCred ?? undefined) : undefined,
+        effectiveAgent,
+        launchConfig.launchCredentialSlug,
+        effectiveTargetWorkspaceId,
       )
+      launchPreferences.adoptRecentChatWorkspace(workspaceId)
       setValue('')
     } catch (err) {
       // Backend says no compatible credential — bounce to the provider settings.
@@ -237,24 +233,55 @@ export function ChatLandingPage() {
   }
 
   return (
-    <div className="relative h-full w-full overflow-auto bg-bg flex flex-col items-center justify-center px-4 py-8 md:px-6 md:py-10">
+    <div className="relative h-full w-full overflow-auto bg-background flex flex-col items-center justify-center px-4 py-6 md:px-6 md:py-10">
       {/* Ask-Alice backdrop — full-bleed, responsive-only layers (gradient wash
           + faint grid). The #302 mock's %-positioned circle / diagonal bars were
           dropped: they drift on portrait and read as pixel-placed art, not a
           responsive surface. pointer-events-none so it never intercepts clicks. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-overlay to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-[38%] bg-gradient-to-t from-overlay-strong to-transparent" />
-        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(to_right,var(--color-text)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-text)_1px,transparent_1px)] [background-size:96px_96px]" />
+        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-accent to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-[38%] bg-gradient-to-t from-accent-strong to-transparent" />
+        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(to_right,var(--foreground)_1px,transparent_1px),linear-gradient(to_bottom,var(--foreground)_1px,transparent_1px)] [background-size:96px_96px]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-2xl flex flex-col gap-5">
+      <div className="relative z-10 w-full max-w-2xl flex flex-col gap-4 md:gap-5">
         <div className="text-center space-y-1.5">
-          <h1 className="text-xl md:text-2xl font-semibold text-text">{t('chatLanding.heading')}</h1>
-          <p className="text-sm text-text-muted">{t('chatLanding.subheading')}</p>
+          {targetWs ? (
+            <>
+              <h1 className="text-xl md:text-2xl font-semibold text-foreground">
+                {t('chatLanding.targetHeading')}
+              </h1>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 pl-2.5 pr-1.5 py-1 text-[12.5px] font-medium text-primary">
+                  <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                  {targetWs.tag}
+                  <button
+                    type="button"
+                    onClick={() => openOrFocus({ kind: 'chat-landing', params: {} })}
+                    aria-label={t('chatLanding.clearTarget')}
+                    title={t('chatLanding.clearTarget')}
+                    className="oa-icon-action ml-0.5 rounded-full p-0.5 text-primary/70 hover:text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-[19px] md:text-2xl font-semibold text-foreground leading-tight">{t('chatLanding.heading')}</h1>
+              <p className="text-[13px] md:text-sm text-muted-foreground leading-relaxed">{t('chatLanding.subheading')}</p>
+            </>
+          )}
         </div>
 
-        <div className="bg-bg-secondary/60 border border-border/60 rounded-2xl px-3 pt-3 pb-2 transition-colors focus-within:border-accent/50">
+        <div
+          className={`rounded-xl px-3 pb-2 pt-3 shadow-[0_18px_50px_-40px_var(--foreground)] transition-[border-color,box-shadow] md:rounded-2xl ${
+            targetWs
+              ? 'bg-primary/[0.04] border border-primary/45 ring-1 ring-primary/15 focus-within:border-primary/70'
+              : 'border border-border/80 bg-secondary/70 focus-within:border-primary/60 focus-within:shadow-[0_20px_55px_-38px_var(--primary)]'
+          }`}
+        >
           <textarea
             ref={textareaRef}
             value={value}
@@ -263,58 +290,55 @@ export function ChatLandingPage() {
             placeholder={t('chatLanding.placeholder')}
             rows={3}
             autoFocus
-            className="w-full bg-transparent resize-none outline-none text-text placeholder:text-text-muted/50 text-[15px] px-2 py-1.5 min-h-[72px] max-h-[40vh]"
+            className="w-full max-h-[40vh] min-h-[92px] resize-none bg-transparent px-2 py-1.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/70 md:min-h-[72px]"
           />
-          <div className="flex items-center justify-between px-1 pt-1">
-            <div className="flex items-center gap-2">
-              {/* Workspace type (Chat). Static — quick-chat always targets the chat template. */}
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-text-muted bg-bg-tertiary px-2 py-1 rounded-md">
-                <MessageSquare className="w-3 h-3" />
-                {t('chatLanding.workspaceType')}
-              </span>
-
-              {/* Agent runtime picker — one of the installed CLIs. */}
-              <div ref={agentBoxRef} className="relative">
+          <div className="flex flex-col gap-2 px-1 pt-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {/* Workspace target — recent by default, explicit when selected.
+                  Visible but non-blocking: users can see where the new Session
+                  will live without answering a chooser on every send. */}
+              <div ref={workspaceBoxRef} className="relative">
                 <button
                   type="button"
-                  onClick={() => setAgentMenuOpen((o) => !o)}
-                  disabled={cliAgents.length === 0}
+                  onClick={() => setWorkspaceMenuOpen((open) => !open)}
+                  disabled={chatWorkspaceOptions.length === 0 || targetWs !== undefined}
                   aria-haspopup="menu"
-                  aria-expanded={agentMenuOpen}
-                  aria-label={t('chatLanding.selectAgent')}
-                  className="inline-flex items-center gap-1.5 text-[11px] text-text-muted bg-bg-tertiary px-2 py-1 rounded-md transition-colors hover:text-text disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-expanded={workspaceMenuOpen}
+                  aria-label={t('chatLanding.selectWorkspace')}
+                  className="oa-pressable inline-flex min-h-8 max-w-[220px] items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-default"
                 >
-                  {SelectedIcon ? <SelectedIcon className="w-3 h-3" /> : null}
-                  {selectedInfo?.displayName ?? t('chatLanding.defaultAgent')}
-                  <ChevronDown className="w-3 h-3 opacity-60" />
+                  <MessageSquare className="w-3 h-3 shrink-0" />
+                  <span className="truncate">
+                    {workspaceTarget
+                      ? workspaceDisplayTitle(workspaceTarget)
+                      : t('chatLanding.newWorkspaceTarget')}
+                  </span>
+                  {chatWorkspaceOptions.length > 0 && targetWs === undefined && (
+                    <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
+                  )}
                 </button>
-                {agentMenuOpen && cliAgents.length > 0 && (
+                {workspaceMenuOpen && targetWs === undefined && chatWorkspaceOptions.length > 0 && (
                   <div
                     role="menu"
-                    className="absolute bottom-full left-0 mb-1 min-w-[170px] py-1 bg-bg-secondary border border-border/70 rounded-lg shadow-lg z-10"
+                    className="oa-popover-enter absolute bottom-full left-0 z-10 mb-1 max-h-[min(24rem,calc(100vh-8rem))] min-w-[220px] max-w-[320px] overflow-y-auto overscroll-contain rounded-lg border border-border/70 bg-secondary py-1 shadow-lg [scrollbar-gutter:stable]"
                   >
-                    {cliAgents.map((a) => {
-                      const Icon = AGENT_ICONS[a.id]
-                      const active = a.id === effectiveAgent
-                      const missing = !isInstalled(a)
+                    {chatWorkspaceOptions.map((workspace) => {
+                      const active = workspace.id === workspaceTarget?.id
                       return (
                         <button
-                          key={a.id}
+                          key={workspace.id}
+                          ref={active ? activeWorkspaceOptionRef : undefined}
                           type="button"
                           role="menuitem"
                           onClick={() => {
-                            setSelectedAgent(a.id)
-                            setAgentMenuOpen(false)
+                            setSelectedWorkspaceId(workspace.id)
+                            launchConfig.resetCredentialSelection()
+                            setWorkspaceMenuOpen(false)
                           }}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:bg-bg-tertiary ${active ? 'text-accent' : missing ? 'text-text-muted/60' : 'text-text'}`}
+                          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-muted ${active ? 'text-primary' : 'text-foreground'}`}
                         >
-                          {Icon ? <Icon className="w-3.5 h-3.5 shrink-0" /> : <span className="w-3.5 shrink-0" />}
-                          <span className="flex-1">{a.displayName}</span>
-                          {missing && (
-                            <span className="text-[10px] text-text-muted/70 shrink-0">
-                              {t('chatLanding.agentNotInstalled')}
-                            </span>
-                          )}
+                          <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate">{workspaceDisplayTitle(workspace)}</span>
                           {active && <Check className="w-3.5 h-3.5 shrink-0" />}
                         </button>
                       )
@@ -323,69 +347,19 @@ export function ChatLandingPage() {
                 )}
               </div>
 
-              {/* Credential picker — only for loginless runtimes (opencode/pi),
-                  which can't start without an injected provider. When none is
-                  configured, the pill becomes a shortcut to set one up. */}
-              {needsCred && noCreds && (
-                <button
-                  type="button"
-                  onClick={goConfigureProvider}
-                  className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md transition-colors hover:bg-amber-500/20"
-                >
-                  <KeyRound className="w-3 h-3" />
-                  {t('chatLanding.configureProvider')}
-                </button>
-              )}
-              {needsCred && !noCreds && creds && creds.length > 0 && (
-                <div ref={credBoxRef} className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setCredMenuOpen((o) => !o)}
-                    aria-haspopup="menu"
-                    aria-expanded={credMenuOpen}
-                    aria-label={t('chatLanding.selectCredential')}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-text-muted bg-bg-tertiary px-2 py-1 rounded-md transition-colors hover:text-text"
-                  >
-                    <KeyRound className="w-3 h-3" />
-                    {credInfo?.slug ?? t('chatLanding.selectCredential')}
-                    <ChevronDown className="w-3 h-3 opacity-60" />
-                  </button>
-                  {credMenuOpen && (
-                    <div
-                      role="menu"
-                      className="absolute bottom-full left-0 mb-1 min-w-[180px] py-1 bg-bg-secondary border border-border/70 rounded-lg shadow-lg z-10"
-                    >
-                      {creds.map((cr) => {
-                        const active = cr.slug === effectiveCred
-                        return (
-                          <button
-                            key={cr.slug}
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                              setPickedCred(cr.slug)
-                              setCredMenuOpen(false)
-                            }}
-                            className={`w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:bg-bg-tertiary ${active ? 'text-accent' : 'text-text'}`}
-                          >
-                            <span className="flex-1 truncate">{cr.slug}</span>
-                            <span className="text-[10px] text-text-muted/70 shrink-0">{cr.vendor}</span>
-                            {active && <Check className="w-3.5 h-3.5 shrink-0" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+              <AgentLaunchSelectors
+                ref={launchSelectorsRef}
+                config={launchConfig}
+                onConfigureProvider={goConfigureProvider}
+              />
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center justify-end gap-1.5">
               <button
                 type="button"
                 disabled
                 title={t('chatLanding.attachSoon')}
                 aria-label={t('chatLanding.attach')}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-muted-foreground/50 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Paperclip className="w-4 h-4" />
               </button>
@@ -395,38 +369,39 @@ export function ChatLandingPage() {
                 disabled={!canSend}
                 title={t('chatLanding.send')}
                 aria-label={t('chatLanding.send')}
-                className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent text-white transition-colors hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="oa-icon-action w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {launching ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
               </button>
             </div>
           </div>
+          <AgentLaunchDetails
+            config={launchConfig}
+            hasWorkspaceTarget={credentialWorkspace !== null && credentialWorkspace !== undefined}
+            onAdjustAi={adjustQuickChatAi}
+            className="mx-1 mt-2 border-t border-border/50 px-1 pt-2"
+          />
         </div>
 
-        {error !== null && <div className="text-[12px] text-red px-1">{error}</div>}
+        {error !== null && <div className="text-[12px] text-destructive px-1">{error}</div>}
 
-        {/* Runtime install guidance — the conversion nudge. Shows when no agent
-            CLI is installed at all, or the selected one is missing from PATH.
-            Detection is a hint, not a gate, so send stays enabled (PATH probing
-            can be wrong); this just tells the user what to install. Gated on
-            `agentsKnown` so it never flashes during the initial /agents load. */}
-        {agentsKnown && !anyInstalled ? (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-[12px] space-y-1.5">
-            <div className="font-medium text-text">{t('chatLanding.noAgentsTitle')}</div>
-            <p className="text-text-muted">{t('chatLanding.noAgentsBody')}</p>
-            <code className="block font-mono text-[11px] text-text bg-bg-tertiary rounded px-2 py-1 select-all">
-              {installHintFor('claude')!.cmd}
-            </code>
+        {/* Runtime guidance. A normal packaged build should expose managed Pi;
+            no-runtime is now an abnormal setup/debug state, not a prompt to
+            make a fresh user install a CLI. */}
+        {launchConfig.agentsKnown && !launchConfig.anyInstalled ? (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] space-y-1.5">
+            <div className="font-medium text-foreground">{t('chatLanding.noAgentsTitle')}</div>
+            <p className="text-muted-foreground">{t('chatLanding.noAgentsBody')}</p>
           </div>
-        ) : selectedMissing && selectedInfo ? (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-[12px] space-y-1.5">
-            <p className="text-text-muted">
+        ) : launchConfig.selectedMissing && selectedInfo ? (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] space-y-1.5">
+            <p className="text-muted-foreground">
               {t('chatLanding.agentMissing', { name: selectedInfo.displayName })}
             </p>
             {installHint?.cmd && (
               <div className="flex items-center gap-2">
-                <span className="text-text-muted/70">{t('chatLanding.installLabel')}</span>
-                <code className="font-mono text-[11px] text-text bg-bg-tertiary rounded px-2 py-1 select-all">
+                <span className="text-muted-foreground">{t('chatLanding.installLabel')}</span>
+                <code className="font-mono text-[11px] text-foreground bg-muted rounded px-2 py-1 select-all">
                   {installHint.cmd}
                 </code>
               </div>
@@ -436,7 +411,7 @@ export function ChatLandingPage() {
                 href={installHint.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block text-accent hover:underline"
+                className="inline-block text-primary hover:underline"
               >
                 {t('chatLanding.installDocs')} ↗
               </a>
@@ -446,15 +421,15 @@ export function ChatLandingPage() {
 
         {/* Loginless runtime has no provider configured — the conversion
             dead-end. Guide the user to set one up instead of a silent failure. */}
-        {noCreds && selectedInfo && (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-[12px] space-y-1.5">
-            <p className="text-text-muted">
+        {launchConfig.noCredentials && selectedInfo && (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] space-y-1.5">
+            <p className="text-muted-foreground">
               {t('chatLanding.noCredBody', { name: selectedInfo.displayName })}
             </p>
             <button
               type="button"
               onClick={goConfigureProvider}
-              className="inline-flex items-center gap-1.5 text-accent hover:underline"
+              className="inline-flex items-center gap-1.5 text-primary hover:underline"
             >
               <KeyRound className="w-3 h-3" />
               {t('chatLanding.configureProvider')} ↗
@@ -464,25 +439,34 @@ export function ChatLandingPage() {
 
         {/* The selected cred differs from the one today's workspace already uses
             — sending switches it. A notice, not a block (the user chose it). */}
-        {willOverwrite && credInfo && (
-          <div className="rounded-lg border border-border/60 bg-bg-secondary/60 px-3 py-2 text-[12px] text-text-muted">
-            {t('chatLanding.credOverwrite', { from: detectedCred ?? '', to: credInfo.slug })}
+        {launchConfig.willOverwriteCredential && launchConfig.credential && (
+          <div className="rounded-lg border border-border/60 bg-secondary/60 px-3 py-2 text-[12px] text-muted-foreground">
+            {t('chatLanding.credOverwrite', {
+              from: launchConfig.detectedCredential?.slug ?? '',
+              to: launchConfig.credential.slug,
+            })}
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 px-1">
-          <span className="text-[11px] text-text-muted/70">{t('chatLanding.examplesLabel')}</span>
-          {[t('chatLanding.ex1'), t('chatLanding.ex2'), t('chatLanding.ex3')].map((ex) => (
-            <button
-              key={ex}
-              type="button"
-              onClick={() => useExample(ex)}
-              disabled={launching}
-              className="text-[12px] text-text-muted bg-bg-secondary/60 border border-border/50 rounded-full px-3 py-1 transition-colors hover:border-accent/40 hover:text-text disabled:opacity-40"
-            >
-              {ex}
-            </button>
-          ))}
+        <div className="relative -mx-4 md:mx-0">
+          <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto px-4 pb-1 pr-14 md:flex-wrap md:overflow-visible md:px-1 md:pr-1 md:pb-0">
+            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{t('chatLanding.examplesLabel')}</span>
+            {[t('chatLanding.ex1'), t('chatLanding.ex2'), t('chatLanding.ex3')].map((ex) => (
+              <button
+                key={ex}
+                type="button"
+                onClick={() => useExample(ex)}
+                disabled={launching}
+                className="min-h-8 shrink-0 rounded-full border border-border/70 bg-secondary/75 px-3 py-1 text-[12px] text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary hover:text-foreground disabled:opacity-40"
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-bg via-bg/90 to-transparent md:hidden"
+          />
         </div>
       </div>
     </div>

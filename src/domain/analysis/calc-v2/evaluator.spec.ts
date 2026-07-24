@@ -178,10 +178,18 @@ describe('calc-v2 evaluator', () => {
   })
 
   it('caps panel size', async () => {
-    const entries = Array.from({ length: 51 }, (_, i) => `"k${i}": 1`).join(', ')
+    const entries = Array.from({ length: 201 }, (_, i) => `"k${i}": 1`).join(', ')
     const r = await run(`{ ${entries} }`, mockBars([1, 2, 3]))
     expect(r.error?.kind).toBe('type')
-    expect(r.error?.message).toMatch(/at most 50/)
+    expect(r.error?.message).toMatch(/at most 200/)
+  })
+
+  it('dates opt-in: attaches the per-source date axis', async () => {
+    const svc = mockBars([1, 2, 3, 4, 5])
+    const off = await runScript(`s = bars("x","1d",asset="equity")\ns.close[-1]`, { barService: svc })
+    expect(off.dates).toBeUndefined() // off by default
+    const on = await runScript(`s = bars("x","1d",asset="equity")\ns.close[-1]`, { barService: svc }, 4, { withDates: true })
+    expect(on.dates?.['yfinance|AAPL']).toEqual(['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05'])
   })
 
   it('a panel entry can be an indicator record (nested)', async () => {

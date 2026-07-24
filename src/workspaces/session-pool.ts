@@ -4,9 +4,15 @@ import type { CliAdapter } from './cli-adapter.js';
 import type { Logger } from './logger.js';
 import {
   PersistentSession,
+  type SessionAttachResult,
+  type SessionControllerClaim,
   type PersistentSessionOptions,
 } from './persistent-session.js';
 import type { TranscriptWatcher } from './transcript-watcher.js';
+import {
+  terminalViewAttributesEqual,
+  type TerminalViewAttributes,
+} from './terminal-view-attributes.js';
 
 /**
  * Per-attach context the factory uses to compose a fresh PersistentSession.
@@ -61,7 +67,7 @@ export interface LiveSessionInfo {
 }
 
 /**
- * Owns every live PTY, keyed by the record id (a stable uuid the
+ * Owns every live PTY, keyed by the record id (a stable launcher id the
  * SessionRegistry pre-allocates). One PersistentSession per id; one
  * attached WebSocket per session (second attach kicks the first). PTYs
  * exist only between spawn and dispose — restart wipes the pool but the
@@ -71,6 +77,7 @@ export class SessionPool {
   private readonly sessions = new Map<string, PersistentSession>();
   private readonly byWs = new Map<string, Set<string>>();
   private readonly adapterFor = new Map<string, CliAdapter>();
+  private terminalViewAttributes: TerminalViewAttributes | null = null;
 
   constructor(
     private readonly configFactory: SessionConfigFactory,
@@ -87,6 +94,10 @@ export class SessionPool {
       wsId,
       recordId,
       name: factoryCtx.recordName,
+      ...(this.terminalViewAttributes
+        ? { initialTerminalViewAttributes: this.terminalViewAttributes }
+        : {}),
+      onTerminalViewAttributes: (attributes) => this.setTerminalViewAttributes(attributes),
       onDisposed: () => this.onSessionDisposed(wsId, recordId),
     });
 
@@ -121,11 +132,11 @@ export class SessionPool {
     cols: number,
     rows: number,
     since: number | undefined,
-  ): boolean {
+    claim?: SessionControllerClaim,
+  ): SessionAttachResult | { readonly ok: false; readonly reason: 'missing' } {
     const session = this.sessions.get(recordId);
-    if (!session) return false;
-    session.attach(ws, cols, rows, since);
-    return true;
+    if (!session) return { ok: false, reason: 'missing' };
+    return session.attach(ws, cols, rows, since, claim);
   }
 
   get(recordId: string): PersistentSession | undefined {
@@ -160,6 +171,19 @@ export class SessionPool {
 
   size(): number {
     return this.sessions.size;
+  }
+
+  /** App-global renderer truth used by every hidden headless terminal. */
+  setTerminalViewAttributes(attributes: TerminalViewAttributes): boolean {
+    if (
+      this.terminalViewAttributes
+      && terminalViewAttributesEqual(this.terminalViewAttributes, attributes)
+    ) return false;
+    this.terminalViewAttributes = attributes;
+    for (const session of this.sessions.values()) {
+      session.setTerminalViewAttributes(attributes);
+    }
+    return true;
   }
 
   /** Dispose ONE session by id. Returns false if not found. */

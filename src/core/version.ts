@@ -30,13 +30,25 @@ let _packageJson: PackageJson | null = null
 
 function readPackageJson(): PackageJson {
   if (_packageJson !== null) return _packageJson
-  try {
-    const here = fileURLToPath(import.meta.url)
-    const repoRoot = resolve(dirname(here), '..', '..')
-    _packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf-8')) as PackageJson
-  } catch {
-    _packageJson = {}
+  const here = fileURLToPath(import.meta.url)
+  const candidates = [
+    process.env['OPENALICE_APP_HOME'] && resolve(process.env['OPENALICE_APP_HOME'], 'package.json'),
+    resolve(process.cwd(), 'package.json'),
+    resolve(dirname(here), '..', '..', 'package.json'),
+  ].filter((value): value is string => Boolean(value))
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf-8')) as PackageJson
+      if (typeof parsed.version === 'string') {
+        _packageJson = parsed
+        return _packageJson
+      }
+    } catch {
+      // Packaged Alice/UTA and source execution have different import.meta.url
+      // roots; continue through the explicit app home, cwd, and source fallbacks.
+    }
   }
+  _packageJson = {}
   return _packageJson
 }
 

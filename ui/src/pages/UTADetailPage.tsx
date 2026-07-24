@@ -1,13 +1,13 @@
-import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ViewSpec } from '../tabs/types'
 import { api } from '../api'
 import { getIntlLocale } from '../lib/intl'
-import type { UTAConfig, BrokerPreset, AccountInfo, Position, BrokerHealthInfo, UTASnapshotSummary, EquityCurvePoint, OrderHistoryEntry, OrderHistoryStatus, TradeHistoryEntry } from '../api/types'
+import type { UTAConfig, BrokerPreset, AccountInfo, SubAccountRef, Position, BrokerHealthInfo, UTASnapshotSummary, EquityCurvePoint, OrderHistoryEntry, OrderHistoryStatus, TradeHistoryEntry } from '../api/types'
 import { useTradingConfig } from '../hooks/useTradingConfig'
 import { useAccountHealth } from '../hooks/useAccountHealth'
 import { PageHeader } from '../components/PageHeader'
-import { EmptyState } from '../components/StateViews'
+import { EmptyState, Skeleton } from '../components/StateViews'
 import { ReconnectButton } from '../components/ReconnectButton'
 import { Toggle } from '../components/Toggle'
 import { HealthBadge } from '../components/uta/HealthBadge'
@@ -35,6 +35,11 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
   const [account, setAccount] = useState<AccountInfo | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
   const [orders, setOrders] = useState<unknown[]>([])
+  // Sub-accounts (wallets). Empty/length-1 for ordinary brokers; >1 for
+  // separate-wallet venues (Binance: spot / derivatives). `selectedSub`
+  // undefined ⇒ the aggregate view across all wallets.
+  const [subAccounts, setSubAccounts] = useState<SubAccountRef[]>([])
+  const [selectedSub, setSelectedSub] = useState<string | undefined>(undefined)
   const [snapshots, setSnapshots] = useState<UTASnapshotSummary[]>([])
   const [editing, setEditing] = useState(false)
   const [orderMode, setOrderMode] = useState<OrderEntryMode | null>(null)
@@ -50,24 +55,49 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
   const preset = useMemo<BrokerPreset | undefined>(() => presets.find(p => p.id === uta?.presetId), [presets, uta])
   const health: BrokerHealthInfo | undefined = id ? healthMap[id] : undefined
 
-  // Live polling — account/positions/orders refresh every 15s.
+  // Sub-account discovery — once per UTA. A failure (or a single-wallet
+  // broker) leaves the list empty, so the selector simply never renders.
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    api.trading.utaSubAccounts(id)
+      .then(r => { if (!cancelled) setSubAccounts(r.subAccounts ?? []) })
+      .catch(() => { if (!cancelled) setSubAccounts([]) })
+    setSelectedSub(undefined)  // reset to aggregate when switching UTAs
+    return () => { cancelled = true }
+  }, [id])
+
+  // Live polling — account/positions/orders refresh every 15s. Account +
+  // positions scope to the selected wallet (undefined ⇒ aggregate); orders
+  // are not wallet-scoped (the venue order list is account-wide).
+  //
+  // Latest-wins guard: scoped CCXT reads are slow (multi-wallet venues do
+  // several round-trips), so switching the sub-account pill twice quickly
+  // leaves two fetches in flight. Without this, the slower (older) response
+  // can land last and paint the WRONG wallet's data under the selected pill.
+  // Each call claims a sequence number; a response only applies if it's still
+  // the newest in flight.
+  const reqSeq = useRef(0)
   const refreshLive = useCallback(async () => {
     if (!id) return
+    const seq = ++reqSeq.current
     setDataError(null)
     try {
       const [acct, pos, ord] = await Promise.all([
-        api.trading.utaAccount(id).catch(() => null),
-        api.trading.utaPositions(id).catch(() => ({ positions: [] as Position[] })),
+        api.trading.utaAccount(id, selectedSub).catch(() => null),
+        api.trading.utaPositions(id, selectedSub).catch(() => ({ positions: [] as Position[] })),
         api.trading.utaOrders(id).catch(() => ({ orders: [] as unknown[] })),
       ])
+      if (seq !== reqSeq.current) return  // superseded by a newer refresh — discard
       setAccount(acct)
       setPositions(pos.positions)
       setOrders(ord.orders)
       setLastUpdated(new Date())
     } catch (err) {
+      if (seq !== reqSeq.current) return
       setDataError(err instanceof Error ? err.message : String(err))
     }
-  }, [id])
+  }, [id, selectedSub])
 
   // Snapshots refresh more slowly (60s); same data feeds the NAV chart and
   // the 24h-delta anchor — no extra fetches needed.
@@ -150,7 +180,7 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
       }))
   }, [snapshots, id])
 
-  if (tc.loading) return <Shell title="Loading…" />
+  if (tc.loading) return <Shell title={id ?? 'UTA'}><UTADetailMainSkeleton /></Shell>
   if (!id) return <Shell title="UTA not specified" />
   if (!uta) {
     return (
@@ -175,10 +205,10 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
         live={{ lastUpdated }}
         description={
           <>
-            <Link to="/trading" className="text-text-muted hover:text-text">← Trading</Link>
-            <span className="mx-2 text-text-muted/40">·</span>
-            <span className="font-mono text-text-muted">{uta.id}</span>
-            <span className="mx-2 text-text-muted/40">·</span>
+            <Link to="/trading" className="text-muted-foreground hover:text-foreground">← Trading</Link>
+            <span className="mx-2 text-muted-foreground/40">·</span>
+            <span className="font-mono text-muted-foreground">{uta.id}</span>
+            <span className="mx-2 text-muted-foreground/40">·</span>
             <HealthBadge health={health} size="sm" />
           </>
         }
@@ -202,7 +232,7 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
             <button
               onClick={() => setOrderMode({ kind: 'place' })}
               disabled={isDisabled}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-bg hover:bg-accent/90 disabled:opacity-40 transition-all active:scale-[0.98] cursor-pointer"
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-all active:scale-[0.98] cursor-pointer"
             >
               + Place Order
             </button>
@@ -213,7 +243,7 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
       <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
         <div className="max-w-[1240px] mx-auto">
           {dataError && (
-            <div className="rounded-md border border-red/30 bg-red/5 px-3 py-2 text-[12px] text-red mb-4">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive mb-4">
               Failed to load live data: {dataError}
             </div>
           )}
@@ -223,11 +253,26 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
               screens it collapses to one column with the Account panel
               first — it's the summary. */}
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
-            <div className="lg:order-2 lg:sticky lg:top-4 self-start min-w-0">
-              <AccountPanel account={account} positions={positions} delta24h={delta24h} clock={clock} />
+            <div className="lg:order-2 lg:sticky lg:top-4 self-start min-w-0 space-y-3">
+              {subAccounts.length > 1 && (
+                <SubAccountSelector
+                  subAccounts={subAccounts}
+                  selected={selectedSub}
+                  onSelect={(sub) => {
+                    // Drop the previous wallet's numbers immediately so the
+                    // panel shows "Loading account info…" during the (slow,
+                    // multi-round-trip) scoped read instead of briefly painting
+                    // the old scope's net-liquidation under the new pill.
+                    setAccount(null)
+                    setSelectedSub(sub)
+                  }}
+                />
+              )}
+              <AccountPanel account={account} positions={positions} delta24h={delta24h} clock={clock} connecting={health?.connecting ?? false} />
             </div>
 
             <div className="lg:order-1 min-w-0 space-y-5">
+              {!lastUpdated ? <UTADetailMainSkeleton /> : <>
               {curvePoints.length >= 2 && (
                 <EquityCurve
                   points={curvePoints}
@@ -248,6 +293,7 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
               />
 
               <OrdersArea utaId={id} openOrders={orders} />
+              </>}
             </div>
           </div>
         </div>
@@ -272,6 +318,8 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
         <OrderEntryDialog
           utaId={uta.id}
           mode={orderMode}
+          subAccounts={subAccounts}
+          defaultSubAccountId={selectedSub}
           onClose={() => setOrderMode(null)}
           onPushComplete={() => { void refreshLive() }}
         />
@@ -285,10 +333,36 @@ export function UTADetailPage({ spec }: UTADetailPageProps) {
 function Shell({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <PageHeader title={title} description={<Link to="/trading" className="text-text-muted hover:text-text">← Trading</Link>} />
+      <PageHeader title={title} description={<Link to="/trading" className="text-muted-foreground hover:text-foreground">← Trading</Link>} />
       <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
         <div className="max-w-[720px] mx-auto">{children}</div>
       </div>
+    </div>
+  )
+}
+
+// ==================== Sub-account selector ====================
+
+/** Segmented control for separate-wallet venues (Binance: spot / derivatives).
+ *  "All" is the aggregate (selected = undefined); each pill scopes the account
+ *  + positions view to one wallet. Only rendered when a UTA spans >1 wallet. */
+function SubAccountSelector({ subAccounts, selected, onSelect }: {
+  subAccounts: SubAccountRef[]
+  selected: string | undefined
+  onSelect: (id: string | undefined) => void
+}) {
+  const pill = (active: boolean) =>
+    `px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+      active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+    }`
+  return (
+    <div className="flex items-center gap-1 p-1 rounded-lg bg-surface border border-border">
+      <button type="button" className={pill(selected === undefined)} onClick={() => onSelect(undefined)}>All</button>
+      {subAccounts.map(s => (
+        <button key={s.id} type="button" className={pill(selected === s.id)} onClick={() => onSelect(s.id)} title={`${s.kind} wallet`}>
+          {s.label}
+        </button>
+      ))}
     </div>
   )
 }
@@ -308,19 +382,60 @@ function sumFinite(values: number[]): number {
  * fabricated zero. (Live examples: Alpaca has no realizedPnL; CCXT/okx has
  * realizedPnL but no buyingPower.)
  */
-function AccountPanel({ account, positions, delta24h, clock }: {
+/** Cold-start placeholder for the UTA-detail main column (curve + positions +
+ *  orders), shown until the first live read lands — instead of a blank pane or
+ *  a misleading "No open positions" while the (sometimes slow) broker read runs. */
+function UTADetailMainSkeleton() {
+  return (
+    <div className="space-y-5" aria-hidden="true">
+      <Skeleton className="h-[220px] w-full rounded-lg" />
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border bg-secondary">
+          <Skeleton className="h-3 w-28" />
+        </div>
+        <div className="divide-y divide-border">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-16 ml-auto" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccountPanel({ account, positions, delta24h, clock, connecting }: {
   account: AccountInfo | null
   positions: Position[]
   delta24h: Delta24h | null
   clock: MarketClockState
+  connecting?: boolean
 }) {
   if (!account) {
     return (
-      <div className="border border-border rounded-lg bg-bg-secondary p-4">
+      <div className="border border-border rounded-lg bg-secondary p-4">
         {clock != null && (
           <div className="text-[12px] mb-3"><MarketClockChip clock={clock} /></div>
         )}
-        <p className="text-[13px] text-text-muted">Loading account info…</p>
+        {/* During the initial broker connect, say so explicitly — "connecting"
+            reads as progress, where a bare "Loading…" that lingers 30s reads
+            as a stall. Skeleton rows below stand in for the metric list so the
+            panel has shape instead of a single line of text. */}
+        <p className={`text-[12px] mb-3.5 ${connecting ? 'text-primary' : 'text-muted-foreground'}`}>
+          {connecting ? 'Connecting to broker…' : 'Loading account info…'}
+        </p>
+        <div className="space-y-3.5" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3 w-14" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -329,9 +444,18 @@ function AccountPanel({ account, positions, delta24h, clock }: {
   const netLiq = Number(account.netLiquidation)
   const unrealized = Number(account.unrealizedPnL)
 
-  // Positions value = Σ marketValue of what the page already fetched — NOT
-  // netLiq − cash, which would bake in margin / quote-currency noise.
-  const positionsValue = sumFinite(positions.map(p => Number(p.marketValue)))
+  // Positions value = non-cash equity = netLiq − cash, so Cash + Positions
+  // Value ≡ Net Liquidation by construction. netLiq is now the sum of every
+  // wallet asset (stablecoins + priced holdings across spot/futures wallets,
+  // ANG-111); cash is the stablecoin slice, so the remainder is exactly the
+  // value of non-stablecoin holdings. Summing positions[].marketValue does NOT
+  // reconcile — it counts perp NOTIONAL (not equity) and omits non-stablecoin
+  // futures-wallet collateral. Fall back to the row sum only if netLiq/cash are
+  // unavailable.
+  const cashVal = Number(account.totalCashValue)
+  const positionsValue = Number.isFinite(netLiq) && Number.isFinite(cashVal)
+    ? netLiq - cashVal
+    : sumFinite(positions.map(p => Number(p.marketValue)))
   const utilizationPct = Number.isFinite(netLiq) && netLiq > 0
     ? (positionsValue / netLiq) * 100
     : null
@@ -350,7 +474,7 @@ function AccountPanel({ account, positions, delta24h, clock }: {
     : null
 
   return (
-    <div className="border border-border rounded-lg bg-bg-secondary p-4">
+    <div className="border border-border rounded-lg bg-secondary p-4">
       {clock != null && (
         <div className="text-[12px] mb-3"><MarketClockChip clock={clock} /></div>
       )}
@@ -373,12 +497,12 @@ function AccountPanel({ account, positions, delta24h, clock }: {
         {utilizationPct != null && (
           <div className="py-2">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[11px] uppercase tracking-wide text-text-muted">Utilization</span>
-              <span className="text-[13px] font-medium tabular-nums text-text">{utilizationPct.toFixed(1)}%</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Utilization</span>
+              <span className="text-[13px] font-medium tabular-nums text-foreground">{utilizationPct.toFixed(1)}%</span>
             </div>
-            <div className="mt-1.5 h-[2px] rounded-full bg-bg-tertiary overflow-hidden">
+            <div className="mt-1.5 h-[2px] rounded-full bg-muted overflow-hidden">
               <div
-                className="h-full rounded-full bg-accent"
+                className="h-full rounded-full bg-primary"
                 style={{ width: `${Math.min(100, Math.max(0, utilizationPct))}%` }}
               />
             </div>
@@ -422,10 +546,10 @@ function AccountRow({ label, value, sign }: {
   value: React.ReactNode
   sign?: 'up' | 'down' | 'flat'
 }) {
-  const valueColor = sign === 'up' ? 'text-green' : sign === 'down' ? 'text-red' : 'text-text'
+  const valueColor = sign === 'up' ? 'text-success' : sign === 'down' ? 'text-destructive' : 'text-foreground'
   return (
     <div className="flex items-baseline justify-between gap-3 py-2">
-      <span className="text-[11px] uppercase tracking-wide text-text-muted">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className={`text-[13px] font-medium tabular-nums text-right ${valueColor}`}>{value}</span>
     </div>
   )
@@ -437,7 +561,7 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   return (
     <section>
       <div className="flex items-center justify-between mb-2.5">
-        <h3 className="text-[13px] font-semibold text-text-muted uppercase tracking-wide">{title}</h3>
+        <h3 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wide">{title}</h3>
         {action}
       </div>
       {children}
@@ -468,7 +592,7 @@ function PositionsSection({ positions, onCloseClick }: {
   if (positions.length === 0) {
     return (
       <Section title="Positions (0)">
-        <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-text-muted">
+        <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-muted-foreground">
           No open positions.
         </div>
       </Section>
@@ -482,7 +606,7 @@ function PositionsSection({ positions, onCloseClick }: {
       <div className="border border-border rounded-lg overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
-            <tr className="bg-bg-secondary text-text-muted text-left">
+            <tr className="bg-secondary text-muted-foreground text-left">
               <th className="px-3 py-2 font-medium">Contract</th>
               <th className="px-3 py-2 font-medium">Side</th>
               <th className="px-3 py-2 font-medium text-right">Qty</th>
@@ -501,20 +625,20 @@ function PositionsSection({ positions, onCloseClick }: {
 
               return (
                 <Fragment key={g.class}>
-                  <tr className="bg-bg-tertiary/40 border-t border-border">
+                  <tr className="bg-muted/40 border-t border-border">
                     <td colSpan={cols} className="px-3 py-1.5">
                       <div className="flex items-center justify-between text-[12px]">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-text">{assetClassLabel(g.class)}</span>
-                          <span className="text-text-muted/60">·</span>
-                          <span className="text-text-muted">{g.positions.length} position{g.positions.length > 1 ? 's' : ''}</span>
+                          <span className="font-semibold text-foreground">{assetClassLabel(g.class)}</span>
+                          <span className="text-muted-foreground/60">·</span>
+                          <span className="text-muted-foreground">{g.positions.length} position{g.positions.length > 1 ? 's' : ''}</span>
                           {!groupCcy && (
-                            <span className="text-text-muted/60 text-[11px]">mixed ccy</span>
+                            <span className="text-muted-foreground/60 text-[11px]">mixed ccy</span>
                           )}
                         </div>
                         <div className="flex items-center gap-3 tabular-nums">
-                          <span className="text-text">{groupCcy ? fmt(sumValue, groupCcy) : `$${sumValue.toLocaleString(getIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
-                          <span className={sumPnl >= 0 ? 'text-green' : 'text-red'}>
+                          <span className="text-foreground">{groupCcy ? fmt(sumValue, groupCcy) : `$${sumValue.toLocaleString(getIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                          <span className={sumPnl >= 0 ? 'text-success' : 'text-destructive'}>
                             {groupCcy ? fmtPnl(sumPnl, groupCcy) : `${sumPnl >= 0 ? '+' : ''}${sumPnl.toLocaleString(getIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                           </span>
                         </div>
@@ -541,28 +665,28 @@ function PositionRow({ position: p, onClose }: { position: Position; onClose: ()
   const pct = cost > 0 ? (pnl / cost) * 100 : 0
 
   return (
-    <tr className="border-t border-border hover:bg-bg-tertiary/30 transition-colors">
+    <tr className="border-t border-border hover:bg-muted/30 transition-colors">
       <td className="px-3 py-2">
         <ContractCell contract={p.contract} />
       </td>
       <td className="px-3 py-2">
-        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${p.side === 'long' ? 'bg-green/15 text-green' : 'bg-red/15 text-red'}`}>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${p.side === 'long' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'}`}>
           {p.side}
         </span>
       </td>
-      <td className="px-3 py-2 text-right text-text tabular-nums">{fmtNum(p.quantity)}</td>
-      <td className="px-3 py-2 text-right text-text-muted tabular-nums">
-        {fmt(p.avgCost, ccy)} <span className="text-text-muted/40">→</span> <span className="text-text">{fmt(p.marketPrice, ccy)}</span>
+      <td className="px-3 py-2 text-right text-foreground tabular-nums">{fmtNum(p.quantity)}</td>
+      <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
+        {fmt(p.avgCost, ccy)} <span className="text-muted-foreground/40">→</span> <span className="text-foreground">{fmt(p.marketPrice, ccy)}</span>
       </td>
-      <td className="px-3 py-2 text-right text-text tabular-nums">{fmt(p.marketValue, ccy)}</td>
-      <td className={`px-3 py-2 text-right font-medium tabular-nums ${pnl >= 0 ? 'text-green' : 'text-red'}`}>
+      <td className="px-3 py-2 text-right text-foreground tabular-nums">{fmt(p.marketValue, ccy)}</td>
+      <td className={`px-3 py-2 text-right font-medium tabular-nums ${pnl >= 0 ? 'text-success' : 'text-destructive'}`}>
         <div>{fmtPnl(pnl, ccy)}</div>
         <div className="text-[11px] font-normal opacity-80">{fmtPctSigned(pct)}</div>
       </td>
       <td className="px-3 py-2 text-right">
         <button
           onClick={onClose}
-          className="text-[11px] text-text-muted hover:text-red transition-colors"
+          className="text-[11px] text-muted-foreground hover:text-destructive transition-colors"
         >
           Close
         </button>
@@ -576,7 +700,7 @@ function PositionRow({ position: p, onClose }: { position: Position; onClose: ()
 type MarketClockState = { isOpen: boolean; nextOpen?: string; nextClose?: string } | 'error' | null
 
 function MarketClockChip({ clock }: { clock: NonNullable<MarketClockState> }) {
-  let dotClass = 'bg-green'
+  let dotClass = 'bg-success'
   let label = '24/7'
 
   if (clock !== 'error') {
@@ -591,7 +715,7 @@ function MarketClockChip({ clock }: { clock: NonNullable<MarketClockState> }) {
         label = 'Market Open'
       }
     } else {
-      dotClass = 'bg-text-muted/50'
+      dotClass = 'bg-muted-foreground/50'
       const opens = clock.nextOpen ? new Date(clock.nextOpen) : null
       if (opens && !Number.isNaN(opens.getTime())) {
         const mins = Math.max(0, Math.round((opens.getTime() - Date.now()) / 60_000))
@@ -605,7 +729,7 @@ function MarketClockChip({ clock }: { clock: NonNullable<MarketClockState> }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-text-muted">
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-muted-foreground">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} aria-hidden />
       {label}
     </span>
@@ -669,8 +793,8 @@ function OrdersArea({ utaId, openOrders }: { utaId: string; openOrders: unknown[
               onClick={() => setTab(t.id)}
               className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
                 tab === t.id
-                  ? 'bg-accent/15 text-accent font-medium'
-                  : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
+                  ? 'bg-primary/15 text-primary font-medium'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               {t.label}
@@ -690,7 +814,7 @@ function OpenOrdersTable({ orders }: { orders: unknown[] }) {
   const rows = orders as OpenOrderRow[]
   if (rows.length === 0) {
     return (
-      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-text-muted">
+      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-muted-foreground">
         No open orders.
       </div>
     )
@@ -699,7 +823,7 @@ function OpenOrdersTable({ orders }: { orders: unknown[] }) {
     <div className="border border-border rounded-lg overflow-x-auto">
       <table className="w-full text-[13px]">
         <thead>
-          <tr className="bg-bg-secondary text-text-muted text-left">
+          <tr className="bg-secondary text-muted-foreground text-left">
             <th className="px-3 py-2 font-medium">Order ID</th>
             <th className="px-3 py-2 font-medium">Contract</th>
             <th className="px-3 py-2 font-medium">Action</th>
@@ -712,16 +836,16 @@ function OpenOrdersTable({ orders }: { orders: unknown[] }) {
         <tbody>
           {rows.map((o, i) => (
             <tr key={i} className="border-t border-border">
-              <td className="px-3 py-2 font-mono text-text-muted text-[11px]">{String(o.orderId ?? '—')}</td>
-              <td className="px-3 py-2 font-mono text-text" title={o.contract?.aliceId}>
+              <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{String(o.orderId ?? '—')}</td>
+              <td className="px-3 py-2 font-mono text-foreground" title={o.contract?.aliceId}>
                 {o.contract?.symbol ?? o.contract?.localSymbol ?? o.contract?.aliceId ?? '?'}
               </td>
-              <td className={`px-3 py-2 font-medium ${o.order?.action === 'BUY' ? 'text-green' : o.order?.action === 'SELL' ? 'text-red' : 'text-text'}`}>{o.order?.action ?? '—'}</td>
-              <td className="px-3 py-2 text-text-muted">{o.order?.orderType ?? '—'}</td>
-              <td className="px-3 py-2 text-right text-text tabular-nums">{String(o.order?.totalQuantity ?? '')}</td>
-              <td className="px-3 py-2 text-right text-text-muted tabular-nums">{o.order?.lmtPrice != null && !isUnsetDecimal(o.order.lmtPrice) ? String(o.order.lmtPrice) : '—'}</td>
+              <td className={`px-3 py-2 font-medium ${o.order?.action === 'BUY' ? 'text-success' : o.order?.action === 'SELL' ? 'text-destructive' : 'text-foreground'}`}>{o.order?.action ?? '—'}</td>
+              <td className="px-3 py-2 text-muted-foreground">{o.order?.orderType ?? '—'}</td>
+              <td className="px-3 py-2 text-right text-foreground tabular-nums">{String(o.order?.totalQuantity ?? '')}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">{o.order?.lmtPrice != null && !isUnsetDecimal(o.order.lmtPrice) ? String(o.order.lmtPrice) : '—'}</td>
               <td className="px-3 py-2">
-                <span className="text-[11px] text-text-muted">{o.orderState?.status ?? 'Unknown'}</span>
+                <span className="text-[11px] text-muted-foreground">{o.orderState?.status ?? 'Unknown'}</span>
               </td>
             </tr>
           ))}
@@ -734,16 +858,16 @@ function OpenOrdersTable({ orders }: { orders: unknown[] }) {
 // ==================== Order History tab ====================
 
 const ORDER_STATUS_STYLES: Record<OrderHistoryStatus, string> = {
-  filled: 'bg-green/15 text-green',
-  cancelled: 'bg-bg-tertiary text-text-muted',
-  rejected: 'bg-red/15 text-red',
-  'user-rejected': 'bg-red/15 text-red',
-  submitted: 'bg-accent/15 text-accent',
+  filled: 'bg-success/15 text-success',
+  cancelled: 'bg-muted text-muted-foreground',
+  rejected: 'bg-destructive/15 text-destructive',
+  'user-rejected': 'bg-destructive/15 text-destructive',
+  submitted: 'bg-primary/15 text-primary',
 }
 
 function OrderStatusBadge({ status }: { status: OrderHistoryStatus }) {
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ORDER_STATUS_STYLES[status] ?? 'bg-bg-tertiary text-text-muted'}`}>
+    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ORDER_STATUS_STYLES[status] ?? 'bg-muted text-muted-foreground'}`}>
       {status}
     </span>
   )
@@ -751,7 +875,7 @@ function OrderStatusBadge({ status }: { status: OrderHistoryStatus }) {
 
 function SideBadge({ side }: { side: 'BUY' | 'SELL' }) {
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${side === 'BUY' ? 'bg-green/15 text-green' : 'bg-red/15 text-red'}`}>
+    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${side === 'BUY' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'}`}>
       {side}
     </span>
   )
@@ -759,7 +883,7 @@ function SideBadge({ side }: { side: 'BUY' | 'SELL' }) {
 
 function SourceChip({ label }: { label: string }) {
   return (
-    <span className="text-[10px] px-1.5 rounded bg-bg-tertiary text-text-muted">
+    <span className="text-[10px] px-1.5 rounded bg-muted text-muted-foreground">
       {label}
     </span>
   )
@@ -770,14 +894,14 @@ function OrderHistoryTable({ orders }: { orders: OrderHistoryEntry[] | null }) {
 
   if (orders == null) {
     return (
-      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-text-muted">
+      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-muted-foreground">
         Loading order history…
       </div>
     )
   }
   if (orders.length === 0) {
     return (
-      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-text-muted">
+      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-muted-foreground">
         No order history yet.
       </div>
     )
@@ -786,7 +910,7 @@ function OrderHistoryTable({ orders }: { orders: OrderHistoryEntry[] | null }) {
     <div className="border border-border rounded-lg overflow-x-auto">
       <table className="w-full text-[13px]">
         <thead>
-          <tr className="bg-bg-secondary text-text-muted text-left">
+          <tr className="bg-secondary text-muted-foreground text-left">
             <th className="px-3 py-2 font-medium">Time</th>
             <th className="px-3 py-2 font-medium">Contract</th>
             <th className="px-3 py-2 font-medium">Side</th>
@@ -801,16 +925,16 @@ function OrderHistoryTable({ orders }: { orders: OrderHistoryEntry[] | null }) {
           {orders.map((o, i) => (
             <Fragment key={`${o.commitHash}-${i}`}>
               <tr
-                className="border-t border-border hover:bg-bg-tertiary/30 transition-colors cursor-pointer"
+                className="border-t border-border hover:bg-muted/30 transition-colors cursor-pointer"
                 onClick={() => setExpanded(prev => prev === i ? null : i)}
               >
-                <td className="px-3 py-2 text-text-muted tabular-nums whitespace-nowrap">{formatHistoryTime(o.timestamp)}</td>
+                <td className="px-3 py-2 text-muted-foreground tabular-nums whitespace-nowrap">{formatHistoryTime(o.timestamp)}</td>
                 <td className="px-3 py-2"><ContractCell contract={o.contract} /></td>
                 <td className="px-3 py-2"><SideBadge side={o.side} /></td>
-                <td className="px-3 py-2 text-text-muted">{o.orderType ?? '—'}</td>
-                <td className="px-3 py-2 text-right text-text tabular-nums">{o.quantity != null ? fmtNum(o.quantity) : '—'}</td>
-                <td className="px-3 py-2 text-right text-text-muted tabular-nums">{o.limitPrice ?? '—'}</td>
-                <td className="px-3 py-2 text-right text-text tabular-nums">
+                <td className="px-3 py-2 text-muted-foreground">{o.orderType ?? '—'}</td>
+                <td className="px-3 py-2 text-right text-foreground tabular-nums">{o.quantity != null ? fmtNum(o.quantity) : '—'}</td>
+                <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">{o.limitPrice ?? '—'}</td>
+                <td className="px-3 py-2 text-right text-foreground tabular-nums">
                   {o.avgFillPrice ? `${o.avgFillPrice}${o.filledQty ? ` × ${o.filledQty}` : ''}` : '—'}
                 </td>
                 <td className="px-3 py-2">
@@ -821,12 +945,12 @@ function OrderHistoryTable({ orders }: { orders: OrderHistoryEntry[] | null }) {
                 </td>
               </tr>
               {expanded === i && (
-                <tr className="border-t border-border bg-bg-tertiary/20">
-                  <td colSpan={8} className="px-3 py-2 text-[11px] text-text-muted">
+                <tr className="border-t border-border bg-muted/20">
+                  <td colSpan={8} className="px-3 py-2 text-[11px] text-muted-foreground">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                       <span className="font-mono">{o.commitHash}</span>
                       <span>{o.message}</span>
-                      {o.error && <span className="text-red">{o.error}</span>}
+                      {o.error && <span className="text-destructive">{o.error}</span>}
                       {o.resolvedAt && <span>resolved {formatHistoryTime(o.resolvedAt)}</span>}
                     </div>
                   </td>
@@ -845,14 +969,14 @@ function OrderHistoryTable({ orders }: { orders: OrderHistoryEntry[] | null }) {
 function TradeHistoryTable({ trades }: { trades: TradeHistoryEntry[] | null }) {
   if (trades == null) {
     return (
-      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-text-muted">
+      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-muted-foreground">
         Loading trade history…
       </div>
     )
   }
   if (trades.length === 0) {
     return (
-      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-text-muted">
+      <div className="border border-border rounded-lg px-4 py-3 text-[12px] text-muted-foreground">
         No trades yet.
       </div>
     )
@@ -861,7 +985,7 @@ function TradeHistoryTable({ trades }: { trades: TradeHistoryEntry[] | null }) {
     <div className="border border-border rounded-lg overflow-x-auto">
       <table className="w-full text-[13px]">
         <thead>
-          <tr className="bg-bg-secondary text-text-muted text-left">
+          <tr className="bg-secondary text-muted-foreground text-left">
             <th className="px-3 py-2 font-medium">Time</th>
             <th className="px-3 py-2 font-medium">Contract</th>
             <th className="px-3 py-2 font-medium">Side</th>
@@ -873,13 +997,13 @@ function TradeHistoryTable({ trades }: { trades: TradeHistoryEntry[] | null }) {
         </thead>
         <tbody>
           {trades.map((t, i) => (
-            <tr key={`${t.commitHash}-${i}`} className="border-t border-border hover:bg-bg-tertiary/30 transition-colors">
-              <td className="px-3 py-2 text-text-muted tabular-nums whitespace-nowrap">{formatHistoryTime(t.timestamp)}</td>
+            <tr key={`${t.commitHash}-${i}`} className="border-t border-border hover:bg-muted/30 transition-colors">
+              <td className="px-3 py-2 text-muted-foreground tabular-nums whitespace-nowrap">{formatHistoryTime(t.timestamp)}</td>
               <td className="px-3 py-2"><ContractCell contract={t.contract} /></td>
               <td className="px-3 py-2"><SideBadge side={t.side} /></td>
-              <td className="px-3 py-2 text-right text-text tabular-nums">{fmtNum(t.quantity)}</td>
-              <td className="px-3 py-2 text-right text-text tabular-nums">{t.price}</td>
-              <td className="px-3 py-2 text-right text-text tabular-nums">{fmt(t.value, t.contract.currency)}</td>
+              <td className="px-3 py-2 text-right text-foreground tabular-nums">{fmtNum(t.quantity)}</td>
+              <td className="px-3 py-2 text-right text-foreground tabular-nums">{t.price}</td>
+              <td className="px-3 py-2 text-right text-foreground tabular-nums">{fmt(t.value, t.contract.currency)}</td>
               <td className="px-3 py-2 text-right">
                 {t.source !== 'order' && (
                   <SourceChip label={t.source === 'external' ? 'External' : 'Reconcile'} />

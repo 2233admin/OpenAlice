@@ -18,6 +18,7 @@ import * as pty from 'node-pty';
 
 import { PersistentSession, type PersistentSessionOptions } from './persistent-session.js';
 import type { Logger } from './logger.js';
+import type { TerminalViewAttributes } from './terminal-view-attributes.js';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 
@@ -86,6 +87,18 @@ function makeOptions(over: Partial<PersistentSessionOptions> = {}): PersistentSe
   };
 }
 
+function terminalViewAttributes(mode: 'dark' | 'light'): TerminalViewAttributes {
+  return {
+    foreground: mode === 'dark' ? [223, 225, 230] : [28, 42, 65],
+    background: mode === 'dark' ? [11, 12, 14] : [251, 250, 246],
+    cursor: [35, 185, 154],
+    ansi: Array.from({ length: 256 }, (_, index) => [index, index, index]),
+    colorSchemeMode: mode,
+    cursorStyle: 'block',
+    cursorBlink: true,
+  };
+}
+
 describe('PersistentSession backpressure / socket-drop deadlock', () => {
   let term: ReturnType<typeof makeFakeTerm>;
 
@@ -149,6 +162,175 @@ describe('PersistentSession backpressure / socket-drop deadlock', () => {
 
     expect(term.pause).not.toHaveBeenCalled();
     expect(term.resume).not.toHaveBeenCalled();
+
+    session.dispose('test');
+  });
+
+  it('writes browser stdin binary frames to the PTY byte-for-byte', () => {
+    const session = new PersistentSession(makeOptions());
+    const ws = new FakeWs();
+    session.attach(ws as never, 80, 24, undefined);
+
+    const input = Buffer.from('，。\n', 'utf8');
+    ws.emit('message', input, true);
+
+    expect(term.write).toHaveBeenCalledTimes(1);
+    const written = term.write.mock.calls[0]?.[0];
+    expect(Buffer.isBuffer(written)).toBe(true);
+    expect(Buffer.compare(written as Buffer, input)).toBe(0);
+
+    session.dispose('test');
+  });
+
+  it('answers terminal capability queries while no renderer is attached', () => {
+    const session = new PersistentSession(makeOptions({ command: ['opencode'] }));
+    const terminalQuery = Buffer.from('\u001b[6n');
+    term.emitData(terminalQuery);
+
+    const ws = new FakeWs();
+    session.attach(ws as never, 80, 24, undefined);
+
+    expect(term.write).toHaveBeenCalledOnce();
+    expect(term.write).toHaveBeenCalledWith('\u001b[1;1R');
+
+    session.dispose('test');
+  });
+
+  it('leaves terminal query replies to an attached renderer', () => {
+    const session = new PersistentSession(makeOptions({ command: ['opencode'] }));
+    const ws = new FakeWs();
+    const terminalQuery = Buffer.from('\u001b[6n');
+    const rendererReply = Buffer.from('\u001b[24;80R');
+    session.attach(ws as never, 80, 24, undefined);
+    term.write.mockClear();
+    ws.send.mockImplementation((data: unknown, optsOrCb?: unknown, cb?: unknown) => {
+      const callback = typeof optsOrCb === 'function' ? optsOrCb : cb;
+      if (Buffer.isBuffer(data) && data.equals(terminalQuery)) {
+        ws.emit('message', rendererReply, true);
+      }
+      if (typeof callback === 'function') callback(undefined);
+    });
+
+    term.emitData(terminalQuery);
+
+    expect(term.write).toHaveBeenCalledOnce();
+    expect(term.write).toHaveBeenCalledWith(rendererReply);
+
+    session.dispose('test');
+  });
+
+  it('pushes mode 2031 theme flips only while the subscribed TUI is hidden', () => {
+    const session = new PersistentSession(makeOptions({
+      initialTerminalViewAttributes: terminalViewAttributes('dark'),
+    }));
+    term.emitData(Buffer.from('\x1b[?2031h'));
+    term.write.mockClear();
+
+    session.setTerminalViewAttributes(terminalViewAttributes('light'));
+    expect(term.write).toHaveBeenCalledWith('\x1b[?997;2n');
+
+    const ws = new FakeWs();
+    session.attach(ws as never, 80, 24, undefined);
+    term.write.mockClear();
+    session.setTerminalViewAttributes(terminalViewAttributes('dark'));
+    expect(term.write).not.toHaveBeenCalled();
+
+    session.dispose('test');
+  });
+
+  it('uses a compact current-screen snapshot for cold attach', () => {
+    const session = new PersistentSession(makeOptions());
+    const raw = Buffer.from('stale frame\x1b[2J\x1b[Hcurrent frame');
+    term.emitData(raw);
+
+    const ws = new FakeWs();
+    session.attach(ws as never, 80, 24, undefined);
+
+    const binaryFrames = ws.send.mock.calls
+      .map(([data]) => data)
+      .filter((data): data is Buffer => Buffer.isBuffer(data));
+    expect(binaryFrames).toHaveLength(1);
+    expect(binaryFrames[0]?.toString('utf8')).toContain('current frame');
+    expect(binaryFrames[0]?.toString('utf8')).not.toContain('stale frame');
+
+    session.dispose('test');
+  });
+
+  it('keeps raw byte replay for hot attach cursors', () => {
+    const session = new PersistentSession(makeOptions());
+    const raw = Buffer.from('raw hot attach\x1b[6n');
+    term.emitData(raw);
+
+    const ws = new FakeWs();
+    session.attach(ws as never, 80, 24, 0);
+
+    const binaryFrames = ws.send.mock.calls
+      .map(([data]) => data)
+      .filter((data): data is Buffer => Buffer.isBuffer(data));
+    expect(binaryFrames).toEqual([raw]);
+
+    session.dispose('test');
+  });
+});
+
+describe('PersistentSession controller lease', () => {
+  let term: ReturnType<typeof makeFakeTerm>;
+
+  beforeEach(() => {
+    term = makeFakeTerm();
+    mockSpawn.mockReturnValue(term as unknown as pty.IPty);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects a second controller without kicking the current controller', () => {
+    const session = new PersistentSession(makeOptions());
+    const ws1 = new FakeWs();
+    const ws2 = new FakeWs();
+
+    const first = session.attach(ws1 as never, 80, 24, undefined, {
+      controllerId: 'web:tab-a',
+      controllerKind: 'web',
+    });
+    expect(first.ok).toBe(true);
+
+    const second = session.attach(ws2 as never, 80, 24, undefined, {
+      controllerId: 'web:tab-b',
+      controllerKind: 'web',
+    });
+
+    expect(second).toEqual({
+      ok: false,
+      reason: 'locked',
+      owner: { id: 'web:tab-a', kind: 'web' },
+    });
+    expect(ws1.close).not.toHaveBeenCalled();
+    expect(ws2.close).toHaveBeenCalledWith(4409, 'session locked by another controller');
+
+    session.dispose('test');
+  });
+
+  it('allows an explicit takeover and kicks the previous controller', () => {
+    const session = new PersistentSession(makeOptions());
+    const ws1 = new FakeWs();
+    const ws2 = new FakeWs();
+
+    expect(session.attach(ws1 as never, 80, 24, undefined, {
+      controllerId: 'web:tab-a',
+      controllerKind: 'web',
+    }).ok).toBe(true);
+
+    const takeover = session.attach(ws2 as never, 80, 24, undefined, {
+      controllerId: 'telegram:chat-1',
+      controllerKind: 'telegram',
+      takeover: true,
+    });
+
+    expect(takeover.ok).toBe(true);
+    expect(ws1.close).toHaveBeenCalledWith(4001, 'kicked by new attach');
+    expect(ws2.close).not.toHaveBeenCalled();
 
     session.dispose('test');
   });

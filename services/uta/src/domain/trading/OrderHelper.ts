@@ -95,7 +95,7 @@ export const OrderHelper = {
     const out: Record<string, unknown> = { ...order }
     for (const field of SENTINEL_DECIMAL_FIELDS) {
       const v = out[field]
-      if (v instanceof Decimal && v.equals(UNSET_DECIMAL)) {
+      if (Decimal.isDecimal(v) && v.equals(UNSET_DECIMAL)) {
         delete out[field]
       }
     }

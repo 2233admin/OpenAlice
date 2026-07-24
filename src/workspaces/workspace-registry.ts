@@ -83,6 +83,10 @@ export class WorkspaceRegistry {
     return this.byId.get(id);
   }
 
+  hasId(id: string): boolean {
+    return this.byId.has(id);
+  }
+
   hasTag(tag: string): boolean {
     return this.tagsInUse.has(tag);
   }
@@ -96,7 +100,13 @@ export class WorkspaceRegistry {
     }
     this.byId.set(ws.id, ws);
     this.tagsInUse.add(ws.tag);
-    await this.flush();
+    try {
+      await this.flush();
+    } catch (error) {
+      this.byId.delete(ws.id);
+      this.tagsInUse.delete(ws.tag);
+      throw error;
+    }
   }
 
   async remove(id: string): Promise<WorkspaceMeta | undefined> {

@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { reloadOnHotUpdate } from '../lib/hmr'
+
+reloadOnHotUpdate('live/inbox-selection')
 
 /**
  * Client-side selection state for the Inbox. Lives outside `ViewSpec` so

@@ -45,7 +45,7 @@ function toHistoryContract(contract: Contract | undefined): HistoryContract {
 
 function decStr(value: Decimal | undefined | null): string | undefined {
   if (value == null) return undefined
-  const d = value instanceof Decimal ? value : new Decimal(String(value))
+  const d = Decimal.isDecimal(value) ? value : new Decimal(String(value))
   if (d.equals(UNSET_DECIMAL)) return undefined
   return d.toFixed()
 }

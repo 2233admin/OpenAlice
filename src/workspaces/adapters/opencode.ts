@@ -1,15 +1,67 @@
 import { execFile } from 'node:child_process';
-import { rm } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { CliAdapter, OnDiskSession, SpawnContext, WorkspaceAiCred } from '../cli-adapter.js';
+import { isModelReasoningEffort } from '../../ai-providers/model-semantics.js';
 import { readWorkspaceFile, writeWorkspaceFile } from '../file-service.js';
+import type { HeadlessOutputEvent } from '../headless-output.js';
+import { resetOwnedJsonConfig, writeOwnedJsonConfig } from './owned-json-config.js';
 
 const execFileAsync = promisify(execFile);
 
 const OPENCODE_CONFIG_PATH = 'opencode.json';
+const OPENCODE_TUI_CONFIG_PATH = 'tui.json';
+const OPENCODE_TUI_CONFIGC_PATH = 'tui.jsonc';
+const OPENCODE_BINDING_STATE_PATH = '.opencode/openalice-provider.json';
 const OPENCODE_PROVIDER_NAME = 'workspace';
+const OPENCODE_SYSTEM_THEME = 'system';
+const OPENCODE_OWNED_PATHS = [
+  ['$schema'],
+  ['provider', OPENCODE_PROVIDER_NAME],
+  ['model'],
+] as const;
+const DEFAULT_OUTPUT_TOKENS = 16_384;
+
+function modelEffortOptions(cred: WorkspaceAiCred): Record<string, unknown> | null {
+  const effort = cred.reasoningEffort;
+  if (!effort) return null;
+  if (cred.wireShape === 'anthropic') {
+    if (effort === 'none') return { thinking: { type: 'disabled' } };
+    // Current Claude adaptive models require the thinking mode alongside
+    // output effort. Other Anthropic-compatible providers such as GLM expose
+    // effort directly and can reject Claude-specific thinking objects.
+    const id = cred.model?.toLowerCase() ?? '';
+    return id.includes('claude') || id.includes('fable')
+      ? { thinking: { type: 'adaptive' }, effort }
+      : { effort };
+  }
+  if (cred.wireShape === 'google-generative-ai') {
+    return { thinkingConfig: { includeThoughts: effort !== 'none', thinkingLevel: effort } };
+  }
+  return { reasoningEffort: effort };
+}
+
+function readModelEffort(
+  options: Record<string, unknown>,
+  wireShape: NonNullable<WorkspaceAiCred['wireShape']>,
+): WorkspaceAiCred['reasoningEffort'] {
+  if (wireShape === 'anthropic') {
+    const thinking = options['thinking'];
+    if (thinking && typeof thinking === 'object' && (thinking as Record<string, unknown>)['type'] === 'disabled') {
+      return 'none';
+    }
+    return isModelReasoningEffort(options['effort']) ? options['effort'] : undefined;
+  }
+  if (wireShape === 'google-generative-ai') {
+    const thinking = options['thinkingConfig'];
+    if (!thinking || typeof thinking !== 'object') return undefined;
+    const level = (thinking as Record<string, unknown>)['thinkingLevel'];
+    return isModelReasoningEffort(level) ? level : undefined;
+  }
+  return isModelReasoningEffort(options['reasoningEffort']) ? options['reasoningEffort'] : undefined;
+}
 // opencode's `@ai-sdk/openai-compatible` SDK is statically bundled into the
 // binary (no runtime `npm install`) and speaks `/v1/chat/completions` — the
 // right shape for OpenAI-compatible + Chinese gateways (DeepSeek/Qwen/Kimi/
@@ -18,6 +70,63 @@ const OPENCODE_PROVIDER_NAME = 'workspace';
 // `@ai-sdk/anthropic` (also bundled) — deferred until there's a real case.
 const OPENCODE_SDK_NPM = '@ai-sdk/openai-compatible';
 
+function positiveNumber(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function parseJsonRecord(raw: string | null): Record<string, unknown> | null {
+  if (raw === null) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureOpenCodeTuiConfigExcluded(cwd: string): Promise<void> {
+  // OpenAlice workspaces are Git repositories, but adapter tests and external
+  // callers may prepare a plain directory. Do not manufacture a partial .git.
+  try {
+    if (!statSync(join(cwd, '.git')).isDirectory()) return;
+  } catch {
+    return;
+  }
+  const path = '.git/info/exclude';
+  const current = await readWorkspaceFile(cwd, path) ?? '';
+  if (current.split(/\r?\n/).includes(OPENCODE_TUI_CONFIG_PATH)) return;
+  const separator = current.length === 0 || current.endsWith('\n') ? '' : '\n';
+  await writeWorkspaceFile(cwd, path, `${current}${separator}${OPENCODE_TUI_CONFIG_PATH}\n`);
+}
+
+/**
+ * Select OpenCode's native terminal-derived theme for OpenAlice workspaces.
+ * The dedicated tui.json layer is supported by OpenCode 1.16+ and has higher
+ * precedence than global TUI settings. Existing native project configuration,
+ * including the legacy opencode.json theme that OpenCode migrates itself,
+ * remains user-owned.
+ */
+export async function syncOpenCodeWorkspaceTheme(cwd: string): Promise<boolean> {
+  await ensureOpenCodeTuiConfigExcluded(cwd);
+
+  // A JSONC project file is user-owned. Avoid creating a competing tui.json
+  // because OpenCode accepts both and their same-directory ordering is native.
+  if (await readWorkspaceFile(cwd, OPENCODE_TUI_CONFIGC_PATH) !== null) return false;
+
+  const tui = parseJsonRecord(await readWorkspaceFile(cwd, OPENCODE_TUI_CONFIG_PATH));
+  if (tui === null || Object.prototype.hasOwnProperty.call(tui, 'theme')) return false;
+
+  const legacy = parseJsonRecord(await readWorkspaceFile(cwd, OPENCODE_CONFIG_PATH));
+  if (legacy === null || Object.prototype.hasOwnProperty.call(legacy, 'theme')) return false;
+
+  tui['$schema'] ??= 'https://opencode.ai/tui.json';
+  tui['theme'] = OPENCODE_SYSTEM_THEME;
+  await writeWorkspaceFile(cwd, OPENCODE_TUI_CONFIG_PATH, `${JSON.stringify(tui, null, 2)}\n`);
+  return true;
+}
+
 /**
  * opencode (github.com/anomalyco/opencode, formerly sst/opencode; MIT, by
  * Dax Raad / SST). Provider-agnostic open-source agent CLI — the third adapter
@@ -25,25 +134,27 @@ const OPENCODE_SDK_NPM = '@ai-sdk/openai-compatible';
  * surface and (b) reach the Chat-Completions ecosystem (CN + local models)
  * that codex's Responses-only lock can't touch.
  *
- * Contract VERIFIED against opencode 1.16.0 on macOS (`opencode --help` +
- * an `opencode debug config` injection smoke, 2026-06):
+ * Contract VERIFIED against opencode 1.16.0 on macOS and the Docker-pinned
+ * 1.17.18 (`opencode --help`, provider config, headless resume, CLI tool calls,
+ * and live traderhub data; 2026-07):
  *
- *   - MCP injection: opencode reads config from many layers; the strongest
- *     knob a launcher controls is `OPENCODE_CONFIG_CONTENT` (inline JSON in
- *     env, precedence below only MDM-managed config, deep-MERGED with the
- *     workspace's own `opencode.json`). We inject OpenAlice's two MCP servers
- *     there in `composeEnv` — the `mcp` block merges in without clobbering the
- *     `provider` block written to `opencode.json`. This is the cleaner analogue
- *     of codex's per-spawn `-c mcp_servers...` flags. Verified via
- *     `opencode debug config`: the file's `provider` and the env's `mcp` block
- *     both land in the resolved config (disjoint top-level keys; remeda
- *     mergeDeep), and `$schema` passes opencode's strict top-level-key check.
+ *   - Tool access: OpenAlice tools are exposed through the injected
+ *     `alice*` / `traderhub` CLI shims, not opencode's native MCP config.
+ *     We intentionally do not set `OPENCODE_CONFIG_CONTENT`: leaving opencode's
+ *     native config surface alone avoids hidden app-mode ports and keeps the
+ *     workspace tooling path identical to pi/shell/headless CLI usage.
  *
  *   - Provider override: `opencode.json` `provider.<name>` with a custom
  *     `baseURL` + `apiKey` + a top-level default `model = "<provider>/<id>"`.
  *     Key written directly into the workspace file (same trust model as codex's
- *     `.codex/env.json`). Reset deletes the file → opencode falls back to its
- *     global auth.
+ *     `.codex/env.json`). OpenAlice owns only `provider.workspace`, the matching
+ *     top-level model, and its schema marker; unrelated opencode config survives
+ *     both writes and reset.
+ *
+ *   - Terminal appearance: the shared runtime lifecycle selects OpenCode's
+ *     native `system` TUI theme through `tui.json` only when the project has
+ *     no explicit TUI/legacy theme config. OpenCode then derives its palette
+ *     from the terminal and handles mode 2031 updates itself.
  *
  *   - Hermetic spawn: `OPENCODE_DISABLE_{MODELS_FETCH,AUTOUPDATE,LSP_DOWNLOAD}`
  *     pinned in `composeEnv` so a trading workbench never phones home at spawn
@@ -85,10 +196,16 @@ export const opencodeAdapter: CliAdapter = {
     headless: true,
   },
 
+  lifecycle: {
+    async prepareWorkspace({ cwd }): Promise<void> {
+      await syncOpenCodeWorkspaceTheme(cwd);
+    },
+  },
+
   composeCommand(_base: readonly string[], ctx: SpawnContext): readonly string[] {
-    // MCP is injected via OPENCODE_CONFIG_CONTENT (composeEnv), not flags, so
-    // the command head is just the binary + a resume flag (if any). Resume is a
-    // top-level flag on the bare TUI — verified against opencode 1.16.0.
+    // Tool access is via the injected CLI shims, so the command head is just
+    // the binary + a resume flag (if any). Resume is a top-level flag on the
+    // bare TUI — verified against opencode 1.16.0.
     const head = ['opencode'];
     if (ctx.resume === undefined) {
       // Quick-chat seed: `opencode --prompt <text>` opens the TUI seeded with
@@ -103,12 +220,15 @@ export const opencodeAdapter: CliAdapter = {
   },
 
   // Headless: `opencode run <prompt>` is non-interactive and exits at the turn
-  // boundary. MCP rides OPENCODE_CONFIG_CONTENT (composeEnv, same as
-  // interactive) so the agent reaches inbox_push; prompt is the trailing
-  // positional after a `--` end-of-options terminator (so a `-`-leading prompt
-  // isn't read as a flag).
-  composeHeadlessCommand(_base: readonly string[], _ctx: SpawnContext, prompt: string): readonly string[] {
-    return ['opencode', 'run', '--format', 'json', '--', prompt];
+  // boundary. Tool access is via the injected CLI shims and bundled skills;
+  // prompt is the trailing positional after a `--` end-of-options terminator
+  // (so a `-`-leading prompt isn't read as a flag).
+  composeHeadlessCommand(_base: readonly string[], ctx: SpawnContext, prompt: string): readonly string[] {
+    return [
+      'opencode', 'run', '--format', 'json',
+      ...(ctx.resume === 'last' ? ['--continue'] : ctx.resume ? ['--session', ctx.resume.sessionId] : []),
+      '--', prompt,
+    ];
   },
 
   // `opencode run --format json` events carry a top-level `sessionID`
@@ -123,6 +243,85 @@ export const opencodeAdapter: CliAdapter = {
     }
   },
 
+  extractHeadlessAssistantText(line: string): string | null {
+    try {
+      const evt = JSON.parse(line) as Record<string, unknown>;
+      if (evt['type'] !== 'text') return null;
+      const part = evt['part'];
+      if (!part || typeof part !== 'object') return null;
+      const record = part as Record<string, unknown>;
+      return record['type'] === 'text' && typeof record['text'] === 'string'
+        ? record['text']
+        : null;
+    } catch {
+      return null;
+    }
+  },
+
+  extractHeadlessOutputEvents(line: string): readonly HeadlessOutputEvent[] {
+    try {
+      const evt = JSON.parse(line) as Record<string, unknown>;
+      if (evt['type'] === 'error') {
+        const error = evt['error'];
+        const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+        const data = record?.['data'] && typeof record['data'] === 'object'
+          ? record['data'] as Record<string, unknown>
+          : null;
+        const message = typeof data?.['message'] === 'string'
+          ? data['message']
+          : typeof record?.['message'] === 'string'
+            ? record['message']
+            : typeof record?.['name'] === 'string'
+              ? record['name']
+              : typeof error === 'string'
+                ? error
+                : 'OpenCode session failed';
+        return [{ type: 'error', message }];
+      }
+      const part = evt['part'];
+      if (!part || typeof part !== 'object') return [];
+      const record = part as Record<string, unknown>;
+      if (evt['type'] === 'text' && record['type'] === 'text' && typeof record['text'] === 'string') {
+        return [{ type: 'text', text: record['text'] }];
+      }
+      if (evt['type'] !== 'tool_use' && record['type'] !== 'tool') return [];
+      const state = record['state'] && typeof record['state'] === 'object'
+        ? record['state'] as Record<string, unknown>
+        : {};
+      const id = typeof record['callID'] === 'string'
+        ? record['callID']
+        : typeof record['id'] === 'string'
+          ? record['id']
+          : `opencode-${record['tool'] ?? 'tool'}`;
+      const name = typeof record['tool'] === 'string'
+        ? record['tool']
+        : typeof record['name'] === 'string'
+          ? record['name']
+          : 'Tool';
+      const start: HeadlessOutputEvent = {
+        type: 'tool-start',
+        id,
+        name,
+        ...(state['input'] !== undefined || record['input'] !== undefined
+          ? { input: state['input'] ?? record['input'] }
+          : {}),
+      };
+      const status = state['status'];
+      if (status !== 'completed' && status !== 'error' && status !== 'failed') return [start];
+      return [start, {
+        type: 'tool-finish',
+        id,
+        name,
+        ...(state['output'] !== undefined || state['error'] !== undefined
+          ? { output: state['output'] ?? state['error'] }
+          : {}),
+        ...(status === 'error' || status === 'failed' ? { isError: true } : {}),
+      }];
+    } catch {
+      return [];
+    }
+  },
+
   composeEnv(ctx: SpawnContext): Record<string, string> {
     const env: Record<string, string> = {
       OPENCODE_DISABLE_MODELS_FETCH: '1',
@@ -130,47 +329,40 @@ export const opencodeAdapter: CliAdapter = {
       OPENCODE_DISABLE_LSP_DOWNLOAD: '1',
     };
 
-    // Inject OpenAlice's MCP servers per-spawn via inline config. Read from the
-    // spawn-bound env (service.ts populates the real MCP port per spawn), NOT
-    // process.env — mirrors codexAdapter.composeCommand. Fail loud if missing:
-    // a workspace silently spawned without trading context is worse than a hard
-    // error (matches the codebase's loud-failure stance).
-    const mcpUrl = ctx.env['OPENALICE_MCP_URL'];
-    if (!mcpUrl) {
-      throw new Error('opencode adapter: OPENALICE_MCP_URL missing from spawn env');
-    }
-    const workspaceId = ctx.env['AQ_WS_ID'];
-    if (!workspaceId) {
-      throw new Error('opencode adapter: AQ_WS_ID missing from spawn env');
-    }
-    const inline = {
-      mcp: {
-        openalice: { type: 'remote', url: mcpUrl, enabled: true },
-        'openalice-workspace': { type: 'remote', url: `${mcpUrl}/${workspaceId}`, enabled: true },
-      },
-    };
-    env['OPENCODE_CONFIG_CONTENT'] = JSON.stringify(inline);
     return env;
   },
 
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {
     const hasProvider = !!(cred.baseUrl || cred.apiKey || cred.model);
     if (!hasProvider) {
-      // Reset: delete the workspace opencode.json so opencode falls back to its
-      // global auth/config. No empty stub left behind.
-      await rm(join(cwd, OPENCODE_CONFIG_PATH), { force: true });
+      await resetOwnedJsonConfig({
+        cwd,
+        configPath: OPENCODE_CONFIG_PATH,
+        statePath: OPENCODE_BINDING_STATE_PATH,
+        label: 'opencode project config',
+        legacyOwnedPaths: OPENCODE_OWNED_PATHS,
+      });
       return;
     }
 
-    const options: Record<string, string> = {};
+    const options: Record<string, unknown> = {};
     if (cred.baseUrl) options['baseURL'] = cred.baseUrl;
-    if (cred.apiKey) options['apiKey'] = cred.apiKey;
+    if (cred.apiKey) {
+      if (cred.wireShape === 'anthropic' && cred.authMode === 'bearer') {
+        // Do not also set apiKey: @ai-sdk/anthropic would add x-api-key and
+        // bearer-only gateways can reject the resulting dual-auth request.
+        options['headers'] = { Authorization: `Bearer ${cred.apiKey}` };
+      } else {
+        options['apiKey'] = cred.apiKey;
+      }
+    }
 
     // The @ai-sdk package opencode loads depends on the wire shape (all bundled):
-    // anthropic → @ai-sdk/anthropic, OpenAI Responses → @ai-sdk/openai, and
-    // OpenAI Chat Completions (the default — CN/local gateways) → the
+    // anthropic → @ai-sdk/anthropic, Google Generative AI → @ai-sdk/google,
+    // OpenAI Responses → @ai-sdk/openai, and OpenAI Chat Completions → the
     // openai-compatible SDK.
     const npm = cred.wireShape === 'anthropic' ? '@ai-sdk/anthropic'
+      : cred.wireShape === 'google-generative-ai' ? '@ai-sdk/google'
       : cred.wireShape === 'openai-responses' ? '@ai-sdk/openai'
       : OPENCODE_SDK_NPM;
     const provider: Record<string, unknown> = {
@@ -179,18 +371,38 @@ export const opencodeAdapter: CliAdapter = {
       options,
     };
     if (cred.model) {
-      provider['models'] = { [cred.model]: { name: cred.model } };
+      const model: Record<string, unknown> = { name: cred.model };
+      if (typeof cred.reasoning === 'boolean') model['reasoning'] = cred.reasoning;
+      const effortOptions = modelEffortOptions(cred);
+      if (effortOptions) model['options'] = effortOptions;
+      const contextWindow = positiveNumber(cred.contextWindow);
+      if (contextWindow !== null) {
+        // opencode treats missing custom-model limits as 0, which disables its
+        // proactive context tracking. Supplying both fields satisfies its config
+        // schema while keeping output conservative and invisible in OpenAlice UI.
+        model['limit'] = { context: contextWindow, output: DEFAULT_OUTPUT_TOKENS };
+      }
+      provider['models'] = { [cred.model]: model };
     }
 
-    const config: Record<string, unknown> = {
-      $schema: 'https://opencode.ai/config.json',
-      provider: { [OPENCODE_PROVIDER_NAME]: provider },
-    };
     // Top-level default model is "<provider>/<id>" so opencode resolves the
-    // workspace provider without a UI model picker.
-    if (cred.model) config['model'] = `${OPENCODE_PROVIDER_NAME}/${cred.model}`;
-
-    await writeWorkspaceFile(cwd, OPENCODE_CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+    // workspace provider without a UI model picker. The reversible state keeps
+    // any pre-existing provider/model/options and restores them on reset.
+    await writeOwnedJsonConfig({
+      cwd,
+      configPath: OPENCODE_CONFIG_PATH,
+      statePath: OPENCODE_BINDING_STATE_PATH,
+      label: 'opencode project config',
+      entries: [
+        { path: ['$schema'], present: true, value: 'https://opencode.ai/config.json' },
+        { path: ['provider', OPENCODE_PROVIDER_NAME], present: true, value: provider },
+        {
+          path: ['model'],
+          present: !!cred.model,
+          value: cred.model ? `${OPENCODE_PROVIDER_NAME}/${cred.model}` : undefined,
+        },
+      ],
+    });
   },
 
   async readAiConfig(cwd: string): Promise<WorkspaceAiCred | null> {
@@ -206,7 +418,14 @@ export const opencodeAdapter: CliAdapter = {
     const ws = (provider[OPENCODE_PROVIDER_NAME] ?? {}) as Record<string, unknown>;
     const options = (ws['options'] ?? {}) as Record<string, unknown>;
     const baseUrl = typeof options['baseURL'] === 'string' ? (options['baseURL'] as string) : null;
-    const apiKey = typeof options['apiKey'] === 'string' ? (options['apiKey'] as string) : null;
+    const headers = (options['headers'] ?? {}) as Record<string, unknown>;
+    const authorization = typeof headers['Authorization'] === 'string'
+      ? headers['Authorization']
+      : typeof headers['authorization'] === 'string'
+        ? headers['authorization']
+        : null;
+    const bearerKey = authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
+    const apiKey = typeof options['apiKey'] === 'string' ? (options['apiKey'] as string) : bearerKey;
     // Top-level model is "<provider>/<id>"; surface just the id back to the modal.
     let model: string | null = null;
     const top = parsed['model'];
@@ -214,13 +433,34 @@ export const opencodeAdapter: CliAdapter = {
       const slash = top.indexOf('/');
       model = slash >= 0 ? top.slice(slash + 1) : top;
     }
+    const models = (ws['models'] ?? {}) as Record<string, Record<string, unknown>>;
+    const modelConfig = model ? models[model] : undefined;
+    const limit = (modelConfig?.['limit'] ?? {}) as Record<string, unknown>;
+    const contextWindow = positiveNumber(limit['context'] as number | null | undefined);
+    const reasoning = typeof modelConfig?.['reasoning'] === 'boolean'
+      ? modelConfig['reasoning']
+      : undefined;
     if (baseUrl === null && apiKey === null && model === null) return null;
     // Reverse the npm package back to the wire shape.
     const npm = typeof ws['npm'] === 'string' ? (ws['npm'] as string) : '';
     const wireShape = npm === '@ai-sdk/anthropic' ? 'anthropic' as const
+      : npm === '@ai-sdk/google' ? 'google-generative-ai' as const
       : npm === '@ai-sdk/openai' ? 'openai-responses' as const
       : 'openai-chat' as const;
-    return { baseUrl, apiKey, model, wireShape };
+    const modelOptions = modelConfig?.['options'];
+    const reasoningEffort = modelOptions && typeof modelOptions === 'object'
+      ? readModelEffort(modelOptions as Record<string, unknown>, wireShape)
+      : undefined;
+    return {
+      baseUrl,
+      apiKey,
+      model,
+      wireShape,
+      ...(wireShape === 'anthropic' ? { authMode: bearerKey ? 'bearer' as const : 'x-api-key' as const } : {}),
+      ...(contextWindow ? { contextWindow } : {}),
+      ...(reasoning !== undefined ? { reasoning } : {}),
+      ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    };
   },
 
   /**

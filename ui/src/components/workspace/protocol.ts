@@ -19,7 +19,24 @@ export interface ResizeMessage {
   readonly rows: number;
 }
 
-export type ClientControlMessage = AttachMessage | ResizeMessage;
+export type TerminalViewRgb = [number, number, number];
+
+export interface TerminalViewAttributes {
+  readonly foreground: TerminalViewRgb;
+  readonly background: TerminalViewRgb;
+  readonly cursor: TerminalViewRgb;
+  readonly ansi: TerminalViewRgb[];
+  readonly colorSchemeMode: 'dark' | 'light';
+  readonly cursorStyle: 'bar' | 'block' | 'underline';
+  readonly cursorBlink: boolean;
+}
+
+export interface TerminalViewAttributesMessage {
+  readonly type: 'terminal-view-attributes';
+  readonly attributes: TerminalViewAttributes;
+}
+
+export type ClientControlMessage = AttachMessage | ResizeMessage | TerminalViewAttributesMessage;
 
 // ── server → client ─────────────────────────────────────────────────────────
 
@@ -29,12 +46,13 @@ export interface AttachedMessage {
   /** Stable session record id. */
   readonly sessionId: string;
   readonly name: string;
-  readonly agentSessionId: string | null;
   readonly pid: number;
   readonly command: readonly string[];
   readonly replayFromSeq: number;
   readonly seq: number;
   readonly scrollbackTruncated: boolean;
+  readonly kittyKeyboardFlags: number;
+  readonly colorSchemeUpdatesSubscribed: boolean;
 }
 
 export interface CursorMessage {
@@ -86,7 +104,6 @@ export function parseServerControl(text: string): ServerControlMessage | null {
         typeof v['wsId'] === 'string' &&
         typeof v['sessionId'] === 'string' &&
         typeof v['name'] === 'string' &&
-        (typeof v['agentSessionId'] === 'string' || v['agentSessionId'] === null) &&
         typeof v['pid'] === 'number' &&
         Array.isArray(v['command']) &&
         v['command'].every((c) => typeof c === 'string') &&
@@ -99,12 +116,14 @@ export function parseServerControl(text: string): ServerControlMessage | null {
           wsId: v['wsId'],
           sessionId: v['sessionId'],
           name: v['name'],
-          agentSessionId: v['agentSessionId'] as string | null,
           pid: v['pid'],
           command: v['command'] as string[],
           replayFromSeq: v['replayFromSeq'],
           seq: v['seq'],
           scrollbackTruncated: v['scrollbackTruncated'],
+          kittyKeyboardFlags:
+            typeof v['kittyKeyboardFlags'] === 'number' ? v['kittyKeyboardFlags'] : 0,
+          colorSchemeUpdatesSubscribed: v['colorSchemeUpdatesSubscribed'] === true,
         };
       }
       return null;
