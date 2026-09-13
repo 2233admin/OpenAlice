@@ -24,6 +24,7 @@ import { useWorkspaces } from '../contexts/workspaces-context'
 import { formatRelativeTime } from '../lib/intl'
 import { useWorkspace } from '../tabs/store'
 import { CenteredLoading } from './StateViews'
+import { IssueAssigneePopover } from './IssueAssigneePopover'
 import { STATUS_META } from './issue-status-meta'
 
 // ==================== Cadence pill (lifted from AutomationSchedulesSection) ====================
@@ -352,12 +353,12 @@ function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen
   const terminal = issue.status === 'done' || issue.status === 'canceled'
   const meta = STATUS_META[issue.status]
   return (
-    <li>
+    <li className="relative">
       <button
         type="button"
         onClick={onOpen}
         title={t('issues.openIssue', { id: issue.id })}
-        className="oa-pressable flex h-11 w-full min-w-0 items-center gap-3 px-3 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
+        className="oa-pressable flex h-11 w-full min-w-0 items-center gap-3 py-0 pl-3 pr-12 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:pl-6 sm:pr-16"
       >
         <PriorityIndicator priority={issue.priority} />
         <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground sm:block" title={t('issues.issueIdTitle', { id: issue.id })}>
@@ -381,6 +382,7 @@ function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen
           <span className="hidden w-28 items-center justify-end sm:flex"><BoardCadence issue={issue} /></span>
         </span>
       </button>
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5"><IssueAssigneePopover wsId={wsId} id={issue.id} /></div>
     </li>
   )
 }
