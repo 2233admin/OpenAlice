@@ -58,3 +58,10 @@ successful demo build.
 Native mock assets live in `ui/dist-demo/` and `dist/demo/`; normal `ui/dist/`
 remains separate. Add reusable scenarios to the shared fixtures and preserve
 cross-links between Workspace, Session, Inbox, Issue, run and file identifiers.
+
+Session names, agents and initial runtime settings belong to the shared Workspace
+Session fixtures. The resume directory and Issue owner projection derive from
+those records; runtime edits use the same in-memory override map. Avoid adding
+an Issue-specific copy of a Session or a hardcoded workspace resume response.
+Auto Quant includes three assignable research Sessions; the missing CPI owner
+remains an intentional recovery scenario.

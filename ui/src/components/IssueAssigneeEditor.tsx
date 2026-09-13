@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { AgentRuntimeIcon } from '../lib/agentRuntimeIcon'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Search } from 'lucide-react'
-import type { IssueAssigneeSession } from '../api/issues'
+import { ChevronRight, Search, MessageSquare } from 'lucide-react'
+import type { IssueAutomationHealth, IssueAssigneeSession } from '../api/issues'
 import type { WorkspaceSessionDirectoryEntry } from './workspace/api'
 import { formatRelativeTime } from '../lib/intl'
 import { Button } from './ui/button'
@@ -18,6 +19,8 @@ export function AssigneeEditor({
   error,
   triggerLabel,
   compact = false,
+  health,
+  onOpenConversation,
   onChange,
 }: {
   value: string
@@ -28,10 +31,14 @@ export function AssigneeEditor({
   error?: string | null
   triggerLabel?: string
   compact?: boolean
+  health?: IssueAutomationHealth
+  onOpenConversation?: () => Promise<void>
   onChange: (next: string) => Promise<boolean>
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const [opening, setOpening] = useState(false)
+  const [openError, setOpenError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [draftValue, setDraftValue] = useState(value)
   const [committing, setCommitting] = useState(false)
@@ -51,7 +58,8 @@ export function AssigneeEditor({
     || sessionChoices.some((session) => session.resumeId === selectedResumeId)
     || authoritativeSelected?.state === 'ready'
   const contextFor = (session: WorkspaceSessionDirectoryEntry) => {
-    const rawContext = session.interactive?.title
+    const rawContext = session.displayName
+      || session.interactive?.title
       || session.interactive?.name
       || session.latestExecution?.assistantPreview
     const normalizedContext = rawContext?.replace(/\s+/g, ' ').trim()
@@ -140,12 +148,13 @@ export function AssigneeEditor({
           setOpen(true)
         }}
         variant={compact ? "ghost" : "outline"}
-        title={selectedDescription || selectedLabel}
+        title={[selectedDescription || selectedLabel, health && `${t(`issues.health.${health.state}`)} · ${health.message}`].filter(Boolean).join(' · ')}
+        aria-description={health ? `${t(`issues.health.${health.state}`)} · ${health.message}` : selectedDescription}
         className={`h-auto w-full min-w-0 justify-start gap-2.5 whitespace-normal text-left ${compact ? "min-h-9 px-2 py-1.5" : "min-h-11 px-3 py-2"}`}
       >
-        <IssueAssigneeAvatar value={value} />
+        <span className="relative"><IssueAssigneeAvatar value={value} />{health && <span title={t(`issues.health.${health.state}`)} className={`absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-background ${health.state === "running" ? "bg-info" : health.state === "healthy" ? "bg-success" : ["failed", "blocked"].includes(health.state) ? "bg-destructive" : ["interrupted", "due"].includes(health.state) ? "bg-warning" : "bg-muted-foreground"}`} />}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-foreground">{triggerLabel || selectedLabel}</span>
+          <span className={`block truncate text-[13px] text-foreground ${compact ? "font-normal" : "font-medium"}`}>{triggerLabel || selectedLabel}</span>
           {!compact && !triggerLabel && selectedDescription && <span className="block truncate text-[11px] text-muted-foreground">{selectedDescription}</span>}
         </span>
         <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" aria-hidden />
@@ -154,6 +163,12 @@ export function AssigneeEditor({
         <DialogHeader className="px-4 pt-4">
           <DialogTitle>{t('issues.detail.chooseAssignee')}</DialogTitle>
           <DialogDescription>{t('issues.detail.chooseAssigneeDescription')}</DialogDescription>
+          {health && <p className="text-xs text-muted-foreground">{t(`issues.health.${health.state}`)} · {health.message}</p>}
+          {onOpenConversation && <Button variant="outline" size="sm" disabled={opening} onClick={async () => {
+            setOpening(true); setOpenError(null)
+            try { await onOpenConversation(); setOpen(false) } catch (error) { setOpenError(error instanceof Error ? error.message : String(error)) } finally { setOpening(false) }
+          }}><MessageSquare size={14} />{t('issues.detail.openConversation')}</Button>}
+          {openError && <p role="alert" className="text-xs text-destructive">{openError}</p>}
         </DialogHeader>
         <label className="mx-4 flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-ring/30">
           <Search size={15} className="text-muted-foreground" aria-hidden />
@@ -174,6 +189,7 @@ export function AssigneeEditor({
             {policyChoices.map((choice) => (
               <AssigneeChoice
                 key={choice.value}
+                icon={<IssueAssigneeAvatar value={choice.value} />}
                 label={choice.label}
                 description={choice.description}
                 selected={draftValue === choice.value}
@@ -196,6 +212,7 @@ export function AssigneeEditor({
             {authoritativeSelected?.state === 'ready'
               && !sessionChoices.some((session) => session.resumeId === authoritativeSelected.resumeId) && (
               <AssigneeChoice
+                icon={<AgentRuntimeIcon agentId={authoritativeSelected.agent} className="size-5 shrink-0" />}
                 label={authoritativeSelected.displayName ?? authoritativeSelected.resumeId}
                 description={[
                   authoritativeSelected.resumeId,
@@ -209,6 +226,7 @@ export function AssigneeEditor({
             {filteredSessions.map((session) => (
               <AssigneeChoice
                 key={session.resumeId}
+                icon={<AgentRuntimeIcon agentId={session.agent} className="size-5 shrink-0" />}
                 label={contextFor(session) ?? session.resumeId}
                 description={labelFor(session)}
                 selected={draftResumeId === session.resumeId}
@@ -244,11 +262,13 @@ export function AssigneeEditor({
 }
 
 function AssigneeChoice({
+  icon,
   label,
   description,
   selected,
   onClick,
 }: {
+  icon?: ReactNode
   label: string
   description?: string
   selected: boolean
@@ -261,6 +281,7 @@ function AssigneeChoice({
       variant="ghost"
       className="h-auto min-h-12 w-full min-w-0 max-w-full justify-start gap-3 overflow-hidden whitespace-normal px-3 py-2 text-left"
     >
+      {icon}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{label}</span>
         {description && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>}

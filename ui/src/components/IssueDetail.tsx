@@ -50,7 +50,7 @@ import { previewForEntry } from '../live/inbox-threads'
 import { useWikilinkHandler } from '../live/wikilink'
 import { useWorkspace } from '../tabs/store'
 import { ConfirmDialog } from './ConfirmDialog'
-import { AutomationHealthPill, CadenceSummary, PropertyMenu } from './IssuesBoard'
+import { CadenceSummary, PropertyMenu } from './IssuesBoard'
 import { IssueSectionNavigation } from './IssueSectionNavigation'
 import { STATUS_META } from './issue-status-meta'
 import { MarkdownContent } from './MarkdownContent'
@@ -68,7 +68,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { AssigneeEditor } from './IssueAssigneeEditor'
 import { resolveIssueAiSelection } from './issue-runtime-options'
 
@@ -106,28 +105,6 @@ function fmtDuration(ms?: number): string {
 
 // ==================== Properties rail ====================
 
-function InspectorField({
-  label,
-  icon,
-  children,
-  className = '',
-}: {
-  label: string
-  icon?: ReactNode
-  children: ReactNode
-  className?: string
-}) {
-  return (
-    <div className={`min-w-0 space-y-1.5 ${className}`}>
-      <span className="flex items-center gap-1.5 text-[11px] leading-[15px] font-medium text-muted-foreground">
-        {icon}
-        {label}
-      </span>
-      <div className="min-w-0 text-sm text-foreground">{children}</div>
-    </div>
-  )
-}
-
 function InspectorSection({
   title,
   description,
@@ -138,7 +115,7 @@ function InspectorSection({
   children: ReactNode
 }) {
   return (
-    <section className="py-5 first:pt-0">
+    <section>
       <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
       {description && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>}
       <div className="mt-3">{children}</div>
@@ -183,8 +160,9 @@ function AgentEditor({
 
   return (
     <>
+      <Cpu size={14} className="ml-2 shrink-0 text-muted-foreground" aria-hidden />
       <select
-        className={railControl}
+        className="h-9 min-w-0 flex-1 cursor-pointer rounded border-0 bg-transparent pl-0 text-[13px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
         value={selected}
         disabled={disabled}
         aria-label={t('issues.detail.runtime')}
@@ -222,9 +200,9 @@ function AgentEditor({
         aria-label={canConfigure
           ? t('issues.detail.configureRuntime', { runtime: effectiveAgent })
           : t('issues.detail.noConfigurableRuntime')}
-        variant="outline"
+        variant="ghost"
         size="icon"
-        className="size-10 sm:size-9"
+        className="size-8 text-muted-foreground"
       >
         <Settings size={14} aria-hidden />
       </Button>
@@ -385,9 +363,6 @@ function IssueAiEditor({
   const summaryEffort = bound
     ? committed.reasoningEffort ?? t('issues.detail.runtimeDecides')
     : committed.reasoningEffort ?? committedCredential?.resolvedReasoningEffort ?? t('issues.detail.runtimeDecides')
-  const summaryDetails = [...new Set([summaryModel, summaryEffort])]
-    .filter((value) => value !== summaryAccess)
-    .join(', ')
   const draftCapability = inherit && !bound
     ? {
         access: t('issues.detail.followWorkspaceHeadless'),
@@ -412,14 +387,14 @@ function IssueAiEditor({
         aria-label={t('issues.detail.aiConfiguration')}
         disabled={disabled}
         onClick={() => setOpen(true)}
-        variant="outline"
-        className="grid h-auto min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] justify-start gap-2.5 whitespace-normal px-3 py-2.5 text-left"
+        variant="ghost"
+        className="grid h-auto min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] justify-start gap-2.5 whitespace-normal px-2 py-2 text-left"
       >
         <KeyRound size={15} className="text-muted-foreground" aria-hidden />
         <span className="min-w-0">
-          <span className="block truncate text-[13px] font-medium text-foreground">{summaryAccess}</span>
-          {summaryDetails && <span className="block truncate text-[11px] text-muted-foreground">{summaryDetails}</span>}
-          <span className="mt-0.5 block text-[10px] text-muted-foreground/75">{provenance}</span>
+          <span className="block truncate text-[13px] font-normal text-foreground">{summaryModel}</span>
+          <span className="block truncate text-[11px] text-muted-foreground">{[summaryAccess, summaryEffort].filter((value, index, values) => value !== summaryModel && values.indexOf(value) === index).join(' · ')}</span>
+          <span className="sr-only">{provenance}</span>
         </span>
         <ChevronRight size={14} className="text-muted-foreground/70" aria-hidden />
       </Button>
@@ -525,10 +500,11 @@ function SchedulePolicyEditor({
         size="sm"
         disabled={saving}
         onClick={() => setOpen(true)}
-        className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+        aria-label={t('issues.detail.editSchedule')}
+        className="h-auto w-full justify-start px-2 py-2 text-left"
       >
-        <SlidersHorizontal size={13} aria-hidden />
-        {t('issues.detail.editSchedule')}
+        <CadenceSummary when={issue.when} compact />
+        <ChevronRight size={13} className="ml-auto shrink-0 text-muted-foreground" aria-hidden />
       </Button>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -645,19 +621,20 @@ function CommentBehaviorEditor({
         type="button"
         disabled={disabled}
         aria-label={t('issues.detail.commentBehavior')}
+        title={preview}
         onClick={() => {
           setDraft(value ?? DEFAULT_ISSUE_COMMENT_PROMPT)
           setOpen(true)
         }}
-        variant="outline"
-        className="h-auto min-h-11 w-full min-w-0 justify-start gap-2.5 whitespace-normal px-3 py-2 text-left"
+        variant="ghost"
+        className="h-auto min-h-9 w-full min-w-0 justify-start gap-2.5 whitespace-normal px-2 py-2 text-left"
       >
         <MessageSquare size={15} className="shrink-0 text-muted-foreground" aria-hidden />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-foreground">
-            {custom ? t('issues.detail.commentBehaviorCustom') : t('issues.detail.default')}
+            {t('issues.detail.commentBehavior')}
           </span>
-          <span className="block truncate text-[11px] text-muted-foreground">{preview}</span>
+          <span className="block truncate text-[11px] text-muted-foreground">{custom ? t('issues.detail.commentBehaviorCustom') : t('issues.detail.default')}</span>
         </span>
         <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" aria-hidden />
       </Button>
@@ -758,6 +735,7 @@ function PropertiesRail({
   sessionsLoaded: boolean
 }) {
   const { t } = useTranslation()
+  const { openHeadlessRun } = useWorkspaces()
   const [confirmAction, setConfirmAction] = useState<'run' | 'retry' | null>(null)
   const [pendingCapability, setPendingCapability] = useState<{
     from: string
@@ -862,7 +840,7 @@ function PropertiesRail({
       id="issue-work-item"
       className="mt-5 min-w-0 w-full shrink-0 scroll-mt-20 lg:sticky lg:top-8 lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:mt-0 lg:self-start"
     >
-      <div className="min-w-0 space-y-4">
+      <div className="min-w-0 space-y-7">
         <h3 className="sr-only">{t('issues.detail.workItem')}</h3>
 
         <InspectorSection title={t('issues.detail.properties')}>
@@ -872,8 +850,18 @@ function PropertiesRail({
               controlId={`issue-detail-${wsId}-${issue.id}-${field}`}
               onPatch={async (patch) => { if (!await onPatch(patch)) throw new Error(t('issues.detail.updateFailed')) }}
             />)}
+
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title={t('issues.detail.agent')}>
+          <div className="-mx-2">
             <AssigneeEditor compact
               value={issue.assignee}
+              health={issue.automationHealth ? { ...issue.automationHealth, message: automationHealthMessage || issue.automationHealth.message } : undefined}
+              onOpenConversation={authoritativeOwner?.state === 'ready' && authoritativeOwner.workspace ? async () => {
+                await openHeadlessRun(authoritativeOwner.workspace!.id, authoritativeOwner.resumeId, { title: authoritativeOwner.displayName || issue.title })
+              } : undefined}
               scheduled={Boolean(issue.when)}
               sessions={sessions}
               authoritativeOwner={authoritativeOwner}
@@ -881,83 +869,12 @@ function PropertiesRail({
               onChange={(assignee) => onPatch({ assignee })}
             />
           </div>
-        </InspectorSection>
-
-        {issue.when && (
-          <InspectorSection title={t('issues.detail.schedule')}>
-            <CadenceSummary when={issue.when} />
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/50 pt-3 text-xs">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Clock size={13} aria-hidden />
-                {t('issues.detail.nextRun')}
-              </span>
-              <span className="tabular-nums text-foreground">
-                {issue.nextDueAtMs ? formatRelativeTime(issue.nextDueAtMs) : '—'}
-              </span>
-            </div>
-            <div className="mt-1 flex justify-end">
-              <SchedulePolicyEditor issue={issue} saving={saving} onPatch={onPatch} />
-            </div>
-          <section className="mt-4 border-t border-border/60 pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <AutomationHealthPill
-                health={issue.automationHealth ?? {
-                  state: 'not_started',
-                  message: t('issues.detail.healthMessage.not_started'),
-                }}
-              />
-              <span className="text-[11px] leading-[15px] tabular-nums text-muted-foreground">
-                {t('issues.detail.lastRun')}: {issue.lastFiredAtMs
-                  ? formatRelativeTime(issue.lastFiredAtMs)
-                  : t('issues.detail.never')}
-              </span>
-            </div>
-            {automationHealthMessage && (
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{automationHealthMessage}</p>
-            )}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {issue.lastFiredAtMs && (
-                <a
-                  href="#issue-runs"
-                  className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow] hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:[box-shadow:var(--oa-focus-shadow)]"
-                >
-                  {t('issues.detail.viewLastRun')}
-                </a>
-              )}
-              {canRetry ? (
-                <Button type="button" size="sm" disabled={retrying} onClick={() => setConfirmAction('retry')} className="ml-auto">
-                  <RotateCcw size={12} aria-hidden />
-                  {retrying ? t('issues.detail.retrying') : t('issues.detail.retryNow')}
-                </Button>
-              ) : canRunNow ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={retrying}
-                  onClick={() => setConfirmAction('run')}
-                  className="ml-auto"
-                >
-                  <Play size={12} aria-hidden />
-                  {retrying ? t('issues.detail.runningNow') : t('issues.detail.runNow')}
-                </Button>
-              ) : null}
-            </div>
-          </section>
-          </InspectorSection>
-        )}
-
-        <Collapsible className="border-t border-border/60 pt-4">
-          <CollapsibleTrigger className="group flex min-h-9 w-full items-center justify-between rounded text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="flex items-center gap-2"><SlidersHorizontal size={14} aria-hidden />{t('issues.detail.agent')}</span>
-            <ChevronRight size={14} className="transition-transform group-data-[panel-open]:rotate-90" aria-hidden />
-          </CollapsibleTrigger>
-          <CollapsibleContent><div className="pb-4 pt-3">
           {issue.when && (
             <>
-              <InspectorField label={t('issues.detail.runtime')}>
+              <div className="-mx-2 mt-1">
                 {ownerResumeId ? (
                   <div
-                    className="flex min-h-10 items-center gap-2.5 rounded-md border border-border bg-muted/20 px-3 py-2"
+                    className="flex min-h-9 items-center gap-2.5 px-2 py-1.5"
                     title={t('issues.detail.sessionDeterminesRuntime')}
                   >
                     <Cpu size={14} className="text-muted-foreground" aria-hidden />
@@ -988,9 +905,9 @@ function PropertiesRail({
                     />
                   </div>
                 )}
-              </InspectorField>
+              </div>
 
-              <InspectorField label={t('issues.detail.aiConfiguration')} className="mt-3">
+              <div className="-mx-2 mt-1">
                 <div className="flex min-w-0">
                   <IssueAiEditor
                     wsId={wsId}
@@ -1020,7 +937,7 @@ function PropertiesRail({
                     }}
                   />
                 </div>
-              </InspectorField>
+              </div>
               {ownerResumeId && ownerSessionBusy(ownerSession) && (
                 <p className="mt-2 text-xs leading-snug text-muted-foreground">{t('issues.detail.sessionTurnInProgress')}</p>
               )}
@@ -1032,18 +949,61 @@ function PropertiesRail({
               )}
             </>
           )}
-          <InspectorField
-            label={t('issues.detail.commentBehavior')}
-            className={issue.when ? 'mt-3' : undefined}
-          >
+          <div className="-mx-2 mt-1">
             <CommentBehaviorEditor
               value={issue.commentPrompt}
               disabled={saving}
               onSave={(commentPrompt) => onPatch({ commentPrompt })}
             />
-          </InspectorField>
-          </div></CollapsibleContent>
-        </Collapsible>
+          </div>
+        </InspectorSection>
+
+        {issue.when && (
+          <InspectorSection title={t('issues.detail.schedule')}>
+            <div className="-mx-2"><SchedulePolicyEditor issue={issue} saving={saving} onPatch={onPatch} /></div>
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/50 pt-3 text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock size={13} aria-hidden />
+                {t('issues.detail.nextRun')}
+              </span>
+              <span className="tabular-nums text-foreground">
+                {issue.nextDueAtMs ? formatRelativeTime(issue.nextDueAtMs) : '—'}
+              </span>
+            </div>
+
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {issue.lastFiredAtMs && (
+                <a
+                  href="#issue-runs"
+                  className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow] hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:[box-shadow:var(--oa-focus-shadow)]"
+                >
+                  {t('issues.detail.viewLastRun')}
+                </a>
+              )}
+              {canRetry ? (
+                <Button type="button" size="sm" variant="outline" disabled={retrying} onClick={() => setConfirmAction('retry')} className="ml-auto">
+                  <RotateCcw size={12} aria-hidden />
+                  {retrying ? t('issues.detail.retrying') : t('issues.detail.retryNow')}
+                </Button>
+              ) : canRunNow ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={retrying}
+                  onClick={() => setConfirmAction('run')}
+                  className="ml-auto"
+                >
+                  <Play size={12} aria-hidden />
+                  {retrying ? t('issues.detail.runningNow') : t('issues.detail.runNow')}
+                </Button>
+              ) : null}
+            </div>
+          </InspectorSection>
+        )}
+
+
       </div>
       {(error || runtimeError) && (
         <p role="alert" className="mt-2 text-xs leading-snug text-destructive">{error || runtimeError}</p>
@@ -1757,7 +1717,8 @@ function WikilinkPicker({
  * follow it before the potentially long What and Activity flow; desktop keeps
  * those controls in the right rail. Runs stay in an independent operational
  * section. Properties expose status /
- * priority / assignee editable inline (each write PATCHes and applies the
+ * priority editable inline; Agent owns assignment and runtime configuration.
+ * Each write PATCHes and applies the
  * server-returned detail — authoritative, refetch-free). The scheduled agent
  * runtime is editable because it is operational routing; schedule cadence and
  * fire prompt remain file-owned frontmatter.
@@ -1984,7 +1945,8 @@ export function IssueDetail({
     issue.when
     && issue.status !== 'done'
     && issue.status !== 'canceled'
-    && latestRun?.status !== 'running',
+    && latestRun?.status !== 'running'
+    && issue.automationHealth?.state !== 'running',
   )
   const comments = data.comments ?? []
   const inboxReports = data.inboxReports ?? []

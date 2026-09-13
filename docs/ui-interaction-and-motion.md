@@ -202,8 +202,13 @@ Issue detail follows a reading-first layout: a compact Issues / ID breadcrumb,
 a 28–32px title, flush editable Markdown, then Activity and operational Runs.
 The desktop grid reserves 256px for a borderless property rail. Status and
 priority reuse the board's labeled menu triggers; assignment reuses the shared
-picker and avatar states. Schedule owns cadence, due time, health, and run
-controls together. Agent settings use the shared Collapsible and start closed.
+picker and avatar states. Properties, Agent, and Schedule are equal, visible
+sections with consistent spacing. Agent contains assignment, runtime, AI model
+selection and comment behavior as quiet property rows. Execution health is a
+dot on the assignee avatar; its explanation and an available owner conversation
+link live in the existing assignment dialog. Schedule exposes a clickable
+cadence summary, next run and secondary run/history actions. Catch-up policy
+stays in the schedule dialog. Running health suppresses a duplicate Run now action.
 No nested rail scroll container competes with the page. Below 1024px the rail
 stacks before the body with the existing section navigation. Editing, scheduling,
 confirmation, and server-error semantics stay in their existing owners.
