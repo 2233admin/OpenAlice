@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   useIssues: vi.fn(),
   openOrFocus: vi.fn(),
   setSidebar: vi.fn(),
+  updateIssue: vi.fn(),
 }))
 
 vi.mock('../hooks/useIssues', () => ({
@@ -60,6 +61,7 @@ beforeEach(async () => {
     data: snapshot([]),
     error: null,
     loading: false,
+    updateIssue: mocks.updateIssue,
   })
 })
 
@@ -83,6 +85,7 @@ describe('IssuesBoard', () => {
       ]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -120,6 +123,7 @@ describe('IssuesBoard', () => {
       ]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -143,6 +147,7 @@ describe('IssuesBoard', () => {
       ]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -168,6 +173,7 @@ describe('IssuesBoard', () => {
       ]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -197,6 +203,7 @@ describe('IssuesBoard', () => {
       ]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -220,6 +227,7 @@ describe('IssuesBoard', () => {
       data: snapshot([issue({ id: 'keyboard-issue', title: 'Keyboard issue' })]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -254,6 +262,7 @@ describe('IssuesBoard', () => {
       })]),
       error: null,
       loading: false,
+    updateIssue: mocks.updateIssue,
     })
 
     render(<IssuesBoard />)
@@ -265,5 +274,34 @@ describe('IssuesBoard', () => {
       kind: 'issue-detail',
       params: { wsId: 'ws-1', id: 'completed-issue' },
     })
+  })
+})
+
+
+describe('inline Issue properties', () => {
+  it('changes priority without opening the Issue and retains failed choices for retry', async () => {
+    const user = userEvent.setup()
+    mocks.useIssues.mockReturnValue({ data: snapshot([issue({ id: 'editable' })]), loading: false, error: null, updateIssue: mocks.updateIssue })
+    mocks.updateIssue.mockRejectedValueOnce(new Error('Write failed'))
+    render(<IssuesBoard />)
+    await user.click(screen.getByRole('button', { name: 'Priority: No' }))
+    await user.click(screen.getByRole('menuitem', { name: 'High' }))
+    expect(mocks.updateIssue).toHaveBeenCalledWith('ws-1', 'editable', { priority: 'high' })
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Write failed')
+    expect(mocks.openOrFocus).not.toHaveBeenCalled()
+    mocks.updateIssue.mockResolvedValueOnce(undefined)
+    await user.click(screen.getByRole('menuitem', { name: 'High' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('changes status from the list menu', async () => {
+    const user = userEvent.setup()
+    mocks.useIssues.mockReturnValue({ data: snapshot([issue({ id: 'editable' })]), loading: false, error: null, updateIssue: mocks.updateIssue })
+    mocks.updateIssue.mockResolvedValue(undefined)
+    render(<IssuesBoard />)
+    await user.click(screen.getByRole('button', { name: 'Status: Todo' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Done' }))
+    expect(mocks.updateIssue).toHaveBeenCalledWith('ws-1', 'editable', { status: 'done' })
+    expect(mocks.openOrFocus).not.toHaveBeenCalled()
   })
 })

@@ -164,7 +164,7 @@ needed for the real task. Prefer a small rotating set over a wall of commands.
 ### Issue list
 
 The global Issues list uses compact 44px rows and 36px status disclosure bars.
-Priority, the stable Issue ID, status icon, and title occupy the leading edge;
+Priority, the stable Issue ID in a 64px truncated slot, status icon, and title occupy the leading edge;
 Workspace display name and next scheduled time sit on the right. Execution
 health is a small dot on the Assignee control, with localized status in its
 accessible name and hover description; the popover shows the full health message. Long titles and IDs truncate without increasing row height. Execution
@@ -177,8 +177,11 @@ including its search, eligibility filtering, and confirmation dialog. Missing
 owners cannot open a conversation; assignment policies explain Session creation. Health messages,
 last-fire time, and full cadence remain available as hover descriptions.
 Below 1024px the Workspace chip hides; below 640px IDs and schedule metadata
-hide so the title and Assignee health indicator remain readable. Rows remain native
-buttons with visible keyboard focus, and collapsed groups leave the tab order.
+hide so the title and Assignee health indicator remain readable. Priority and status are independent shared-menu triggers with current-value
+checks, keyboard navigation, and numeric selection. Writes apply the returned
+Issue immediately so status changes move rows into the matching group; failures
+keep the menu open with an error. The title opens detail through a sibling
+button rather than nesting controls. Collapsed groups leave the tab order.
 
 ### Background execution surfaces
 
