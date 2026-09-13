@@ -195,7 +195,7 @@ interface IssueDetailExtras {
 const demoIssueExtras: Record<string, IssueDetailExtras> = {
   'demo-ws-auto-quant/morning-scan': {
     body: [
-      'Scan the pre-market movers and surface anything the book should react to before the open.',
+      'Track AI data-center power demand before the open: VST generation economics and VRT equipment order conversion. Publish material changes; retain quiet scans in history.',
       '',
       '## What to look for',
       '',
@@ -219,7 +219,7 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
       '- Coordinated with [[Thesis invalidation watch]].',
       '- Sizing for any new names feeds the [[Liquidity risk review]] (heads-up: that title is used in two workspaces — pick the right one).',
     ].join('\n'),
-    what: 'Run the morning movers scan and push a ranked Inbox digest.',
+    what: 'Review VST and VRT: signed supply contracts, commissioning delays, backlog conversion and unusual volume. Push only material changes to Inbox; do not place trades.',
     agent: 'codex',
     runs: [
       {
@@ -228,7 +228,7 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
         resumable: true,
         wsId: 'demo-ws-auto-quant',
         agent: 'codex',
-        prompt: 'Run the morning movers scan and push a ranked Inbox digest.',
+        prompt: 'Review VST and VRT: signed supply contracts, commissioning delays, backlog conversion and unusual volume. Push only material changes to Inbox; do not place trades.',
         status: 'done',
         startedAt: now - HOUR,
         finishedAt: now - HOUR + 84_000,
@@ -236,7 +236,7 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
         exitCode: 0,
         output: {
           hasAssistantReply: true,
-          assistantPreview: 'Morning scan complete: three actionable gaps, led by the semiconductor cluster.',
+          assistantPreview: 'Morning scan complete: VST leads the power watchlist; compare generation delivery with VRT equipment demand.',
           blockCount: 7,
           toolCalls: 3,
           toolFailures: 0,
@@ -248,7 +248,7 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
         resumable: false,
         wsId: 'demo-ws-auto-quant',
         agent: 'codex',
-        prompt: 'Run the morning movers scan and push a ranked Inbox digest.',
+        prompt: 'Review VST and VRT: signed supply contracts, commissioning delays, backlog conversion and unusual volume. Push only material changes to Inbox; do not place trades.',
         status: 'failed',
         startedAt: now - DAY,
         finishedAt: now - DAY + 12_000,
@@ -268,7 +268,7 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
         resumable: true,
         wsId: 'demo-ws-auto-quant',
         agent: 'codex',
-        prompt: 'Run the morning movers scan and push a ranked Inbox digest.',
+        prompt: 'Review VST and VRT: signed supply contracts, commissioning delays, backlog conversion and unusual volume. Push only material changes to Inbox; do not place trades.',
         status: 'done',
         startedAt: now - 2 * DAY,
         finishedAt: now - 2 * DAY + 79_000,
@@ -637,7 +637,7 @@ export function demoIssueAddComment(
     },
   })
   demoIssueComments[key] = comments
-  window.setTimeout(() => {
+  globalThis.setTimeout(() => {
     const source = comments.find((comment) => comment.id === commentId)
     if (!source || source.delivery?.state !== 'pending') return
     const replyCommentId = `demo-reply-${commentId}`

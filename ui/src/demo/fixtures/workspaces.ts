@@ -1,3 +1,4 @@
+import { POWER_SESSION_ID, POWER_RESUME_ID } from './power-research'
 import type { Workspace, TemplateInfo, SessionRecord } from '../../components/workspace/api'
 
 // The flagship demo workspace — the one inbox/transcript fixtures tie to.
@@ -73,6 +74,12 @@ export const DEMO_MACRO_WORKSPACE_ID = 'demo-ws-macro'
 // styling (per-agent badge colours for claude/codex/opencode/pi, the paused
 // treatment, and the hover pause/resume/delete icons).
 const demoChatSessions: SessionRecord[] = [
+  {
+    id: POWER_SESSION_ID, resumeId: POWER_RESUME_ID, wsId: DEMO_CHAT_WORKSPACE_ID,
+    agent: 'pi', name: 'power', createdAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(), state: 'running', surface: 'webpi',
+    pid: 0, startedAt: Date.now(), title: 'AI power: from demand to delivery',
+  },
   {
     id: DEMO_CHAT_SESSION_ID,
     resumeId: DEMO_CHAT_RESUME_ID,
@@ -161,7 +168,7 @@ const demoChatSessions: SessionRecord[] = [
 export const demoChatWorkspace: Workspace = {
   id: DEMO_CHAT_WORKSPACE_ID,
   tag: 'chat-may26',
-  displayName: 'Semis and supply chain',
+  displayName: 'Infrastructure research',
   dir: '/demo/workspaces/chat-may26',
   createdAt: new Date().toISOString(),
   template: 'chat',
