@@ -1890,10 +1890,12 @@ export const en = {
       'broker-classic': 'Dense TWS-inspired trading workstation',
     },
     palette: {
+      codex: 'Codex',
       paper: 'Paper', porcelain: 'Porcelain', linen: 'Linen', 'windows-classic': 'Windows Classic',
       graphite: 'Graphite', midnight: 'Midnight', moss: 'Moss', iris: 'Iris',
     },
     paletteDescription: {
+      codex: 'Clean white with cool neutral grays',
       paper: 'Warm, editorial neutrals',
       porcelain: 'Cool, crisp workspace',
       linen: 'Oat, ink, and terracotta',

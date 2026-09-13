@@ -1866,10 +1866,12 @@ export const zhHant: Resources = {
       'broker-classic': '受 TWS 啟發的高密度交易工作台',
     },
     palette: {
+      codex: 'Codex',
       paper: '紙張', porcelain: '白瓷', linen: '亞麻', 'windows-classic': 'Windows 經典',
       graphite: '石墨', midnight: '午夜', moss: '苔色', iris: '鳶尾',
     },
     paletteDescription: {
+      codex: '純白內容與中性冷灰',
       paper: '溫暖的編輯風中性色',
       porcelain: '清爽的冷調工作區',
       linen: '燕麥紙、墨棕與陶土色',

@@ -1857,10 +1857,12 @@ export const zh: Resources = {
       'broker-classic': '受 TWS 启发的高密度交易工作台',
     },
     palette: {
+      codex: 'Codex',
       paper: '纸张', porcelain: '白瓷', linen: '亚麻', 'windows-classic': 'Windows 经典',
       graphite: '石墨', midnight: '午夜', moss: '苔色', iris: '鸢尾',
     },
     paletteDescription: {
+      codex: '纯白内容与中性冷灰',
       paper: '温暖的编辑风中性色',
       porcelain: '清爽的冷调工作区',
       linen: '燕麦纸、墨棕与陶土色',

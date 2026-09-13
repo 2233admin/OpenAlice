@@ -1859,10 +1859,12 @@ export const ja: Resources = {
       'broker-classic': 'TWS に着想を得た高密度な取引画面',
     },
     palette: {
+      codex: 'Codex',
       paper: 'ペーパー', porcelain: 'ポーセリン', linen: 'リネン', 'windows-classic': 'Windows クラシック',
       graphite: 'グラファイト', midnight: 'ミッドナイト', moss: 'モス', iris: 'アイリス',
     },
     paletteDescription: {
+      codex: '白とニュートラルなクールグレー',
       paper: '温かみのある編集向け中間色',
       porcelain: '涼しく鮮明なワークスペース',
       linen: 'オート麦色、墨色、テラコッタ',

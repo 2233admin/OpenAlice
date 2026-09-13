@@ -11,9 +11,9 @@ OpenAlice is a working console, not a static report. Motion should make the
 interface feel responsive and help the eye retain context without turning live
 trading surfaces into ambient animation.
 
-## Visual Language: Warm Editorial Workstation
+## Visual Language: Neutral Working Surface
 
-OpenAlice should feel like a calm, paper-like professional desk: warm,
+OpenAlice should feel like a calm professional desk: neutral,
 information-dense, precise, and operational. It is neither a generic admin
 dashboard nor a decorative consumer-finance app.
 
@@ -21,7 +21,9 @@ Build hierarchy with typography, spacing, alignment, and thin separators before
 adding another container. One dominant surface should own a task; supporting
 information should recede without becoming illegible.
 
-- Use warm neutral surfaces and the existing theme tokens. Do not introduce
+- Use neutral surfaces and the existing theme tokens. Codex is the default Day
+  card (white content and cool-gray sidebar); Graphite remains the default Night
+  card. Paper remains available, and saved palette choices are preserved. Do not introduce
   isolated hard-coded palettes.
 - Reserve blue for interaction and selection. Reserve green and red for
   financial or safety meaning, and amber for warnings. Do not use semantic
