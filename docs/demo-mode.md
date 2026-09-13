@@ -13,7 +13,7 @@ pnpm electron:demo
 ```
 
 This builds the desktop shell and a separate mock UI, then opens Inbox in a
-1280 × 800 native window. `pnpm electron:demo --skip-build` reopens the previous
+1280 × 800 native window without the public browser demo banner. `pnpm electron:demo --skip-build` reopens the previous
 build. After source changes, run the command without `--skip-build`. Close the
 window to stop its fixture child. Every launch starts fresh; the printed
 `openalice-demo-*` temporary directory retains local diagnostics for inspection.

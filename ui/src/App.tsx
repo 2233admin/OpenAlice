@@ -127,7 +127,7 @@ function AppShellContent() {
 
   return (
     <div className={`flex flex-col h-full ${macDesktop ? 'oa-desktop-mac' : ''}`}>
-      {import.meta.env.VITE_DEMO_MODE && <DemoBanner />}
+      {import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:' && <DemoBanner />}
       {import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:' && <DemoAnalytics />}
       {!macDesktop && <UpdateBanner />}
       <DesktopUpdatePrompt />
