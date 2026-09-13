@@ -204,7 +204,7 @@ function advanceDemoReply(wsId: string, sessionId: string): WebSessionSnapshot |
   const key = webKey(wsId, sessionId)
   const stream = demoReplyStreams.get(key)
   if (!stream) return findDemoWebSession(wsId, sessionId)
-  const count = Math.min(stream.text.length, Math.floor(Math.max(0, Date.now() - stream.startedAt - 500) / 12))
+  const count = Math.min(stream.text.length, Math.floor(Math.max(0, Date.now() - stream.startedAt - 200) / 4))
   if (count === stream.emitted) return findDemoWebSession(wsId, sessionId)
   stream.emitted = count
   const message = { role: 'assistant' as const, content: [{ type: 'text' as const, text: stream.text.slice(0, count) }] }
