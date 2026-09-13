@@ -69,7 +69,7 @@ export function ActivityBarUtilityMenu({
           <img src={aliceWave} alt="" draggable={false} className="size-full origin-[50%_38%] scale-[1.8] object-contain" />
         </span>
         {!compactRail && (
-          <span className="min-w-0 flex-1 truncate font-medium">{t('nav.yourAlice')}</span>
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{t('nav.yourAlice')}</span>
         )}
         {connectorWarnings > 0 && (
           <span
