@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import {
@@ -28,6 +28,8 @@ import { CenteredLoading } from './StateViews'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './ui/dropdown-menu'
 import { SelectionCheckIcon } from './ui/selection-check-icon'
 import { IssueAssigneePopover } from './IssueAssigneePopover'
+import { IssueListToolbar } from './IssueListToolbar'
+import { matchesIssueView, readIssueView, type IssueColumn } from './issue-list-view'
 import { STATUS_META } from './issue-status-meta'
 
 // ==================== Cadence pill (lifted from AutomationSchedulesSection) ====================
@@ -375,14 +377,14 @@ export function PropertyMenu({ field, issue, onPatch, controlId, showLabel = fal
   </DropdownMenu>
 }
 
-function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen, onPatch }: BoardRow & { onOpen: () => void; onPatch: (patch: IssuePatch) => Promise<void> }) {
+function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen, onPatch, columns }: BoardRow & { columns: IssueColumn[]; onOpen: () => void; onPatch: (patch: IssuePatch) => Promise<void> }) {
   const { t } = useTranslation()
   const terminal = issue.status === 'done' || issue.status === 'canceled'
   return (
     <li className="group flex h-11 min-w-0 items-center gap-1 px-3 hover:bg-muted/45 sm:px-6">
-      <PropertyMenu controlId={`issue-priority-${wsId}-${issue.id}`} field="priority" issue={issue} onPatch={onPatch} />
-      <span className="hidden w-16 shrink-0 truncate text-xs text-muted-foreground sm:block" title={t('issues.issueIdTitle', { id: issue.id })}>#{issue.id}</span>
-      <PropertyMenu controlId={`issue-status-${wsId}-${issue.id}`} field="status" issue={issue} onPatch={onPatch} />
+      {columns.includes('priority') && <PropertyMenu controlId={`issue-priority-${wsId}-${issue.id}`} field="priority" issue={issue} onPatch={onPatch} />}
+      {columns.includes('id') && <span className="hidden w-16 shrink-0 truncate text-xs text-muted-foreground sm:block" title={t('issues.issueIdTitle', { id: issue.id })}>#{issue.id}</span>}
+      {columns.includes('status') && <PropertyMenu controlId={`issue-status-${wsId}-${issue.id}`} field="status" issue={issue} onPatch={onPatch} />}
       <button
         type="button"
         onClick={onOpen}
@@ -397,21 +399,25 @@ function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen, onPatch }: BoardRow &
             <Copy size={12} aria-hidden />
           </span>
         )}
-        <span className="hidden max-w-36 shrink-0 items-center gap-1.5 rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground lg:inline-flex" title={t('issues.workspaceTitle', { workspace: wsTag, id: wsId.slice(0, 8) })}>
+        {columns.includes('workspace') && <span className="hidden max-w-36 shrink-0 items-center gap-1.5 rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground lg:inline-flex" title={t('issues.workspaceTitle', { workspace: wsTag, id: wsId.slice(0, 8) })}>
           <Layers size={11} className="shrink-0" aria-hidden />
           <span className="truncate">{wsTag}</span>
-        </span>
-        <span data-testid="issue-automation-summary" className="flex shrink-0 items-center gap-4">
+        </span>}
+        {columns.includes('schedule') && <span data-testid="issue-automation-summary" className="flex shrink-0 items-center gap-4">
           <span className="hidden w-28 items-center justify-end sm:flex"><BoardCadence issue={issue} /></span>
-        </span>
+        </span>}
       </button>
-      <div className="ml-2 shrink-0"><IssueAssigneePopover wsId={wsId} id={issue.id} assignee={issue.assignee} health={issue.automationHealth} /></div>
+      {columns.includes('assignee') && <div className="ml-2 shrink-0"><IssueAssigneePopover wsId={wsId} id={issue.id} assignee={issue.assignee} health={issue.automationHealth} /></div>}
     </li>
   )
 }
 
 function StatusGroup({
   status,
+  groupKey = status,
+  label,
+  columns,
+  hideHeading = false,
   rows,
   collapsed,
   onToggle,
@@ -419,6 +425,10 @@ function StatusGroup({
   onPatch,
 }: {
   status: IssueStatus
+  groupKey?: string
+  label?: string
+  columns: IssueColumn[]
+  hideHeading?: boolean
   rows: BoardRow[]
   collapsed: boolean
   onToggle: () => void
@@ -427,36 +437,37 @@ function StatusGroup({
 }) {
   const { t } = useTranslation()
   const meta = STATUS_META[status]
-  const statusLabel = t(`issues.status.${status}`)
-  const listId = `issues-status-${status}`
+  const statusLabel = label ?? t(`issues.status.${status}`)
+  const listId = `issues-status-${groupKey}`
   return (
     <section
-      data-testid={`issue-status-group-${status}`}
+      data-testid={`issue-status-group-${groupKey}`}
       className="min-w-0"
     >
-      <button
+      {!hideHeading && <button
         type="button"
         onClick={onToggle}
         aria-expanded={!collapsed}
         aria-controls={listId}
         aria-label={t(collapsed ? 'issues.expandStatus' : 'issues.collapseStatus', { status: statusLabel })}
-        className="flex h-9 w-full items-center gap-2 bg-muted/45 px-3 text-left transition-colors hover:bg-muted/60 sm:px-4"
+        className="flex h-9 w-full items-center gap-2 rounded-lg bg-muted/45 px-3 text-left transition-colors hover:bg-muted/60 sm:px-4"
       >
         {collapsed ? (
           <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" />
         ) : (
           <ChevronDown size={14} className="shrink-0 text-muted-foreground/70" />
         )}
-        <meta.Icon size={14} className={`shrink-0 ${meta.className}`} />
+        {!label && <meta.Icon size={14} className={`shrink-0 ${meta.className}`} />}
         <span className="text-[13px] font-medium text-foreground">{statusLabel}</span>
         <span className="text-xs text-muted-foreground">{rows.length}</span>
-      </button>
-      {!collapsed && (
+      </button>}
+      {(!collapsed || hideHeading) && (
         <ul id={listId} className="py-1">
           {rows.map((row) => (
             <IssueRow
               key={`${row.wsId}:${row.issue.id}`}
               {...row}
+              columns={columns}
               onOpen={() => onOpenRow(row)}
               onPatch={(patch) => onPatch(row.wsId, row.issue.id, patch)}
             />
@@ -490,28 +501,25 @@ function InvalidWorkspaces({ workspaces }: { workspaces: IssueWorkspace[] }) {
 
 // ==================== Board ====================
 
-/**
- * Global Issue board — a read-only, Linear-style list of every workspace's
- * issues (GET /api/issues), grouped by status. An issue with a `when` is
- * scheduled (carries a cadence pill + still fires headless runs via the
- * scanner); an issue without is a pure tracked work item. Each workspace owns
- * its issues as `.alice/issues/<id>.md` files — there is no central registry
- * and nothing to create here (Phase 1).
- */
+/** Workspace-owned Issues with local view preferences and inline property editing. */
 export function IssuesBoard() {
   const { t } = useTranslation()
   const { data, error, loading, updateIssue } = useIssues()
   const { workspaces: workspaceMetas } = useWorkspaces()
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
   const setSidebar = useWorkspace((s) => s.setSidebar)
-  const [collapsed, setCollapsed] = useState<Set<IssueStatus>>(new Set())
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [view, setView] = useState(readIssueView)
+  useEffect(() => {
+    try { localStorage.setItem('openalice-issue-list-view', JSON.stringify({ tab: view.tab, grouping: view.grouping, ordering: view.ordering, completed: view.completed, columns: view.columns })) } catch { /* Storage may be unavailable. */ }
+  }, [view.tab, view.grouping, view.ordering, view.completed, view.columns])
 
   const openRow = (row: BoardRow) => {
     setSidebar('issue')
     openOrFocus({ kind: 'issue-detail', params: { wsId: row.wsId, id: row.issue.id } })
   }
 
-  const toggle = (status: IssueStatus) =>
+  const toggle = (status: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
       if (next.has(status)) next.delete(status)
@@ -561,10 +569,23 @@ export function IssuesBoard() {
     })),
   )
 
-  const groups = STATUS_ORDER.map((status) => ({
-    status,
-    rows: rows.filter((r) => r.issue.status === status).sort(boardRowOrder),
-  })).filter((g) => g.rows.length > 0)
+  const visibleRows = rows.filter((row) => matchesIssueView(row.issue, row.wsId, view))
+  const compare = (a: BoardRow, b: BoardRow) => view.ordering === 'title' ? a.issue.title.localeCompare(b.issue.title)
+    : view.ordering === 'due' ? (a.issue.nextDueAtMs ?? Infinity) - (b.issue.nextDueAtMs ?? Infinity) || boardRowOrder(a, b)
+    : view.ordering === 'priority' ? PRIORITY_ORDER[a.issue.priority] - PRIORITY_ORDER[b.issue.priority] || boardRowOrder(a, b)
+    : boardRowOrder(a, b)
+  const keys = view.grouping === 'status' ? STATUS_ORDER : view.grouping === 'priority' ? Object.keys(PRIORITY_ORDER)
+    : view.grouping === 'workspace' ? okWorkspaces.map((ws) => ws.wsId) : ['all']
+  const groups = keys.map((key) => ({
+    key,
+    status: (view.grouping === 'status' ? key : 'todo') as IssueStatus,
+    label: view.grouping === 'status' ? undefined : view.grouping === 'priority' ? (key === 'none' ? t('issues.priority.label', { priority: t('issues.priority.none') }) : t(`issues.priority.${key as IssuePriority}`))
+      : view.grouping === 'workspace' ? rows.find((row) => row.wsId === key)?.wsTag : undefined,
+    rows: visibleRows.filter((row) => view.grouping === 'none' || (view.grouping === 'workspace' ? row.wsId : row.issue[view.grouping]) === key).sort(compare),
+  })).filter((group) => group.rows.length)
+  const toolbar = <IssueListToolbar view={view} onChange={(patch) => setView((current) => ({ ...current, ...patch }))}
+    workspaces={okWorkspaces.map((ws) => ({ id: ws.wsId, label: rows.find((row) => row.wsId === ws.wsId)?.wsTag || ws.tag }))}
+    visible={visibleRows.length} total={rows.length} />
 
   const staleBanner = error ? (
     <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning">
@@ -572,9 +593,10 @@ export function IssuesBoard() {
     </div>
   ) : null
 
-  if (groups.length === 0 && invalid.length === 0) {
+  if (rows.length === 0 && invalid.length === 0) {
     return (
       <div className="mx-auto max-w-[1240px] space-y-3">
+        {toolbar}
         {staleBanner}
         <div className="rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <ListChecks size={24} className="mx-auto text-muted-foreground/50" />
@@ -593,15 +615,21 @@ export function IssuesBoard() {
 
   return (
     <div data-testid="issues-board" className="w-full space-y-1">
+      {toolbar}
       {staleBanner}
+      {groups.length === 0 && rows.length > 0 && <p className="py-16 text-center text-sm text-muted-foreground">{t('issues.view.noMatches')}</p>}
       <InvalidWorkspaces workspaces={invalid} />
       {groups.map((g) => (
         <StatusGroup
-          key={g.status}
+          key={`${view.grouping}:${g.key}`}
           status={g.status}
+          groupKey={g.key}
+          label={g.label}
+          columns={view.columns}
+          hideHeading={view.grouping === 'none'}
           rows={g.rows}
-          collapsed={collapsed.has(g.status)}
-          onToggle={() => toggle(g.status)}
+          collapsed={collapsed.has(`${view.grouping}:${g.key}`)}
+          onToggle={() => toggle(`${view.grouping}:${g.key}`)}
           onOpenRow={openRow}
           onPatch={updateIssue}
         />

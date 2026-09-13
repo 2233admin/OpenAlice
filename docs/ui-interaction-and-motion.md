@@ -166,6 +166,13 @@ needed for the real task. Prefer a small rotating set over a wall of commands.
 ### Issue list
 
 The global Issues list uses compact 44px rows and 36px status disclosure bars.
+Its toolbar separates Active / Backlog / All issues from filter and display
+popovers. Filters combine text, status, priority, Workspace, assignment policy,
+and schedule presence; display preferences control grouping, ordering, completed
+visibility, and six optional properties. Display preferences persist locally;
+filters reset on remount. Shared Popover, DropdownMenu, Button, and Switch own
+keyboard/focus behavior. The toolbar wraps and popovers scroll within short or
+narrow viewports. Unsupported subscription and sub-issue options are omitted.
 Priority, the stable Issue ID in a 64px truncated slot, status icon, and title occupy the leading edge;
 Workspace display name and next scheduled time sit on the right. Execution
 health is a small dot on the Assignee control, with localized status in its
