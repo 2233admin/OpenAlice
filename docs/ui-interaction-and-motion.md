@@ -165,8 +165,9 @@ needed for the real task. Prefer a small rotating set over a wall of commands.
 
 The global Issues list uses compact 44px rows and 36px status disclosure bars.
 Priority, the stable Issue ID, status icon, and title occupy the leading edge;
-Workspace display name, execution health, and next scheduled time sit on the
-right. Long titles and IDs truncate without increasing row height. Execution
+Workspace display name and next scheduled time sit on the right. Execution
+health is a small dot on the Assignee control, with localized status in its
+accessible name and hover description; the popover shows the full health message. Long titles and IDs truncate without increasing row height. Execution
 configuration remains in the Issue detail. Each row has an independent Assignee
 button using the shared Popover primitive. Its upper section reads the
 authoritative Issue owner on demand, shows Session runtime parameters, and
@@ -176,7 +177,7 @@ including its search, eligibility filtering, and confirmation dialog. Missing
 owners cannot open a conversation; assignment policies explain Session creation. Health messages,
 last-fire time, and full cadence remain available as hover descriptions.
 Below 1024px the Workspace chip hides; below 640px IDs and schedule metadata
-hide so the title and execution health remain readable. Rows remain native
+hide so the title and Assignee health indicator remain readable. Rows remain native
 buttons with visible keyboard focus, and collapsed groups leave the tab order.
 
 ### Background execution surfaces

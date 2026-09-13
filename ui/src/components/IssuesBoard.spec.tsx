@@ -94,8 +94,8 @@ describe('IssuesBoard', () => {
     expect(screen.queryByText('pi override')).toBeNull()
 
     const rowText = screen.getByTitle('Open daily-close-scan').textContent ?? ''
-    expect(rowText.indexOf('收盘扫描')).toBeLessThan(rowText.indexOf('Healthy'))
-    expect(rowText.indexOf('market-desk')).toBeLessThan(rowText.indexOf('Healthy'))
+    expect(rowText).not.toContain('Healthy')
+    expect(screen.getByRole('button', { name: 'Assignee · Healthy' })).toBeTruthy()
   })
 
   it('orders operational failures first without exposing execution configuration', () => {
@@ -173,7 +173,7 @@ describe('IssuesBoard', () => {
     render(<IssuesBoard />)
 
     expect(screen.getByText('进行中')).toBeTruthy()
-    expect(screen.getAllByText('运行中')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '负责人 · 运行中' })).toBeTruthy()
     expect(screen.getAllByText('每工作日 08:30')).toHaveLength(1)
     expect(screen.queryByText('首次运行时指派')).toBeNull()
     expect(screen.queryByText('claude 覆盖')).toBeNull()
@@ -207,7 +207,7 @@ describe('IssuesBoard', () => {
     expect(group.className).not.toContain('border-y')
     expect(group.className).not.toContain('rounded-lg')
     expect(screen.getAllByTestId('issue-automation-summary')).toHaveLength(1)
-    expect(screen.getAllByText('Healthy')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Assignee · Healthy' })).toBeTruthy()
     expect(screen.getByTitle('Every 1h')).toBeTruthy()
 
     const priority = screen.getByLabelText('High priority')

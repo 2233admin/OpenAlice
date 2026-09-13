@@ -198,17 +198,6 @@ const AUTOMATION_HEALTH_CLASS: Record<IssueAutomationHealthState, string> = {
   blocked: 'bg-destructive/15 text-destructive',
 }
 
-const BOARD_HEALTH_CLASS: Record<IssueAutomationHealthState, string> = {
-  inactive: 'text-muted-foreground',
-  not_started: 'text-muted-foreground',
-  due: 'text-warning',
-  running: 'text-info',
-  healthy: 'text-success',
-  interrupted: 'text-warning',
-  failed: 'text-destructive',
-  blocked: 'text-destructive',
-}
-
 export function AutomationHealthPill({ health }: { health: IssueAutomationHealth }) {
   const { t } = useTranslation()
   return (
@@ -315,24 +304,6 @@ function boardRowOrder(a: BoardRow, b: BoardRow): number {
   return a.issue.title.localeCompare(b.issue.title)
 }
 
-function BoardHealth({ issue }: { issue: IssueListItem }) {
-  const { t } = useTranslation()
-  const health = issue.automationHealth
-  if (!health) return null
-  const active = health.state === 'running' || health.state === 'due'
-  const lastRun = issue.lastFiredAtMs ? formatRelativeTime(issue.lastFiredAtMs) : ''
-
-  return (
-    <span
-      title={[health.message, lastRun].filter(Boolean).join(" · ")}
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-medium ${BOARD_HEALTH_CLASS[health.state]}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full bg-current ${active ? 'animate-pulse' : ''}`} aria-hidden />
-      {t(`issues.health.${health.state}`)}
-    </span>
-  )
-}
-
 function BoardCadence({ issue }: { issue: IssueListItem }) {
   const { t } = useTranslation()
   if (!issue.when) return null
@@ -378,11 +349,10 @@ function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen
           <span className="truncate">{wsTag}</span>
         </span>
         <span data-testid="issue-automation-summary" className="flex shrink-0 items-center gap-4">
-          <span className="flex w-24 items-center justify-end"><BoardHealth issue={issue} /></span>
           <span className="hidden w-28 items-center justify-end sm:flex"><BoardCadence issue={issue} /></span>
         </span>
       </button>
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5"><IssueAssigneePopover wsId={wsId} id={issue.id} /></div>
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5"><IssueAssigneePopover wsId={wsId} id={issue.id} health={issue.automationHealth} /></div>
     </li>
   )
 }
