@@ -56,6 +56,7 @@ function snapshot(issues: IssueListItem[]): IssueSnapshot {
 }
 
 beforeEach(async () => {
+  localStorage.removeItem('openalice-issue-list-view')
   await i18n.changeLanguage('en')
   mocks.useIssues.mockReturnValue({
     data: snapshot([]),
@@ -303,5 +304,47 @@ describe('inline Issue properties', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Done' }))
     expect(mocks.updateIssue).toHaveBeenCalledWith('ws-1', 'editable', { status: 'done' })
     expect(mocks.openOrFocus).not.toHaveBeenCalled()
+  })
+})
+
+describe('Issue views', () => {
+  const seed = () => mocks.useIssues.mockReturnValue({ data: snapshot([
+    issue({ id: 'active', title: 'Active task', priority: 'urgent' }),
+    issue({ id: 'later', title: 'Later task', status: 'backlog' }),
+    issue({ id: 'finished', title: 'Finished task', status: 'done' }),
+  ]), loading: false, error: null, updateIssue: mocks.updateIssue })
+
+  it('switches tabs, combines text and priority filters, and clears filters', async () => {
+    seed()
+    const user = userEvent.setup()
+    render(<IssuesBoard />)
+    await user.click(screen.getByRole('button', { name: 'Active' }))
+    expect(screen.queryByText('Later task')).toBeNull()
+    expect(screen.queryByText('Finished task')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'All issues' }))
+    await user.click(screen.getByRole('button', { name: 'Filter' }))
+    await user.type(screen.getByRole('textbox', { name: 'Search issues…' }), 'task')
+    await user.click(screen.getByRole('button', { name: 'Urgent' }))
+    expect(screen.getByText('Active task')).toBeTruthy()
+    expect(screen.queryByText('Later task')).toBeNull()
+    await user.click(screen.getAllByRole('button', { name: 'Clear filters' })[0])
+    expect(screen.getByText('Later task')).toBeTruthy()
+    expect(mocks.updateIssue).not.toHaveBeenCalled()
+  })
+
+  it('hides columns and completed issues and restores display preferences after remount', async () => {
+    seed()
+    const user = userEvent.setup()
+    const mounted = render(<IssuesBoard />)
+    await user.click(screen.getByRole('button', { name: 'Display options' }))
+    await user.click(screen.getByRole('button', { name: 'ID' }))
+    await user.click(screen.getByRole('switch', { name: 'Show completed issues' }))
+    expect(screen.queryByText('#active')).toBeNull()
+    expect(screen.queryByText('Finished task')).toBeNull()
+    mounted.unmount()
+    render(<IssuesBoard />)
+    expect(screen.queryByText('#active')).toBeNull()
+    expect(screen.queryByText('Finished task')).toBeNull()
+    expect(screen.getByText('Active task')).toBeTruthy()
   })
 })

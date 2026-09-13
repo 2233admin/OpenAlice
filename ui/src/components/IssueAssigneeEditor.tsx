@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Search, UserRound } from 'lucide-react'
+import { ChevronRight, Search } from 'lucide-react'
 import type { IssueAssigneeSession } from '../api/issues'
 import type { WorkspaceSessionDirectoryEntry } from './workspace/api'
 import { formatRelativeTime } from '../lib/intl'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
+import { IssueAssigneeAvatar } from './IssueAssigneeAvatar'
 import { SelectionCheckIcon } from './ui/selection-check-icon'
 
 export function AssigneeEditor({
@@ -16,6 +17,7 @@ export function AssigneeEditor({
   disabled,
   error,
   triggerLabel,
+  compact = false,
   onChange,
 }: {
   value: string
@@ -25,6 +27,7 @@ export function AssigneeEditor({
   disabled?: boolean
   error?: string | null
   triggerLabel?: string
+  compact?: boolean
   onChange: (next: string) => Promise<boolean>
 }) {
   const { t } = useTranslation()
@@ -136,13 +139,14 @@ export function AssigneeEditor({
           setDraftValue(value)
           setOpen(true)
         }}
-        variant="outline"
-        className="h-auto min-h-11 w-full min-w-0 justify-start gap-2.5 whitespace-normal px-3 py-2 text-left"
+        variant={compact ? "ghost" : "outline"}
+        title={selectedDescription || selectedLabel}
+        className={`h-auto w-full min-w-0 justify-start gap-2.5 whitespace-normal text-left ${compact ? "min-h-9 px-2 py-1.5" : "min-h-11 px-3 py-2"}`}
       >
-        <UserRound size={15} className="shrink-0 text-muted-foreground" aria-hidden />
+        <IssueAssigneeAvatar value={value} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-foreground">{triggerLabel || selectedLabel}</span>
-          {!triggerLabel && selectedDescription && <span className="block truncate text-[11px] text-muted-foreground">{selectedDescription}</span>}
+          {!compact && !triggerLabel && selectedDescription && <span className="block truncate text-[11px] text-muted-foreground">{selectedDescription}</span>}
         </span>
         <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" aria-hidden />
       </Button>

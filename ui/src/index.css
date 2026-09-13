@@ -1881,3 +1881,13 @@ html[lang="ja"] .oa-onboarding-title {
 .markdown-content a[data-file-path]:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
 .markdown-content a.markdown-file-image.is-sticker img { border: 0; border-radius: 0; background: transparent; }
+
+/* Issue detail shares a flush reading column with its title and Activity. */
+.issue-detail-document .what-editor-content .ProseMirror {
+  padding: 0;
+}
+.issue-detail-document .what-editor-shell {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

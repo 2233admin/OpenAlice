@@ -11,9 +11,9 @@ OpenAlice is a working console, not a static report. Motion should make the
 interface feel responsive and help the eye retain context without turning live
 trading surfaces into ambient animation.
 
-## Visual Language: Warm Editorial Workstation
+## Visual Language: Neutral Working Surface
 
-OpenAlice should feel like a calm, paper-like professional desk: warm,
+OpenAlice should feel like a calm professional desk: neutral,
 information-dense, precise, and operational. It is neither a generic admin
 dashboard nor a decorative consumer-finance app.
 
@@ -21,7 +21,9 @@ Build hierarchy with typography, spacing, alignment, and thin separators before
 adding another container. One dominant surface should own a task; supporting
 information should recede without becoming illegible.
 
-- Use warm neutral surfaces and the existing theme tokens. Do not introduce
+- Use neutral surfaces and the existing theme tokens. Codex is the default Day
+  card (white content and cool-gray sidebar); Graphite remains the default Night
+  card. Paper remains available, and saved palette choices are preserved. Do not introduce
   isolated hard-coded palettes.
 - Reserve blue for interaction and selection. Reserve green and red for
   financial or safety meaning, and amber for warnings. Do not use semantic
@@ -164,6 +166,13 @@ needed for the real task. Prefer a small rotating set over a wall of commands.
 ### Issue list
 
 The global Issues list uses compact 44px rows and 36px status disclosure bars.
+Its toolbar separates Active / Backlog / All issues from filter and display
+popovers. Filters combine text, status, priority, Workspace, assignment policy,
+and schedule presence; display preferences control grouping, ordering, completed
+visibility, and six optional properties. Display preferences persist locally;
+filters reset on remount. Shared Popover, DropdownMenu, Button, and Switch own
+keyboard/focus behavior. The toolbar wraps and popovers scroll within short or
+narrow viewports. Unsupported subscription and sub-issue options are omitted.
 Priority, the stable Issue ID in a 64px truncated slot, status icon, and title occupy the leading edge;
 Workspace display name and next scheduled time sit on the right. Execution
 health is a small dot on the Assignee control, with localized status in its
@@ -186,6 +195,18 @@ checks, keyboard navigation, and numeric selection. Writes apply the returned
 Issue immediately so status changes move rows into the matching group; failures
 keep the menu open with an error. The title opens detail through a sibling
 button rather than nesting controls. Collapsed groups leave the tab order.
+
+### Issue detail
+
+Issue detail follows a reading-first layout: a compact Issues / ID breadcrumb,
+a 28–32px title, flush editable Markdown, then Activity and operational Runs.
+The desktop grid reserves 256px for a borderless property rail. Status and
+priority reuse the board's labeled menu triggers; assignment reuses the shared
+picker and avatar states. Schedule owns cadence, due time, health, and run
+controls together. Agent settings use the shared Collapsible and start closed.
+No nested rail scroll container competes with the page. Below 1024px the rail
+stacks before the body with the existing section navigation. Editing, scheduling,
+confirmation, and server-error semantics stay in their existing owners.
 
 ### Background execution surfaces
 
