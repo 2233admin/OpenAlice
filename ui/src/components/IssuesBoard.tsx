@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import {
-  Bot,
+  Layers,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -25,7 +25,6 @@ import { formatRelativeTime } from '../lib/intl'
 import { useWorkspace } from '../tabs/store'
 import { CenteredLoading } from './StateViews'
 import { STATUS_META } from './issue-status-meta'
-import type { Workspace } from './workspace/api'
 
 // ==================== Cadence pill (lifted from AutomationSchedulesSection) ====================
 
@@ -204,9 +203,9 @@ const BOARD_HEALTH_CLASS: Record<IssueAutomationHealthState, string> = {
   due: 'text-warning',
   running: 'text-info',
   healthy: 'text-success',
-  interrupted: 'rounded-md bg-warning/15 px-2 py-1 text-warning',
-  failed: 'rounded-md bg-destructive/15 px-2 py-1 text-destructive',
-  blocked: 'rounded-md bg-destructive/15 px-2 py-1 text-destructive',
+  interrupted: 'text-warning',
+  failed: 'text-destructive',
+  blocked: 'text-destructive',
 }
 
 export function AutomationHealthPill({ health }: { health: IssueAutomationHealth }) {
@@ -270,19 +269,10 @@ interface BoardRow {
   wsId: string
   wsTag: string
   issue: IssueListItem
-  agentRuntime?: AgentRuntime
   /** When this issue's name collides across workspaces (`issue.nameCollision`),
    *  how many OTHER workspaces also claim the name — drives the warning tooltip.
    *  Absent ⇒ no collision. */
   dupOthers?: number
-}
-
-interface AgentRuntime {
-  id: string
-  displayName: string
-  source: 'override' | 'issue-default' | 'workspace-default' | 'workspace'
-  /** Explicit frontmatter only matters in the board when it differs from the effective default. */
-  distinctOverride?: boolean
 }
 
 /** Normalised collision key — title, trimmed + lowercased. Mirrors the server's
@@ -290,54 +280,6 @@ interface AgentRuntime {
 const nameKey = (title: string): string => title.trim().toLowerCase()
 
 // ==================== Rows + groups ====================
-
-function agentName(id: string, agents: readonly { id: string; displayName: string }[]): string {
-  return agents.find((agent) => agent.id === id)?.displayName ?? id
-}
-
-function resolveAgentRuntime(
-  issue: IssueListItem,
-  workspace: Workspace | null,
-  agents: readonly { id: string; displayName: string; kind?: 'agent' | 'utility' }[],
-  issueDefaultAgent: string | null,
-  defaultAgent: string | null,
-): AgentRuntime | undefined {
-  if (!workspace) {
-    return issue.agent
-      ? { id: issue.agent, displayName: agentName(issue.agent, agents), source: 'override', distinctOverride: true }
-      : undefined
-  }
-  const runtimeIds = agents
-    .filter((agent) => agent.kind !== 'utility')
-    .map((agent) => agent.id)
-  const workspaceIssueDefault = workspace.runtimeSettings?.runtime.headless.defaultAgent
-    ?? workspace.runtimeSettings?.runtime.headless.recent.agent
-    ?? null
-  const issueDefaultId = workspaceIssueDefault && runtimeIds.includes(workspaceIssueDefault)
-    ? workspaceIssueDefault
-    : issueDefaultAgent && runtimeIds.includes(issueDefaultAgent) ? issueDefaultAgent : null
-  const legacyWorkspaceDefault = workspace.defaultAgent ?? defaultAgent
-  const workspaceDefaultId = legacyWorkspaceDefault && runtimeIds.includes(legacyWorkspaceDefault) ? legacyWorkspaceDefault : null
-  const effectiveDefaultId = issueDefaultId ?? workspaceDefaultId ?? runtimeIds[0] ?? null
-  if (issue.agent) {
-    return {
-      id: issue.agent,
-      displayName: agentName(issue.agent, agents),
-      source: 'override',
-      distinctOverride: issue.agent !== effectiveDefaultId,
-    }
-  }
-  if (issueDefaultId) {
-    return { id: issueDefaultId, displayName: agentName(issueDefaultId, agents), source: 'issue-default' }
-  }
-  if (workspaceDefaultId) {
-    return { id: workspaceDefaultId, displayName: agentName(workspaceDefaultId, agents), source: 'workspace-default' }
-  }
-  const fallbackId = runtimeIds[0]
-  return fallbackId
-    ? { id: fallbackId, displayName: agentName(fallbackId, agents), source: 'workspace' }
-    : undefined
-}
 
 const ATTENTION_ORDER: Record<IssueAutomationHealthState, number> = {
   blocked: 0,
@@ -381,12 +323,11 @@ function BoardHealth({ issue }: { issue: IssueListItem }) {
 
   return (
     <span
-      title={health.message}
-      className={`inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${BOARD_HEALTH_CLASS[health.state]}`}
+      title={[health.message, lastRun].filter(Boolean).join(" · ")}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-medium ${BOARD_HEALTH_CLASS[health.state]}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full bg-current ${active ? 'animate-pulse' : ''}`} aria-hidden />
       {t(`issues.health.${health.state}`)}
-      {lastRun && <span className="font-normal text-muted-foreground/80">· {lastRun}</span>}
     </span>
   )
 }
@@ -401,94 +342,44 @@ function BoardCadence({ issue }: { issue: IssueListItem }) {
       className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
     >
       <Clock size={11} className="shrink-0 text-muted-foreground/70" aria-hidden />
-      <span className={`truncate ${nextRun ? 'hidden sm:inline' : ''}`}>{cadenceLabel(issue.when, t)}</span>
-      {nextRun && (
-        <>
-          <span className="hidden shrink-0 text-muted-foreground/50 sm:inline" aria-hidden>·</span>
-          <span className="shrink-0 text-muted-foreground/80">{nextRun}</span>
-        </>
-      )}
+      <span className="truncate tabular-nums">{nextRun || cadenceLabel(issue.when, t)}</span>
     </span>
   )
 }
 
-function IssueRow({ wsId, wsTag, issue, agentRuntime, dupOthers, onOpen }: BoardRow & { onOpen: () => void }) {
+function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen: () => void }) {
   const { t } = useTranslation()
   const terminal = issue.status === 'done' || issue.status === 'canceled'
-  const titleMatchesId = issue.title.trim().toLowerCase() === issue.id.trim().toLowerCase()
-  const explicitAssignee = issue.assignee !== '@unassigned'
-  const explicitAgent = agentRuntime?.source === 'override' && agentRuntime.distinctOverride !== false
-  const assigneeLabel = issue.assignee === '@new-then-resume'
-    ? t('issues.assignOnFirstRun')
-    : issue.assignee === '@new-each-run'
-      ? t('issues.detail.mutationValue.newSessionEachRun')
-      : issue.assignee
+  const meta = STATUS_META[issue.status]
   return (
     <li>
       <button
         type="button"
         onClick={onOpen}
         title={t('issues.openIssue', { id: issue.id })}
-        className="oa-pressable grid min-h-11 w-full grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/35 sm:px-4 lg:grid-cols-[1rem_minmax(16rem,1.25fr)_minmax(9rem,.65fr)_minmax(19rem,1fr)] lg:items-center lg:gap-x-5"
+        className="oa-pressable flex h-11 w-full min-w-0 items-center gap-3 px-3 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
       >
-        <span className="col-start-1 row-start-1 mt-0.5 flex h-5 w-4 shrink-0 items-center justify-center">
-          <PriorityIndicator priority={issue.priority} />
+        <PriorityIndicator priority={issue.priority} />
+        <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground sm:block" title={t('issues.issueIdTitle', { id: issue.id })}>
+          #{issue.id}
         </span>
-
-        <div className="col-start-2 row-start-1 min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <span
-              title={issue.title}
-              className={`min-w-0 text-[13px] font-medium leading-5 sm:text-[13.5px] lg:truncate ${
-                terminal ? 'text-muted-foreground' : 'text-foreground'
-              } line-clamp-2 lg:line-clamp-1`}
-            >
-              {issue.title}
-            </span>
-            {issue.nameCollision && (
-              <span
-                title={t((dupOthers ?? 1) === 1 ? 'issues.duplicateOne' : 'issues.duplicateMany', {
-                  count: dupOthers ?? 1,
-                })}
-                aria-label={t('issues.duplicateLabel')}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-[9px] font-medium text-warning"
-              >
-                <Copy size={9} aria-hidden /> {t('issues.duplicateShort')}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {(issue.when || issue.automationHealth) && (
-          <div
-            data-testid="issue-automation-summary"
-            className="col-start-2 row-start-2 mt-1.5 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 lg:col-start-4 lg:row-start-1 lg:mt-0 lg:grid-cols-[minmax(7rem,.65fr)_minmax(0,1fr)] lg:items-start lg:gap-x-4"
-          >
-            <BoardHealth issue={issue} />
-            <BoardCadence issue={issue} />
-          </div>
-        )}
-
-        <div className="col-start-2 mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[10.5px] text-muted-foreground/80 lg:col-start-3 lg:row-start-1 lg:mt-0">
-          <span className="truncate" title={t('issues.workspaceTitle', { workspace: wsTag, id: wsId.slice(0, 8) })}>
-            {wsTag}
+        <meta.Icon size={14} className={`shrink-0 ${meta.className}`} aria-label={t(`issues.status.${issue.status}`)} />
+        <span className={`min-w-0 flex-1 truncate text-[13px] ${terminal ? 'text-muted-foreground' : 'text-foreground'}`}>
+          {issue.title}
+        </span>
+        {issue.nameCollision && (
+          <span title={t((dupOthers ?? 1) === 1 ? 'issues.duplicateOne' : 'issues.duplicateMany', { count: dupOthers ?? 1 })} aria-label={t('issues.duplicateLabel')} className="shrink-0 text-warning">
+            <Copy size={12} aria-hidden />
           </span>
-          {!titleMatchesId && (
-            <span className="hidden max-w-[14rem] truncate font-mono text-muted-foreground/60 sm:inline" title={t('issues.issueIdTitle', { id: issue.id })}>
-              #{issue.id}
-            </span>
-          )}
-          {explicitAssignee && (
-            <span className="max-w-[14rem] truncate text-muted-foreground" title={t('issues.assigneeTitle', { assignee: issue.assignee })}>
-              {assigneeLabel}
-            </span>
-          )}
-          {explicitAgent && agentRuntime && (
-            <span className="inline-flex items-center gap-1 text-muted-foreground" title={t('issues.agentOverrideTitle', { agent: agentRuntime.displayName })}>
-              <Bot size={10} aria-hidden /> {t('issues.agentOverrideShort', { agent: agentRuntime.id })}
-            </span>
-          )}
-        </div>
+        )}
+        <span className="hidden max-w-36 shrink-0 items-center gap-1.5 rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground lg:inline-flex" title={t('issues.workspaceTitle', { workspace: wsTag, id: wsId.slice(0, 8) })}>
+          <Layers size={11} className="shrink-0" aria-hidden />
+          <span className="truncate">{wsTag}</span>
+        </span>
+        <span data-testid="issue-automation-summary" className="flex shrink-0 items-center gap-4">
+          <span className="flex w-24 items-center justify-end"><BoardHealth issue={issue} /></span>
+          <span className="hidden w-28 items-center justify-end sm:flex"><BoardCadence issue={issue} /></span>
+        </span>
       </button>
     </li>
   )
@@ -514,7 +405,7 @@ function StatusGroup({
   return (
     <section
       data-testid={`issue-status-group-${status}`}
-      className="border-y border-border/70"
+      className="min-w-0"
     >
       <button
         type="button"
@@ -522,7 +413,7 @@ function StatusGroup({
         aria-expanded={!collapsed}
         aria-controls={listId}
         aria-label={t(collapsed ? 'issues.expandStatus' : 'issues.collapseStatus', { status: statusLabel })}
-        className="flex min-h-11 w-full items-center gap-2 bg-secondary/25 px-2 py-2.5 text-left transition-colors hover:bg-muted/40 sm:px-3"
+        className="flex h-9 w-full items-center gap-2 bg-muted/45 px-3 text-left transition-colors hover:bg-muted/60 sm:px-4"
       >
         {collapsed ? (
           <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" />
@@ -530,11 +421,11 @@ function StatusGroup({
           <ChevronDown size={14} className="shrink-0 text-muted-foreground/70" />
         )}
         <meta.Icon size={14} className={`shrink-0 ${meta.className}`} />
-        <span className="text-[13px] font-semibold text-foreground">{statusLabel}</span>
+        <span className="text-[13px] font-medium text-foreground">{statusLabel}</span>
         <span className="text-xs text-muted-foreground">{rows.length}</span>
       </button>
       {!collapsed && (
-        <ul id={listId} className="divide-y divide-border/60 border-t border-border/70">
+        <ul id={listId} className="py-1">
           {rows.map((row) => (
             <IssueRow
               key={`${row.wsId}:${row.issue.id}`}
@@ -582,7 +473,7 @@ function InvalidWorkspaces({ workspaces }: { workspaces: IssueWorkspace[] }) {
 export function IssuesBoard() {
   const { t } = useTranslation()
   const { data, error, loading } = useIssues()
-  const { agents, defaultAgent, issueDefaultAgent, workspaces: workspaceMetas } = useWorkspaces()
+  const { workspaces: workspaceMetas } = useWorkspaces()
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
   const setSidebar = useWorkspace((s) => s.setSidebar)
   const [collapsed, setCollapsed] = useState<Set<IssueStatus>>(new Set())
@@ -634,15 +525,8 @@ export function IssuesBoard() {
   const rows: BoardRow[] = okWorkspaces.flatMap((w) =>
     (w.issues ?? []).map((issue) => ({
       wsId: w.wsId,
-      wsTag: w.tag,
+      wsTag: workspaceMetas.find((workspace) => workspace.id === w.wsId)?.displayName || w.tag,
       issue,
-      agentRuntime: resolveAgentRuntime(
-        issue,
-        workspaceMetas.find((workspace) => workspace.id === w.wsId) ?? null,
-        agents,
-        issueDefaultAgent,
-        defaultAgent,
-      ),
       dupOthers: issue.nameCollision
         ? Math.max(0, (wsByName.get(nameKey(issue.title))?.size ?? 1) - 1)
         : undefined,
@@ -680,7 +564,7 @@ export function IssuesBoard() {
   }
 
   return (
-    <div data-testid="issues-board" className="mx-auto max-w-[1240px] space-y-5">
+    <div data-testid="issues-board" className="w-full space-y-1">
       {staleBanner}
       <InvalidWorkspaces workspaces={invalid} />
       {groups.map((g) => (

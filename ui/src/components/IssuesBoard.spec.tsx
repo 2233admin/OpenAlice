@@ -95,10 +95,10 @@ describe('IssuesBoard', () => {
 
     const rowText = screen.getByTitle('Open daily-close-scan').textContent ?? ''
     expect(rowText.indexOf('收盘扫描')).toBeLessThan(rowText.indexOf('Healthy'))
-    expect(rowText.indexOf('Healthy')).toBeLessThan(rowText.indexOf('market-desk'))
+    expect(rowText.indexOf('market-desk')).toBeLessThan(rowText.indexOf('Healthy'))
   })
 
-  it('orders operational failures first and exposes only meaningful exceptions', () => {
+  it('orders operational failures first without exposing execution configuration', () => {
     mocks.useIssues.mockReturnValue({
       data: snapshot([
         issue({
@@ -127,11 +127,11 @@ describe('IssuesBoard', () => {
     const rows = screen.getAllByRole('listitem')
     expect(rows).toHaveLength(2)
     expect(rows[0]?.textContent).toContain('Failed scheduled work')
-    expect(screen.getByText('@resume-calm-market-desk-a1b2c3')).toBeTruthy()
-    expect(screen.getByText('claude override')).toBeTruthy()
+    expect(screen.queryByText('@resume-calm-market-desk-a1b2c3')).toBeNull()
+    expect(screen.queryByText('claude override')).toBeNull()
   })
 
-  it('explains transitional ownership without exposing the raw @new-then-resume token', () => {
+  it('keeps transitional ownership in the detail instead of the list', () => {
     mocks.useIssues.mockReturnValue({
       data: snapshot([
         issue({
@@ -147,7 +147,7 @@ describe('IssuesBoard', () => {
 
     render(<IssuesBoard />)
 
-    expect(screen.getByText('Assign on first run')).toBeTruthy()
+    expect(screen.queryByText('Assign on first run')).toBeNull()
     expect(screen.queryByText('@new-then-resume')).toBeNull()
   })
 
@@ -175,8 +175,8 @@ describe('IssuesBoard', () => {
     expect(screen.getByText('进行中')).toBeTruthy()
     expect(screen.getAllByText('运行中')).toHaveLength(1)
     expect(screen.getAllByText('每工作日 08:30')).toHaveLength(1)
-    expect(screen.getByText('首次运行时指派')).toBeTruthy()
-    expect(screen.getByText('claude 覆盖')).toBeTruthy()
+    expect(screen.queryByText('首次运行时指派')).toBeNull()
+    expect(screen.queryByText('claude 覆盖')).toBeNull()
     expect(screen.getByLabelText('高优先级')).toBeTruthy()
     expect(screen.getByLabelText('折叠“进行中”议题')).toBeTruthy()
     expect(screen.getByTitle('打开 weekday-scan')).toBeTruthy()
@@ -203,12 +203,12 @@ describe('IssuesBoard', () => {
 
     const board = screen.getByTestId('issues-board')
     const group = screen.getByTestId('issue-status-group-todo')
-    expect(board.className).toContain('max-w-[1240px]')
-    expect(group.className).toContain('border-y')
+    expect(board.className).toContain('w-full')
+    expect(group.className).not.toContain('border-y')
     expect(group.className).not.toContain('rounded-lg')
     expect(screen.getAllByTestId('issue-automation-summary')).toHaveLength(1)
     expect(screen.getAllByText('Healthy')).toHaveLength(1)
-    expect(screen.getAllByText('Every 1h')).toHaveLength(1)
+    expect(screen.getByTitle('Every 1h')).toBeTruthy()
 
     const priority = screen.getByLabelText('High priority')
     expect(priority.querySelectorAll('.bg-muted-foreground\\/80')).toHaveLength(3)

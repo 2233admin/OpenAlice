@@ -161,6 +161,18 @@ chatbot filler. Their visible titles should stay scannable while the inserted
 prompt carries the evidence, freshness, persistence, and permission boundaries
 needed for the real task. Prefer a small rotating set over a wall of commands.
 
+### Issue list
+
+The global Issues list uses compact 44px rows and 36px status disclosure bars.
+Priority, the stable Issue ID, status icon, and title occupy the leading edge;
+Workspace display name, execution health, and next scheduled time sit on the
+right. Long titles and IDs truncate without increasing row height. Execution
+configuration and Session ownership remain in the Issue detail. Health messages,
+last-fire time, and full cadence remain available as hover descriptions.
+Below 1024px the Workspace chip hides; below 640px IDs and schedule metadata
+hide so the title and execution health remain readable. Rows remain native
+buttons with visible keyboard focus, and collapsed groups leave the tab order.
+
 ### Background execution surfaces
 
 The bottom Your Alice application menu uses the static Alice portrait and a
