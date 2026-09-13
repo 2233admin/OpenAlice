@@ -92,6 +92,7 @@ let demoWebRequestSequence = 0
 
 export function resetDemoWorkspaceWebState(): void {
   demoReplyStreams.clear()
+  demoSessionPresence.clear()
   demoManagerMessages = []
   demoQuickChatSequence = 0
   demoWebRequestSequence = 0
@@ -529,7 +530,7 @@ export const workspacesHandlers = [
   }),
   http.put('/api/workspaces/terminal-view-attributes', () =>
     HttpResponse.json({ ok: true, changed: true })),
-  http.get('/api/workspaces', () => HttpResponse.json({ workspaces: demoWorkspaces })),
+  http.get('/api/workspaces', () => HttpResponse.json({ workspaces: demoWorkspaces.map(workspace => ({ ...workspace, sessions: workspace.sessions.map(session => ({ ...session, presence: demoSessionPresence.get(webKey(workspace.id, session.resumeId)) ?? session.presence ?? 'active' })) })) })),
   http.get('/api/workspaces/manager', () => HttpResponse.json({
     manager: {
       id: 'workspace-manager', tag: 'Workspace Manager',
@@ -1196,7 +1197,7 @@ export const workspacesHandlers = [
     if (presence !== 'active' && presence !== 'archived' && presence !== 'deleted') {
       return HttpResponse.json({ error: 'invalid_presence' }, { status: 400 })
     }
-    demoSessionPresence.set(resumeId, presence)
+    demoSessionPresence.set(webKey(String(params.id), resumeId), presence)
     return HttpResponse.json({ resumeId, presence, lifecycle: 'active' })
   }),
   http.get('/api/workspaces/:id/resumes', ({ params, request }) => {
@@ -1305,8 +1306,8 @@ export const workspacesHandlers = [
     return HttpResponse.json({
       workspace: { id: wsId, tag: workspace?.tag ?? wsId },
       sessions: sessions.filter((session) => !requestedResume || session.resumeId === requestedResume).map((session) => {
-        const presence = demoSessionPresence.get(session.resumeId) ?? session.presence
-        return presence && presence !== 'active' ? { ...session, presence } : session
+        const presence = demoSessionPresence.get(webKey(wsId, session.resumeId)) ?? session.presence
+        return { ...session, presence: presence ?? 'active' }
       }),
     })
   }),
@@ -1431,7 +1432,17 @@ export const workspacesHandlers = [
       { status: 201 },
     )
   }),
-  http.post('/api/workspaces/:id/sessions/:sid/pause', () => HttpResponse.json(true)),
+  http.post('/api/workspaces/:id/sessions/:sid/pause', ({ params }) => {
+    const workspace = demoWorkspaces.find(row => row.id === String(params.id))
+    const session = workspace?.sessions.find(row => row.id === String(params.sid))
+    if (!workspace || !session) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    const key = webKey(workspace.id, session.id)
+    if (!demoResumedSessions.has(key)) demoResumedSessions.set(key, session)
+    demoReplyStreams.delete(key)
+    updateDemoWebSession(workspace.id, session.id, () => ({ phase: 'idle', streamingMessage: null, requests: [] }))
+    demoWorkspaces[demoWorkspaces.indexOf(workspace)] = { ...workspace, sessions: workspace.sessions.map(row => row.id === session.id ? { ...row, state: 'paused' as const, pid: null } : row) }
+    return HttpResponse.json(true)
+  }),
   http.put('/api/workspaces/:id/sessions/:sid/runtime', async ({ params, request }) => {
     const workspaceIndex = demoWorkspaces.findIndex((candidate) => candidate.id === String(params.id))
     const workspace = workspaceIndex >= 0 ? demoWorkspaces[workspaceIndex] : undefined
