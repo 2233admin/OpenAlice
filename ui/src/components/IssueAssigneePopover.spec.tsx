@@ -16,7 +16,7 @@ beforeEach(async () => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 it('loads on demand and opens the authoritative owner in its own Workspace', async () => {
   const user = userEvent.setup()
-  render(<IssueAssigneePopover wsId="issue-workspace" id="work" />)
+  render(<IssueAssigneePopover wsId="issue-workspace" id="work" assignee="@resume-owner" />)
   expect(mocks.detail).not.toHaveBeenCalled()
   await user.click(screen.getByRole('button', { name: 'Assignee' }))
   expect(screen.getByText('test-model')).toBeTruthy()
@@ -26,7 +26,7 @@ it('loads on demand and opens the authoritative owner in its own Workspace', asy
 it('uses the existing confirmation picker and keeps errors visible', async () => {
   const user = userEvent.setup()
   mocks.update.mockRejectedValue(new Error('Session is busy'))
-  render(<IssueAssigneePopover wsId="issue-workspace" id="work" />)
+  render(<IssueAssigneePopover wsId="issue-workspace" id="work" assignee="@resume-owner" />)
   await user.click(screen.getByRole('button', { name: 'Assignee' }))
   await user.click(screen.getAllByRole('button', { name: 'Assignee' }).at(-1)!)
   await user.click(screen.getByRole('button', { name: /New Session · each run/ }))
@@ -38,18 +38,31 @@ it('applies only the server-returned assignment after confirmation', async () =>
   const user = userEvent.setup()
   const next = { issue: { assignee: '@new-each-run' } }
   mocks.update.mockResolvedValue(next)
-  render(<IssueAssigneePopover wsId="issue-workspace" id="work" />)
+  render(<IssueAssigneePopover wsId="issue-workspace" id="work" assignee="@resume-owner" />)
   await user.click(screen.getByRole('button', { name: 'Assignee' }))
   await user.click(screen.getAllByRole('button', { name: 'Assignee' }).at(-1)!)
   await user.click(screen.getByRole('button', { name: /New Session · each run/ }))
   expect(mocks.update).not.toHaveBeenCalled()
   await user.click(screen.getByRole('button', { name: 'Confirm assignment' }))
   expect(mocks.mutate).toHaveBeenCalledWith(next)
+  expect(screen.getAllByRole('button', { name: 'Assignee' })[0].getAttribute('aria-description')).toBe('New Session · each run')
 })
 it('does not offer a chat action for an unavailable owner', async () => {
   const user = userEvent.setup()
   mocks.detail.mockReturnValue({ data: { issue: { assignee: '@resume-missing' }, assigneeSession: { resumeId: 'resume-missing', state: 'missing' } }, mutate: mocks.mutate })
-  render(<IssueAssigneePopover wsId="issue-workspace" id="work" />)
+  render(<IssueAssigneePopover wsId="issue-workspace" id="work" assignee="@resume-owner" />)
   await user.click(screen.getByRole('button', { name: 'Assignee' }))
   expect(screen.queryByRole('button', { name: 'Open conversation' })).toBeNull()
+})
+
+it.each([
+  ['@unassigned', 'Unassigned'],
+  ['@human', 'Human'],
+  ['@new-each-run', 'New Session · each run'],
+  ['@new-then-resume', 'New Session · assign after first run'],
+  ['@resume-owner', 'Signed Session · resume-owner'],
+])('describes assignment %s without fetching Session details', (assignee, description) => {
+  render(<IssueAssigneePopover wsId="issue-workspace" id="work" assignee={assignee} />)
+  expect(screen.getByRole('button', { name: 'Assignee' }).getAttribute('aria-description')).toBe(description)
+  expect(mocks.detail).not.toHaveBeenCalled()
 })

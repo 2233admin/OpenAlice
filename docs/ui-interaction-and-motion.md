@@ -169,7 +169,11 @@ Workspace display name and next scheduled time sit on the right. Execution
 health is a small dot on the Assignee control, with localized status in its
 accessible name and hover description; the popover shows the full health message. Long titles and IDs truncate without increasing row height. Execution
 configuration remains in the Issue detail. Each row has an independent Assignee
-button using the shared Popover primitive. Its upper section reads the
+button using the shared Popover primitive. Unassigned uses a dashed person avatar;
+bound Sessions and human responsibility use solid neutral avatars. New-Session
+policies use dashed plus/repeat avatars, with the exact responsibility in the
+hover description and accessible description. Assignment confirmation updates
+the avatar immediately from the server response. Its upper section reads the
 authoritative Issue owner on demand, shows Session runtime parameters, and
 opens that Session through the existing conversation activation path. The
 lower section reuses `IssueAssigneeEditor`, also used by the detail inspector,
