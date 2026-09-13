@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, UserRound } from 'lucide-react'
+import { Bot, MessageSquare, Plus, Repeat2, UserRound } from 'lucide-react'
 import type { IssueAutomationHealth, IssueAutomationHealthState } from '../api/issues'
 import { issuesApi } from '../api/issues'
 import { useIssueDetail } from '../hooks/useIssueDetail'
@@ -16,24 +16,43 @@ const HEALTH_DOT: Record<IssueAutomationHealthState, string> = {
   interrupted: 'bg-warning', failed: 'bg-destructive', blocked: 'bg-destructive',
 }
 
-export function IssueAssigneePopover({ wsId, id, health }: { wsId: string; id: string; health?: IssueAutomationHealth }) {
+export function IssueAssigneePopover({ wsId, id, assignee, health }: { wsId: string; id: string; assignee: string; health?: IssueAutomationHealth }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const [currentAssignee, setCurrentAssignee] = useState(assignee)
+  useEffect(() => setCurrentAssignee(assignee), [wsId, id, assignee])
+  const bound = currentAssignee.startsWith('@resume-')
+  const human = currentAssignee === '@human'
+  const eachRun = currentAssignee === '@new-each-run'
+  const newSession = currentAssignee === '@new-then-resume'
+  const description = bound ? t('issues.detail.signedSession', { resumeId: currentAssignee.slice(1) })
+    : human ? t('issues.detail.human')
+    : eachRun ? t('issues.detail.assigneeWorkspaceScheduled')
+    : newSession ? t('issues.detail.assigneeNew')
+    : t('issues.detail.unassigned')
   const label = [t('issues.detail.assignee'), health && t(`issues.health.${health.state}`)].filter(Boolean).join(' · ')
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger aria-label={label} title={health ? `${label} — ${health.message}` : label} className="relative flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <UserRound size={16} aria-hidden />
+      <PopoverTrigger aria-label={label} aria-description={description} title={[description, health && `${t(`issues.health.${health.state}`)} — ${health.message}`].filter(Boolean).join(" · ")} className="relative flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {bound || human ? <span className="flex size-5 items-center justify-center rounded-full bg-muted-foreground text-background">
+          {bound ? <Bot size={13} aria-hidden /> : <UserRound size={13} aria-hidden />}
+        </span> : eachRun || newSession ? <span className="flex size-5 items-center justify-center rounded-full border border-dashed border-current">
+          {eachRun ? <Repeat2 size={12} aria-hidden /> : <Plus size={12} aria-hidden />}
+        </span> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" strokeDasharray="1.5 4" strokeLinecap="round" />
+          <circle cx="12" cy="10" r="3" fill="currentColor" />
+          <path d="M5.5 18.3a7.5 7.5 0 0 1 13 0M6 19a9 9 0 0 0 12 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>}
         {health && <span aria-hidden className={`absolute right-0.5 top-0.5 size-2 rounded-full ring-2 ring-background ${HEALTH_DOT[health.state]}`} />}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] p-0">
-        {open && <AssigneeContent wsId={wsId} id={id} />}
+        {open && <AssigneeContent wsId={wsId} id={id} onAssigned={setCurrentAssignee} />}
       </PopoverContent>
     </Popover>
   )
 }
 
-function AssigneeContent({ wsId, id }: { wsId: string; id: string }) {
+function AssigneeContent({ wsId, id, onAssigned }: { wsId: string; id: string; onAssigned: (assignee: string) => void }) {
   const { t } = useTranslation()
   const { data, error, mutate } = useIssueDetail(wsId, id)
   const { directory, loading, error: directoryError } = useWorkspaceSessionDirectory(wsId)
@@ -87,7 +106,9 @@ function AssigneeContent({ wsId, id }: { wsId: string; id: string }) {
         <AssigneeEditor triggerLabel={t('issues.detail.chooseAssignee')} value={data.issue.assignee} scheduled={Boolean(data.issue.when)} sessions={directory?.sessions ?? []} authoritativeOwner={owner} error={actionError} disabled={loading || Boolean(directoryError)} onChange={async (assignee) => {
           setActionError(null)
           try {
-            mutate(await issuesApi.update(wsId, id, { assignee }))
+            const next = await issuesApi.update(wsId, id, { assignee })
+            mutate(next)
+            onAssigned(next.issue.assignee)
             return true
           } catch (e) {
             setActionError(e instanceof Error ? e.message : String(e))

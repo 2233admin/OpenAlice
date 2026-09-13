@@ -403,7 +403,7 @@ function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen, onPatch }: BoardRow &
           <span className="hidden w-28 items-center justify-end sm:flex"><BoardCadence issue={issue} /></span>
         </span>
       </button>
-      <div className="ml-2 shrink-0"><IssueAssigneePopover wsId={wsId} id={issue.id} health={issue.automationHealth} /></div>
+      <div className="ml-2 shrink-0"><IssueAssigneePopover wsId={wsId} id={issue.id} assignee={issue.assignee} health={issue.automationHealth} /></div>
     </li>
   )
 }
