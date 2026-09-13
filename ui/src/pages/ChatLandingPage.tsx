@@ -349,7 +349,7 @@ export function HarnessLandingPage({
     managedWorkspaceLaunch: mode === 'chat' && credentialWorkspace !== null && credentialWorkspace !== undefined,
   })
   const effectiveAgent = launchConfig.effectiveAgent
-  const [uiMode, setUiMode] = useState<'terminal' | 'webpi'>('terminal')
+  const [uiMode, setUiMode] = useState<'terminal' | 'webpi'>(import.meta.env.VITE_DEMO_MODE ? 'webpi' : 'terminal')
   const selectedInfo = launchConfig.selectedAgent
   const supportsGui = Boolean(selectedInfo?.capabilities.web?.freshSession)
   const surface = supportsGui ? uiMode : 'terminal'

@@ -1,3 +1,4 @@
+import { demoChatWorkflowReply, demoChatWorkflowTitle } from '../fixtures/chat-workflows'
 import { stickerHandlers } from './stickers'
 import { http, HttpResponse } from 'msw'
 import type { AliceHarnessConfig } from '../../hooks/useAliceHarness'
@@ -212,6 +213,13 @@ function appendDemoWebMessages(
 function startDemoWebTurn(wsId: string, sessionId: string, message: string): WebSessionSnapshot | null {
   const current = ensureDemoWebSession(wsId, sessionId)
   if (!current) return null
+  const workflowReply = demoChatWorkflowReply(message)
+  if (workflowReply) {
+    return appendDemoWebMessages(wsId, sessionId, [
+      { role: 'user', content: message },
+      { role: 'assistant', content: [{ type: 'text', text: workflowReply }] },
+    ])
+  }
   if (!demoWebCapabilities[current.agent]?.permissionPrompts) {
     return appendDemoWebMessages(wsId, sessionId, demoWebFollowUp(current.agent, message))
   }
@@ -1356,7 +1364,7 @@ export const workspacesHandlers = [
       resumeId,
       pid: 0,
       startedAt,
-      title: prompt,
+      title: demoChatWorkflowTitle(prompt) ?? prompt,
     }
     const updatedWorkspace = {
       ...ws,
@@ -1387,7 +1395,7 @@ export const workspacesHandlers = [
           startedAt,
           agent,
           resumeId,
-          title: prompt,
+          title: demoChatWorkflowTitle(prompt) ?? prompt,
           surface,
         },
       },

@@ -65,3 +65,20 @@ those records; runtime edits use the same in-memory override map. Avoid adding
 an Issue-specific copy of a Session or a hardcoded workspace resume response.
 Auto Quant includes three assignable research Sessions; the missing CPI owner
 remains an intentional recovery scenario.
+
+## Chat entry walkthroughs
+
+Demo Chat defaults to the standard GUI for capable runtimes; normal launches
+retain their existing default. Suggested workflows still fill the composer so
+the visitor can read the request before sending. Both pages of Chat suggestions
+(and the Nano starters) have distinct prewritten answers in
+`ui/src/demo/fixtures/chat-workflows.ts`, matched against the shared localized
+starter catalog. Chinese starters use Chinese replies; other languages currently
+use English example replies. Each answer finishes with the same installation
+destination as the demo banner. These examples use ordinary user/assistant
+messages, not a separate marketing renderer or fabricated tool events.
+
+Replies distinguish illustrative analysis and proposed work from actual market
+reads, saved files, scheduled jobs or backtests. Unrecognized prompts retain the
+existing simulated conversation/permission flow. Browser and Electron resolve
+the same fixtures through their normal demo transports.
