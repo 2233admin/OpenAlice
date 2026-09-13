@@ -7,9 +7,8 @@ reloadOnHotUpdate('live/activity-bar-collapse')
 /**
  * Per-section collapse state for the ActivityBar.
  *
- * Keyed by the section's `sectionLabel` string (e.g. "System", "Legacy").
- * Sections with an empty label (the top pinned-nav block) are never
- * collapsible — they don't get an entry here either way.
+ * Keyed by the section's stable group id (e.g. "system", "custom:desk").
+ * The unlabeled primary group is never collapsible.
  *
  * Stores the **user's explicit preference**: `true` = collapsed,
  * `false` = expanded, absent = "use the section's `defaultCollapsed`
@@ -25,7 +24,21 @@ reloadOnHotUpdate('live/activity-bar-collapse')
 
 interface ActivityBarCollapseState {
   collapsedSections: Record<string, boolean>
-  railCollapsed: boolean
+  /** null uses the shell's responsive default; explicit choices always win. */
+  railCollapsed: boolean | null
+}
+
+function migrateCollapseKeys(collapsed: Record<string, boolean>): Record<string, boolean> {
+  const next = { ...collapsed }
+  if ('Beta' in next && !('beta' in next)) {
+    next.beta = next.Beta
+    delete next.Beta
+  }
+  if ('System' in next && !('system' in next)) {
+    next.system = next.System
+    delete next.System
+  }
+  return next
 }
 
 interface ActivityBarCollapseActions {
@@ -40,7 +53,7 @@ export const useActivityBarCollapse = create<ActivityBarCollapseState & Activity
   persist(
     (set) => ({
       collapsedSections: {},
-      railCollapsed: false,
+      railCollapsed: null,
       setCollapsed: (name, collapsed, defaultCollapsed) =>
         set((s) => {
           const next = { ...s.collapsedSections }
@@ -53,6 +66,21 @@ export const useActivityBarCollapse = create<ActivityBarCollapseState & Activity
         }),
       setRailCollapsed: (collapsed) => set({ railCollapsed: collapsed }),
     }),
-    { name: 'openalice.activitybar-sections.v1', version: 2 },
+    {
+      name: 'openalice.activitybar-sections.v1',
+      version: 3,
+      migrate: (persisted, version) => {
+        const state = persisted && typeof persisted === 'object'
+          ? persisted as ActivityBarCollapseState
+          : { collapsedSections: {}, railCollapsed: false }
+        if (version < 3) {
+          return {
+            ...state,
+            collapsedSections: migrateCollapseKeys(state.collapsedSections ?? {}),
+          }
+        }
+        return state
+      },
+    },
   ),
 )

@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 
 import type {
   AgentInteractiveSetupStatus,
   CliAdapter,
+  ResolvedSessionRuntimeBinding,
   SpawnContext,
   WorkspaceAiCred,
 } from '../cli-adapter.js';
@@ -25,6 +29,34 @@ const CLAUDE_OWNED_PATHS = [
 ] as const;
 
 const CLAUDE_PROJECT_EFFORTS = new Set<ModelReasoningEffort>(['low', 'medium', 'high', 'xhigh']);
+const CLAUDE_RUN_EFFORTS = new Set<ModelReasoningEffort>(['low', 'medium', 'high', 'max']);
+
+export async function readClaudeSessionTitleFile(path: string): Promise<string | null> {
+  let customTitle: string | undefined;
+  let aiTitle: string | undefined;
+  try {
+    const lines = createInterface({
+      input: createReadStream(path, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of lines) {
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (entry['type'] === 'custom-title' && typeof entry['customTitle'] === 'string') {
+        customTitle = entry['customTitle'].trim() || undefined;
+      } else if (entry['type'] === 'ai-title' && typeof entry['aiTitle'] === 'string') {
+        aiTitle = entry['aiTitle'].trim() || undefined;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return customTitle ?? aiTitle ?? null;
+}
 
 function claudeProjectEffort(value: unknown): ModelReasoningEffort | null {
   return typeof value === 'string' && CLAUDE_PROJECT_EFFORTS.has(value as ModelReasoningEffort)
@@ -44,19 +76,7 @@ function claudeProjectEffort(value: unknown): ModelReasoningEffort | null {
  * same flag so automation doesn't silently lose MCP if a future version
  * closes that gap.
  */
-const AUTOTRUST_SETTINGS = '{"enableAllProjectMcpServers":true}';
-
-// `claude -p` has nobody available to answer a permission prompt. Keep its
-// autonomous Bash surface limited to the four launcher-owned CLI shims rather
-// than bypassing every Claude Code permission. The gateway still validates the
-// Workspace/run identity and each command's argument schema server-side.
-// Syntax follows Claude Code's documented command-prefix permission rules.
-const HEADLESS_ALLOWED_TOOLS = [
-  'Bash(alice:*)',
-  'Bash(alice-workspace:*)',
-  'Bash(alice-uta:*)',
-  'Bash(traderhub:*)',
-].join(',');
+const AUTOTRUST_SETTINGS = '{"enableAllProjectMcpServers":true,"sandbox":{"enabled":false}}';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -157,12 +177,61 @@ export const claudeAdapter: CliAdapter = {
     resumeById: true,
     transcriptDiscovery: 'fs-watch',
     headless: true,
+    // Bidirectional stream-json keeps one `claude -p` alive across turns and
+    // routes tool permission prompts over stdio (`--permission-prompt-tool
+    // stdio`). `--session-id <uuid>` creates the session on a fresh Session so
+    // the same id resumes in the TUI later.
+    web: { wire: 'claude-stream-json', permissionPrompts: true, freshSession: true },
+    aiProvider: {
+      credentialSource: 'runtime-or-workspace',
+      wirePreference: ['anthropic'],
+      defaultWire: 'anthropic',
+    },
+  },
+
+  sessionRuntime: {
+    project(ctx, runtime: ResolvedSessionRuntimeBinding) {
+      const effort = runtime.binding.reasoningEffort;
+      if (effort && !CLAUDE_RUN_EFFORTS.has(effort)) {
+        throw new Error(`Claude Code cannot use Session effort ${effort}`);
+      }
+      // Claude Code applies provider-shaped `env` from user/project/local
+      // settings after inheriting the child process environment. A managed
+      // Vault binding must exclude user and local sources so an unrelated
+      // global login or deprecated `.claude/settings.local.json` export cannot
+      // replace ANTHROPIC_BASE_URL / auth / model after OpenAlice projects the
+      // immutable Session binding. Keep the project source enabled: Claude
+      // owns the native loading semantics for the Workspace's CLAUDE.md and
+      // `.claude/skills`, and treating those files as a synthetic plugin loses
+      // their normal project scope and persona behavior. Explicit `--settings`
+      // supplied by composeCommand still loads, so launcher-owned MCP trust
+      // remains available.
+      //
+      // Native bindings intentionally keep Claude's normal settings chain:
+      // choosing Agent login means the runtime, not OpenAlice, owns provider
+      // discovery and authentication.
+      const managedCredentialArgs = runtime.binding.credential.source === 'vault'
+        ? ['--setting-sources=project']
+        : [];
+      const args = [
+        ...managedCredentialArgs,
+        ...(runtime.binding.model ? ['--model', runtime.binding.model] : []),
+        ...(effort ? ['--effort', effort] : []),
+      ];
+      const ai = runtime.ai;
+      const env: Record<string, string> = {};
+      if (ai?.baseUrl) env['ANTHROPIC_BASE_URL'] = ai.baseUrl;
+      if (ai?.apiKey) {
+        env[ai.authMode === 'bearer' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY'] = ai.apiKey;
+      }
+      return { env, interactiveArgs: args, headlessArgs: args, webArgs: args };
+    },
   },
 
   readInteractiveSetupStatus: readClaudeInteractiveSetupStatus,
 
   composeCommand(base: readonly string[], ctx: SpawnContext): readonly string[] {
-    const cmd = [...base, '--settings', AUTOTRUST_SETTINGS];
+    const cmd = [...base, '--settings', AUTOTRUST_SETTINGS, '--dangerously-skip-permissions', ...(ctx.sessionRuntime?.interactiveArgs ?? [])];
     if (ctx.resume === undefined) {
       // Quick-chat seed: `claude [flags] -- <prompt>` opens the interactive TUI
       // and auto-submits the prompt. The `--` end-of-options terminator (same as
@@ -190,17 +259,46 @@ export const claudeAdapter: CliAdapter = {
   // progress in the task log AND every event carries `session_id`, so the
   // run's identity is captured from line 1 instead of parsed out of a final
   // result blob (verified 2.1.x, 2026-06-11).
-  composeHeadlessCommand(base: readonly string[], ctx: SpawnContext, prompt: string): readonly string[] {
+  composeHeadlessCommand(
+    base: readonly string[],
+    ctx: SpawnContext,
+    prompt: string,
+  ): readonly string[] {
     if (ctx.resume === 'last') {
       throw new Error('claude headless: resume requires a concrete resumeId mapping')
     }
     return [
       ...base,
-      '--settings', AUTOTRUST_SETTINGS,
-      '--allowedTools', HEADLESS_ALLOWED_TOOLS,
+      '--settings', AUTOTRUST_SETTINGS, '--dangerously-skip-permissions',
+      ...(ctx.sessionRuntime?.headlessArgs ?? []),
       ...(ctx.resume ? ['--resume', ctx.resume.sessionId] : []),
       '-p', '--output-format', 'stream-json', '--verbose',
       '--', prompt,
+    ];
+  },
+
+  // Web surface: bidirectional stream-json. `--input-format stream-json` keeps
+  // the process alive between turns, `--include-partial-messages` streams text
+  // deltas, and `--permission-prompt-tool stdio` turns tool permission prompts
+  // into `control_request` frames the transport can present in the browser
+  // (managed launches bypass tool approvals). A fresh Session mints its
+  // uuid up front so `--resume <id>` reopens the identical conversation in the
+  // TUI afterwards. MCP still rides the workspace `.mcp.json` via the same
+  // autotrust settings as the TUI.
+  composeWebCommand(base: readonly string[], ctx: SpawnContext): readonly string[] {
+    if (ctx.resume === 'last') throw new Error('the Web surface requires a concrete Claude session id or a fresh Session');
+    return [
+      ...base,
+      '--settings', AUTOTRUST_SETTINGS, '--dangerously-skip-permissions',
+      ...(ctx.sessionRuntime?.webArgs ?? ctx.sessionRuntime?.interactiveArgs ?? []),
+      ...(ctx.appendSystemPrompt ? ['--append-system-prompt', ctx.appendSystemPrompt] : []),
+      ...(ctx.resume ? ['--resume', ctx.resume.sessionId] : ['--session-id', randomUUID()]),
+      '-p',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--permission-prompt-tool', 'stdio',
     ];
   },
 
@@ -294,8 +392,9 @@ export const claudeAdapter: CliAdapter = {
     }
   },
 
+  /** @deprecated Native-project compatibility export; managed Sessions use sessionRuntime. */
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {
-    const hasAny = cred.baseUrl || cred.apiKey || cred.model;
+    const hasAny = cred.baseUrl || cred.apiKey || cred.model || cred.reasoningEffort;
     if (!hasAny) {
       await resetOwnedJsonConfig({
         cwd,
@@ -338,6 +437,7 @@ export const claudeAdapter: CliAdapter = {
     });
   },
 
+  /** @deprecated Compatibility inspection for legacy Session bindings only. */
   async readAiConfig(cwd: string): Promise<WorkspaceAiCred | null> {
     const raw = await readWorkspaceFile(cwd, CLAUDE_SETTINGS_PATH);
     if (raw === null) return null;
@@ -377,5 +477,10 @@ export const claudeAdapter: CliAdapter = {
   extractSessionId(filename: string): string | null {
     const m = SESSION_FILE_RE.exec(filename);
     return m && m[1] ? m[1] : null;
+  },
+  readSessionTitle(cwd: string, sessionId: string): Promise<string | null> {
+    return readClaudeSessionTitleFile(
+      join(homedir(), '.claude', 'projects', projectKey(cwd), `${sessionId}.jsonl`),
+    );
   },
 };

@@ -11,8 +11,8 @@ the desks currently in service; departed desks have already moved elsewhere.
 Start with product indexes, not an unbounded filesystem crawl:
 
 ```bash
-alice-workspace peer list
-alice-workspace issue list --mode detailed
+alice peer list
+alice issue list --mode detailed
 ```
 
 `peer list` already includes recent attributable Session titles. Use those to
@@ -25,20 +25,23 @@ crawl.
 For one desk or coworker:
 
 ```bash
-alice-workspace peer path --id <workspaceId>
-alice-workspace peer sessions --id <workspaceId>
-alice-workspace conversation ask --resume-id <resumeId> --prompt "..." --await
-# Only when no attributable Session exists:
-alice-workspace conversation ask --ws-id <workspaceId> --prompt "..." --await
+alice peer path --id <workspaceId>
+alice peer sessions --id <workspaceId>
+alice conversation ask --resume-id <resumeId> --prompt "..." --await
+# Recruit a fresh coworker for new work:
+alice conversation create --ws-id <workspaceId> --prompt "..."
+# Explicit historical reconstruction when no attributable Session exists:
+alice conversation create --ws-id <workspaceId> --prompt "..." --reconstruct --await
 ```
 
 This distinction is not cosmetic. `--resume-id` continues the exact coworker
-and its working memory. `--ws-id` recruits or reconstructs a worker at that
-desk; it can inspect the Workspace, but it must not impersonate the historical
-owner. Preserve and report `resolution.mode` (`exact` versus `reconstructed`)
-when the difference affects the answer.
+and its working memory. `--ws-id` recruits a fresh worker at that desk. Its
+prompt stays ordinary unless `--reconstruct` explicitly asks it to recover
+missing historical intent; either way it must not impersonate an absent owner.
+Preserve and report `resolution.mode` (`exact` versus `reconstructed`) when the
+difference affects the answer.
 
-Use `alice-workspace <group> <verb> --help` whenever a flag is uncertain. The
+Use `alice <group> <verb> --help` whenever a flag is uncertain. The
 live manifest is authoritative even when an older Workspace carries stale
 instructions.
 
@@ -51,17 +54,18 @@ instructions.
 - Prefer asking an attributable `resumeId` when one is known. Recent Session
   titles in `peer list` are hints; use `peer sessions --id` only for the few
   relevant desks to resolve the exact identity. Otherwise recruit a worker from
-  the relevant Workspace with `conversation ask --ws-id`, and label the answer
-  as reconstruction rather than the original coworker's memory.
-- Ask several desks in parallel when useful, but use `--await` first and collect
-  the answers before giving the user one management view.
+  the relevant Workspace with `conversation create --ws-id`. Add `--reconstruct`
+  only for missing historical intent and never claim the fresh worker carries
+  the original coworker's memory.
+- Use `--await` for a short answer needed now. For delegated work or several
+  desks, dispatch first and retrieve/collect the answers later.
 
 ## Mutations require a preview and a clear user instruction
 
 Template reconciliation is preview-first:
 
 ```bash
-alice-workspace template upgrade --id <workspaceId>
+alice template upgrade --id <workspaceId>
 ```
 
 Only add `--apply` after the user has asked to perform the reviewed mutation.

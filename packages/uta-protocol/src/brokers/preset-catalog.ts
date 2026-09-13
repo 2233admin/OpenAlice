@@ -261,7 +261,7 @@ export const BITGET_PRESET: BrokerPresetDef = {
   label: 'Bitget',
   description: 'Bitget — spot and USDT-M perpetuals.',
   category: 'crypto',
-  hint: 'Bitget requires API key + secret + passphrase (set when creating the key). Demo Trading routes orders to a simulated environment using the production domain.',
+  hint: 'Bitget requires API key + secret + passphrase (set when creating the key). OpenAlice currently supports Classic accounts; Bitget Unified Trading Account (v3) is not yet supported. Demo Trading routes orders to a simulated environment using the production domain.',
   defaultName: 'bitget-main',
   badge: 'BG',
   badgeColor: 'text-primary',
@@ -336,8 +336,8 @@ export const CCXT_CUSTOM_PRESET: BrokerPresetDef = {
 
 export const ALPACA_PRESET: BrokerPresetDef = {
   id: 'alpaca',
-  label: 'Alpaca (US Equities)',
-  description: 'Commission-free US stocks and ETFs with fractional shares.',
+  label: 'Alpaca (Stocks & Crypto)',
+  description: 'US stocks, ETFs and spot crypto trading; read-only option contracts and snapshots.',
   category: 'recommended',
   hint: 'Paper and Live use **separate** API keys — generate from the matching dashboard at alpaca.markets. Paper is free and unlimited; Live places real orders on real money.',
   defaultName: 'alpaca-paper',

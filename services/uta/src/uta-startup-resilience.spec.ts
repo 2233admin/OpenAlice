@@ -1,10 +1,17 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+
+// This spec starts a TypeScript child process while the monorepo suite is
+// heavily concurrent. Older supported Windows hosts can need more than 10s
+// before both accounts become observable even though the isolated path is
+// healthy. Child exits are still checked on every poll.
+const STARTUP_READINESS_TIMEOUT_MS = 30_000
+const TEST_TIMEOUT_MS = STARTUP_READINESS_TIMEOUT_MS + 10_000
 
 function listen(server: Server): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -28,7 +35,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function stopChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
   child.kill('SIGTERM')
@@ -95,7 +102,7 @@ describe('UTA process startup resilience', () => {
     child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
 
     try {
-      const deadline = Date.now() + 10_000
+      const deadline = Date.now() + STARTUP_READINESS_TIMEOUT_MS
       type ListedAccount = {
         id?: string
         health?: { status?: string; reach?: string; connecting?: boolean; recovering?: boolean; lastError?: string }
@@ -154,5 +161,5 @@ describe('UTA process startup resilience', () => {
       await closeServer(fakeTws)
       await rm(home, { recursive: true, force: true })
     }
-  }, 15_000)
+  }, TEST_TIMEOUT_MS)
 })

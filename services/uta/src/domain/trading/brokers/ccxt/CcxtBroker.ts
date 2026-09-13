@@ -45,6 +45,7 @@ import {
   type CcxtExchangeOverrides,
   type CcxtSubAccountDef,
   exchangeOverrides,
+  defaultFetchBalance,
   defaultFetchOrderById,
   defaultCancelOrderById,
   defaultPlaceOrder,
@@ -55,6 +56,17 @@ import {
 /** The implicit single wallet a unified-account venue (okx / bybit UTA) exposes
  *  — one plain fetchBalance() covers everything, so no selector is ever needed. */
 const UNIFIED_SUBACCOUNT: CcxtSubAccountDef = { id: 'default', label: 'Account', kind: 'unified', walletTypes: [] }
+
+const BAR_INTERVAL_MS: Record<BarParams['interval'], number> = {
+  '1m': 60_000,
+  '5m': 5 * 60_000,
+  '15m': 15 * 60_000,
+  '30m': 30 * 60_000,
+  '1h': 60 * 60_000,
+  '4h': 4 * 60 * 60_000,
+  '1d': 24 * 60 * 60_000,
+  '1w': 7 * 24 * 60 * 60_000,
+}
 
 /**
  * Pull leveraged-derivative risk metadata (leverage / liquidation price /
@@ -104,6 +116,13 @@ function applyEnvProxy(exchange: Exchange): void {
   if (!proxy) return
   if (/^socks/i.test(proxy)) exchange.socksProxy = proxy
   else exchange.httpsProxy = proxy
+}
+
+/** A CCXT `urls.api` value that can actually build a request URL: a non-empty
+ *  string or a non-empty { public, private, … } map. */
+function hasUsableApiUrl(api: unknown): boolean {
+  if (typeof api === 'string') return api.length > 0
+  return typeof api === 'object' && api !== null && Object.keys(api).length > 0
 }
 
 // Treated as cash (1:1 to USD) when computing balances and as ineligible
@@ -261,6 +280,14 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
         // demoTrading branch below — instead of an unclassified UNKNOWN.
         throw new BrokerError('CONFIG', `${this.exchangeName}: cannot enable Sandbox — ${err instanceof Error ? err.message : String(err)}`)
       }
+      // Since ccxt 4.5.7x the base describe() carries `urls.test: undefined`
+      // for every exchange, so `'test' in urls` is always true and
+      // setSandboxMode no longer throws for venues without a testnet — it
+      // silently sets urls.api = {} and the first request fails with a cryptic
+      // URL error (kucoin, kraken, coinbase, htx, mexc, …). Fail loudly now.
+      if (!hasUsableApiUrl((this.exchange as unknown as { urls?: Record<string, unknown> }).urls?.['api'])) {
+        throw new BrokerError('CONFIG', `${this.exchangeName}: cannot enable Sandbox — ${this.exchangeName} does not have a sandbox URL`)
+      }
     }
 
     if (config.demoTrading) {
@@ -377,7 +404,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       throw BrokerError.from(err, 'NETWORK')
     }
 
-    const marketCount = Object.keys(this.exchange.markets).length
+    const marketCount = Object.keys(this.markets).length
     if (marketCount === 0) {
       throw new BrokerError('NETWORK', `CcxtBroker[${this.id}]: failed to load any markets`)
     }
@@ -398,7 +425,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   async refreshCatalog(): Promise<void> {
     this.ensureInit()
     await this.exchange.loadMarkets(true)
-    const marketCount = Object.keys(this.exchange.markets).length
+    const marketCount = Object.keys(this.markets).length
     console.log(`CcxtBroker[${this.id}]: catalog refreshed (${marketCount} markets)`)
   }
 
@@ -716,7 +743,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   // ---- Sub-accounts ----
 
   /** The sub-account decomposition for this venue: the override's list for
-   *  separate-wallet venues (binance), else the single unified default. */
+   *  separate-wallet venues (Binance / Bitget Classic), else the single unified default. */
   private resolveSubAccounts(): CcxtSubAccountDef[] {
     return this.overrides.subAccounts?.length ? this.overrides.subAccounts : [UNIFIED_SUBACCOUNT]
   }
@@ -757,6 +784,15 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   }
 
   // ---- Queries ----
+
+  /** Keep account-level PnL and position rows on the same venue-specific
+   *  derivative route. */
+  private async fetchDerivativePositions() {
+    const fetchOverride = this.overrides.fetchPositions
+    return fetchOverride
+      ? await fetchOverride(this.exchange, defaultFetchPositions)
+      : await defaultFetchPositions(this.exchange)
+  }
 
   /**
    * Synthesize asset holdings (BTC/ETH/etc balances) into Position records.
@@ -874,7 +910,8 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
    * `subAccountId` selector narrows which are fetched (omitted ⇒ every wallet).
    * Unified venues (okx / bybit UTA — verified: spot/swap/contract all return the
    * same pool) have no wallet types → one unscoped call. A per-wallet failure
-   * (e.g. an un-activated COIN-M wallet → -2015) is skipped loudly, not fatal.
+   * (e.g. an un-activated COIN-M wallet → -2015) is skipped loudly unless the
+   * venue declares strict private reads because every wallet is authoritative.
    * Also rolls up futures `totalInitialMargin` for the account's margin figure.
    */
   private async gatherWalletBalances(subAccountId?: string): Promise<{ balances: Array<Record<string, unknown>>; initMargin: Decimal }> {
@@ -886,16 +923,23 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       const info = (b['info'] ?? {}) as Record<string, unknown>
       if (info['totalInitialMargin'] !== undefined) initMargin = initMargin.plus(new Decimal(String(info['totalInitialMargin'])))
     }
+    const fetchBalance = async (params?: Record<string, unknown>) => {
+      const fetchOverride = this.overrides.fetchBalance
+      return fetchOverride
+        ? await fetchOverride(this.exchange, params, defaultFetchBalance)
+        : await defaultFetchBalance(this.exchange, params)
+    }
     if (walletTypes?.length) {
       for (const type of walletTypes) {
         try {
-          accrue(await this.exchange.fetchBalance({ type }) as unknown as Record<string, unknown>)
+          accrue(await fetchBalance({ type }))
         } catch (err) {
+          if (this.overrides.strictPrivateReads) throw err
           console.warn(`CcxtBroker[${this.id}]: fetchBalance(${type}) skipped — ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`)
         }
       }
     } else {
-      accrue(await this.exchange.fetchBalance() as unknown as Record<string, unknown>)
+      accrue(await fetchBalance())
     }
     return { balances, initMargin }
   }
@@ -976,12 +1020,16 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       let realizedPnL = new Decimal(0)
       if (includesDerivatives) {
         try {
-          const rawPositions = await this.exchange.fetchPositions()
+          const rawPositions = await this.fetchDerivativePositions()
           for (const p of rawPositions) {
             unrealizedPnL = unrealizedPnL.plus(new Decimal(String(p.unrealizedPnl ?? 0)))
             realizedPnL = realizedPnL.plus(new Decimal(String((p as unknown as Record<string, unknown>).realizedPnl ?? 0)))
           }
-        } catch { /* positions are display-only here — don't fail the account read */ }
+        } catch (err) {
+          if (this.overrides.strictPrivateReads) throw err
+          // Positions are display-only for permissive venues; preserve the
+          // balance read when their optional PnL endpoint fails.
+        }
       }
 
       return {
@@ -1009,19 +1057,16 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     const includesDerivatives = scoped.some(s => s.kind === 'derivatives' || s.kind === 'unified')
 
     try {
-      const fetchOverride = this.overrides.fetchPositions
       const [raw, spotHoldings] = await Promise.all([
         includesDerivatives
-          ? (fetchOverride
-              ? fetchOverride(this.exchange, defaultFetchPositions)
-              : defaultFetchPositions(this.exchange))
+          ? this.fetchDerivativePositions()
           : Promise.resolve([] as Awaited<ReturnType<typeof defaultFetchPositions>>),
         this.fetchAssetHoldings(subAccountId),
       ])
       const result: Position[] = []
 
       for (const p of raw) {
-        const market = this.markets[p.symbol]
+        const market = p.symbol ? this.markets[p.symbol] : undefined
         if (!market) continue
 
         // Use Decimal arithmetic to avoid IEEE 754 precision loss (e.g. 0.51 → 0.50999...)
@@ -1100,8 +1145,8 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   }
 
   private convertCcxtOrder(o: CcxtOrder): OpenOrder | null {
-    const market = this.markets[o.symbol]
-    if (!market) return null
+    const market = o.symbol ? this.markets[o.symbol] : undefined
+    if (!market || !o.symbol) return null
 
     if (o.id) {
       this.orderSymbolCache.set(o.id, o.symbol)
@@ -1117,7 +1162,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     // Fill data — without these, a sync that sees the order filled records
     // the transition but loses qty/price, breaking cost-basis downstream.
     if (o.filled != null) order.filledQuantity = new Decimal(o.filled)
-    order.orderId = parseInt(o.id, 10) || 0
+    order.orderId = parseInt(o.id ?? '', 10) || 0
 
     const tp = o.takeProfitPrice
     const sl = o.stopLossPrice
@@ -1141,8 +1186,9 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   /**
    * All open orders on the account — the surface external-order observation
    * diffs against. Venue-dependent: some exchanges can't enumerate open
-   * orders without a symbol scope; those degrade to [] with a once-per-
-   * instance warning rather than failing the observation pass.
+   * orders without a symbol scope; permissive defaults degrade to [] with a
+   * once-per-instance warning. Verified strict adapters propagate incomplete
+   * namespace reads so a partial list cannot masquerade as authoritative.
    */
   async getOpenOrders(): Promise<OpenOrder[]> {
     if (this.keyless) return []
@@ -1161,6 +1207,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       }
       return converted
     } catch (err) {
+      if (this.overrides.strictOpenOrderReads) throw BrokerError.from(err)
       if (!this.warnedOpenOrdersUnsupported) {
         this.warnedOpenOrdersUnsupported = true
         console.warn(
@@ -1214,9 +1261,44 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       throw new BrokerError('EXCHANGE', `${this.exchangeName} does not support the ${params.interval} interval`)
     }
     try {
-      const since = params.start ? params.start.getTime() : undefined
-      const rows = await this.exchange.fetchOHLCV(ccxtSymbol, timeframe, since, params.limit)
-      return (rows as number[][]).map(([ts, o, h, l, c, v]) => ({
+      const limit = Math.min(5000, params.limit == null ? 5000 : Math.max(1, Math.floor(params.limit)))
+      const lowerBound = params.start?.getTime()
+      const upperBound = Math.min(params.end?.getTime() ?? Date.now(), Date.now())
+      // CCXT exchanges return the FIRST `limit` rows at/after `since`. Alice's
+      // BarParams contract is the opposite: limit truncates to the MOST RECENT
+      // rows in the requested window. Anchor `since` immediately before that
+      // trailing window so one exchange page contains the latest bars instead
+      // of an ancient first page (issue #717). Ask for one extra interval:
+      // venues differ on whether the in-progress candle is visible, and an
+      // exact N-interval window otherwise returns only N-1 completed candles.
+      const queryLimit = limit == null ? undefined : limit + 1
+      const trailingSince = limit == null
+        ? undefined
+        : upperBound - BAR_INTERVAL_MS[params.interval] * queryLimit! + 1
+      const since = trailingSince == null
+        ? lowerBound
+        : Math.max(lowerBound ?? Number.NEGATIVE_INFINITY, trailingSince)
+      // Venues cap page sizes independently of the requested limit (OKX:
+      // 300). Walk forward until the window ends, not just the first page.
+      // De-duplicate inclusive boundaries and stop on non-advancing responses.
+      const byTime = new Map<number, number[]>()
+      let cursor = since
+      for (let page = 0; page < 100; page++) {
+        const rows = await this.exchange.fetchOHLCV(ccxtSymbol, timeframe, cursor, queryLimit) as number[][]
+        let latest = Number.NEGATIVE_INFINITY
+        for (const row of rows) {
+          const ts = row[0]
+          if (!Number.isFinite(ts)) continue
+          latest = Math.max(latest, ts)
+          if ((lowerBound == null || ts >= lowerBound) && ts <= upperBound) byTime.set(ts, row)
+        }
+        if (!rows.length || latest < (cursor ?? Number.NEGATIVE_INFINITY) || latest >= upperBound || byTime.size >= queryLimit!) break
+        const next = latest + BAR_INTERVAL_MS[params.interval]
+        if (!Number.isFinite(next) || next > upperBound || (cursor != null && next <= cursor)) break
+        cursor = next
+      }
+      const selected = [...byTime.values()].sort((a, b) => a[0] - b[0]).slice(-limit)
+      return selected.map(([ts, o, h, l, c, v]) => ({
         timestamp: new Date(ts),
         open: String(o), high: String(h), low: String(l), close: String(c),
         volume: String(v ?? 0),

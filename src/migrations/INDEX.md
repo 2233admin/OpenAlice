@@ -3,25 +3,16 @@
 
 # Migration Index
 
-Each row corresponds to one migration in `src/migrations/`. The runner applies pending migrations in this order on every boot, recording applied IDs in `data/config/_meta.json`. Migrations are idempotent in their body in addition to the journal-level guard.
+The active migration chain starts after the **0.89.2-beta** baseline.
+Development-era migrations before `0039` are retired and are not runtime-reachable.
+Fresh baseline homes are seeded directly from current schemas and defaults.
+
+Each row below corresponds to an active migration in `src/migrations/`. The runner applies pending migrations in this order on every boot, recording applied IDs in `data/config/_meta.json`.
 
 | ID | App Version | Date | Affects | Summary |
 |----|-------------|------|---------|---------|
-| `0008_disable_targetless_cron_jobs` | 0.40.0-beta.3 | 2026-06-08 | cron/jobs.json | Disable enabled cron jobs that have no target workspace (legacy AgentWork-era jobs) so they stop firing into the retired path. |
-| `0009_seal_broker_credentials` | 0.41.0-beta.2 | 2026-06-11 | accounts.json | Seal broker credentials at rest (AES-256-GCM envelope + 0600), replacing plaintext accounts.json |
-| `0010_workspace_issues_to_markdown` | 0.60.0-beta.1 | 2026-06-27 | workspaces/<id>/.alice/{issue,schedule}.json | Convert legacy workspace declarations (.alice/schedule.json, .alice/issue.json) into the per-issue markdown format (.alice/issues/<id>.md) so existing self-scheduled issues survive the upgrade. |
-| `0011_workspace_issue_assignee_defaults` | 0.72.0-beta | 2026-07-04 | workspaces/<id>/.alice/issues/*.md | Remove legacy `assignee: unassigned` defaults from workspace issue files so missing assignees resolve to the owning workspace. |
-| `0012_recent_chat_workspace_preference` | 0.73.0-beta | 2026-07-11 | data/preferences.json, workspaces/workspaces.json, workspaces/state/sessions/*.json | Route Quick Chat to the most recently active durable Chat workspace instead of creating a new daily workspace. |
-| `0013_session_run_source` | 0.74.0-beta | 2026-07-11 | workspaces/state/sessions/*.json | Version Session records for durable headless-run provenance and idempotent return-to-session navigation. |
-| `0014_headless_resume_identity` | 0.80.0-beta | 2026-07-11 | workspaces/state/headless-tasks.json | Assign durable resumeId values to historical headless runs so execution identity and resumable conversation identity remain distinct. |
-| `0015_resume_identity_registry` | 0.80.0-beta | 2026-07-11 | workspaces/state/resume-identities.json, workspaces/state/sessions/*.json | Create the backend resumeId to native runtime session-id registry. |
-| `0016_artifact_provenance_store` | 0.80.0-beta | 2026-07-11 | workspaces/state/artifact-provenance.json | Create the durable product Session to artifact provenance store. |
-| `0017_issue_what_and_comment_sidecars` | 0.80.0-beta | 2026-07-12 | workspaces/<id>/.alice/issues/*.md, workspaces/<id>/.alice/issues/*.comments.json | Make markdown What the sole Issue work definition and move comments into structured per-Issue JSON sidecars. |
-| `0018_issue_assignee_ownership` | 0.80.0-beta | 2026-07-12 | workspaces/<id>/.alice/issues/*.md | Replace Issue execution ownership with one workspace, human, unassigned, or Session assignee. |
-| `0019_issue_session_signatures` | 0.80.0-beta | 2026-07-12 | workspaces/<id>/.alice/issues/*.md | Write Issue ownership as @workspace or an exact @resumeId Session signature. |
-| `0020_headless_issue_trigger` | 0.80.0-beta | 2026-07-12 | workspaces/state/headless-tasks.json | Store the composite Issue trigger separately from a run execution Workspace. |
-| `0021_workspace_departure_catalog` | 0.80.0-beta | 2026-07-12 | workspaces/workspaces.json, workspaces/workspaces/*, workspaces/departed-workspaces/*, workspaces/state/workspace-catalog.json | Move unregistered Workspace directories into a durable departed catalog without deleting them. |
-| `0022_connector_service_config` | 0.81.0-beta | 2026-07-13 | connectors.json, connector-service.json, ports.json | Move external notifications into sealed Connector Service config and retire legacy Web/MCP-Ask connector meanings. |
-| `0023_google_native_credentials` | 0.81.0-beta | 2026-07-16 | ai-provider-manager.json | Route saved Google Gemini credentials through the native API so current AQ authorization keys work. |
-| `0024_pi_native_workspace_config` | 0.82.0-beta | 2026-07-18 | workspaces/workspaces/*/.pi-agent, workspaces/departed-workspaces/*/.pi-agent, Pi user agent directory | Move redirected Pi Workspace homes into Pi's native global-provider and project-settings layers. |
-| `0025_retire_global_compaction_config` | 0.83.0-beta | 2026-07-19 | compaction.json, ai-provider-manager.json | Remove retired global context and compaction limits so model and native Agent runtime semantics remain authoritative. |
+| `0039_workspace_session_runtime_bindings` | 0.89.3-beta | 2026-08-11 | workspaces/state/resume-identities.json, workspaces/state/workspace-manager-sessions/*.json, workspaces/workspaces/*/.alice/sessions/*.json, workspaces/departed-workspaces/*/.alice/sessions/*.json | Move 0.89.2 Session AI bindings from the launcher identity registry into their owning Workspaces. |
+| `0040_unified_session_records` | 0.89.4-beta | 2026-08-15 | workspaces/state/resume-identities.json, workspaces/state/headless-tasks.json, workspaces/state/sessions/*.json | Give every non-purged resume identity one persistent Session roster record, including headless-born conversations. |
+| `0041_connector_desk_flag` | 0.89.5-beta | 2026-08-19 | workspaces/*/.alice/issues/*.md | Rewrite shipped telegramConnector: true Issue flags to connectorDesk: telegram. |
+| `0042_workspace_default_agent` | 0.92.1 | 2026-09-10 | workspaces/*/.alice/workspace.json, workspaces/*/.alice/settings.json | Move the legacy Workspace default Agent into interactive runtime settings, preserving pinned defaults and Session bindings. |
+| `0043_inbox_markdown_body` | 0.92.1 | 2026-09-10 | data/inbox/entries.jsonl | Unify Inbox comments and file pointers into Markdown bodies, preserving provenance and published file revisions. |

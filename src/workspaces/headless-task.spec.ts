@@ -22,6 +22,18 @@ const noopLogger = {
 const baseEnv = { PATH: process.env['PATH'] ?? '' };
 
 describe('runHeadlessTask', () => {
+  it('runs to natural exit when no watchdog is requested', async () => {
+    const r = await runHeadlessTask({
+      command: ['node', '-e', 'setTimeout(() => process.stdout.write("finished"), 50)'],
+      cwd: process.cwd(),
+      env: baseEnv,
+      logger: noopLogger,
+    });
+    expect(r.exitCode).toBe(0);
+    expect(r.killed).toBe(false);
+    expect(r.stdoutTail).toBe('finished');
+  });
+
   it('captures clean exit + stdout tail on a one-shot command', async () => {
     const r = await runHeadlessTask({
       command: ['node', '-e', 'process.stdout.write("hello-headless")'],
@@ -31,6 +43,7 @@ describe('runHeadlessTask', () => {
       logger: noopLogger,
     });
     expect(r.exitCode).toBe(0);
+    expect(r.processStarted).toBe(true);
     expect(r.killed).toBe(false);
     expect(r.stdoutTail).toContain('hello-headless');
   });
@@ -60,15 +73,42 @@ describe('runHeadlessTask', () => {
   });
 
   it('reports a missing binary as exitCode -1 instead of throwing', async () => {
+    let spawned = false;
     const r = await runHeadlessTask({
       command: ['definitely-not-a-real-binary-xyz123'],
       cwd: process.cwd(),
       env: baseEnv,
       timeoutMs: 5_000,
       logger: noopLogger,
+      onChildSpawned: () => {
+        spawned = true;
+      },
     });
     expect(r.exitCode).toBe(-1);
     expect(r.killed).toBe(false);
+    expect(r.processStarted).toBe(false);
+    expect(r.launchErrorCode).toBe('executable_not_found');
+    expect(r.error).toContain('was not found');
+    expect(spawned).toBe(false);
+  });
+
+  it('keeps a started process non-zero exit distinct from a launch failure', async () => {
+    let spawned = false;
+    const r = await runHeadlessTask({
+      command: ['node', '-e', 'process.exit(7)'],
+      cwd: process.cwd(),
+      env: baseEnv,
+      timeoutMs: 5_000,
+      logger: noopLogger,
+      onChildSpawned: () => {
+        spawned = true;
+      },
+    });
+    expect(r.exitCode).toBe(7);
+    expect(r.processStarted).toBe(true);
+    expect(r.launchErrorCode).toBeUndefined();
+    expect(r.error).toBeUndefined();
+    expect(spawned).toBe(true);
   });
 
   it('scans stdout lines for the agent session id and fires onSessionId once', async () => {
@@ -117,6 +157,7 @@ describe('runHeadlessTask', () => {
     const script =
       `process.stdout.write(${JSON.stringify(first + '\n')});` +
       `process.stdout.write(${JSON.stringify(second)});`;
+    const snapshots: string[] = [];
     const r = await runHeadlessTask({
       command: ['node', '-e', script],
       cwd: process.cwd(),
@@ -136,10 +177,15 @@ describe('runHeadlessTask', () => {
           return [];
         }
       },
+      onProgress: (snapshot) => {
+        snapshots.push(snapshot.assistantText ?? '');
+      },
     });
     expect(r.assistantText).toBe('Hello 👋');
     expect(r.structured.assistantText).toBe('Hello 👋');
     expect(r.structured.blocks).toHaveLength(2);
+    expect(snapshots).toContain('Hello');
+    expect(snapshots.at(-1)).toBe('Hello 👋');
   });
 
   it('streams stdout/stderr diagnostics beyond the 16KB in-memory tails', async () => {

@@ -1,3 +1,5 @@
+import { inspectBarQuality, invalidOhlcFields } from './quality.js'
+import { describeBarFreshness } from './freshness.js'
 /**
  * Federated bar layer — service.
  *
@@ -23,7 +25,7 @@ import type {
   BarMeta,
   BarCapability,
 } from './types.js'
-import { formatBarId, parseBarId } from './types.js'
+import { formatBarId, isDerivativeBarId, parseBarId } from './types.js'
 
 /** Hard ceiling on bars returned by any single fetch (explosion guard). */
 const MAX_BARS = 5000
@@ -39,9 +41,8 @@ const VENDOR_CAPABILITY: Record<string, BarCapability> = {
 const BAR_INTERVALS: readonly BarInterval[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
 
 function toBarInterval(interval: string): BarInterval {
-  return (BAR_INTERVALS as readonly string[]).includes(interval)
-    ? (interval as BarInterval)
-    : '1d'
+  if (!(BAR_INTERVALS as readonly string[]).includes(interval)) throw new Error(`Unsupported bar interval: ${interval}`)
+  return interval as BarInterval
 }
 
 /** Map a broker secType to the data-vendor asset class (for candidate display
@@ -101,7 +102,7 @@ function startDateFor(opts: GetBarsOpts): string {
   const anchor = opts.asOf ?? opts.end
   const end = anchor ? new Date(anchor) : new Date()
   const days = opts.count != null
-    ? Math.max(getCalendarDays(opts.interval), Math.ceil(opts.count * perBarDays(opts.interval)) + 5)
+    ? Math.max(7, Math.ceil(opts.count * perBarDays(opts.interval)) + 5)
     : getCalendarDays(opts.interval)
   const start = new Date(end)
   start.setDate(start.getDate() - days)
@@ -111,7 +112,7 @@ function startDateFor(opts: GetBarsOpts): string {
 // ---- bar shaping ----
 
 function isFullBar(d: Record<string, unknown>): boolean {
-  return d.close != null && d.open != null && d.high != null && d.low != null
+  return invalidOhlcFields(d).length === 0
 }
 
 function dateOf(bar: Bar, interval?: string): string {
@@ -121,10 +122,10 @@ function dateOf(bar: Bar, interval?: string): string {
   // A daily/weekly bar is a calendar day, not an instant — render date-only even
   // when a broker stamps it at the session open (e.g. Alpaca's 04:00/05:00 ET,
   // which also flips an hour across DST and looks like a bug). Intraday keeps
-  // its time; a UTC-midnight stamp is date-only regardless.
+  // its instant, including UTC-midnight candles.
   const daily = interval === '1d' || interval === '1w'
-  if (daily || iso.endsWith('T00:00:00.000Z')) return iso.slice(0, 10)
-  return iso.slice(0, 19).replace('T', ' ')
+  if (daily) return iso.slice(0, 10)
+  return iso
 }
 
 function barToOhlcv(bar: Bar, interval?: string): OhlcvBar {
@@ -164,18 +165,20 @@ function tradingDaysBetween(fromISO: string, toISO: string): number {
   return days
 }
 
-/** Freshness contract — did the data actually reach the requested point-in-time?
- *  Anchor = explicit end/asOf, else today. The point is to make a delayed source
- *  that silently stopped a day behind "now" LOUD, not to mask it as current. */
+/** Add record timestamps alongside the legacy weekday comparison. */
 function computeFreshness(
   lastBarDate: string,
   opts: GetBarsOpts,
   now: () => Date,
-): Pick<BarMeta, 'asOf' | 'isLatestActual' | 'staleTradingDays'> {
-  if (!lastBarDate) return {}
-  const anchor = (opts.end ?? opts.asOf ?? now().toISOString().slice(0, 10)).slice(0, 10)
+  earliest: string,
+  capability?: string,
+): Pick<BarMeta, 'asOf' | 'isLatestActual' | 'staleTradingDays' | 'freshness'> {
+  const observed = now()
+  const freshness = describeBarFreshness(lastBarDate, Boolean(opts.end || opts.asOf), observed, { earliest, capability })
+  if (!lastBarDate) return { freshness }
+  const anchor = (opts.end ?? opts.asOf ?? observed.toISOString().slice(0, 10)).slice(0, 10)
   const gap = tradingDaysBetween(lastBarDate.slice(0, 10), anchor)
-  return { asOf: anchor, isLatestActual: gap === 0, staleTradingDays: gap }
+  return { asOf: anchor, isLatestActual: gap === 0, staleTradingDays: gap, freshness }
 }
 
 /** Sort ascending, cap to MAX_BARS (keep most-recent), then truncate to `count`. */
@@ -198,10 +201,24 @@ export function createBarService(deps: BarServiceDeps): BarService {
     symbol: string,
     opts: GetBarsOpts,
   ): Promise<BarsResult> {
-    const start_date = startDateFor(opts)
+    if (opts.interval === '4h' && ['yfinance', 'eastmoney', 'twse'].includes(provider)) {
+      throw new Error(`${provider} does not supply 4h bars; request 1h and aggregate locally, or choose a source supporting 4h`)
+    }
+    if (provider === 'fmp' && opts.interval === '1w') throw new Error('fmp does not supply 1w bars; request 1d and aggregate locally')
+    let start_date = startDateFor(opts)
+    // Yahoo intraday retention is measured from now, not the requested anchor.
+    // Only inferred windows may shrink; explicit dates must remain truthful.
+    if (['yfinance', 'twse'].includes(provider) && ['1m', '5m', '15m', '30m', '1h'].includes(opts.interval)) {
+      const retention = opts.interval === '1m' ? 7 : opts.interval === '1h' ? 729 : 59
+      const earliest = new Date(Date.now() - retention * 86400000).toISOString().slice(0, 10)
+      if (!opts.start && start_date < earliest) start_date = earliest
+      if ((opts.start && opts.start < earliest) || (opts.end ?? opts.asOf ?? '9999') < earliest) {
+        throw new Error(`yfinance ${opts.interval} history is limited to recent ${retention} days; choose a later window, daily bars, or another source`)
+      }
+    }
     // Upper bound: the provider compatibility models apply end_date;
     // we also post-filter defensively in case a provider ignores it.
-    const end_date = opts.end
+    const end_date = opts.end ?? opts.asOf
     const p = (extra?: Record<string, unknown>) => ({ symbol, start_date, provider, ...(end_date ? { end_date } : {}), ...extra })
     let raw: Array<Record<string, unknown>>
     switch (assetClass) {
@@ -215,21 +232,29 @@ export function createBarService(deps: BarServiceDeps): BarService {
         raw = await deps.currencyClient.getHistorical(p({ interval: opts.interval }))
         break
       case 'commodity':
+        if (opts.interval !== '1d') throw new Error('Commodity vendor bars support only 1d; choose an explicit broker source for other intervals')
         raw = await deps.commodityClient.getSpotPrices(p())
         break
     }
-    let bars = raw.filter(isFullBar) as OhlcvBar[]
-    if (end_date) bars = bars.filter((b) => b.date.slice(0, 10) <= end_date)
+    const boundedRaw = raw.filter(row =>
+      (!opts.start || String(row.date).slice(0, 10) >= opts.start) &&
+      (!end_date || String(row.date).slice(0, 10) <= end_date))
+    const quality = inspectBarQuality(boundedRaw)
+    const bars = boundedRaw.filter(isFullBar) as OhlcvBar[]
     const filtered = finalize(bars, opts.count)
     return {
       bars: filtered,
       meta: buildMeta(symbol, filtered, {
+        quality,
+        interval: opts.interval,
+        limit: MAX_BARS,
+        truncatedRows: Math.max(0, bars.length - MAX_BARS),
         source: 'vendor',
         sourceId: provider,
         barId: formatBarId(provider, symbol),
         provider,
         barCapability: VENDOR_CAPABILITY[provider],
-        ...computeFreshness(filtered[filtered.length - 1]?.date ?? '', opts, () => new Date()),
+        ...computeFreshness(filtered[filtered.length - 1]?.date ?? '', opts, () => new Date(), filtered[0]?.date ?? '', VENDOR_CAPABILITY[provider]),
       }),
     }
   }
@@ -241,38 +266,43 @@ export function createBarService(deps: BarServiceDeps): BarService {
     // The broker's HONEST entitlement (Alpaca free = 'iex', CCXT = 'realtime'),
     // not a blanket 'realtime'. Falls back to 'realtime' when the gateway can't
     // surface it (mocks / brokers that declare no quality).
-    const caps: Record<string, BarCapability> = (await deps.utaManager.getBarCapabilities?.()) ?? {}
+    const caps: Record<string, BarCapability> = (await deps.utaManager.getBarCapabilities?.(barId)) ?? {}
     const cap = caps[sourceId]
     if (deps.utaManager.getBarCapabilities && !cap) {
       throw new Error(`UTA source "${sourceId}" does not advertise historical-bar support.`)
     }
     const effectiveCap: BarCapability = cap ?? 'realtime'
-    // Mirror the vendor branch: a count-only request becomes a START WINDOW we
-    // over-fetch and then tail-slice (finalize keeps the most-recent `count`).
-    // We deliberately do NOT forward `count` as the broker's `limit`. Alpaca's
-    // getBarsV2 — and any API that anchors `limit` to a default *start* and
-    // returns the FIRST N bars ascending — would otherwise collapse a count-only
-    // request to the in-progress session: a single daily bar timestamped at the
-    // premarket open, or just the first minutes of an intraday series, instead
-    // of the most recent N. (Reproduced 2026-06-25 against alpaca paper: `1d
-    // count=60` → 1 bar timestamped 04:00; `1m count=50` → 08:00–08:49.)
+    // Mirror the vendor branch: a count-only request gets a bounded start
+    // window, while `limit` carries the cross-broker contract that the caller
+    // wants the most-recent N bars in that window. Broker adapters must enforce
+    // tail semantics even when their upstream API interprets limit as "first N
+    // from since" (CCXT and Alpaca both need adapter-specific handling).
     const start = opts.start ?? (opts.count != null ? startDateFor(opts) : undefined)
     const params: BarParams = {
       interval: toBarInterval(opts.interval),
       start: start ? new Date(start) : undefined,
-      end: (opts.end ?? opts.asOf) ? new Date((opts.end ?? opts.asOf)!) : undefined,
+      end: (opts.end ?? opts.asOf) ? new Date(`${opts.end ?? opts.asOf}T23:59:59.999Z`) : undefined,
+      limit: opts.count,
     }
     const wireBars = await acct.getHistorical({ aliceId: barId }, params)
-    const bars = finalize(wireBars.map((b) => barToOhlcv(b, params.interval)), opts.count)
+    const bounded = wireBars.map((b) => barToOhlcv(b, params.interval)).filter((bar) =>
+      (!opts.start || bar.date.slice(0, 10) >= opts.start) &&
+      (!(opts.end ?? opts.asOf) || bar.date.slice(0, 10) <= (opts.end ?? opts.asOf)!))
+    const quality = inspectBarQuality(bounded as unknown as Array<Record<string, unknown>>)
+    const bars = finalize(bounded.filter(row => isFullBar(row as unknown as Record<string, unknown>)), opts.count)
     const symbol = parseBarId(barId)?.nativeSymbol ?? barId
     return {
       bars,
       meta: buildMeta(symbol, bars, {
+        quality,
+        interval: opts.interval,
+        limit: MAX_BARS,
+        truncatedRows: Math.max(0, wireBars.length - MAX_BARS),
         source: 'uta',
         sourceId,
         barId,
         barCapability: effectiveCap,
-        ...computeFreshness(bars[bars.length - 1]?.date ?? '', opts, () => new Date()),
+        ...computeFreshness(bars[bars.length - 1]?.date ?? '', opts, () => new Date(), bars[0]?.date ?? '', effectiveCap),
       }),
     }
   }
@@ -353,15 +383,18 @@ export function createBarService(deps: BarServiceDeps): BarService {
         }
       }
 
-      // User intent first, freshness second: an exact delayed EURUSD result must
-      // not disappear below dozens of vaguely-related realtime contracts. Auto
-      // source resolution applies its own derivative/freshness policy later.
+      // User intent first, real/spot exposure second, freshness third. A bare
+      // ticker such as AAPL must not open a realtime synthetic
+      // AAPL/USDT:USDT contract ahead of the actual equity merely because the
+      // derivative is fresher. This mirrors bare-symbol auto resolution while
+      // preserving every provider as an explicit selectable result.
       const FRESHNESS_RANK: Record<BarCapability, number> = {
         realtime: 0, iex: 1, subscription: 2, delayed: 3, free: 4,
       }
       out.sort(
         (a, b) =>
           candidateRelevance(query, b) - candidateRelevance(query, a) ||
+          Number(isDerivativeBarId(a.barId)) - Number(isDerivativeBarId(b.barId)) ||
           (a.barCapability ? FRESHNESS_RANK[a.barCapability] : 5) -
           (b.barCapability ? FRESHNESS_RANK[b.barCapability] : 5),
       )
@@ -369,6 +402,20 @@ export function createBarService(deps: BarServiceDeps): BarService {
     },
 
     async getBars(ref, opts) {
+      toBarInterval(opts.interval)
+      if (ref.assetClass != null && !['equity', 'crypto', 'currency', 'commodity'].includes(ref.assetClass)) throw new Error(`Unsupported asset class: ${ref.assetClass}`)
+      if (opts.count != null && (!Number.isInteger(opts.count) || opts.count < 1 || opts.count > MAX_BARS)) {
+        throw new Error(`count must be an integer between 1 and ${MAX_BARS}`)
+      }
+      for (const key of ['start', 'end', 'asOf'] as const) {
+        const value = opts[key]
+        if (value != null && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value)) {
+          throw new Error(`${key} must be a valid YYYY-MM-DD date`)
+        }
+      }
+      if (opts.end && opts.asOf && opts.end !== opts.asOf) throw new Error('end and asOf must agree')
+      const end = opts.end ?? opts.asOf
+      if (opts.start && end && opts.start > end) throw new Error('start must not follow end')
       if ('symbol' in ref) {
         const provider = deps.vendorProviders[ref.assetClass]
         return getVendorBars(provider, ref.assetClass, ref.symbol, opts)
@@ -378,13 +425,26 @@ export function createBarService(deps: BarServiceDeps): BarService {
       if (!parsed) throw new Error(`Invalid barId "${ref.barId}" (expected "sourceId|nativeSymbol")`)
       const isUta = await deps.utaManager.has(parsed.sourceId)
       if (isUta) return getUtaBars(parsed.sourceId, ref.barId, opts)
-      // vendor barId — needs an assetClass to route to the right client
-      if (!ref.assetClass) {
-        throw new Error(
-          `Vendor barId "${ref.barId}" needs an assetClass to route. Pass { barId, assetClass } or use { symbol, assetClass }.`,
-        )
+      // References carry source identity only. Resolve an exact catalog match,
+      // never a fuzzy hit or an equity fallback. Explicit hints remain supported.
+      let assetClass = ref.assetClass
+      if (!assetClass) {
+        // Search providers sometimes accept the base symbol but not their own
+        // normalized pair/secid (BTCUSD -> BTC, 1.600519 -> 600519). Broaden
+        // only the lookup query; the returned identity must still match exactly.
+        const queries = [...new Set([parsed.nativeSymbol,
+          ...parsed.nativeSymbol.split(/[.\/-]/).filter(part => part.length >= 3),
+          ...(/^[A-Z0-9]{6,}$/.test(parsed.nativeSymbol) ? [parsed.nativeSymbol.slice(0, -3)] : []),
+        ])].slice(0, 4)
+        const matches = (await Promise.all(queries.map(query => aggregateSymbolSearch(deps.marketSearch, query, 100)))).flat()
+        const classes = new Set(matches.filter(hit =>
+          String(hit.symbol ?? hit.id ?? '') === parsed.nativeSymbol &&
+          (hit.sourceId ?? deps.vendorProviders[hit.assetClass]) === parsed.sourceId,
+        ).map(hit => hit.assetClass))
+        if (classes.size !== 1) throw new Error(`Cannot uniquely resolve asset class for "${ref.barId}". Use market search-bars and an exact barId, or pass assetClass explicitly.`)
+        assetClass = [...classes][0]
       }
-      return getVendorBars(parsed.sourceId, ref.assetClass, parsed.nativeSymbol, opts)
+      return getVendorBars(parsed.sourceId, assetClass!, parsed.nativeSymbol, opts)
     },
   }
 }

@@ -1,5 +1,5 @@
 import { fetchJson, headers } from './client'
-import type { HeadlessTaskStatus } from './headless'
+import type { HeadlessTaskStatus, HeadlessTurnProgress } from './headless'
 
 export type InquirySubject =
   | { kind: 'inbox'; entryId: string }
@@ -22,6 +22,7 @@ export interface InquiryRecord {
   durationMs?: number
   error?: string
   assistantText: string | null
+  progress?: HeadlessTurnProgress
   inquiry: {
     subject: InquirySubject
     question: string
@@ -48,7 +49,10 @@ export const inquiriesApi = {
 
   async askInbox(entryId: string, prompt: string): Promise<InquiryDispatch> {
     return fetchJson(`/api/inquiries/inbox/${encodeURIComponent(entryId)}`, {
-      method: 'POST', headers, body: JSON.stringify({ prompt }),
+      // This surface is explicitly a historical Inbox follow-up. Exact senders
+      // receive the plain prompt; only an unattributed fallback gets the
+      // reconstruction preamble.
+      method: 'POST', headers, body: JSON.stringify({ prompt, reconstruct: true }),
     })
   },
 
@@ -65,7 +69,8 @@ export const inquiriesApi = {
   ): Promise<InquiryDispatch> {
     return fetchJson(
       `/api/inquiries/issues/${encodeURIComponent(workspaceId)}/${encodeURIComponent(issueId)}`,
-      { method: 'POST', headers, body: JSON.stringify(input) },
+      // Issue inquiries explicitly ask historical creator/owner/run context.
+      { method: 'POST', headers, body: JSON.stringify({ ...input, reconstruct: true }) },
     )
   },
 }

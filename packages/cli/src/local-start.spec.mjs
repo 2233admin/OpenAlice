@@ -38,6 +38,7 @@ describe('OpenAlice local Runtime launcher', () => {
       prepare: true,
       rebuild: true,
       takeover: true,
+      checkUpdates: true,
       waitMs: 15_000,
     })
   })
@@ -151,6 +152,38 @@ describe('OpenAlice local Runtime launcher', () => {
     expect(runtimeEnv).not.toHaveProperty('OPENALICE_TAKEOVER')
   })
 
+  it('leaves the Web port unpinned when the Supervisor selected an automatic port', () => {
+    const runtimeEnv = buildLocalRuntimeEnv({
+      OPENALICE_WEB_PORT: '41000',
+    }, {
+      appDir: '/tmp/OpenAlice',
+      homeRoot: '/tmp/alice-home',
+      nodeBinary: '/test/node',
+      port: undefined,
+      takeover: false,
+    })
+
+    expect(runtimeEnv).not.toHaveProperty('OPENALICE_WEB_PORT')
+  })
+
+  it('isolates managed Pi for every local Guardian launch path', () => {
+    const runtimeEnv = buildLocalRuntimeEnv({
+      OPENALICE_MANAGED_PI_PATH: '/managed/pi/cli.js',
+      PI_CODING_AGENT_DIR: '/native/pi',
+    }, {
+      appDir: '/tmp/OpenAlice',
+      homeRoot: '/tmp/alice-home',
+      nodeBinary: '/test/node',
+      port: 41_000,
+      takeover: false,
+    })
+
+    expect(runtimeEnv).toEqual(expect.objectContaining({
+      PI_CODING_AGENT_DIR: join('/tmp/alice-home', 'runtime', 'pi'),
+      PI_CODING_AGENT_SESSION_DIR: join('/tmp/alice-home', 'runtime', 'pi', 'sessions'),
+    }))
+  })
+
   it('starts the built Guardian on loopback and preserves explicit takeover', async () => {
     const child = new FakeChild()
     const spawnProcess = vi.fn(() => child)
@@ -192,6 +225,173 @@ describe('OpenAlice local Runtime launcher', () => {
       }),
     }))
     expect(launchBrowser).toHaveBeenCalledWith('http://127.0.0.1:41000')
+  })
+
+  it('starts the Bun compatibility path without desktop-managed Pi state', async () => {
+    vi.stubGlobal('__OPENALICE_BUN_STANDALONE__', true)
+    try {
+      const child = new FakeChild()
+      const spawnProcess = vi.fn(() => child)
+      const resolveRoot = vi.fn()
+      const prepareSource = vi.fn()
+
+      await expect(startLocal(parseLocalStartArgs([
+        '--home', '/tmp/alice-home',
+        '--port', '41000',
+      ]), {
+        env: {
+          OPENALICE_APP_HOME: '/opt/openalice/releases/v1/share/openalice',
+          OPENALICE_RUNTIME_CONTENT_IDENTITY: 'release-content-1',
+          OPENALICE_MANAGED_PI_PATH: '/desktop/pi/cli.js',
+          OPENALICE_MANAGED_PI_NODE_PATH: '/desktop/node',
+          PI_CODING_AGENT_DIR: '/native/pi',
+        },
+        runtimeExecutable: '/opt/openalice/releases/v1/bin/openalice',
+        inspectDependencies: async () => [
+          { id: 'git', status: 'available', executable: '/usr/bin/git' },
+          { id: 'bash', status: 'available', executable: '/bin/bash' },
+        ],
+        probeRuntime: async () => false,
+        readRuntimeStatus: async () => ({ class: 'absent', owner: null, endpoints: {} }),
+        resolveRoot,
+        prepareSource,
+        spawnProcess,
+        waitForRuntime: async () => ({ authed: true, tokenConfigured: false }),
+        launchBrowser: async () => child.finish(0),
+        stdout: { write: vi.fn() },
+      })).resolves.toBe(0)
+
+      expect(resolveRoot).not.toHaveBeenCalled()
+      expect(prepareSource).not.toHaveBeenCalled()
+      expect(spawnProcess).toHaveBeenCalledWith(
+        '/opt/openalice/releases/v1/bin/openalice',
+        ['--internal-role', 'guardian'],
+        expect.objectContaining({
+          env: expect.objectContaining({
+            OPENALICE_RUNTIME_PROVIDER: 'bun',
+            PI_CODING_AGENT_DIR: '/native/pi',
+          }),
+        }),
+      )
+      const spawnedEnv = spawnProcess.mock.calls[0][2].env
+      expect(spawnedEnv).not.toHaveProperty('OPENALICE_MANAGED_PI_PATH')
+      expect(spawnedEnv).not.toHaveProperty('OPENALICE_MANAGED_PI_NODE_PATH')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('confirms direct activation through the Bun compatibility launcher', async () => {
+    vi.stubGlobal('__OPENALICE_BUN_STANDALONE__', true)
+    try {
+      const pending = {
+        schemaVersion: 1,
+        activeRelease: '0.92.0-darwin-arm64-bbbbbbbbbbbbbbbb',
+        previousRelease: '0.91.0-darwin-arm64-aaaaaaaaaaaaaaaa',
+        productVersion: '0.92.0',
+        state: 'pending',
+        activatedAt: '2026-08-30T01:00:00.000Z',
+      }
+      const confirmActivationImpl = vi.fn(async () => ({
+        ...pending,
+        state: 'confirmed',
+        confirmedAt: '2026-08-30T01:01:00.000Z',
+      }))
+      await expect(startLocal({
+        ...parseLocalStartArgs(['--no-open']),
+        homeRoot: '/tmp/alice-home',
+      }, {
+        activationLayout: {
+          kind: 'bun',
+          currentPath: '/cli/current',
+          releasesDir: '/cli/releases',
+        },
+        readActivationReceiptImpl: async () => pending,
+        realpathImpl: async (path) => path.endsWith('current')
+          ? '/cli/releases/0.92.0-darwin-arm64-bbbbbbbbbbbbbbbb'
+          : '/cli/releases',
+        installedContentIdentityImpl: () => 'bbbbbbbbbbbbbbbb',
+        confirmActivationImpl,
+        probeRuntime: async () => true,
+        readRuntimeStatus: async () => ({
+          class: 'running',
+          owner: { surface: 'cli', pid: 123 },
+          provider: { kind: 'bun', contentIdentity: 'bbbbbbbbbbbbbbbb' },
+          endpoints: { web: 'http://127.0.0.1:47331' },
+        }),
+        stdout: { write: vi.fn() },
+      })).resolves.toBe(0)
+      expect(confirmActivationImpl).toHaveBeenCalledOnce()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('rolls back direct activation when the Bun compatibility launcher exits early', async () => {
+    vi.stubGlobal('__OPENALICE_BUN_STANDALONE__', true)
+    try {
+      const child = new FakeChild()
+      const pending = {
+        schemaVersion: 1,
+        activeRelease: '0.92.0-darwin-arm64-bbbbbbbbbbbbbbbb',
+        previousRelease: '0.91.0-darwin-arm64-aaaaaaaaaaaaaaaa',
+        productVersion: '0.92.0',
+        state: 'pending',
+        activatedAt: '2026-08-30T01:00:00.000Z',
+      }
+      const activateReleaseImpl = vi.fn(async () => undefined)
+      const spawnProcess = () => {
+        setImmediate(() => child.emit('exit', 1, null))
+        return child
+      }
+      await expect(startLocal(parseLocalStartArgs([
+        '--home', '/tmp/alice-home',
+        '--no-open',
+      ]), {
+        env: { OPENALICE_APP_HOME: '/release/share/openalice' },
+        activationLayout: {
+          kind: 'bun',
+          currentPath: '/cli/current',
+          releasesDir: '/cli/releases',
+          lockDir: '/cli/install.lock',
+        },
+        readActivationReceiptImpl: async () => pending,
+        realpathImpl: async (path) => path.endsWith('current')
+          ? `/cli/releases/${pending.activeRelease}`
+          : '/cli/releases',
+        installedContentIdentityImpl: () => 'bbbbbbbbbbbbbbbb',
+        assertNoLiveInstallerImpl: async () => undefined,
+        inspectRollbackImpl: async () => ({
+          current: { name: pending.activeRelease },
+          target: { name: pending.previousRelease },
+        }),
+        activateReleaseImpl,
+        markActivationRolledBackImpl: async () => undefined,
+        runtimeExecutable: '/release/bin/openalice',
+        inspectDependencies: async () => [
+          { id: 'git', status: 'available', executable: '/usr/bin/git' },
+          { id: 'bash', status: 'available', executable: '/bin/bash' },
+        ],
+        probeRuntime: async () => false,
+        readRuntimeStatus: async () => ({ class: 'absent', owner: null, endpoints: {} }),
+        spawnProcess,
+        waitForRuntime: async () => new Promise(() => undefined),
+        stdout: { write: vi.fn() },
+      })).rejects.toMatchObject({
+        code: 'EEARLYEXIT',
+        rollback: {
+          failedRelease: pending.activeRelease,
+          restoredRelease: pending.previousRelease,
+        },
+      })
+      expect(activateReleaseImpl).toHaveBeenCalledWith(
+        expect.any(Object),
+        pending.previousRelease,
+        expect.any(Object),
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('uses Corepack when pnpm is not installed', async () => {

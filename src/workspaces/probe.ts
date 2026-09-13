@@ -7,7 +7,7 @@
  * PTY byte streams.
  *
  * Design notes:
- * - We use node-pty (not plain child_process) because both `claude` and
+ * - We use the selected PTY backend (not plain child_process) because both `claude` and
  *   `codex` change behavior dramatically in TUI vs. non-TTY mode (trust
  *   dialog, ANSI output, even argument parsing on some flags). The probe
  *   should exercise the same path a real user takes.
@@ -24,9 +24,9 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import * as pty from 'node-pty';
-
 import type { Logger } from './logger.js';
+import { loadPtyBackend } from './pty-runtime.js';
+import type { PtyBackend } from './pty-types.js';
 import { resolveLaunchCommand } from './win-command.js';
 
 export interface HeadlessProbeArgs {
@@ -40,6 +40,8 @@ export interface HeadlessProbeArgs {
   readonly logger: Logger;
   /** Closes directory-operation start races once the PTY actually exists. */
   readonly onSpawned?: () => void;
+  /** Test seam; production loads the platform module only when probing. */
+  readonly pty?: PtyBackend;
 }
 
 export interface JsonlFileDelta {
@@ -72,12 +74,10 @@ const KILL_GRACE_MS = 500;
 export async function runHeadlessProbe(args: HeadlessProbeArgs): Promise<HeadlessProbeResult> {
   const { command, cwd, env, transcriptDir, transcriptFileRe, prompt, timeoutMs, logger } = args;
 
-  // win32: resolve the bare CLI name to a real `.exe` or a cmd.exe-wrapped
-  // `.cmd` shim before the prompt is appended — same ConPTY limitation the
-  // interactive pool handles. Without this, probing opencode/pi on Windows
-  // ENOENTs and the agent can never be enabled. The probe prompt is a fixed
-  // launcher-internal ping (no untrusted input), so the shim wrap is safe.
-  const [argv0, ...argv1Composed] = resolveLaunchCommand(command, { env }).argv;
+  // win32: resolve the bare CLI name through the shared direct/Node/Bash shim
+  // policy. A batch-only fallback is still acceptable here because the probe
+  // prompt is fixed launcher text rather than user-controlled input.
+  const [argv0, ...argv1Composed] = resolveLaunchCommand(command, { env, cwd }).argv;
   if (!argv0) throw new Error('probe: empty command');
   const argv1 = [...argv1Composed, prompt];
 
@@ -89,13 +89,13 @@ export async function runHeadlessProbe(args: HeadlessProbeArgs): Promise<Headles
   let signal: number | null = null;
   let killed = false;
 
-  const child = pty.spawn(argv0, argv1, {
+  const child = (args.pty ?? loadPtyBackend()).spawn(argv0, argv1, {
+    name: 'xterm-256color',
     cwd,
     env: env as { [key: string]: string },
     cols: 80,
     rows: 24,
-    encoding: null,
-  } as never);
+  });
   args.onSpawned?.();
 
   child.onData((data) => {

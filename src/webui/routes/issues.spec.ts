@@ -67,11 +67,16 @@ function build(inboxReports: InboxEntry[] = []) {
     if (!detail) throw new IssueRetryError('not_found', 'Issue not found.')
     return detail
   })
+  const runIssueNow = vi.fn(async (wsId: string, id: string) => {
+    const detail = await readDetail(wsId, id)
+    if (!detail) throw new IssueRetryError('not_found', 'Issue not found.')
+    return detail
+  })
   const svc = {
     registry: {
       get: (id: string) => (
         id === 'ws-1'
-          ? { id: 'ws-1', dir: wsDir, tag: 'ws-1', agents: ['claude', 'codex', 'pi', 'shell'] }
+          ? { id: 'ws-1', dir: wsDir, tag: 'ws-1' }
           : undefined
       ),
     },
@@ -91,9 +96,10 @@ function build(inboxReports: InboxEntry[] = []) {
     },
     issueDetail: readDetail,
     retryIssue,
+    runIssueNow,
     provenanceStore: { append: appendProvenance, list: vi.fn(), latest: vi.fn() },
   } as unknown as WorkspaceService
-  return { app: createIssuesRoutes(svc, { conversation }), appendProvenance, retryIssue, ask }
+  return { app: createIssuesRoutes(svc, { conversation }), appendProvenance, retryIssue, runIssueNow, ask }
 }
 
 async function req(app: any, method: string, path: string, body?: unknown) {
@@ -140,6 +146,22 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     expect((await req(app, 'PATCH', '/ws-1/i1', { agent: 'shell' })).body.error).toBe('invalid_agent')
   })
 
+  it('400 invalid_effort for an unsupported value', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T' })
+    const { app } = build()
+    const r = await req(app, 'PATCH', '/ws-1/i1', { effort: 'extreme' })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toBe('invalid_effort')
+  })
+
+  it('400 invalid_timeout for an unsupported value', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T' })
+    const { app } = build()
+    const r = await req(app, 'PATCH', '/ws-1/i1', { timeout: '12m' })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toBe('invalid_timeout')
+  })
+
   it('validates and persists explicit scheduled ownership', async () => {
     await createIssue(wsDir, { id: 'i1', title: 'T', when: { kind: 'every', every: '1h' } })
     const { app } = build()
@@ -164,6 +186,17 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     expect(unavailable.body.error).toBe('unavailable_assignee_session')
   })
 
+  it('rejects deprecated assignee aliases with a canonical replacement', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T', when: { kind: 'every', every: '1h' } })
+    const { app } = build()
+    const deprecated = await req(app, 'PATCH', '/ws-1/i1', { assignee: '@new' })
+    expect(deprecated.status).toBe(400)
+    expect(deprecated.body).toEqual({
+      error: 'deprecated_assignee',
+      message: '@new is deprecated; use @new-then-resume',
+    })
+  })
+
   it('400 no_fields when the body has none of the patchable fields', async () => {
     await createIssue(wsDir, { id: 'i1', title: 'T' })
     const { app } = build()
@@ -176,7 +209,14 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     await createIssue(wsDir, { id: 'i1', title: 'T', body: 'keep me' })
     const { app, appendProvenance } = build()
     const r = await req(app, 'PATCH', '/ws-1/i1', {
-      status: 'in_progress', priority: 'high', assignee: '@human', agent: 'pi', what: 'new exact work',
+      status: 'in_progress',
+      priority: 'high',
+      assignee: '@human',
+      agent: 'pi',
+      credential: 'gemini-primary',
+      model: 'gemini-3.5-pro',
+      effort: 'high',
+      what: 'new exact work',
     })
     expect(r.status).toBe(200)
     expect(r.body.issue).toMatchObject({
@@ -185,6 +225,9 @@ describe('PATCH /api/issues/:wsId/:id', () => {
       priority: 'high',
       assignee: '@human',
       agent: 'pi',
+      credential: 'gemini-primary',
+      model: 'gemini-3.5-pro',
+      effort: 'high',
       what: 'new exact work',
     })
     expect(Array.isArray(r.body.runs)).toBe(true)
@@ -192,6 +235,9 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     const re = await readWorkspaceIssues(wsDir)
     expect(re.ok && re.issues[0].status).toBe('in_progress')
     expect(re.ok && re.issues[0].agent).toBe('pi')
+    expect(re.ok && re.issues[0].credential).toBe('gemini-primary')
+    expect(re.ok && re.issues[0].model).toBe('gemini-3.5-pro')
+    expect(re.ok && re.issues[0].effort).toBe('high')
     expect(re.ok && re.issues[0].what).toBe('new exact work')
     expect(appendProvenance).toHaveBeenCalledWith(expect.objectContaining({
       artifact: { kind: 'issue', workspaceId: 'ws-1', issueId: 'i1' },
@@ -201,8 +247,11 @@ describe('PATCH /api/issues/:wsId/:id', () => {
         fields: expect.arrayContaining([
           { field: 'status', before: 'todo', after: 'in_progress' },
           { field: 'priority', before: 'none', after: 'high' },
-          { field: 'assignee', before: '@workspace', after: '@human' },
+          { field: 'assignee', before: '@unassigned', after: '@human' },
           { field: 'runtime', after: 'pi' },
+          { field: 'credential', after: 'gemini-primary' },
+          { field: 'model', after: 'gemini-3.5-pro' },
+          { field: 'effort', after: 'high' },
           { field: 'what' },
         ]),
       },
@@ -217,6 +266,17 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     expect(r.body.issue.agent).toBeUndefined()
     const re = await readWorkspaceIssues(wsDir)
     expect(re.ok && re.issues[0].agent).toBeUndefined()
+  })
+
+  it('sets and clears an optional scheduled-run timeout', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T', when: { kind: 'every', every: '30m' } })
+    const { app } = build()
+    const set = await req(app, 'PATCH', '/ws-1/i1', { timeout: '60m' })
+    expect(set.status).toBe(200)
+    expect(set.body.issue.timeout).toBe('60m')
+    const cleared = await req(app, 'PATCH', '/ws-1/i1', { timeout: null })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body.issue.timeout).toBeUndefined()
   })
 })
 
@@ -263,6 +323,29 @@ describe('POST /api/issues/:wsId/:id/retry', () => {
   })
 })
 
+describe('POST /api/issues/:wsId/:id/run', () => {
+  it('returns the authoritative detail with 202', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T', when: { kind: 'every', every: '1h' } })
+    const { app, runIssueNow } = build()
+    const r = await req(app, 'POST', '/ws-1/i1/run')
+    expect(r.status).toBe(202)
+    expect(r.body.issue.id).toBe('i1')
+    expect(runIssueNow).toHaveBeenCalledWith('ws-1', 'i1')
+  })
+
+  it('maps a live-run conflict to 409', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T', when: { kind: 'every', every: '1h' } })
+    const { app, runIssueNow } = build()
+    runIssueNow.mockRejectedValueOnce(new IssueRetryError('already_running', 'This Issue already has a run in progress.'))
+    const r = await req(app, 'POST', '/ws-1/i1/run')
+    expect(r.status).toBe(409)
+    expect(r.body).toEqual({
+      error: 'already_running',
+      message: 'This Issue already has a run in progress.',
+    })
+  })
+})
+
 describe('POST /api/issues/:wsId/:id/comments', () => {
   it('400 text_required for a blank comment', async () => {
     await createIssue(wsDir, { id: 'i1', title: 'T' })
@@ -289,6 +372,35 @@ describe('POST /api/issues/:wsId/:id/comments', () => {
       action: 'commented',
       origin: { kind: 'human' },
     }))
+  })
+
+  it('asks the creator or reconstructs for a human comment without a fixed owner', async () => {
+    await createIssue(wsDir, { id: 'i1', title: 'T' })
+    const { app, ask } = build()
+    const r = await req(app, 'POST', '/ws-1/i1/comments', { text: 'how should I read this?' })
+    expect(r.status).toBe(200)
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({
+      target: {
+        kind: 'issue',
+        workspaceId: 'ws-1',
+        issueId: 'i1',
+        action: 'created',
+      },
+      reconstruct: true,
+      source: { kind: 'human' },
+      subject: expect.objectContaining({
+        kind: 'issue',
+        issueId: 'i1',
+        relation: 'creator',
+        commentId: expect.any(String),
+      }),
+    }))
+    expect(r.body.comments[0].delivery).toEqual({
+      state: 'pending',
+      targetResumeId: 'resume-kind-owl-abc123',
+      taskId: 'run-comment-reply',
+    })
+    expect(r.body.issue.assignee).toBe('@unassigned')
   })
 
   it('notifies the fixed owner and persists pending delivery without blocking the comment', async () => {

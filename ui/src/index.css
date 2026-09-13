@@ -1,5 +1,16 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 @import "./theme/palette.css";
+@import "./theme/style-profiles.css";
+
+@font-face {
+  font-family: "Instrument Sans Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url("./assets/fonts/instrument-sans-latin-wght-normal.woff2") format("woff2-variations");
+}
 
 /* Tailwind aliases for the semantic color card. The core names intentionally
    mirror Orca/shadcn; this does not import or require the shadcn component
@@ -53,20 +64,51 @@
   --color-backdrop: var(--backdrop);
   --color-code-background: var(--code-background);
   --color-report-canvas: var(--report-canvas);
+  --color-office-wall: var(--office-wall);
+  --color-office-wall-grain: var(--office-wall-grain);
+  --color-office-wall-crown: var(--office-wall-crown);
+  --color-office-trim: var(--office-trim);
+  --color-office-trim-shadow: var(--office-trim-shadow);
+  --color-office-floor: var(--office-floor);
+  --color-office-floor-plank: var(--office-floor-plank);
+  --color-office-floor-sheen: var(--office-floor-sheen);
+  --color-office-label: var(--office-label);
+  --color-office-label-foreground: var(--office-label-foreground);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  --font-sans: "Instrument Sans Variable", "PingFang SC",
     "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
   --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas,
     monospace;
+
+  /* OpenAlice is a dense workbench: Tailwind's default 14px `text-sm` makes
+     shared controls and overlays compete with page titles. Keep the familiar
+     20px reading rhythm while aligning the global body/control size to the
+     semantic `.text-body` token below. */
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+
+  /* Shared workbench geometry. Composer and drawer silhouettes keep their
+     dedicated larger radii at the component boundary. */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
 }
 
 /* Base resolution (no attribute / explicit light). */
 :root {
-  --motion-fast: 120ms;
-  --motion-standard: 180ms;
-  --motion-slow: 260ms;
+  --motion-fast: 110ms;
+  --motion-standard: 160ms;
+  --motion-slow: 250ms;
   --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-drawer: var(--motion-ease-out);
+  --oa-control-hover-border: color-mix(in srgb, var(--foreground) 18%, transparent);
+  --oa-control-focus-border: color-mix(in srgb, var(--foreground) 28%, transparent);
+  --oa-focus-ring: color-mix(in srgb, var(--foreground) 46%, transparent);
+  --oa-focus-shadow: 0 0 0 1px var(--oa-focus-ring);
 }
 
 /* Japanese gets a JP-first sans stack so shared Han characters render in
@@ -74,7 +116,7 @@
    would pick (Han unification). Scoped via <html lang="ja">, which the locale
    store keeps in sync. */
 :root:lang(ja) {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Instrument Sans Variable",
     "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "YuGothic",
     "Meiryo", "Noto Sans JP", sans-serif;
 }
@@ -84,7 +126,7 @@
    the default stack would pick. Scoped via <html lang="zh-Hant"> — region-
    neutral (serves both Taiwan and Hong Kong Traditional readers). */
 :root:lang(zh-Hant) {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Instrument Sans Variable",
     "PingFang TC", "Microsoft JhengHei", "Noto Sans TC",
     "Noto Sans CJK TC", sans-serif;
 }
@@ -98,8 +140,14 @@ body,
 body {
   background: var(--app-background-wash), var(--background);
   color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
   overflow: hidden;
-  transition: background-color 0.4s ease, color 0.4s ease;
+  text-rendering: optimizeLegibility;
+  transition:
+    background-color var(--motion-slow) var(--motion-ease-out),
+    color var(--motion-slow) var(--motion-ease-out);
 }
 
 ::selection {
@@ -113,21 +161,102 @@ body {
    reserve ambient loops for real live/loading state. Pointer cursors are global
    because a clickable control should never make the user guess. */
 
+/* Unread is a quiet informational cue, not an alarm or selected state.
+   Shared by the global Inbox count and both Inbox list presentations. */
+.oa-inbox-unread-count {
+  color: color-mix(in srgb, var(--info) 60%, var(--sidebar-foreground));
+  background: color-mix(in srgb, var(--info) 12%, var(--sidebar));
+}
+.oa-inbox-unread-dot {
+  background: color-mix(in srgb, var(--info) 70%, var(--muted-foreground));
+}
+
+/* Expanded desktop navigation has one inset per hierarchy level. Keep these
+   density rules out of the compact rail and touch navigation. */
+@media (pointer: coarse) {
+  .oa-sidebar-child-row { min-height: 40px; }
+}
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  #activity-bar:not([data-rail-layout="compact"]) .oa-nav-item {
+    min-height: 30px;
+    padding-inline: 8px;
+    gap: 8px;
+  }
+  #activity-bar .oa-harness-nav-header { min-height: 30px; }
+  #activity-bar .oa-harness-nav-actions > button { height: 28px; }
+  #activity-bar .oa-harness-nav-children { margin-left: 8px; padding-bottom: 4px; }
+  #activity-bar .oa-harness-nav-children .oa-sidebar-child-row {
+    margin-inline: 0;
+    min-height: 30px;
+    padding-block: 4px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .oa-harness-studio-entry .oa-studio-arrow { opacity: 0; }
+  .oa-harness-studio-entry > button:hover .oa-studio-arrow,
+  .oa-harness-studio-entry > button:focus-visible .oa-studio-arrow { opacity: 1; }
+}
+
 :where(button, [role="button"], summary, a[href], select):not(:disabled):not([aria-disabled="true"]) {
   cursor: pointer;
+}
+
+:root:not([data-ui-style="win98"]) .oa-field-control {
+  transition:
+    border-color var(--motion-fast) var(--motion-ease-out),
+    background-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out);
+}
+
+:root:not([data-ui-style="win98"]) .oa-field-control:hover:not(:disabled):not([aria-invalid="true"]) {
+  border-color: var(--oa-control-hover-border);
+}
+
+:root:not([data-ui-style="win98"]) .oa-field-control:focus-visible {
+  border-color: var(--oa-control-focus-border);
+  box-shadow: var(--oa-focus-shadow);
+}
+
+:root:not([data-ui-style="win98"]) .oa-field-control[aria-invalid="true"]:focus-visible {
+  border-color: color-mix(in srgb, var(--destructive) 64%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--destructive) 42%, transparent);
+}
+
+:root:not([data-ui-style="win98"]) select.oa-field-control {
+  appearance: none;
+  padding-right: 2rem;
+  background-image:
+    linear-gradient(45deg, transparent 46%, var(--muted-foreground) 46% 54%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, var(--muted-foreground) 46% 54%, transparent 54%);
+  background-position:
+    calc(100% - 0.8125rem) 50%,
+    calc(100% - 0.5625rem) 50%;
+  background-repeat: no-repeat;
+  background-size: 0.375rem 0.375rem;
+}
+
+@media (forced-colors: active) {
+  :root:not([data-ui-style="win98"]) select.oa-field-control {
+    appearance: auto;
+    background-image: none;
+  }
 }
 
 :where(button:disabled, [role="button"][aria-disabled="true"]) {
   cursor: default;
 }
 
+[data-slot="resizable-handle"] {
+  cursor: col-resize;
+}
+
 .oa-pressable {
   transition:
-    transform var(--motion-fast) var(--motion-ease-standard),
-    border-color var(--motion-standard) var(--motion-ease-standard),
-    background-color var(--motion-standard) var(--motion-ease-standard),
-    color var(--motion-standard) var(--motion-ease-standard),
-    box-shadow var(--motion-standard) var(--motion-ease-standard);
+    transform var(--motion-fast) var(--motion-ease-out),
+    border-color var(--motion-fast) var(--motion-ease-out),
+    background-color var(--motion-fast) var(--motion-ease-out),
+    color var(--motion-fast) var(--motion-ease-out);
 }
 
 .oa-icon-action,
@@ -143,9 +272,53 @@ body {
 .oa-nav-item,
 .oa-nav-row {
   transition:
-    transform var(--motion-fast) var(--motion-ease-out),
-    color var(--motion-standard) var(--motion-ease-standard),
-    background-color var(--motion-standard) var(--motion-ease-standard);
+    color var(--motion-fast) var(--motion-ease-out),
+    background-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out);
+}
+
+:where(.oa-pressable, .oa-nav-item, .oa-nav-row):focus-visible {
+  outline: none;
+  box-shadow: var(--oa-focus-shadow);
+}
+
+.oa-data-surface {
+  border-color: color-mix(in srgb, var(--foreground) 9%, transparent);
+  background: color-mix(in srgb, var(--card) 94%, var(--background));
+}
+
+.oa-data-surface-header {
+  border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
+  background: color-mix(in srgb, var(--secondary) 38%, transparent);
+}
+
+.oa-chart {
+  font-variant-numeric: tabular-nums;
+}
+
+.oa-chart .recharts-tooltip-wrapper {
+  outline: none;
+}
+
+.oa-chart .recharts-default-tooltip,
+.oa-chart-tooltip {
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent) !important;
+  border-radius: var(--radius-lg) !important;
+  background: color-mix(in srgb, var(--popover) 96%, transparent) !important;
+  color: var(--popover-foreground) !important;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--shadow-color) 8%, transparent),
+    0 8px 24px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+}
+
+.oa-chart .recharts-default-tooltip {
+  padding: 0.375rem 0.625rem !important;
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
+.oa-chart .recharts-tooltip-cursor {
+  stroke: color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 
 .oa-status-surface {
@@ -155,35 +328,181 @@ body {
     box-shadow var(--motion-slow) var(--motion-ease-standard);
 }
 
+.oa-composer-notice {
+  background: color-mix(in srgb, var(--card) 88%, var(--background));
+  border-color: color-mix(in srgb, var(--foreground) 9%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-color) 5%, transparent);
+}
+
+.oa-composer-notice[data-tone="warning"] .oa-composer-notice-icon {
+  color: var(--warning);
+}
+
+.oa-composer-notice[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--destructive) 24%, transparent);
+}
+
+.oa-composer-notice[data-tone="error"] .oa-composer-notice-icon {
+  color: var(--destructive);
+}
+
+.oa-demo-banner {
+  background: color-mix(in srgb, var(--secondary) 78%, var(--background));
+  border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--shadow-color) 4%, transparent);
+}
+
+.oa-demo-install {
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 7%, transparent);
+  transition:
+    background-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out);
+}
+
+.oa-demo-install:hover {
+  background: color-mix(in srgb, var(--card) 90%, var(--secondary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 11%, transparent);
+}
+
+.oa-harness-context-tray {
+  background: color-mix(in srgb, var(--secondary) 86%, var(--card));
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition:
+    background-color var(--motion-standard) var(--motion-ease-standard),
+    box-shadow var(--motion-standard) var(--motion-ease-standard);
+}
+
+.oa-harness-composer-shell {
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--shadow-color) 4%, transparent),
+    0 2px 8px color-mix(in srgb, var(--shadow-color) 4%, transparent),
+    0 14px 52px color-mix(in srgb, var(--shadow-color) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition:
+    box-shadow var(--motion-fast) var(--motion-ease-out);
+}
+
+.oa-harness-composer-shell:focus-within {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--shadow-color) 5%, transparent),
+    0 2px 8px color-mix(in srgb, var(--shadow-color) 5%, transparent),
+    0 16px 58px color-mix(in srgb, var(--shadow-color) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  .oa-harness-context-tray,
+  .oa-harness-composer-shell {
+    corner-shape: superellipse(1.5);
+  }
+}
+
+.oa-chat-new-action {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 3.5%, transparent);
+}
+
+.oa-sidebar-child-row:has(.oa-sidebar-child-row-main:focus-visible) {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .oa-pressable:hover:not(:disabled):not([aria-disabled="true"]) {
-    transform: translateY(-1px);
-    box-shadow: 0 5px 14px color-mix(in srgb, var(--foreground) 9%, transparent);
+  /* Keep actions keyboard-reachable; focus reveals them before activation. */
+  .oa-application-menu-more {
+    opacity: 0;
+    transition: opacity var(--motion-fast);
   }
 
+  .oa-application-menu:hover .oa-application-menu-more,
+  .oa-application-menu:focus-visible .oa-application-menu-more,
+  .oa-application-menu[aria-expanded="true"] .oa-application-menu-more {
+    opacity: 1;
+  }
+
+  .oa-harness-nav-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .oa-harness-nav-header:hover .oa-harness-nav-actions,
+  .oa-harness-nav-header:focus-within .oa-harness-nav-actions,
+  .oa-harness-nav-actions:has([aria-expanded="true"]) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .oa-session-overflow-action {
+    position: absolute;
+    inset-inline-end: 0.5rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.96);
+    visibility: hidden;
+    transition:
+      opacity var(--motion-fast) var(--motion-ease-out),
+      transform var(--motion-fast) var(--motion-ease-out),
+      visibility 0s linear var(--motion-fast);
+  }
+
+  .oa-session-row:hover .oa-session-overflow-action,
+  .oa-session-row:focus-within .oa-session-overflow-action {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  .oa-session-state-action {
+    transition:
+      color var(--motion-fast) var(--motion-ease-standard),
+      background-color var(--motion-fast) var(--motion-ease-standard),
+      opacity var(--motion-fast) var(--motion-ease-out),
+      transform var(--motion-fast) var(--motion-ease-out),
+      visibility 0s linear 0s;
+  }
+
+  .oa-session-row:hover .oa-session-state-action,
+  .oa-session-row:focus-within .oa-session-state-action {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.96);
+    visibility: hidden;
+    transition-delay: 0s, 0s, 0s, 0s, var(--motion-fast);
+  }
+}
+
+@media (max-height: 34rem) {
+  .oa-harness-scroll {
+    padding-block: 0.5rem;
+  }
+
+  .oa-harness-hero-mark {
+    display: none;
+  }
+
+  .oa-harness-title {
+    margin-top: 0;
+  }
+
+  .oa-harness-starters {
+    margin-top: 0.5rem;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
   .oa-pressable:active:not(:disabled):not([aria-disabled="true"]) {
-    transform: translateY(0) scale(0.98);
-    box-shadow: none;
-  }
-
-  .oa-icon-action:hover:not(:disabled):not([aria-disabled="true"]) {
-    transform: translateY(-1px);
-  }
-
-  .oa-icon-action:hover:not(:disabled):not([aria-disabled="true"]) > svg {
-    transform: scale(1.1);
+    transform: scale(0.98);
   }
 
   .oa-icon-action:active:not(:disabled):not([aria-disabled="true"]) {
-    transform: translateY(0) scale(0.92);
-  }
-
-  .oa-nav-item:hover .oa-nav-icon {
-    transform: translateX(1px) scale(1.04);
-  }
-
-  .oa-nav-row:hover {
-    transform: translateX(1px);
+    transform: scale(0.96);
   }
 }
 
@@ -236,6 +555,97 @@ body {
   }
 }
 
+@keyframes oa-tracked-graph-node-enter {
+  from {
+    opacity: 0;
+    transform: translate(var(--oa-graph-enter-x), var(--oa-graph-enter-y)) scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes oa-tracked-graph-edge-enter {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes oa-tracked-graph-preview-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+    border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    border-color: var(--border);
+  }
+}
+
+.oa-tracked-graph-node {
+  transition: opacity var(--motion-standard) var(--motion-ease-standard);
+}
+
+.oa-tracked-graph-preview-enter {
+  animation: oa-tracked-graph-preview-enter var(--motion-slow) var(--motion-ease-out) backwards;
+  transform-origin: bottom right;
+}
+
+.oa-tracked-graph-node-enter {
+  animation: oa-tracked-graph-node-enter var(--motion-slow) var(--motion-ease-out) backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.oa-tracked-graph-edge {
+  stroke-dasharray: 1;
+  animation: oa-tracked-graph-edge-enter var(--motion-slow) var(--motion-ease-out) backwards;
+  transition:
+    opacity var(--motion-standard) var(--motion-ease-standard),
+    stroke-width var(--motion-fast) var(--motion-ease-standard);
+}
+
+.oa-tracked-graph-node-mark {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.oa-tracked-graph-node[data-focus-state="active"] .oa-tracked-graph-node-mark {
+  transform: scale(1.14);
+}
+
+.oa-tracked-graph-node[data-focus-state="related"] .oa-tracked-graph-node-mark {
+  transform: scale(1.035);
+}
+
+.oa-tracked-graph-hover-halo,
+.oa-tracked-graph-label {
+  transition: opacity var(--motion-standard) var(--motion-ease-standard);
+}
+
+.oa-tracked-graph-node-enter[data-enter-phase="1"],
+.oa-tracked-graph-edge[data-enter-phase="1"] {
+  animation-delay: calc(var(--motion-fast) / 4);
+}
+
+.oa-tracked-graph-node-enter[data-enter-phase="2"],
+.oa-tracked-graph-edge[data-enter-phase="2"] {
+  animation-delay: calc(var(--motion-fast) / 2);
+}
+
+.oa-tracked-graph-node-enter[data-enter-phase="3"],
+.oa-tracked-graph-edge[data-enter-phase="3"] {
+  animation-delay: calc(var(--motion-fast) - var(--motion-fast) / 4);
+}
+
+.oa-tracked-graph-node-enter[data-enter-phase="4"],
+.oa-tracked-graph-edge[data-enter-phase="4"] {
+  animation-delay: var(--motion-fast);
+}
+
 .oa-view-enter {
   animation: oa-view-enter var(--motion-standard) var(--motion-ease-out) both;
 }
@@ -248,6 +658,49 @@ body {
   animation: oa-backdrop-enter var(--motion-standard) ease-out both;
 }
 
+/* Page-owned navigators become touch surfaces inside the phone drawer.
+   A 40px height floor removes the old 18–28px rows; icon controls keep 36px
+   of horizontal room so adjacent workspace names remain distinguishable. */
+.oa-page-sidebar-dialog :is(button, [role="button"]) {
+  min-height: 2.5rem;
+}
+
+.oa-page-sidebar-dialog button:has(svg) {
+  min-width: 2.25rem;
+}
+
+/* Workspace tree controls stay compact for a fine pointer, but touch-capable
+   desktop/tablet layouts must not collapse them back into 20px hit targets. */
+@media (hover: none), (pointer: coarse) {
+  .oa-workspace-row-action {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+
+  .oa-workspace-context-item {
+    min-height: 2.5rem;
+  }
+
+  .oa-harness-context-tray :is(button, [role="button"]),
+  .oa-harness-composer :is(button, [role="button"]),
+  .oa-harness-starters .oa-icon-action {
+    min-height: 2.25rem;
+  }
+
+  .oa-harness-context-tray .oa-icon-action,
+  .oa-harness-composer .oa-icon-action,
+  .oa-harness-starters .oa-icon-action {
+    min-width: 2.25rem;
+  }
+}
+
+.oa-page-sidebar-dialog :is(
+  input:not([type="checkbox"]):not([type="radio"]),
+  select
+) {
+  min-height: 2.5rem;
+}
+
 .oa-disclosure-enter {
   transform-origin: top;
   animation: oa-disclosure-enter var(--motion-standard) var(--motion-ease-out) both;
@@ -256,6 +709,27 @@ body {
 .oa-popover-enter {
   transform-origin: top;
   animation: oa-popover-enter var(--motion-standard) var(--motion-ease-out) both;
+}
+
+.oa-sortable-placeholder {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
+  outline: 1px dashed color-mix(in srgb, var(--primary) 32%, var(--border));
+  outline-offset: -1px;
+  box-shadow: none;
+}
+
+.oa-sortable-placeholder > * {
+  visibility: hidden;
+}
+
+.oa-sortable-overlay {
+  pointer-events: none;
+  z-index: 80;
+  will-change: transform;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: var(--secondary);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 /* ==================== Typography scale ====================
@@ -269,19 +743,102 @@ body {
    - .text-micro    badges, timestamps, table metadata */
 
 .text-display {
-  @apply text-[28px] md:text-[36px] font-bold leading-tight tabular-nums;
+  @apply text-[28px] leading-[34px] font-bold tabular-nums md:text-[36px] md:leading-[42px];
 }
 .text-title {
-  @apply text-[16px] font-semibold leading-snug;
+  @apply text-[16px] leading-[22px] font-semibold;
 }
 .text-body {
-  @apply text-[13px] leading-relaxed;
+  @apply text-[13px] leading-5;
 }
 .text-caption {
-  @apply text-[12px] leading-relaxed;
+  @apply text-[12px] leading-[18px];
 }
 .text-micro {
-  @apply text-[11px] tracking-wide;
+  @apply text-[11px] leading-[15px];
+}
+
+/* One chrome row for navigator and working view. Body descriptions are not
+   toolbar content. Layout owns the header slot; pages retain their actions. */
+.oa-topbar-host { container-type: inline-size; }
+/* Windows keeps native caption controls. Only header rows intersecting their
+   actual geometry reserve space; nested toolbars keep their normal density. */
+.oa-windows-chrome-fallback {
+  position: fixed;
+  z-index: 101;
+  -webkit-app-region: drag;
+}
+:root[data-window-chrome="windows"] [data-caption-row] {
+  min-height: max(44px, var(--desktop-caption-height, 44px));
+  height: auto;
+  flex-shrink: 0;
+  padding-left: max(12px, calc(var(--caption-left, 0px) + 8px));
+  padding-right: max(12px, calc(var(--caption-right, 0px) + 8px));
+  -webkit-app-region: drag;
+}
+:root[data-window-chrome="windows"] [data-caption-stacked] {
+  padding: calc(var(--desktop-caption-height, 44px) + 4px) 12px 4px;
+}
+:root[data-window-chrome="windows"] [data-caption-row] :is(button, a, input, textarea, select, [role="button"], [role="tab"], [role="tablist"], [role="separator"], [contenteditable="true"]),
+:root[data-window-chrome="windows"] [data-caption-row] :is(.oa-topbar-actions, .oa-topbar-leading) {
+  -webkit-app-region: no-drag;
+}
+/* Portaled edge drawers also stay below the native caption controls. */
+:root[data-window-chrome="windows"] [data-slot="sheet-content"]:is([data-side="left"], [data-side="right"], [data-side="top"]) {
+  padding-top: max(16px, var(--desktop-caption-height, 44px));
+}
+:root[data-window-chrome="windows"] [data-slot="sheet-content"] [data-slot="sheet-close"] {
+  top: calc(var(--desktop-caption-height, 44px) + 8px);
+}
+/* macOS owns the traffic lights; the existing navigation and page headers
+   share their row. Browser windows keep their original geometry. */
+.oa-desktop-mac .oa-topbar,
+.oa-desktop-mac .oa-activity-brand,
+.oa-desktop-mac [data-testid="mobile-context-bar"] {
+  -webkit-app-region: drag;
+}
+.oa-desktop-mac :is(button, a, input, textarea, select, [role="button"], [role="tab"], [role="separator"]),
+.oa-desktop-mac .oa-topbar-actions,
+.oa-desktop-mac .oa-topbar-leading {
+  -webkit-app-region: no-drag;
+}
+.oa-desktop-mac [data-testid="mobile-context-bar"] {
+  height: 44px;
+  flex-shrink: 0;
+  padding-left: 88px;
+  background: var(--sidebar);
+}
+@media (min-width: 768px) {
+  .oa-desktop-mac .oa-topbar { min-height: 44px; }
+  .oa-desktop-mac #activity-bar .oa-activity-brand {
+    height: 44px;
+    min-height: 44px;
+    padding-left: 88px;
+    justify-content: flex-end;
+  }
+  .oa-desktop-mac #activity-bar .oa-activity-brand h1 { display: none; }
+  .oa-desktop-mac #activity-bar[data-rail-layout="compact"] { width: 88px; }
+}
+.oa-topbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+}
+.oa-topbar-leading { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.oa-topbar-leading:empty { display: none; }
+.oa-topbar-identity { display: flex; flex: 1 1 6rem; min-width: 0; align-items: center; gap: 8px; }
+.oa-topbar-actions { display: flex; flex: 0 1 auto; max-width: 100%; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; }
+.oa-topbar-actions > div { max-width: 100%; flex-wrap: wrap; }
+.oa-topbar [data-slot="button"] { min-height: 28px; }
+@media (max-width: 767px), (pointer: coarse) {
+  .oa-topbar { min-height: 48px; }
+  .oa-topbar [data-slot="button"] { min-height: 40px; }
 }
 
 /* ==================== Live-data pulse ====================
@@ -539,6 +1096,14 @@ html[lang="ja"] .oa-onboarding-title {
   .oa-popover-enter {
     animation: none;
   }
+  .oa-sortable-overlay {
+    box-shadow: none;
+  }
+  .oa-tracked-graph-node-enter,
+  .oa-tracked-graph-edge,
+  .oa-tracked-graph-preview-enter {
+    animation: none;
+  }
   .oa-pressable,
   .oa-icon-action,
   .oa-icon-action > svg,
@@ -546,6 +1111,13 @@ html[lang="ja"] .oa-onboarding-title {
   .oa-nav-row,
   .oa-nav-icon,
   .oa-status-surface {
+    transition-duration: 0.01ms;
+  }
+  .oa-tracked-graph-node,
+  .oa-tracked-graph-edge,
+  .oa-tracked-graph-node-mark,
+  .oa-tracked-graph-hover-halo,
+  .oa-tracked-graph-label {
     transition-duration: 0.01ms;
   }
   .oa-pressable:hover,
@@ -561,52 +1133,67 @@ html[lang="ja"] .oa-onboarding-title {
 /* ==================== Button utility classes ==================== */
 
 .btn-primary {
-  @apply px-4 py-2 text-[13px] font-medium rounded-lg
+  @apply px-4 py-2 text-[13px] leading-[18px] font-medium rounded-md
     bg-primary border border-primary text-primary-foreground
-    hover:bg-primary/90 transition-all active:scale-[0.98]
+    hover:bg-primary/90 transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
 .btn-secondary {
-  @apply px-4 py-2 text-[13px] font-medium rounded-lg border border-border text-muted-foreground
-    hover:bg-muted hover:text-foreground transition-all active:scale-[0.98]
+  @apply px-4 py-2 text-[13px] leading-[18px] font-medium rounded-md border border-border text-muted-foreground
+    hover:bg-muted hover:text-foreground transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
 .btn-danger {
-  @apply px-4 py-2 text-[13px] font-medium rounded-lg border border-destructive/30 text-destructive
-    hover:bg-destructive/10 transition-all active:scale-[0.98]
+  @apply px-4 py-2 text-[13px] leading-[18px] font-medium rounded-md border border-destructive/30 text-destructive
+    hover:bg-destructive/10 transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
 }
 
 .btn-primary-sm {
-  @apply px-3 py-1.5 text-xs font-medium rounded-md
+  @apply px-3 py-1.5 text-xs leading-4 font-medium rounded-md
     bg-primary border border-primary text-primary-foreground
-    hover:bg-primary/90 transition-all active:scale-[0.98]
+    hover:bg-primary/90 transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background;
 }
 
 .btn-secondary-sm {
-  @apply px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground
-    hover:bg-muted hover:text-foreground transition-all active:scale-[0.98]
+  @apply px-3 py-1.5 text-xs leading-4 font-medium rounded-md border border-border text-muted-foreground
+    hover:bg-muted hover:text-foreground transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-fast)] active:scale-[0.98]
     disabled:opacity-40 disabled:cursor-default cursor-pointer
     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background;
 }
 
-/* Scrollbar styling */
+/* Native scrollbars stay subtle and gain contrast under the pointer. */
+* {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 22%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 22%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted-foreground) 34%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-button {
+  display: none;
 }
 
 /* Hide scrollbar utility — content still scrolls (programmatically or via
@@ -620,52 +1207,100 @@ html[lang="ja"] .oa-onboarding-title {
   display: none;               /* Chromium / WebKit */
 }
 
-/* Markdown content inside assistant messages */
-/* Prose base size — the single knob for all markdown surfaces (chat,
-   inbox comment, doc preview, file viewer). Headings/lists use `em` so
-   they scale off this. Without it, markdown inherits the browser default
-   16px, which reads oversized next to the 12–13px UI chrome. Being
-   tuned empirically; candidate prose tier for the semantic scale. */
+/* ==================== Markdown typography ====================
+   Messages and documents share parsing and element semantics, but not density.
+   The default remains compact enough for chat/runtime surfaces; the reading
+   modifier is used by durable Markdown reports and issue documents. */
 .markdown-content {
-  font-size: 15px;
+  --markdown-font-size: 15px;
+  --markdown-leading: 1.65;
+  color: inherit;
+  font-size: var(--markdown-font-size);
+  line-height: var(--markdown-leading);
   overflow-wrap: break-word;
+  word-break: normal;
 }
-.markdown-content p {
-  margin: 0.5em 0;
-  text-wrap: pretty;
-}
-.markdown-content p:first-child {
+
+.markdown-content > :first-child {
   margin-top: 0;
 }
-.markdown-content p:last-child {
+
+.markdown-content > :last-child {
   margin-bottom: 0;
 }
-.markdown-content pre {
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  overflow-x: auto;
-  margin: 8px 0;
-  font-size: 13px;
+
+.markdown-content p {
+  margin: 0.65em 0;
+  text-wrap: pretty;
 }
+
+.markdown-content strong {
+  color: color-mix(in srgb, var(--foreground) 94%, var(--muted-foreground));
+  font-weight: 650;
+}
+
+.markdown-content del {
+  color: var(--muted-foreground);
+  text-decoration-thickness: 1px;
+}
+
+.markdown-content kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-inline: 0.08em;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--secondary) 76%, var(--card));
+  padding: 0.05em 0.38em;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  line-height: 1.45;
+  vertical-align: 0.08em;
+}
+
+.markdown-content hr {
+  height: 0;
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.markdown-content pre {
+  margin: 0.75em 0;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--background);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
 .markdown-content code {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 0.86em;
 }
+
 .markdown-content :not(pre) > code {
-  background: var(--muted);
-  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 4px;
+  background: var(--code-background);
+  padding: 0.12em 0.38em;
   overflow-wrap: anywhere;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+
 .markdown-content ul,
 .markdown-content ol {
-  padding-left: 1.5em;
-  margin: 0.5em 0;
+  margin: 0.7em 0;
+  padding-left: 1.4em;
 }
+
 /* Tailwind preflight resets list-style to none — restore markers. */
 .markdown-content ul {
   list-style: disc;
@@ -673,13 +1308,30 @@ html[lang="ja"] .oa-onboarding-title {
 .markdown-content ol {
   list-style: decimal;
 }
+
 .markdown-content li {
-  margin: 0.25em 0;
+  margin: 0.3em 0;
+  padding-left: 0.12em;
   text-wrap: pretty;
 }
-.markdown-content li::marker {
-  color: var(--muted-foreground);
+
+.markdown-content li > ul,
+.markdown-content li > ol {
+  margin-block: 0.3em;
 }
+
+.markdown-content li::marker {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, transparent);
+}
+
+.markdown-content input[type="checkbox"] {
+  width: 0.95em;
+  height: 0.95em;
+  margin: 0 0.45em 0 0;
+  accent-color: var(--primary);
+  vertical-align: -0.08em;
+}
+
 /* Obsidian-style [[name]] wikilinks → clickable entity references. */
 .markdown-content a.wikilink {
   display: inline-block;
@@ -708,58 +1360,280 @@ html[lang="ja"] .oa-onboarding-title {
   background: color-mix(in srgb, currentColor 10%, transparent);
   text-decoration: underline;
 }
+
 .markdown-content blockquote {
-  border-left: 3px solid var(--primary);
-  padding-left: 12px;
-  color: var(--muted-foreground);
-  margin: 0.5em 0;
+  margin: 0.9em 0;
+  border-left: 2px solid color-mix(in srgb, var(--primary) 72%, var(--border));
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  padding: 0.65em 0.9em;
+  color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
 }
+
+.markdown-content blockquote > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-table-shell {
+  max-width: 100%;
+  margin: 0.9em 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--card) 52%, transparent);
+  overscroll-behavior-inline: contain;
+}
+
 .markdown-content table {
-  border-collapse: collapse;
-  margin: 8px 0;
   width: 100%;
+  min-width: 34rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.5;
 }
+
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid var(--border);
-  padding: 6px 12px;
+  border: 0;
+  border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  padding: 0.65em 0.8em;
   text-align: left;
+  vertical-align: top;
 }
+
+.markdown-content tr > :last-child {
+  border-right: 0;
+}
+
+.markdown-content tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 .markdown-content th {
-  background: var(--muted);
+  background: color-mix(in srgb, var(--muted) 58%, var(--card));
+  color: var(--foreground);
+  font-size: 0.9em;
+  font-weight: 650;
+  white-space: nowrap;
 }
+
+.markdown-content tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+}
+
 .markdown-content img {
   max-width: 100%;
+  height: auto;
+  margin: 1em auto;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   border-radius: 8px;
-  margin: 8px 0;
 }
+
 .markdown-content a {
   color: var(--primary);
-  text-decoration: none;
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 36%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
   overflow-wrap: anywhere;
 }
+
 .markdown-content a:hover {
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
+
 .markdown-content h1 {
-  font-size: 1.25em;
-  font-weight: 600;
-  margin: 0.75em 0 0.5em;
+  margin: 1.2em 0 0.55em;
+  color: var(--foreground);
+  font-size: 1.45em;
+  font-weight: 680;
+  line-height: 1.28;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
 }
+
 .markdown-content h2 {
-  font-size: 1.125em;
-  font-weight: 600;
-  margin: 0.75em 0 0.5em;
+  margin: 1.25em 0 0.5em;
+  color: var(--foreground);
+  font-size: 1.22em;
+  font-weight: 670;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
+
 .markdown-content h3 {
-  font-size: 1em;
-  font-weight: 600;
-  margin: 0.5em 0 0.25em;
+  margin: 1em 0 0.4em;
+  color: var(--foreground);
+  font-size: 1.05em;
+  font-weight: 650;
+  line-height: 1.4;
 }
+
+.markdown-content h4 {
+  margin: 0.95em 0 0.35em;
+  color: var(--foreground);
+  font-size: 1em;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
 .markdown-content h1:first-child,
 .markdown-content h2:first-child,
-.markdown-content h3:first-child {
+.markdown-content h3:first-child,
+.markdown-content h4:first-child {
   margin-top: 0;
+}
+
+/* Durable reports use a narrower measure, clearer section rhythm, and slightly
+   larger text. This is deliberately not a card: the document remains the one
+   dominant surface inside the existing application shell. */
+.markdown-content--reading {
+  --markdown-font-size: 15px;
+  --markdown-leading: 1.72;
+  color: color-mix(in srgb, var(--foreground) 84%, var(--muted-foreground));
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+.markdown-content--reading p {
+  margin-block: 0.82em;
+}
+
+.markdown-content--reading strong {
+  font-weight: 620;
+}
+
+/* Long CJK italics are difficult to scan and commonly appear as report decks.
+   Treat a first-paragraph, all-emphasis block as editorial standfirst text. */
+.markdown-content--reading > p:first-of-type:has(> em:only-child) {
+  max-width: 44rem;
+  margin: 0 0 2.2rem;
+  border-left: 2px solid color-mix(in srgb, var(--primary) 58%, var(--border));
+  padding-left: 1rem;
+  color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground));
+  font-size: 0.98em;
+  line-height: 1.78;
+}
+
+.markdown-content--reading > p:first-of-type:has(> em:only-child) em {
+  font-style: normal;
+}
+
+.markdown-content--reading h1 {
+  max-width: 100%;
+  margin-bottom: 1.35rem;
+  font-size: clamp(1.45rem, 2.3vw, 1.75rem);
+  font-weight: 660;
+  line-height: 1.24;
+  letter-spacing: -0.02em;
+  text-wrap: pretty;
+}
+
+/* Inbox supplies a stable document title above provenance. When the stored
+ * report opens with that exact Markdown heading, keep the source untouched but
+ * avoid rendering the same title twice. The outer h1 preserves the document
+ * outline for assistive technology. */
+.inbox-report-body--repeats-heading .markdown-content--reading > h1:first-child {
+  display: none;
+}
+
+.markdown-content--reading h2 {
+  margin-top: 2.6em;
+  margin-bottom: 0.75em;
+  border-top: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+  padding-top: 0.85em;
+  font-size: 1.24em;
+  font-weight: 660;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+}
+
+.markdown-content--reading h3 {
+  margin-top: 1.75em;
+  margin-bottom: 0.5em;
+  font-size: 1.04em;
+  font-weight: 650;
+}
+
+.markdown-content--reading h4 {
+  margin-top: 1.35em;
+}
+
+.markdown-content--reading hr {
+  width: min(100%, 10rem);
+  margin: 2.25em 0;
+  border-top-color: color-mix(in srgb, var(--border) 78%, transparent);
+}
+
+.markdown-content--reading blockquote {
+  margin-block: 1.35em;
+  padding: 0.8em 1em;
+  font-size: 0.94em;
+  line-height: 1.65;
+}
+
+.markdown-content--reading ul,
+.markdown-content--reading ol {
+  margin-block: 0.8em;
+  padding-left: 1.35em;
+}
+
+.markdown-content--reading li {
+  margin-block: 0.34em;
+  padding-left: 0.12em;
+}
+
+.markdown-content--reading .markdown-table-shell {
+  margin-block: 1.25em 1.8em;
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  background: transparent;
+}
+
+.markdown-content--reading table {
+  font-size: 0.84em;
+  line-height: 1.42;
+}
+
+.markdown-content--reading th,
+.markdown-content--reading td {
+  padding: 0.58em 0.72em;
+}
+
+.markdown-content--reading th {
+  background: color-mix(in srgb, var(--muted) 38%, var(--card));
+  font-size: 0.88em;
+  font-weight: 620;
+}
+
+.markdown-content--reading .code-block-wrapper {
+  margin-block: 1.35em;
+}
+
+@media (max-width: 639px) {
+  .markdown-content--reading {
+    --markdown-font-size: 14.5px;
+    --markdown-leading: 1.7;
+  }
+
+  .markdown-content--reading h1 {
+    font-size: 1.45rem;
+  }
+
+  .markdown-content--reading h2 {
+    font-size: 1.2em;
+  }
+
+  .markdown-content table {
+    min-width: 30rem;
+  }
 }
 
 /* Issue What visual editor. Tiptap owns the editable DOM, while these rules
@@ -786,7 +1660,7 @@ html[lang="ja"] .oa-onboarding-title {
 }
 .what-editor-content .ProseMirror p.is-editor-empty:first-child::before {
   color: var(--muted-foreground);
-  content: 'Describe what this Issue should accomplish…';
+  content: attr(data-placeholder);
   float: left;
   height: 0;
   pointer-events: none;
@@ -946,3 +1820,59 @@ html[lang="ja"] .oa-onboarding-title {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Base UI owns measurement and mount lifetime; hidden panels leave the tab order. */
+.oa-collapsible-panel {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  opacity: 1;
+  transition: height 180ms var(--motion-ease-out), opacity 180ms var(--motion-ease-out);
+}
+.oa-collapsible-panel[data-starting-style],
+.oa-collapsible-panel[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .oa-collapsible-panel { transition: none; }
+}
+
+/* Resolved Workspace files retain their position in the Markdown body. */
+.markdown-content a.markdown-file-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+  color: var(--foreground);
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.markdown-file-type {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+}
+.markdown-file-label { display: grid; min-width: 0; }
+.markdown-file-label > span { color: var(--muted-foreground); font-size: 12px; }
+.markdown-content a.markdown-file-image { display: block; width: fit-content; max-width: 100%; }
+.markdown-content a.markdown-file-image img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(256px, 100%);
+  max-height: 512px;
+  object-fit: contain;
+  margin: 12px 0;
+}
+.markdown-content a.markdown-file-card:hover { border-color: var(--muted-foreground); }
+.markdown-content a[data-file-path]:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+.markdown-content a.markdown-file-image.is-sticker img { border: 0; border-radius: 0; background: transparent; }

@@ -3,7 +3,6 @@ import { tradingHandlers } from './trading'
 import { workspacesHandlers } from './workspaces'
 import { inboxHandlers } from './inbox'
 import { entitiesHandlers } from './entities'
-import { personaHeartbeatHandlers } from './personaHeartbeat'
 import { scheduleHandlers } from './schedule'
 import { issuesHandlers } from './issues'
 import { wikilinkHandlers } from './wikilink'
@@ -11,12 +10,17 @@ import { toolsSimulatorHandlers } from './toolsSimulator'
 import { marketHandlers } from './market'
 import { configKeysHandlers } from './configKeys'
 import { agentStatusHandlers } from './agentStatus'
+import { agentConversationHandlers } from './agentConversations'
+import { agentRuntimeHandlers } from './agentRuntime'
+import { officeHandlers } from './office'
 import { newsListHandlers } from './newsList'
 import { devMiscHandlers } from './devMisc'
 import { headlessHandlers } from './headless'
 import { preferencesHandlers } from './preferences'
+import { uiLayoutHandlers } from './ui-layout'
 import { inquiryHandlers } from './inquiries'
 import { connectorsHandlers } from './connectors'
+import { harnessSurfaceHandlers } from './harness-surfaces'
 import { catchAllHandlers } from './catchAll'
 
 // Order matters: catchAll must be LAST. MSW resolves handlers in registration
@@ -28,7 +32,6 @@ export const handlers = [
   ...workspacesHandlers,
   ...inboxHandlers,
   ...entitiesHandlers,
-  ...personaHeartbeatHandlers,
   ...scheduleHandlers,
   ...issuesHandlers,
   ...wikilinkHandlers,
@@ -36,11 +39,16 @@ export const handlers = [
   ...marketHandlers,
   ...configKeysHandlers,
   ...agentStatusHandlers,
+  ...agentConversationHandlers,
+  ...agentRuntimeHandlers,
+  ...officeHandlers,
   ...newsListHandlers,
   ...devMiscHandlers,
   ...headlessHandlers,
   ...preferencesHandlers,
+  ...uiLayoutHandlers,
   ...inquiryHandlers,
   ...connectorsHandlers,
+  ...harnessSurfaceHandlers,
   ...catchAllHandlers,
 ]

@@ -1,10 +1,15 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { SessionRegistry, type SessionRecord } from './session-registry.js'
+import {
+  SessionRegistry,
+  sessionCoworkerLabel,
+  sessionDisplayTitle,
+  type SessionRecord,
+} from './session-registry.js'
 import type { Logger } from './logger.js'
 
 const noopLogger = {
@@ -45,21 +50,32 @@ function rec(over: Partial<SessionRecord> = {}): SessionRecord {
 }
 
 describe('SessionRegistry persistence', () => {
-  // Regression: parseRecords rebuilt each record field-by-field and dropped
-  // `title`, so the chat-sidebar title reverted to the `c1` name on every
-  // server restart / registry reload even though flush had written it to disk.
-  it('round-trips the session title across a reload', async () => {
+  it('serializes overlapping writes to the same workspace', async () => {
+    const reg = await SessionRegistry.load(root, noopLogger)
+    await reg.create(rec())
+    await Promise.all(Array.from({ length: 20 }, (_, i) => reg.create(rec({ id: `codex-concurrent-${i}`, resumeId: `resume-concurrent-${i}`, state: 'paused' }))))
+    const restored = await SessionRegistry.load(root, noopLogger)
+    expect(restored.listFor(WS)).toHaveLength(21)
+  })
+
+  it('round-trips native and fallback titles across a reload', async () => {
     const reg = await SessionRegistry.load(root, noopLogger)
     await reg.create(rec({
       id: 'claude-calm-amber-river',
       title: "What's moving in semiconductors today?",
+      fallbackTitle: 'Tell me about semiconductors.',
     }))
     await reg.create(rec({
       id: 'claude-clear-copper-harbor',
+      resumeId: 'resume-clear-copper-harbor-d4e5f6',
       name: 'c2',
-      title: '解释一下美债收益率曲线倒挂',
+      fallbackTitle: '解释一下美债收益率曲线倒挂',
     }))
-    await reg.create(rec({ id: 'claude-quiet-silver-meadow', name: 'c3' })) // unseeded — no title
+    await reg.create(rec({
+      id: 'claude-quiet-silver-meadow',
+      resumeId: 'resume-quiet-silver-meadow-g7h8i9',
+      name: 'c3',
+    })) // unseeded — no title
 
     // A fresh instance over the same dir = a server restart.
     const reloaded = await SessionRegistry.load(root, noopLogger)
@@ -69,10 +85,37 @@ describe('SessionRegistry persistence', () => {
     expect(byId.get('claude-calm-amber-river')?.title).toBe(
       "What's moving in semiconductors today?",
     )
-    expect(byId.get('claude-clear-copper-harbor')?.title).toBe(
+    expect(byId.get('claude-calm-amber-river')?.fallbackTitle).toBe(
+      'Tell me about semiconductors.',
+    )
+    expect(byId.get('claude-clear-copper-harbor')?.fallbackTitle).toBe(
       '解释一下美债收益率曲线倒挂',
     ) // CJK survives
     expect(byId.get('claude-quiet-silver-meadow')?.title).toBeUndefined() // unseeded stays nameless
+  })
+
+  it('loads pre-v3 titles as fallbacks so a native title can replace them', async () => {
+    const sessionsDir = join(root, 'sessions')
+    await mkdir(sessionsDir, { recursive: true })
+    await writeFile(join(sessionsDir, `${WS}.json`), JSON.stringify({
+      version: 2,
+      records: [rec({
+        state: 'paused',
+        title: 'The old first message',
+      })],
+    }))
+
+    const reg = await SessionRegistry.load(root, noopLogger)
+    await reg.ensureLoaded(WS)
+    const loaded = reg.listFor(WS)[0]!
+    expect(loaded.title).toBeUndefined()
+    expect(loaded.fallbackTitle).toBe('The old first message')
+    expect(sessionDisplayTitle(loaded)).toBe('The old first message')
+
+    await reg.update(WS, loaded.id, { title: 'Native runtime title' })
+    expect(sessionDisplayTitle(reg.get(WS, loaded.id)!)).toBe('Native runtime title')
+    expect(sessionCoworkerLabel(reg.get(WS, loaded.id)!, 'AAPL desk')).toBe('AAPL desk')
+    expect(sessionCoworkerLabel(reg.get(WS, loaded.id)!, '  ')).toBe('Native runtime title')
   })
 
   // The exact path the user hit: a reload both flips orphaned running→paused
@@ -117,6 +160,7 @@ describe('SessionRegistry persistence', () => {
       agent: 'codex',
       name: 'x1',
       sourceRunId: 'run-2026-07-11',
+      surface: 'headless',
       resumeHint: { kind: 'agent-session-id', value: '019eb75e-0b1b-7fa2' },
     }))
 
@@ -128,5 +172,30 @@ describe('SessionRegistry persistence', () => {
       sourceRunId: 'run-2026-07-11',
       resumeHint: { kind: 'agent-session-id', value: '019eb75e-0b1b-7fa2' },
     })
+  })
+
+  it('rejects a second roster row for the same resume identity', async () => {
+    const reg = await SessionRegistry.load(root, noopLogger)
+    await reg.create(rec())
+
+    await expect(reg.create(rec({
+      id: 'claude-second-row',
+      name: 'c2',
+    }))).rejects.toThrow('already exists for resume identity')
+  })
+
+  it('rejects duplicate resume identities while loading a persisted file', async () => {
+    const sessionsDir = join(root, 'sessions')
+    await mkdir(sessionsDir, { recursive: true })
+    await writeFile(join(sessionsDir, `${WS}.json`), JSON.stringify({
+      version: 4,
+      records: [
+        rec({ state: 'paused' }),
+        rec({ id: 'claude-second-row', name: 'c2', state: 'paused' }),
+      ],
+    }))
+
+    await expect(SessionRegistry.load(root, noopLogger))
+      .rejects.toThrow('duplicate resume identity')
   })
 })

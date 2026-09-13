@@ -1,19 +1,26 @@
 // ==================== Version / Update awareness ====================
 
+export type UpdateChannel = 'stable' | 'beta' | 'dev' | 'pinned' | 'custom'
+export type UpdateAuthority = 'source' | 'desktop' | 'cli' | 'service' | 'none'
+
 export interface VersionInfo {
   /** App version from package.json. */
   current: string
-  /** Latest release tag from GitHub, or null if fetch failed / no releases. */
+  /** Running installation's normalized update channel. */
+  channel: UpdateChannel
+  /** Surface that owns update discovery and application. */
+  updateAuthority: UpdateAuthority
+  /** Latest version from the installed channel's release manifest. */
   latest: string | null
-  /** True when latest > current (semver). */
+  /** True when the update owner reports a newer release. */
   hasUpdate: boolean
-  /** GitHub release page URL — UI links to this for changelog. */
+  /** Release notes URL supplied by the channel manifest. */
   releaseUrl: string | null
-  /** Markdown release body. */
+  /** Reserved release notes body; channel manifests currently omit it. */
   releaseNotes: string | null
   /** ISO timestamp when the release was published. */
   publishedAt: string | null
-  /** Non-null when fetch failed (rate limit, network, etc.). */
+  /** Non-null when manifest fetch or validation failed. */
   error: string | null
 }
 
@@ -36,8 +43,9 @@ export interface Profile {
 // ==================== AI Provider Credentials ====================
 
 export type CredentialVendor =
-  | 'anthropic' | 'openai' | 'google'
-  | 'minimax' | 'glm' | 'kimi' | 'deepseek' | 'longcat'
+  | 'anthropic' | 'openai' | 'google' | 'xai'
+  | 'minimax' | 'glm' | 'kimi' | 'deepseek' | 'longcat' | 'openrouter'
+  | 'cursor'
   | 'custom'
 
 export type CredentialAuthType = 'api-key' | 'subscription'
@@ -86,7 +94,7 @@ export interface CredentialSetupGuide {
 }
 
 export type ModelReasoningMode = 'none' | 'optional' | 'adaptive' | 'required'
-export type ModelReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ModelReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 export interface ModelSemantics {
   contextWindow?: number
@@ -120,6 +128,8 @@ export interface Preset {
   /** Regions × their per-shape endpoints — the form picks a region; the
    *  credential captures that region's whole wires map (its capabilities). */
   regions?: SerializedRegion[]
+  /** Runtime that consumes this credential directly rather than through a wire. */
+  directAgentId?: string
   /** Provider-aware guidance for the API-key credential form. */
   setup?: CredentialSetupGuide
 }
@@ -248,13 +258,15 @@ export interface NewsArticle {
   source: string | null
   link: string | null
   categories: string | null
+  image?: string | null
 }
 
 export interface NewsListResponse {
   items: NewsArticle[]
   count: number
-  lookback: string
+  lookback: string | null
 }
+
 
 // ==================== Trading ====================
 
@@ -365,7 +377,21 @@ export interface Position {
 export interface WalletCommitLog {
   hash: string
   message: string
-  operations: Array<{ symbol: string; action: string; change: string; status: string }>
+  operations: Array<{
+    symbol: string
+    action: string
+    change: string
+    status: string
+    order?: {
+      side?: string
+      orderType?: string
+      totalQuantity?: string
+      cashQuantity?: string
+      limitPrice?: string
+      auxPrice?: string
+      timeInForce?: string
+    }
+  }>
   timestamp: string
   round?: number
 }
@@ -390,6 +416,7 @@ export interface WalletOperation {
 export interface WalletStatus {
   staged: WalletOperation[]
   pendingMessage: string | null
+  pendingHash?: string | null
   head: string | null
   commitCount: number
 }
@@ -406,6 +433,8 @@ export interface WalletPushResult {
   operationCount: number
   submitted: Array<{ action: string; success: boolean; orderId?: string; status: string; error?: string }>
   rejected: Array<{ action: string; success: boolean; error?: string; status: string }>
+  /** Demo-only marker: the response exercises the result UI without contacting a broker. */
+  simulated?: boolean
 }
 
 // ==================== Order / Trade History ====================
@@ -508,6 +537,8 @@ export interface UTAConfig {
   presetConfig: Record<string, unknown>
   /** Whether broker-side account mutations are refused. */
   readOnly: boolean
+  /** Public-data-only UTA; excluded from account and portfolio surfaces. */
+  keyless?: boolean
   /** Whether this UTA participates in broker-backed market-data discovery. */
   asVendor: boolean
 }
@@ -549,8 +580,32 @@ export interface BrokerPackStatus {
   installed: boolean
   source: 'builtin' | 'workspace' | 'downloaded' | 'missing' | 'broken'
   version?: string
+  updateAvailable?: boolean
   reason?: string
   requiredBy: string[]
+}
+
+export type BrokerAccountPackState =
+  | 'ready'
+  | 'needs-install'
+  | 'needs-repair'
+  | 'unsupported-preset'
+
+export interface BrokerAccountPackReadiness {
+  accountId: string
+  label: string
+  presetId: string
+  configuredEnabled: boolean
+  engine?: BrokerEngine
+  state: BrokerAccountPackState
+  operational: boolean
+  action?: 'install' | 'repair' | 'update'
+  reason?: string
+}
+
+export interface BrokerPackReadinessResponse {
+  packs: BrokerPackStatus[]
+  accounts: BrokerAccountPackReadiness[]
 }
 
 export interface GuardEntry {

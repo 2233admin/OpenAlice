@@ -1,8 +1,9 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { dirname } from 'path'
+import { publishCliEndpoint } from './server/cli-endpoint.js'
+import { createMarketBarsTools } from './tool/market-bars.js'
 import {
   acquireOpenAliceRuntimeLocks,
   takeoverRequested,
+  RuntimeAlreadyRunningError,
   type OpenAliceRuntimeLock,
 } from '@traderalice/guardian-runtime'
 // The in-process AI loop (AgentCenter, then GenerateRouter + AgentWork) is gone
@@ -10,7 +11,7 @@ import {
 // runs go through headless workspace dispatch (cron → workspace).
 import { loadConfig, readMarketDataConfig } from './core/config.js'
 import { printLegacyDataNotice } from './core/legacy-data-notice.js'
-import { dataPath, defaultPath, userDataHome } from '@/core/paths.js'
+import { userDataHome } from '@/core/paths.js'
 import { resolveLauncherRoot } from '@/workspaces/config.js'
 import type { Plugin, EngineContext } from './core/types.js'
 import { McpPlugin } from './server/mcp.js'
@@ -22,6 +23,7 @@ import { createUTAClient } from '@traderalice/uta-protocol'
 import { UTAManagerSDK } from './services/uta-client/index.js'
 import { waitForUTAReady } from './services/uta-supervisor/health.js'
 import { resolveUTAUrl } from './services/uta-supervisor/url.js'
+import { scheduleInstalledBrokerPackReconciliation } from './services/broker-packs/auto-updater.js'
 import {
   liteUnavailableReason,
   readonlyMutationReason,
@@ -52,6 +54,10 @@ import { createEconomyTools } from './tool/economy.js'
 import { SessionStore } from './core/session.js'
 import { createInboxStore } from './core/inbox-store.js'
 import { startInboxConnectorBridge } from './services/connector-client/index.js'
+import { startConnectorActionBridge } from './services/connector-client/action-bridge.js'
+import { createWorkspaceConversationControl } from './workspaces/conversation-control.js'
+import { runInternalBootstrapRole } from './workspaces/bootstrap-runtime.js'
+import { startTelegramDeskInboundPoll, telegramDeskHasRunningWork } from './workspaces/issues/telegram-desk-chat.js'
 import { ToolCenter } from './core/tool-center.js'
 import { WorkspaceToolCenter } from './core/workspace-tool-center.js'
 import { inboxPushFactory } from './tool/inbox-push.js'
@@ -59,23 +65,19 @@ import { inboxReadFactory } from './tool/inbox-read.js'
 import { workspacePathFactory } from './tool/workspace-path.js'
 import { workspaceSessionsFactory } from './tool/workspace-sessions.js'
 import { workspaceListFactory } from './tool/workspace-list.js'
-import { workspaceTemplateUpgradeFactory } from './tool/workspace-template-upgrade.js'
+import { workspaceTemplateUpgradeFactory, aliceHarnessUpgradeFactory } from './tool/workspace-template-upgrade.js'
 import { createEntityStore } from './core/entity-store.js'
 import { entityUpsertFactory } from './tool/entity-upsert.js'
 import { entitySearchFactory } from './tool/entity-search.js'
 import { issueToolFactories } from './tool/issue-tools.js'
 import { sessionSignatureFactory } from './tool/session-signature.js'
+import { sessionRenameFactory } from './tool/session-rename.js'
 import { provenanceShowFactory } from './tool/provenance-show.js'
 import { conversationToolFactories } from './tool/conversation.js'
 import { artifactConversationToolFactories } from './tool/conversation-artifacts.js'
 import { createToolCallLog } from './core/tool-call-log.js'
 import { NewsCollectorStore, NewsCollector } from './domain/news/index.js'
 import { createNewsArchiveTools } from './tool/news.js'
-
-// ==================== Persistence paths ====================
-
-const PERSONA_FILE = dataPath('brain', 'persona.md')
-const PERSONA_DEFAULT = defaultPath('persona.default.md')
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 let runtimeLock: OpenAliceRuntimeLock | null = null
@@ -84,17 +86,6 @@ async function releaseRuntimeLock(): Promise<void> {
   const current = runtimeLock
   runtimeLock = null
   await current?.release()
-}
-
-/** Read a file, copying from default if it doesn't exist yet. */
-async function readWithDefault(target: string, defaultFile: string): Promise<string> {
-  try { return await readFile(target, 'utf-8') } catch { /* not found — copy default */ }
-  try {
-    const content = await readFile(defaultFile, 'utf-8')
-    await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, content)
-    return content
-  } catch { return '' }
 }
 
 async function main() {
@@ -120,10 +111,12 @@ async function main() {
   workspaceToolCenter.register(workspaceSessionsFactory)
   workspaceToolCenter.register(workspaceListFactory)
   workspaceToolCenter.register(workspaceTemplateUpgradeFactory)
+  workspaceToolCenter.register(aliceHarnessUpgradeFactory)
   workspaceToolCenter.register(entityUpsertFactory)
   workspaceToolCenter.register(entitySearchFactory)
   for (const f of issueToolFactories) workspaceToolCenter.register(f)
   workspaceToolCenter.register(sessionSignatureFactory)
+  workspaceToolCenter.register(sessionRenameFactory)
   workspaceToolCenter.register(provenanceShowFactory)
   for (const f of conversationToolFactories) workspaceToolCenter.register(f)
   for (const f of artifactConversationToolFactories) workspaceToolCenter.register(f)
@@ -165,11 +158,6 @@ async function main() {
     unavailableReason: () => liteUnavailableReason(currentTradingModePolicy()),
     readonlyMutationReason: () => readonlyMutationReason(currentTradingModePolicy()),
   })
-
-  // ==================== Persona ====================
-  // The persona file is seeded on first run so the user has an editable
-  // override (consumed by the workspace context-injector).
-  await readWithDefault(PERSONA_FILE, PERSONA_DEFAULT)
 
   // ==================== News Collector Store ====================
 
@@ -279,6 +267,7 @@ async function main() {
   // v1 calculateIndicator (createAnalysisTools) is retired from the tool surface
   // — calculateQuant (v2, barId-keyed) supersedes it and the two descriptions
   // confused the model / bloated context. The code remains for now.
+  toolCenter.register(createMarketBarsTools({ barService }), 'market-bars')
   toolCenter.register(createQuantTools({ barService }), 'quant')
   toolCenter.register(createSnapshotTools(barService), 'snapshot')
   toolCenter.register(createSimulateTools(barService), 'simulate')
@@ -309,6 +298,24 @@ async function main() {
   // skip (see cron listener). Created here so cron dispatch can hold it.
   const workspaceServiceRef = createWorkspaceServiceRef()
   startInboxConnectorBridge(inboxStore, () => workspaceServiceRef.current)
+  startConnectorActionBridge(inboxStore, () => workspaceServiceRef.current, {
+    utaManager,
+    tradingModePolicy: currentTradingModePolicy,
+  })
+  startTelegramDeskInboundPoll({
+    listWorkspaces: () => workspaceServiceRef.current?.registry.list() ?? [],
+    getWorkspace: (id) => workspaceServiceRef.current?.registry.get(id),
+    provenanceStore: () => workspaceServiceRef.current?.provenanceStore,
+    conversation: () => {
+      const service = workspaceServiceRef.current
+      return service ? createWorkspaceConversationControl(service) : undefined
+    },
+    deskGenerating: (desk) => {
+      const service = workspaceServiceRef.current
+      if (!service) return false
+      return telegramDeskHasRunningWork(service.headlessTasks.list({ status: 'running' }), desk)
+    },
+  })
 
   // Snapshot scheduler lives in UTA after Step 6 — Alice no longer
   // drives the periodic equity-curve writes. The UTA service starts
@@ -317,16 +324,6 @@ async function main() {
   // ==================== News Collector ====================
 
   let newsCollector: NewsCollector | null = null
-  if (config.news.enabled && config.news.feeds.length > 0) {
-    newsCollector = new NewsCollector({
-      store: newsStore,
-      feeds: config.news.feeds,
-      intervalMs: config.news.intervalMinutes * 60 * 1000,
-    })
-    newsCollector.start()
-    const activeCount = config.news.feeds.filter((f) => f.enabled !== false).length
-    console.log(`news-collector: started (${activeCount}/${config.news.feeds.length} feeds active, every ${config.news.intervalMinutes}m)`)
-  }
 
   // ==================== Plugins ====================
 
@@ -380,6 +377,12 @@ async function main() {
         localCliOnWeb,
         listen: webTransport !== 'ipc',
         ...(process.env['OPENALICE_TOOL_SOCKET'] ? { cliSocketPath: process.env['OPENALICE_TOOL_SOCKET'] } : {}),
+        // The packaged Workspace acceptance exercises the real scanner without
+        // adding a minute to every host in the package matrix. This flag is
+        // owned by the smoke launcher and never changes normal cadence.
+        ...(process.env['OPENALICE_ELECTRON_SMOKE_WORKSPACE_ACCEPTANCE'] === '1'
+          ? { scheduleScannerIntervalMs: 100 }
+          : {}),
       },
       workspaceServiceRef,
     ))
@@ -409,7 +412,41 @@ async function main() {
     console.log(`plugin started: ${plugin.name}`)
   }
 
+  const removeCliEndpoint = await publishCliEndpoint(toolBaseUrl, process.env['OPENALICE_TOOL_SOCKET'])
+
+  // Optional products actively install their own journal producer after the
+  // shared Workspace service is ready. NanoAlice can omit News entirely; the
+  // journal core never imports or starts the collector.
+  if (config.news.enabled && config.news.feeds.length > 0) {
+    const newsActivity = workspaceServiceRef.current?.activityJournal.registerFamily({
+      family: 'news',
+      types: ['news.ingested'] as const,
+    })
+    newsCollector = new NewsCollector({
+      store: newsStore,
+      feeds: config.news.feeds,
+      intervalMs: config.news.intervalMinutes * 60 * 1000,
+      ...(newsActivity ? {
+        onIngested: async (record) => {
+          await newsActivity.record('news.ingested', {
+            newsItemId: record.seq,
+            dedupKey: record.dedupKey,
+            title: record.title,
+            ...(record.metadata.source ? { source: record.metadata.source } : {}),
+            ...(record.metadata.link ? { link: record.metadata.link } : {}),
+            publishedAt: record.pubTs,
+            ingestSource: record.metadata.ingestSource ?? 'rss',
+          })
+        },
+      } : {}),
+    })
+    newsCollector.start()
+    const activeCount = config.news.feeds.filter((f) => f.enabled !== false).length
+    console.log(`news-collector: started (${activeCount}/${config.news.feeds.length} feeds active, every ${config.news.intervalMinutes}m)`)
+  }
+
   console.log('engine: started')
+  scheduleInstalledBrokerPackReconciliation()
 
   // Broker catalog refresh, snapshot scheduling, and broker close-on-
   // shutdown all live in the UTA service after Step 6.
@@ -419,6 +456,7 @@ async function main() {
   let stopped = false
   const shutdown = async () => {
     stopped = true
+    await removeCliEndpoint()
     newsCollector?.stop()
     for (const plugin of [...corePlugins, ...optionalPlugins.values()]) {
       await plugin.stop()
@@ -438,7 +476,7 @@ async function main() {
   }
 }
 
-async function start(): Promise<void> {
+export async function startAliceRuntime(): Promise<void> {
   const guardianPid = positiveInteger(process.env['OPENALICE_GUARDIAN_PID'])
   const guardianStartedAt = positiveInteger(process.env['OPENALICE_GUARDIAN_STARTED_AT'])
   runtimeLock = await acquireOpenAliceRuntimeLocks({
@@ -469,7 +507,14 @@ function positiveInteger(raw: string | undefined): number | undefined {
   return Number.isInteger(value) && value > 0 ? value : undefined
 }
 
-start().catch((err) => {
-  console.error('fatal:', err)
-  process.exit(1)
-})
+export async function runAliceEntrypoint(): Promise<void> {
+  if (await runInternalBootstrapRole()) return
+  await startAliceRuntime()
+}
+
+if (!(globalThis as { __OPENALICE_INTERNAL_ROLE_DISPATCH__?: boolean }).__OPENALICE_INTERNAL_ROLE_DISPATCH__) {
+  runAliceEntrypoint().catch((err) => {
+    console.error('fatal:', err)
+    process.exit(err instanceof RuntimeAlreadyRunningError ? err.exitCode : 1)
+  })
+}

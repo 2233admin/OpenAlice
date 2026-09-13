@@ -104,7 +104,7 @@ describe('issueRunRecord', () => {
       taskId: 'task-1',
       resumeId: 'resume-gentle-otter-abc123',
       wsId: 'ws-1',
-      trigger: { kind: 'issue', workspaceId: 'ws-home', issueId: 'audit' },
+      trigger: { kind: 'issue', workspaceId: 'ws-home', issueId: 'audit', retryOfTaskId: 'failed-occurrence' },
       agent: 'codex',
       prompt: 'inspect it',
       status: 'done',
@@ -116,6 +116,7 @@ describe('issueRunRecord', () => {
       taskId: 'task-1',
       resumeId: 'resume-gentle-otter-abc123',
       resumable: true,
+      retryOfTaskId: 'failed-occurrence',
     })
     expect(projected).not.toHaveProperty('agentSessionId')
   })
@@ -195,7 +196,7 @@ describe('flattenBoardRows', () => {
               title: 'Y',
               status: 'todo',
               priority: 'none',
-              assignee: '@workspace',
+              assignee: '@new-each-run',
               agent: 'pi',
               when: { kind: 'every', every: '1h' },
               nameCollision: true,
@@ -222,7 +223,7 @@ describe('flattenBoardRows', () => {
         title: 'Y',
         status: 'todo',
         priority: 'none',
-        assignee: '@workspace',
+        assignee: '@new-each-run',
         agent: 'pi',
         scheduled: true,
         workspace: { wsId: 'a', tag: 'auto-quant' },
@@ -239,13 +240,13 @@ describe('assignee projection', () => {
     title: 'Issue',
     status: 'todo',
     priority: 'none',
-    assignee: '@workspace',
+    assignee: '@unassigned',
     what: 'Issue',
   } as const
 
-  it('projects Workspace ownership without needing a workspace-tag rewrite', () => {
-    expect(snapshotBoardIssue(baseIssue, null).assignee).toBe('@workspace')
-    expect(detailIssue(baseIssue, null).assignee).toBe('@workspace')
+  it('projects the implicit unassigned owner without a workspace-tag rewrite', () => {
+    expect(snapshotBoardIssue(baseIssue, null).assignee).toBe('@unassigned')
+    expect(detailIssue(baseIssue, null).assignee).toBe('@unassigned')
   })
 
   it('respects an explicit unassigned assignee', () => {

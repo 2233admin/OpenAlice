@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { InboxNotification } from '@traderalice/connector-protocol'
+import { MAX_CONNECTOR_ATTACHMENT_BYTES } from '@traderalice/connector-protocol'
 import { createMemoryInboxStore } from '../../core/inbox-store.js'
 import {
   attachInboxConnectorBridge,
   projectInboxAttachments,
+  projectInboxDoc,
   toNotification,
 } from './index.js'
 
@@ -30,8 +32,11 @@ describe('Inbox Connector bridge', () => {
       warn,
     })
 
-    const entry = await store.append({ workspaceId: 'ws-1', comments: 'done' })
-    expect(entry.comments).toBe('done')
+    const entry = await store.append({
+      workspaceId: 'ws-1',
+      body: 'done'
+    })
+    expect(entry.body).toBe('done')
     await vi.waitFor(() => expect(push).toHaveBeenCalledOnce())
 
     rejectDelivery(new Error('external IM offline'))
@@ -44,13 +49,12 @@ describe('Inbox Connector bridge', () => {
       ts: 1_700_000_000_000,
       workspaceId: 'ws-1',
       workspaceLabel: 'Research',
-      comments: 'Read the report.',
-      docs: [{ path: 'research/close.md' }],
       origin: { kind: 'headless', resumeId: 'resume-calm-river-12ab', agent: 'pi' },
+      body: "Read the report.\n\n[[research/close.md]]"
     })
     expect(notification).toMatchObject({
       title: 'Inbox update from Research',
-      body: 'Read the report.\n\nReports:\n- research/close.md',
+      body: 'Read the report.\n\n[[research/close.md]]',
       provenance: { resumeId: 'resume-calm-river-12ab', actorLabel: 'pi' },
     })
   })
@@ -71,8 +75,7 @@ describe('Inbox Connector bridge', () => {
 
     await store.append({
       workspaceId: 'ws-1',
-      docs: [{ path: 'research/close.md' }],
-      comments: 'Attached without flattening the report.',
+      body: "Attached without flattening the report.\n\n[[research/close.md]]"
     })
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledOnce())
@@ -110,13 +113,12 @@ describe('Inbox Connector bridge', () => {
 
     await store.append({
       workspaceId: 'ws-1',
-      docs: [{ path: 'research/close.html' }],
-      comments: 'Dashboard attached.',
+      body: "Dashboard attached.\n\n[[research/close.html]]"
     })
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledOnce())
     const notification = push.mock.calls[0]?.[0]
-    expect(notification?.body).toBe('Dashboard attached.\n\nReports:\n- research/close.html')
+    expect(notification?.body).toBe('Dashboard attached.\n\n[[research/close.html]]')
     expect(notification?.body).not.toContain('Close dashboard')
     expect(notification?.attachments?.[0]).toMatchObject({
       filename: 'close.html',
@@ -140,7 +142,7 @@ describe('Inbox Connector bridge', () => {
       id: 'entry-legacy-htm',
       ts: Date.now(),
       workspaceId: 'ws-1',
-      docs: [{ path: 'legacy.htm' }],
+      body: "[[legacy.htm]]"
     }, () => ({ dir: root }))
 
     expect(attachments).toEqual([])
@@ -157,7 +159,7 @@ describe('Inbox Connector bridge', () => {
       id: 'entry-ambiguous',
       ts: Date.now(),
       workspaceId: 'ws-1',
-      docs: [{ path: 'ambiguous.md' }],
+      body: "[[ambiguous.md]]"
     }, () => ({ dir: root }), warn)
 
     expect(attachments).toHaveLength(1)
@@ -183,10 +185,110 @@ describe('Inbox Connector bridge', () => {
       id: 'entry-escape',
       ts: Date.now(),
       workspaceId: 'ws-1',
-      docs: [{ path: 'leak.md' }],
+      body: "[[leak.md]]"
     }, () => ({ dir: root }), warn)
 
     expect(attachments).toEqual([])
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('symlink target escapes Workspace'))
+  })
+})
+
+describe('projectInboxDoc', () => {
+  const baseEntry = {
+    id: 'entry-one',
+    ts: Date.now(),
+    workspaceId: 'ws-1',
+    body: 'See the report.'
+  }
+
+  it('materializes one selected Markdown file through the shared Workspace checks', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openalice-connector-one-doc-'))
+    tempDirs.push(root)
+    await mkdir(join(root, 'research'))
+    await writeFile(join(root, 'research', 'close.md'), '# Close scan\n')
+
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[research/close.md]]\n\n[[research/other.md]]"
+    }, 0, () => ({ dir: root }))
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.sourcePath).toBe('research/close.md')
+    expect(result.attachment.filename).toBe('close.md')
+    expect(result.attachment.mediaType).toBe('text/markdown; charset=utf-8')
+  })
+
+  it('refuses a path that escapes the Workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openalice-connector-escape-doc-'))
+    tempDirs.push(root)
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[../secret.md]]"
+    }, 0, () => ({ dir: root }))
+    expect(result).toMatchObject({ ok: false, reason: 'doc_not_found' })
+  })
+
+  it('refuses a symlink that escapes the Workspace', async ({ skip }) => {
+    const root = await mkdtemp(join(tmpdir(), 'openalice-connector-doc-workspace-'))
+    const outside = await mkdtemp(join(tmpdir(), 'openalice-connector-doc-outside-'))
+    tempDirs.push(root, outside)
+    await writeFile(join(outside, 'secret.md'), '# outside\n')
+    try {
+      await symlink(join(outside, 'secret.md'), join(root, 'leak.md'))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') skip('symlinks unavailable on this runner')
+      throw error
+    }
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[leak.md]]"
+    }, 0, () => ({ dir: root }))
+    expect(result).toMatchObject({ ok: false, reason: 'path_escape' })
+  })
+
+  it('refuses a file above the one-megabyte cap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openalice-connector-doc-large-'))
+    tempDirs.push(root)
+    await writeFile(join(root, 'huge.md'), Buffer.alloc(MAX_CONNECTOR_ATTACHMENT_BYTES + 1, 0x61))
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[huge.md]]"
+    }, 0, () => ({ dir: root }))
+    expect(result).toMatchObject({ ok: false, reason: 'file_too_large' })
+  })
+
+  it('fails clearly when the selected index is gone', async () => {
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[research/close.md]]"
+    }, 4, () => ({ dir: '/tmp' }))
+    expect(result).toMatchObject({ ok: false, reason: 'doc_not_found' })
+  })
+
+  it('fails clearly when the live file is missing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openalice-connector-doc-missing-'))
+    tempDirs.push(root)
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[research/missing.md]]"
+    }, 0, () => ({ dir: root }))
+    expect(result).toMatchObject({ ok: false, reason: 'file_missing' })
+  })
+
+  it('sends original bytes when encoding cannot be identified safely', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openalice-connector-doc-ambiguous-'))
+    tempDirs.push(root)
+    const source = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x80, 0x81, 0x82, 0x83])
+    await writeFile(join(root, 'ambiguous.md'), source)
+    const warn = vi.fn()
+    const result = await projectInboxDoc({
+      ...baseEntry,
+      body: "[[ambiguous.md]]"
+    }, 0, () => ({ dir: root }), warn)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(Buffer.from(result.attachment.contentBase64, 'base64')).toEqual(source)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('encoding unchanged'))
   })
 })

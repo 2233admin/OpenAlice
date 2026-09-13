@@ -1,3 +1,4 @@
+import { isFileReference, parseMarketReference } from '@traderalice/connector-protocol'
 /**
  * Reusable markdown renderer with syntax-highlighted code blocks and copy buttons.
  *
@@ -5,7 +6,7 @@
  * the same typography without inheriting chat chrome.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Marked, type TokenizerAndRendererExtension } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
@@ -13,7 +14,7 @@ import DOMPurify from 'dompurify'
 import 'highlight.js/styles/github-dark.min.css'
 
 import { useWikilinkHandler } from '../live/wikilink'
-import { useWorkspaces } from '../contexts/workspaces-context'
+import { useWorkspaceActions } from '../contexts/workspace-actions-context'
 import { resolveSessionSignature } from './workspace/api'
 
 function escapeHtml(s: string): string {
@@ -35,7 +36,7 @@ function escapeHtml(s: string): string {
  * are case-insensitive); MarkdownContent delegates the actual navigation
  * on click so this module stays a pure string renderer.
  */
-function createWikilinkExtension(opts: { codeSpanWikilinks: boolean }): TokenizerAndRendererExtension {
+function createWikilinkExtension(opts: { codeSpanWikilinks: boolean; fileHrefs?: Record<string, string> }): TokenizerAndRendererExtension {
   return {
     name: 'wikilink',
     level: 'inline',
@@ -56,6 +57,23 @@ function createWikilinkExtension(opts: { codeSpanWikilinks: boolean }): Tokenize
     },
     renderer(token) {
       const name = token.text as string
+      if (name.startsWith('market/')) {
+        const market = parseMarketReference(name)
+        const href = opts.fileHrefs?.[name]
+        if (!market || !href) return escapeHtml(token.raw)
+        return `<a class="markdown-file-card" href="${escapeHtml(href)}" data-file-path="${escapeHtml(name)}"><span class="markdown-file-type">K</span><span class="markdown-file-label"><strong>${escapeHtml(market.barId.split('|').slice(1).join('|'))} · ${market.interval}</strong><span>${escapeHtml(market.barId)} · K-line</span></span><span aria-hidden="true">↗</span></a>`
+      }
+      if (opts.fileHrefs && isFileReference(name)) {
+        const href = opts.fileHrefs[name]
+        if (!href) return escapeHtml(token.raw)
+        const attributes = `href="${escapeHtml(href)}" data-file-path="${escapeHtml(name)}"`
+        if (/\.(png|jpe?g|webp|gif)$/i.test(name)) {
+          return `<a class="markdown-file-image${name.startsWith('sticker/') ? ' is-sticker' : ''}" ${attributes}><img src="${escapeHtml(href)}" alt="${escapeHtml(name)}" loading="lazy" /></a>`
+        }
+        const filename = name.split('/').pop() ?? name
+        const extension = filename.split('.').pop()?.toUpperCase() ?? 'FILE'
+        return `<a class="markdown-file-card" ${attributes}><span class="markdown-file-type">${escapeHtml(extension)}</span><span class="markdown-file-label"><strong>${escapeHtml(filename)}</strong><span>${escapeHtml(name)}</span></span><span aria-hidden="true">↗</span></a>`
+      }
       const key = name.toLowerCase()
       return `<a class="wikilink" data-entity="${escapeHtml(key)}">${escapeHtml(name)}</a>`
     },
@@ -78,7 +96,7 @@ const sessionSignatureExtension: TokenizerAndRendererExtension = {
   },
 }
 
-function createMarked(opts: { strikethrough: boolean; codeSpanWikilinks: boolean }): Marked {
+function createMarked(opts: { strikethrough: boolean; codeSpanWikilinks: boolean; fileHrefs?: Record<string, string> }): Marked {
   const instance = new Marked(
     markedHighlight({
       langPrefix: 'hljs language-',
@@ -92,7 +110,7 @@ function createMarked(opts: { strikethrough: boolean; codeSpanWikilinks: boolean
     { breaks: true },
   )
   instance.use({ extensions: [
-    createWikilinkExtension({ codeSpanWikilinks: opts.codeSpanWikilinks }),
+    createWikilinkExtension(opts),
     sessionSignatureExtension,
   ] })
   if (!opts.strikethrough) {
@@ -120,17 +138,25 @@ function addCodeBlockWrappers(html: string): string {
   return html.replace(
     /<pre><code class="hljs language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,
     (_, lang, code) =>
-      `<div class="code-block-wrapper"><div class="code-header"><span>${lang}</span><button class="code-copy-btn" data-code>${COPY_ICON} Copy</button></div><pre><code class="hljs language-${lang}">${code}</code></pre></div>`,
+      `<div class="code-block-wrapper"><div class="code-header"><span>${lang}</span><button type="button" class="code-copy-btn" data-code>${COPY_ICON} Copy</button></div><pre><code class="hljs language-${lang}">${code}</code></pre></div>`,
   ).replace(
     /<pre><code class="hljs">([\s\S]*?)<\/code><\/pre>/g,
     (_, code) =>
-      `<div class="code-block-wrapper"><div class="code-header"><span>code</span><button class="code-copy-btn" data-code>${COPY_ICON} Copy</button></div><pre><code class="hljs">${code}</code></pre></div>`,
+      `<div class="code-block-wrapper"><div class="code-header"><span>code</span><button type="button" class="code-copy-btn" data-code>${COPY_ICON} Copy</button></div><pre><code class="hljs">${code}</code></pre></div>`,
   )
 }
 
 interface MarkdownContentProps {
   text: string
+  fileHrefs?: Record<string, string>
+  onFileReference?: (path: string) => void
   className?: string
+  /**
+   * Long-form documents need a calmer measure and stronger hierarchy than
+   * chat messages, comments, and runtime output. Reading mode changes only
+   * presentation; parsing and interaction stay shared.
+   */
+  variant?: 'default' | 'reading'
   /**
    * GitHub-flavoured `~~delete~~` rendering. Disable on terse agent comments
    * because financial prose often uses `~$123` for approximate prices.
@@ -147,42 +173,72 @@ interface MarkdownContentProps {
    * Pass an explicit handler to override (e.g. tests, alternate surfaces).
    */
   onWikilink?: (entityKey: string) => void
+  /** Optional owner-provided route for relative document links. */
+  resolveRelativeHref?: (href: string) => string
 }
 
 export function renderMarkdownHtml(
   text: string,
-  opts: { strikethrough?: boolean; codeSpanWikilinks?: boolean } = {},
+  opts: { fileHrefs?: Record<string, string>; strikethrough?: boolean; codeSpanWikilinks?: boolean; resolveRelativeHref?: (href: string) => string } = {},
 ): string {
-  const parser = opts.codeSpanWikilinks
+  const parser = opts.fileHrefs ? createMarked({ strikethrough: opts.strikethrough !== false, codeSpanWikilinks: false, fileHrefs: opts.fileHrefs }) : opts.codeSpanWikilinks
     ? opts.strikethrough === false
       ? markedComment
       : markedWithCodeSpanWikilinks
     : opts.strikethrough === false
       ? markedWithoutStrikethrough
       : markedWithStrikethrough
-  const raw = DOMPurify.sanitize(parser.parse(text) as string)
-  return addCodeBlockWrappers(raw)
+  let raw = DOMPurify.sanitize(parser.parse(text) as string)
+  if (opts.resolveRelativeHref) {
+    // Parse inert, sanitized markup. Re-sanitize resolved URLs as well; an
+    // owner callback must not bypass the renderer's URL safety contract.
+    const fragment = document.createElement('template')
+    fragment.innerHTML = raw
+    for (const link of fragment.content.querySelectorAll('a[href]')) {
+      const href = link.getAttribute('href') ?? ''
+      if (href && !/^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(href)) {
+        link.setAttribute('href', opts.resolveRelativeHref(href))
+      }
+    }
+    raw = DOMPurify.sanitize(fragment.innerHTML)
+  }
+  return addMarkdownStructure(addCodeBlockWrappers(raw))
+}
+
+/** Give wide tables their own scroll owner instead of letting a document
+ * stretch the complete application shell. The wrapper is generated after
+ * sanitization and contains no user-controlled attributes. */
+function addMarkdownStructure(html: string): string {
+  return html
+    .replace(/<table>/g, '<div class="markdown-table-shell"><table>')
+    .replace(/<\/table>/g, '</table></div>')
 }
 
 export function MarkdownContent({
   text,
   className,
+  variant = 'default',
   strikethrough = true,
   codeSpanWikilinks = false,
   onWikilink,
+  resolveRelativeHref,
+  fileHrefs,
+  onFileReference,
 }: MarkdownContentProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const defaultWikilink = useWikilinkHandler()
-  const { openHeadlessRun } = useWorkspaces()
+  const { openHeadlessRun } = useWorkspaceActions()
   const wikilink = onWikilink ?? defaultWikilink
 
   const html = useMemo(() => {
-    return renderMarkdownHtml(text, { strikethrough, codeSpanWikilinks })
-  }, [text, strikethrough, codeSpanWikilinks])
+    return renderMarkdownHtml(text, { strikethrough, codeSpanWikilinks, resolveRelativeHref, fileHrefs })
+  }, [text, strikethrough, codeSpanWikilinks, resolveRelativeHref, fileHrefs])
 
   const handleClick = useCallback(
     (e: MouseEvent) => {
       const target = e.target as HTMLElement
+      const file = target.closest('a[data-file-path]')
+      if (file && onFileReference) { e.preventDefault(); onFileReference(file.getAttribute('data-file-path')!); return }
       const link = target.closest('a.wikilink') as HTMLElement | null
       if (link) {
         e.preventDefault()
@@ -217,7 +273,7 @@ export function MarkdownContent({
         }, 2000)
       })
     },
-    [wikilink, openHeadlessRun],
+    [wikilink, openHeadlessRun, onFileReference],
   )
 
   useEffect(() => {
@@ -228,8 +284,28 @@ export function MarkdownContent({
   }, [handleClick])
 
   return (
-    <div ref={contentRef} className={className}>
-      <div className="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />
+    <div ref={contentRef} className={className} data-markdown-variant={variant}>
+      <StaticMarkdownBody html={html} variant={variant} />
     </div>
   )
 }
+
+/**
+ * Keep browser-owned state inside an unchanged report intact. Selection,
+ * translation overlays, find-in-page markers, and extension annotations all
+ * live in this subtree; unrelated parent/context updates must not replace it.
+ */
+const StaticMarkdownBody = memo(function StaticMarkdownBody({
+  html,
+  variant,
+}: {
+  html: string
+  variant: NonNullable<MarkdownContentProps['variant']>
+}) {
+  return (
+    <div
+      className={`markdown-content${variant === 'reading' ? ' markdown-content--reading' : ''}`}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+})

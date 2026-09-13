@@ -1,9 +1,7 @@
 /**
  * Golden / characterization test for launcher-owned context injection. The
- * MCP bytes are asserted exactly; the persona composition is asserted to equal
- * `persona + "\n\n---\n\n" + <template>/CLAUDE.md` — byte-identical to what the
- * old `compose_persona_claude_md` bash produced. Skills are asserted to land in
- * both discovery paths.
+ * Template instructions are asserted to land byte-identically in both native
+ * agent filenames. Skills are asserted to land in both discovery paths.
  */
 
 import { existsSync } from 'node:fs';
@@ -14,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { dataPath, defaultPath } from '@/core/paths.js';
+import { defaultPath } from '@/core/paths.js';
 
 import { injectWorkspaceContext } from './context-injector.js';
 import type { TemplateMeta } from './template-registry.js';
@@ -32,7 +30,7 @@ function makeTemplate(over: Partial<TemplateMeta>): TemplateMeta {
     version: '0.0.0',
     defaultAgents: ['claude'],
     injectTools: false,
-    injectPersona: false,
+    injectInstructions: false,
     bundledSkills: [],
     ...over,
   };
@@ -60,29 +58,23 @@ describe('injectWorkspaceContext — no MCP injection (CLI-only)', () => {
   });
 });
 
-describe('injectWorkspaceContext — persona', () => {
-  it('composes persona + separator + template instruction into CLAUDE.md and AGENTS.md', async () => {
-    // Mirror the injector's persona precedence: a live data/brain/persona.md
-    // override wins over the shipped default.
-    const personaPath = existsSync(dataPath('brain', 'persona.md'))
-      ? dataPath('brain', 'persona.md')
-      : defaultPath('persona.default.md');
-    const persona = await readFile(personaPath, 'utf8');
+describe('injectWorkspaceContext — instructions', () => {
+  it('copies template instructions into CLAUDE.md and AGENTS.md', async () => {
     const instruction = await readFile(join(CHAT_FILES, 'instruction.md'), 'utf8');
-    const expected = `${persona}\n\n---\n\n${instruction}`;
 
     await injectWorkspaceContext({
-      template: makeTemplate({ injectPersona: true, filesDir: CHAT_FILES }),
+      template: makeTemplate({ injectInstructions: true, filesDir: CHAT_FILES }),
       wsId: 'ws-abc',
       dir,
     });
 
-    expect(await read('CLAUDE.md')).toBe(expected);
-    expect(await read('AGENTS.md')).toBe(expected);
+    expect(await read('CLAUDE.md')).toBe(instruction);
+    expect(await read('AGENTS.md')).toBe(instruction);
+    expect(instruction).toContain('You are Alice, an autonomous agent from the OpenAlice project.');
   });
 
-  it('does not touch CLAUDE.md / AGENTS.md when injectPersona is false', async () => {
-    await injectWorkspaceContext({ template: makeTemplate({ injectPersona: false }), wsId: 'ws-abc', dir });
+  it('does not touch CLAUDE.md / AGENTS.md when injectInstructions is false', async () => {
+    await injectWorkspaceContext({ template: makeTemplate({ injectInstructions: false }), wsId: 'ws-abc', dir });
     expect(existsSync(join(dir, 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false);
   });
@@ -92,9 +84,10 @@ describe('injectWorkspaceContext — persona', () => {
     expect(instruction.split('\n').length).toBeLessThan(120);
     expect(instruction).toContain('Every price, return, date, ratio');
     expect(instruction).toContain('A comment is a board');
-    expect(instruction).toContain('The `alice-workspace` skill contains the exact commands');
-    expect(instruction).not.toContain('alice-workspace issue comment --text');
-    expect(instruction).not.toContain('alice-workspace inbox push --doc');
+    expect(instruction).toContain('OpenAlice does not wrap');
+    expect(instruction).toContain('The `alice` skill contains the exact commands');
+    expect(instruction).not.toContain('alice issue comment --text');
+    expect(instruction).not.toContain('alice inbox push --doc');
     expect(instruction).not.toContain('--when');
   });
 });
@@ -112,17 +105,48 @@ describe('injectWorkspaceContext — skills', () => {
     expect(existsSync(join(dir, '.pi/skills'))).toBe(false);                        // no Pi collision copy
   });
 
+  it('copies the Chat AutoQuant delegation contract into both discovery paths', async () => {
+    await injectWorkspaceContext({
+      template: makeTemplate({ bundledSkills: ['delegate-autoquant'] }),
+      wsId: 'ws-chat',
+      dir,
+    });
+    for (const root of ['.claude/skills', '.agents/skills']) {
+      const skill = await read(`${root}/delegate-autoquant/SKILL.md`);
+      expect(skill).toContain('alice conversation create --harness autoquant');
+      expect(skill).toContain('The universal result is the Agent\'s ordinary `assistantText` handoff');
+      expect(skill).toContain('does not automatically publish either artifact to the');
+      expect(skill).toContain('Primary deliverable directory: <absolute path>');
+      expect(skill).toContain('Do not rerun the research.');
+    }
+  });
+
   it('injects the per-CLI playbooks (alice* + traderhub) for a tool-bearing template', async () => {
     await injectWorkspaceContext({
       template: makeTemplate({ injectTools: true, bundledSkills: ['scan-value-chain'] }),
       wsId: 'ws-abc',
       dir,
     });
-    for (const name of ['alice', 'alice-analysis', 'alice-uta', 'alice-workspace', 'traderhub', 'scan-value-chain']) {
+    for (const name of ['alice', 'alice-analysis', 'alice-uta', 'traderhub', 'file-delivery', 'scan-value-chain']) {
       expect(existsSync(join(dir, '.claude/skills', name, 'SKILL.md')), name).toBe(true);
       expect(existsSync(join(dir, '.agents/skills', name, 'SKILL.md')), name).toBe(true);
     }
     expect(existsSync(join(dir, '.pi/skills'))).toBe(false);
+  });
+
+  it('keeps peer file access on native Coding Agent capabilities', async () => {
+    await injectWorkspaceContext({
+      template: makeTemplate({ injectTools: true }),
+      wsId: 'ws-abc',
+      dir,
+    });
+    const skill = await read('.agents/skills/alice/references/collaboration.md');
+    expect(skill).toContain('There is deliberately no Workspace-level file-read command');
+    expect(skill).toContain('alice peer path --id <workspaceId>');
+    expect(skill).toContain("Coding Agent's native Read/Search/Glob/Git capabilities");
+    expect(skill).toContain('alice conversation ask --inbox-id <entryId>');
+    expect(skill).toContain('alice conversation create --harness autoquant');
+    expect(skill).not.toContain('peer file-read');
   });
 
   it('gives every runtime copyable UTA read recipes', async () => {
@@ -176,3 +200,12 @@ describe('injectWorkspaceContext — skills', () => {
     expect(existsSync(join(dir, '.pi/skills/scan-value-chain/SKILL.md'))).toBe(false);
   });
 });
+
+it('installs the optional sticker Skill only for a new full Chat projection', async () => {
+  const template = makeTemplate({ name: 'chat' })
+  await injectWorkspaceContext({ template, wsId: 'chat', dir, templateOnly: true })
+  expect(existsSync(join(dir, '.agents/skills/alice-stickers/SKILL.md'))).toBe(false)
+  await injectWorkspaceContext({ template, wsId: 'chat', dir })
+  expect(await readFile(join(dir, '.agents/skills/alice-stickers/SKILL.md'), 'utf8')).toContain('[[sticker/wave.png]]')
+  expect(existsSync(join(dir, 'sticker/wave.png'))).toBe(true)
+})

@@ -12,11 +12,26 @@ import { basename, dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { claudeAdapter } from './claude.js';
+import { claudeAdapter, readClaudeSessionTitleFile } from './claude.js';
 import { codexAdapter } from './codex.js';
-import { opencodeAdapter } from './opencode.js';
-import { piAdapter, syncPiProjectTrust, syncPiWindowsShellPath } from './pi.js';
-import { migrateLegacyPiAgentDir, piWorkspaceProviderId } from './pi-config.js';
+import { agyAdapter } from './agy.js';
+import { cursorAdapter } from './cursor.js';
+import { grokAdapter } from './grok.js';
+import { ompAdapter } from './omp.js';
+import { openCodeSessionTitle, opencodeAdapter } from './opencode.js';
+import {
+  piAdapter,
+  readPiSessionTitleFile,
+  syncPiProjectTrust,
+  syncPiWindowsShellPath,
+} from './pi.js';
+import {
+  localizePiWorkspaceProvider,
+  migrateLegacyPiAgentDir,
+  PI_BINDING_STATE_PATH,
+  PI_PROVIDER_EXTENSION_PATH,
+  piWorkspaceProviderId,
+} from './pi-config.js';
 import { prepareAgentRuntimeWorkspace } from '../cli-adapter.js';
 import { credentialToWorkspaceAiCred } from '../credential-injection.js';
 
@@ -35,7 +50,7 @@ describe('claudeAdapter AI-config', () => {
   // Project-scoped `.mcp.json` servers park at "Pending approval" until the
   // user approves — and each workspace dir is a fresh project key, so every
   // spawn carries the auto-trust setting (see AUTOTRUST_SETTINGS in claude.ts).
-  const SETTINGS_FLAG = ['--settings', '{"enableAllProjectMcpServers":true}'];
+  const SETTINGS_FLAG = ['--settings', '{"enableAllProjectMcpServers":true,"sandbox":{"enabled":false}}', '--dangerously-skip-permissions'];
 
   it('composeCommand: fresh spawn injects the MCP auto-trust settings', () => {
     expect(claudeAdapter.composeCommand(['claude'], { cwd: dir, env: {} })).toEqual([
@@ -51,6 +66,16 @@ describe('claudeAdapter AI-config', () => {
   it('composeCommand: "last" resume throws (intentionally unsupported)', () => {
     expect(() => claudeAdapter.composeCommand(['claude'], { cwd: dir, env: {}, resume: 'last' }))
       .toThrow(/"last" resume not supported/);
+  });
+
+  it('prefers Claude custom titles over generated titles', async () => {
+    const transcript = join(dir, 'claude-session.jsonl');
+    await writeFile(transcript, [
+      JSON.stringify({ type: 'ai-title', aiTitle: 'Generated title', sessionId: 'native-1' }),
+      JSON.stringify({ type: 'custom-title', customTitle: '  User renamed title  ', sessionId: 'native-1' }),
+      '',
+    ].join('\n'));
+    expect(await readClaudeSessionTitleFile(transcript)).toBe('User renamed title');
   });
 
   it('writes full x-api-key config byte-exact', async () => {
@@ -157,6 +182,17 @@ describe('claudeAdapter AI-config', () => {
     expect(JSON.parse(await read('.claude/settings.local.json'))).toEqual({ effortLevel: 'low' });
   });
 
+  it('persists an effort-only Claude native-login preference', async () => {
+    await claudeAdapter.writeAiConfig!(dir, { reasoningEffort: 'high' });
+    expect(JSON.parse(await read('.claude/settings.local.json'))).toEqual({
+      effortLevel: 'high',
+    });
+    expect(await claudeAdapter.readAiConfig!(dir)).toMatchObject({
+      model: null,
+      reasoningEffort: 'high',
+    });
+  });
+
   it('rejects effort values Claude Code cannot persist in project settings', async () => {
     await expect(claudeAdapter.writeAiConfig!(dir, { model: 'claude-x', reasoningEffort: 'max' }))
       .rejects.toThrow(/cannot persist project effort max/);
@@ -189,6 +225,8 @@ describe('codexAdapter AI-config', () => {
       '--ask-for-approval',
       'never',
       '-c',
+      'allow_login_shell=false',
+      '-c',
       'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
       '-c',
       'mcp_servers.openalice-workspace.url="http://127.0.0.1:47332/mcp/ws-abc"',
@@ -207,6 +245,8 @@ describe('codexAdapter AI-config', () => {
       '--ask-for-approval',
       'never',
       '-c',
+      'allow_login_shell=false',
+      '-c',
       'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
       '-c',
       'mcp_servers.openalice-workspace.url="http://127.0.0.1:47332/mcp/ws-abc"',
@@ -219,6 +259,8 @@ describe('codexAdapter AI-config', () => {
       'danger-full-access',
       '--ask-for-approval',
       'never',
+      '-c',
+      'allow_login_shell=false',
       '-c',
       'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
       '-c',
@@ -235,6 +277,8 @@ describe('codexAdapter AI-config', () => {
       'danger-full-access',
       '--ask-for-approval',
       'never',
+      '-c',
+      'allow_login_shell=false',
     ]);
   });
 
@@ -242,29 +286,77 @@ describe('codexAdapter AI-config', () => {
     await codexAdapter.writeAiConfig!(dir, {
       baseUrl: 'https://oai.test/v1', apiKey: 'sk-c', model: 'gpt-x', wireApi: 'responses',
     });
-    expect(await read('.codex/config.toml')).toBe(
+    expect(await read('.codex/openalice-home/config.toml')).toBe(
       'model = "gpt-x"\nmodel_provider = "workspace"\n\n'
       + '[model_providers.workspace]\nname = "OpenAlice workspace provider"\n'
       + 'base_url = "https://oai.test/v1"\nenv_key = "OPENALICE_WORKSPACE_KEY"\nwire_api = "responses"\n',
     );
-    expect(await read('.codex/env.json')).toBe('{\n  "OPENALICE_WORKSPACE_KEY": "sk-c"\n}\n');
+    expect(await read('.codex/openalice-home/env.json'))
+      .toBe('{\n  "OPENALICE_WORKSPACE_KEY": "sk-c"\n}\n');
+    expect(codexAdapter.composeEnv!({ cwd: dir, env: {} })).toEqual({
+      CODEX_HOME: join(dir, '.codex/openalice-home'),
+      OPENALICE_WORKSPACE_KEY: 'sk-c',
+    });
+    expect(codexAdapter.composeCommand([], { cwd: dir, env: {} })).toEqual(expect.arrayContaining([
+      '--model',
+      'gpt-x',
+      '-c',
+      'model_provider="workspace"',
+    ]));
   });
 
   it('always writes wire_api = responses (codex is Responses-only)', async () => {
     await codexAdapter.writeAiConfig!(dir, { baseUrl: 'https://oai.test/v1', apiKey: 'sk-c', model: 'gpt-x' });
-    expect(await read('.codex/config.toml')).toContain('wire_api = "responses"\n');
+    expect(await read('.codex/openalice-home/config.toml')).toContain('wire_api = "responses"\n');
   });
 
-  it('model-only writes no provider block and an empty env.json', async () => {
+  it('binds a managed API key without an explicit endpoint to the official provider', async () => {
+    await codexAdapter.writeAiConfig!(dir, { apiKey: 'sk-c', model: 'gpt-x' });
+    expect(await read('.codex/openalice-home/config.toml')).toContain(
+      'base_url = "https://api.openai.com/v1"\n',
+    );
+    expect(await codexAdapter.readAiConfig!(dir)).toMatchObject({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-c',
+      model: 'gpt-x',
+    });
+  });
+
+  it('model-only uses native project config without redirecting CODEX_HOME', async () => {
     await codexAdapter.writeAiConfig!(dir, { model: 'gpt-y' });
     expect(await read('.codex/config.toml')).toBe('model = "gpt-y"\n');
-    expect(await read('.codex/env.json')).toBe('{}\n');
+    expect(existsSync(join(dir, '.codex/env.json'))).toBe(false);
+    expect(existsSync(join(dir, '.codex/openalice-provider.json'))).toBe(true);
+    expect(codexAdapter.composeEnv!({ cwd: dir, env: {} })).toEqual({});
   });
 
-  it('reset (empty cred) tears down the entire .codex/ directory', async () => {
+  it('reset removes only OpenAlice-owned Codex config and preserves siblings', async () => {
+    await mkdir(join(dir, '.codex'), { recursive: true });
+    await writeFile(join(dir, '.codex/config.toml'), 'notify = true\n');
     await codexAdapter.writeAiConfig!(dir, { baseUrl: 'u', model: 'm' });
     await codexAdapter.writeAiConfig!(dir, {});
-    expect(existsSync(join(dir, '.codex'))).toBe(false);
+    expect(await read('.codex/config.toml')).toBe('notify = true\n');
+    expect(existsSync(join(dir, '.codex/openalice-home'))).toBe(false);
+  });
+
+  it('restores a user-owned project model after resetting a native preference', async () => {
+    await mkdir(join(dir, '.codex'), { recursive: true });
+    await writeFile(join(dir, '.codex/config.toml'), 'model = "user-model"\nnotify = true\n');
+
+    await codexAdapter.writeAiConfig!(dir, { model: 'openalice-model', reasoningEffort: 'high' });
+    expect(await read('.codex/config.toml')).toBe(
+      'model = "openalice-model"\nnotify = true\nmodel_reasoning_effort = "high"\n',
+    );
+    await codexAdapter.writeAiConfig!(dir, {});
+    expect(await read('.codex/config.toml')).toBe('model = "user-model"\nnotify = true\n');
+  });
+
+  it('does not restore over a user edit made after native injection', async () => {
+    await codexAdapter.writeAiConfig!(dir, { model: 'openalice-model' });
+    await writeFile(join(dir, '.codex/config.toml'), 'model = "user-edited"\n');
+
+    await codexAdapter.writeAiConfig!(dir, {});
+    expect(await read('.codex/config.toml')).toBe('model = "user-edited"\n');
   });
 
   it('round-trips through readAiConfig', async () => {
@@ -280,8 +372,19 @@ describe('codexAdapter AI-config', () => {
     await codexAdapter.writeAiConfig!(dir, {
       baseUrl: 'https://oai.test/v1', model: 'gpt-x', reasoningEffort: 'medium',
     });
-    expect(await read('.codex/config.toml')).toContain('model_reasoning_effort = "medium"\n');
+    expect(await read('.codex/openalice-home/config.toml'))
+      .toContain('model_reasoning_effort = "medium"\n');
     expect(await codexAdapter.readAiConfig!(dir)).toMatchObject({ reasoningEffort: 'medium' });
+  });
+
+  it('writes and round-trips an effort-only native-login preference', async () => {
+    await codexAdapter.writeAiConfig!(dir, { reasoningEffort: 'high' });
+    expect(await read('.codex/config.toml')).toBe('model_reasoning_effort = "high"\n');
+    expect(codexAdapter.composeEnv!({ cwd: dir, env: {} })).toEqual({});
+    expect(await codexAdapter.readAiConfig!(dir)).toMatchObject({
+      model: null,
+      reasoningEffort: 'high',
+    });
   });
 
   it('readAiConfig returns null when no files exist', async () => {
@@ -289,8 +392,9 @@ describe('codexAdapter AI-config', () => {
   });
 
   it('listOnDisk returns only rollouts whose session_meta cwd matches this workspace', async () => {
-    // Workspace has its own .codex → adapter reads <cwd>/.codex/sessions (not ~).
-    const leaf = join(dir, '.codex', 'sessions', '2026', '06', '05');
+    await codexAdapter.writeAiConfig!(dir, { baseUrl: 'https://oai.test/v1', model: 'gpt-x' });
+    // Only custom-provider mode reads sessions from its isolated CODEX_HOME.
+    const leaf = join(dir, '.codex', 'openalice-home', 'sessions', '2026', '06', '05');
     await mkdir(leaf, { recursive: true });
     const mine = { type: 'session_meta', payload: { id: 'mine-uuid-0001', cwd: dir } };
     const other = { type: 'session_meta', payload: { id: 'other-uuid-0002', cwd: '/some/other/workspace' } };
@@ -304,10 +408,56 @@ describe('codexAdapter AI-config', () => {
   it('listOnDisk returns [] when there are no sessions', async () => {
     expect(await codexAdapter.listOnDisk!(dir)).toEqual([]);
   });
+
+  it('prefers Codex Desktop generated titles from its local thread catalog', async () => {
+    await codexAdapter.writeAiConfig!(dir, { baseUrl: 'https://oai.test/v1', model: 'gpt-x' });
+    const home = join(dir, '.codex', 'openalice-home');
+    await mkdir(home, { recursive: true });
+    await writeFile(join(home, 'session_index.jsonl'), [
+      JSON.stringify({ id: 'native-1', thread_name: 'Legacy Codex title', updated_at: '2026-07-30' }),
+      '{"partially-written":',
+      '',
+    ].join('\n'));
+
+    const sqliteDir = join(home, 'sqlite');
+    await mkdir(sqliteDir, { recursive: true });
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const database = new DatabaseSync(join(sqliteDir, 'codex-dev.db'));
+    database.exec(`
+      CREATE TABLE local_thread_catalog (
+        thread_id TEXT NOT NULL,
+        display_title TEXT NOT NULL
+      )
+    `);
+    database.prepare(
+      'INSERT INTO local_thread_catalog (thread_id, display_title) VALUES (?, ?)',
+    ).run('native-1', '  Generated investigation title  ');
+    database.close();
+
+    expect(await codexAdapter.readSessionTitle!(dir, 'native-1')).toBe('Generated investigation title');
+    expect(await codexAdapter.readSessionTitle!(dir, 'missing')).toBeNull();
+  });
+
+  it('keeps reading Codex native titles from the legacy session index', async () => {
+    await codexAdapter.writeAiConfig!(dir, { baseUrl: 'https://oai.test/v1', model: 'gpt-x' });
+    const home = join(dir, '.codex', 'openalice-home');
+    await mkdir(home, { recursive: true });
+    await writeFile(join(home, 'session_index.jsonl'),
+      `${JSON.stringify({ id: 'native-legacy', thread_name: 'Legacy Codex title' })}\n`);
+
+    expect(await codexAdapter.readSessionTitle!(dir, 'native-legacy')).toBe('Legacy Codex title');
+  });
 });
 
 describe('opencodeAdapter AI-config', () => {
   const mcpEnv = { OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp', AQ_WS_ID: 'ws-abc' };
+
+  it('uses the title returned by OpenCode session list', () => {
+    expect(openCodeSessionTitle([
+      { id: 'ses_1', title: '  Native OpenCode title  ' },
+    ], 'ses_1')).toBe('Native OpenCode title');
+    expect(openCodeSessionTitle([], 'ses_1')).toBeNull();
+  });
 
   it('prepares OpenCode to derive its theme from the terminal palette', async () => {
     await mkdir(join(dir, '.git/info'), { recursive: true });
@@ -406,14 +556,23 @@ describe('opencodeAdapter AI-config', () => {
     await opencodeAdapter.writeAiConfig!(dir, {
       baseUrl: 'https://cn.test/v1', apiKey: 'sk-o', model: 'deepseek-chat',
     });
-    expect(JSON.parse(await read('opencode.json'))).toEqual({
+    expect(JSON.parse(await read('opencode.json'))).toMatchObject({
       $schema: 'https://opencode.ai/config.json',
       provider: {
         workspace: {
           npm: '@ai-sdk/openai-compatible',
           name: 'OpenAlice workspace provider',
           options: { baseURL: 'https://cn.test/v1', apiKey: 'sk-o' },
-          models: { 'deepseek-chat': { name: 'deepseek-chat' } },
+          models: {
+            'deepseek-chat': {
+              name: 'deepseek-chat',
+              variants: {
+                none: { reasoningEffort: 'none' },
+                high: { reasoningEffort: 'high' },
+                max: { reasoningEffort: 'max' },
+              },
+            },
+          },
         },
       },
       model: 'workspace/deepseek-chat',
@@ -424,7 +583,7 @@ describe('opencodeAdapter AI-config', () => {
     await opencodeAdapter.writeAiConfig!(dir, {
       baseUrl: 'https://cn.test/v1', apiKey: 'sk-o', model: 'deepseek-chat', contextWindow: 1_000_000,
     });
-    expect(JSON.parse(await read('opencode.json')).provider.workspace.models['deepseek-chat']).toEqual({
+    expect(JSON.parse(await read('opencode.json')).provider.workspace.models['deepseek-chat']).toMatchObject({
       name: 'deepseek-chat',
       limit: { context: 1_000_000, output: 16_384 },
     });
@@ -505,7 +664,7 @@ describe('opencodeAdapter AI-config', () => {
         anthropic: 'https://api.minimax.io/anthropic',
         'openai-chat': 'https://api.minimax.io/v1',
       },
-    }, 'opencode', { model: 'MiniMax-M2.5' })!;
+    }, opencodeAdapter, { model: 'MiniMax-M2.5' })!;
 
     await opencodeAdapter.writeAiConfig!(dir, cred);
     const config = JSON.parse(await read('opencode.json'));
@@ -587,6 +746,10 @@ describe('assignsSessionId capability (gates the launcher\'s assign-id-at-spawn 
     expect(piAdapter.capabilities.assignsSessionId).toBe(true);
     expect(claudeAdapter.capabilities.assignsSessionId ?? false).toBe(false);
     expect(codexAdapter.capabilities.assignsSessionId ?? false).toBe(false);
+    expect(cursorAdapter.capabilities.assignsSessionId ?? false).toBe(false);
+    expect(agyAdapter.capabilities.assignsSessionId ?? false).toBe(false);
+    expect(grokAdapter.capabilities.assignsSessionId ?? false).toBe(false);
+    expect(ompAdapter.capabilities.assignsSessionId ?? false).toBe(false);
     expect(opencodeAdapter.capabilities.assignsSessionId ?? false).toBe(false);
   });
 });
@@ -594,9 +757,12 @@ describe('assignsSessionId capability (gates the launcher\'s assign-id-at-spawn 
 describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)', () => {
   const ctx = (env: Record<string, string> = {}) => ({ cwd: '/ws', env });
 
-  it('all four agent adapters declare the headless capability', () => {
+  it('all agent adapters declare the headless capability', () => {
     expect(claudeAdapter.capabilities.headless).toBe(true);
     expect(codexAdapter.capabilities.headless).toBe(true);
+    expect(cursorAdapter.capabilities.headless).toBe(true);
+    expect(agyAdapter.capabilities.headless).toBe(true);
+    expect(grokAdapter.capabilities.headless).toBe(true);
     expect(opencodeAdapter.capabilities.headless).toBe(true);
     expect(piAdapter.capabilities.headless).toBe(true);
   });
@@ -608,9 +774,8 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
     expect(claudeAdapter.composeHeadlessCommand!(['claude'], ctx(), 'do x')).toEqual([
       'claude',
       '--settings',
-      '{"enableAllProjectMcpServers":true}',
-      '--allowedTools',
-      'Bash(alice:*),Bash(alice-workspace:*),Bash(alice-uta:*),Bash(traderhub:*)',
+      '{"enableAllProjectMcpServers":true,"sandbox":{"enabled":false}}',
+      '--dangerously-skip-permissions',
       '-p',
       '--output-format',
       'stream-json',
@@ -626,13 +791,47 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
       '-c',
       'approval_policy="never"',
       '-c',
-      'sandbox_mode="workspace-write"',
+      'sandbox_mode="danger-full-access"',
       '-c',
-      'sandbox_workspace_write.network_access=true',
+      'allow_login_shell=false',
       'exec',
       '--json',
       '--',
       'do x',
+    ]);
+  });
+
+  it('agy: stream-json --dangerously-skip-permissions -p <prompt> (no -- terminator)', () => {
+    expect(agyAdapter.composeHeadlessCommand!(['claude'], ctx(), 'do x')).toEqual([
+      'agy',
+      '--output-format',
+      'stream-json',
+      '--dangerously-skip-permissions',
+      '-p',
+      'do x',
+    ]);
+  });
+
+  it('cursor: -p stream-json --force --trust -- <prompt>', () => {
+    expect(cursorAdapter.composeHeadlessCommand!(['claude'], ctx(), 'do x')).toEqual([
+      'cursor-agent',
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--force', '--sandbox', 'disabled',
+      '--trust',
+      '--',
+      'do x',
+    ]);
+  });
+
+  it('grok: streaming-json --always-approve --single=<prompt>', () => {
+    expect(grokAdapter.composeHeadlessCommand!(['grok'], ctx(), 'do x')).toEqual([
+      'grok', '--sandbox', 'off',
+      '--no-leader', '--always-approve',
+      '--output-format',
+      'streaming-json',
+      '--single=do x',
     ]);
   });
 
@@ -672,6 +871,18 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
     expect(opencodeAdapter.composeHeadlessCommand!(['opencode'], { ...ctx(), resume }, 'next')).toEqual([
       'opencode', 'run', '--format', 'json', '--session', 'native-session-1', '--', 'next',
     ]);
+    expect(cursorAdapter.composeHeadlessCommand!(['cursor-agent'], { ...ctx(), resume }, 'next')).toEqual([
+      'cursor-agent', '-p', '--output-format', 'stream-json', '--force', '--sandbox', 'disabled', '--trust',
+      '--resume', 'native-session-1', '--', 'next',
+    ]);
+    expect(agyAdapter.composeHeadlessCommand!(['agy'], { ...ctx(), resume }, 'next')).toEqual([
+      'agy', '--output-format', 'stream-json', '--dangerously-skip-permissions',
+      '--conversation', 'native-session-1', '-p', 'next',
+    ]);
+    expect(grokAdapter.composeHeadlessCommand!(['grok'], { ...ctx(), resume }, 'next')).toEqual([
+      'grok', '--sandbox', 'off', '--no-leader', '--always-approve', '--resume', 'native-session-1',
+      '--output-format', 'streaming-json', '--single=next',
+    ]);
     expect(piAdapter.composeHeadlessCommand!(['pi'], { ...ctx(), resume }, 'next')).toEqual([
       'pi', '--session-id', 'native-session-1', '-p', '--mode', 'json', 'next',
     ]);
@@ -679,11 +890,26 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
 
   it('claude/codex/opencode place a -leading prompt after a -- terminator', () => {
     const dashy = '--help me by explaining X';
-    for (const a of [claudeAdapter, codexAdapter, opencodeAdapter]) {
+    for (const a of [claudeAdapter, codexAdapter, cursorAdapter, opencodeAdapter]) {
       const argv = a.composeHeadlessCommand!(['bin'], ctx({ OPENALICE_MCP_URL: 'http://x/mcp', AQ_WS_ID: 'w' }), dashy);
       expect(argv[argv.length - 1]).toBe(dashy); // prompt is the last token
       expect(argv[argv.length - 2]).toBe('--'); // immediately after the terminator
     }
+  });
+
+  it('agy binds a -leading prompt to -p because -- terminates the Gemini key-path run', () => {
+    const dashy = '--help me by explaining X';
+    const argv = agyAdapter.composeHeadlessCommand!(['agy'], ctx(), dashy);
+    expect(argv.at(-2)).toBe('-p');
+    expect(argv.at(-1)).toBe(dashy);
+    expect(argv).not.toContain('--');
+  });
+
+  it('grok binds a -leading prompt with --single= because -p consumes the next argv', () => {
+    const dashy = '--help me by explaining X';
+    const argv = grokAdapter.composeHeadlessCommand!(['grok'], ctx(), dashy);
+    expect(argv.at(-1)).toBe(`--single=${dashy}`);
+    expect(argv).not.toContain('--');
   });
 
   it('pi takes the prompt as a bare trailing positional (no -- terminator available)', () => {
@@ -695,6 +921,17 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
 
 describe('piAdapter AI-config', () => {
   const mcpEnv = { OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp', AQ_WS_ID: 'ws-abc' };
+
+  it('uses the latest explicit Pi session name', async () => {
+    const transcript = join(dir, 'pi-session.jsonl');
+    await writeFile(transcript, [
+      JSON.stringify({ type: 'session', id: 'native-1', cwd: dir }),
+      JSON.stringify({ type: 'session_info', name: 'First name' }),
+      JSON.stringify({ type: 'session_info', name: '  Renamed in Pi  ' }),
+      '',
+    ].join('\n'));
+    expect(await readPiSessionTitleFile(transcript)).toBe('Renamed in Pi');
+  });
   let previousPiAgentDir: string | undefined;
 
   beforeEach(() => {
@@ -710,9 +947,9 @@ describe('piAdapter AI-config', () => {
   const readGlobalModels = async (): Promise<Record<string, any>> =>
     JSON.parse(await readFile(join(dir, 'pi-user-agent', 'models.json'), 'utf8')) as Record<string, any>;
 
-  const readWorkspaceProvider = async (): Promise<Record<string, any>> => {
-    const models = await readGlobalModels();
-    return models['providers'][piWorkspaceProviderId(dir)] as Record<string, any>;
+  const readWorkspaceProvider = async (cwd = dir): Promise<Record<string, any>> => {
+    const state = JSON.parse(await readFile(join(cwd, '.pi/openalice-provider.json'), 'utf8')) as Record<string, any>;
+    return state['provider'] as Record<string, any>;
   };
 
   it('prepares Pi to follow the terminal light/dark mode by default', async () => {
@@ -870,7 +1107,7 @@ describe('piAdapter AI-config', () => {
     expect(piAdapter.composeEnv!({ cwd: dir, env: mcpEnv })).toEqual({});
   });
 
-  it('writes the provider globally and selects it through native project settings', async () => {
+  it('registers the provider through a managed project extension and native project settings', async () => {
     await piAdapter.writeAiConfig!(dir, {
       baseUrl: 'https://cn.test/v1', apiKey: 'sk-p', model: 'deepseek-chat',
     });
@@ -884,21 +1121,27 @@ describe('piAdapter AI-config', () => {
     const settings = JSON.parse(await read('.pi/settings.json'));
     expect(settings.defaultProvider).toBe(piWorkspaceProviderId(dir));
     expect(settings.defaultModel).toBe('deepseek-chat');
+    const extension = await readFile(join(dir, PI_PROVIDER_EXTENSION_PATH), 'utf8');
+    expect(extension).toContain('pi.registerProvider(providerId, registeredProvider)');
+    expect(extension).toContain('contextWindow: 128000');
+    expect(extension).toContain('maxTokens: 16384');
+    expect(extension).not.toContain('sk-p');
+    expect(existsSync(join(dir, 'pi-user-agent', 'models.json'))).toBe(false);
     if (process.platform === 'win32') expect(settings.shellPath).toMatch(/bash\.exe$/i);
     else expect(settings.shellPath).toBeUndefined();
     expect(existsSync(join(dir, '.pi-agent'))).toBe(false);
   });
 
-  it('serializes concurrent Workspace providers without dropping either global entry', async () => {
+  it('keeps concurrent Workspace providers isolated in their own project state', async () => {
     const other = join(dir, 'second-workspace');
     await mkdir(other, { recursive: true });
     await Promise.all([
       piAdapter.writeAiConfig!(dir, { baseUrl: 'https://one/v1', model: 'one' }),
       piAdapter.writeAiConfig!(other, { baseUrl: 'https://two/v1', model: 'two' }),
     ]);
-    const providers = (await readGlobalModels())['providers'];
-    expect(providers[piWorkspaceProviderId(dir)].models).toEqual([{ id: 'one' }]);
-    expect(providers[piWorkspaceProviderId(other)].models).toEqual([{ id: 'two' }]);
+    expect((await readWorkspaceProvider(dir))['models']).toEqual([{ id: 'one' }]);
+    expect((await readWorkspaceProvider(other))['models']).toEqual([{ id: 'two' }]);
+    expect(existsSync(join(dir, 'pi-user-agent', 'models.json'))).toBe(false);
   });
 
   it('writes managed shellPath into Pi settings when the runtime profile provides one', async () => {
@@ -1042,6 +1285,25 @@ describe('piAdapter AI-config', () => {
       customField: true,
     });
     expect(existsSync(join(dir, '.pi/openalice-provider.json'))).toBe(false);
+    expect(existsSync(join(dir, PI_PROVIDER_EXTENSION_PATH))).toBe(false);
+  });
+
+  it('never overwrites or strands a user-edited provider extension', async () => {
+    await piAdapter.writeAiConfig!(dir, { baseUrl: 'https://one.test/v1', model: 'one' });
+    const extensionPath = join(dir, PI_PROVIDER_EXTENSION_PATH);
+    const userExtension = `${await readFile(extensionPath, 'utf8')}\n// user-owned customization\n`;
+    await writeFile(extensionPath, userExtension);
+
+    await expect(
+      piAdapter.writeAiConfig!(dir, { baseUrl: 'https://two.test/v1', model: 'two' }),
+    ).rejects.toThrow(/Refusing to overwrite user-edited Pi extension/);
+    expect(await readFile(extensionPath, 'utf8')).toBe(userExtension);
+    expect((await readWorkspaceProvider())['baseUrl']).toBe('https://one.test/v1');
+
+    await piAdapter.writeAiConfig!(dir, {});
+    expect(await readFile(extensionPath, 'utf8')).toBe(userExtension);
+    expect(existsSync(join(dir, PI_BINDING_STATE_PATH))).toBe(true);
+    expect(await piAdapter.readAiConfig!(dir)).toBeNull();
   });
 
   it('Pi reset leaves project selections edited after injection in place', async () => {
@@ -1058,6 +1320,7 @@ describe('piAdapter AI-config', () => {
       defaultModel: 'user-model',
     });
     expect(existsSync(join(dir, '.pi/openalice-provider.json'))).toBe(false);
+    expect(existsSync(join(dir, PI_PROVIDER_EXTENSION_PATH))).toBe(false);
   });
 
   it('round-trips through readAiConfig', async () => {
@@ -1073,13 +1336,60 @@ describe('piAdapter AI-config', () => {
     expect(await piAdapter.readAiConfig!(dir)).toBeNull();
   });
 
-  it('preserves malformed Pi-owned global models instead of overwriting it', async () => {
+  it('does not let malformed Pi-owned global models block a local provider binding', async () => {
     const modelsPath = join(dir, 'pi-user-agent', 'models.json');
     await mkdir(dirname(modelsPath), { recursive: true });
     await writeFile(modelsPath, '{ user is repairing this');
-    await expect(piAdapter.writeAiConfig!(dir, { baseUrl: 'u', model: 'm' }))
-      .rejects.toThrow(/not valid JSON/);
+    await expect(piAdapter.writeAiConfig!(dir, { baseUrl: 'u', model: 'm' })).resolves.toBeUndefined();
+    expect((await readWorkspaceProvider())['models']).toEqual([{ id: 'm' }]);
     expect(await readFile(modelsPath, 'utf8')).toBe('{ user is repairing this');
+  });
+
+  it('localizes an existing global provider and repairs a torn project model selection', async () => {
+    const providerId = piWorkspaceProviderId(dir);
+    await mkdir(join(dir, '.pi'), { recursive: true });
+    await mkdir(join(dir, 'pi-user-agent'), { recursive: true });
+    await writeFile(join(dir, '.pi/settings.json'), JSON.stringify({
+      defaultProvider: providerId,
+      defaultModel: 'intended-model',
+    }));
+    await writeFile(join(dir, '.pi/openalice-provider.json'), JSON.stringify({
+      version: 1,
+      providerId,
+      previous: {
+        defaultProvider: { present: false },
+        defaultModel: { present: false },
+        shellPath: { present: false },
+      },
+      injected: {
+        defaultProvider: { present: true, value: providerId },
+        defaultModel: { present: true, value: 'intended-model' },
+        shellPath: { present: false },
+      },
+    }));
+    await writeFile(join(dir, 'pi-user-agent/models.json'), JSON.stringify({
+      providers: {
+        [providerId]: {
+          name: `OpenAlice workspace provider (${basename(dir)})`,
+          api: 'openai-completions',
+          baseUrl: 'https://provider.test/v1',
+          apiKey: 'localize-key',
+          models: [{ id: 'stale-model', reasoning: true }],
+        },
+        user: { name: 'User provider', api: 'openai-completions' },
+      },
+    }));
+
+    await expect(localizePiWorkspaceProvider(dir)).resolves.toBe(true);
+    expect((await readWorkspaceProvider())['models']).toEqual([{ id: 'intended-model' }]);
+    expect((await readGlobalModels())['providers']).toEqual({
+      user: { name: 'User provider', api: 'openai-completions' },
+    });
+    expect(await piAdapter.readAiConfig!(dir)).toMatchObject({
+      baseUrl: 'https://provider.test/v1',
+      apiKey: 'localize-key',
+      model: 'intended-model',
+    });
   });
 
   it('migrates legacy provider, settings, auth, trust, packages, and sessions without hiding user state', async () => {

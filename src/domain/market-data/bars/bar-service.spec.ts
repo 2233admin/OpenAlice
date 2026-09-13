@@ -3,7 +3,7 @@
  * Real-provider accuracy is covered by bars.bbProvider.spec.ts (gated).
  */
 import { describe, it, expect, vi } from 'vitest'
-import { createBarService, parseBarId, formatBarId } from './index.js'
+import { createBarService, parseBarId, formatBarId, isDerivativeBarId } from './index.js'
 import type { BarServiceDeps, UtaBarGateway } from './types.js'
 import type {
   EquityClientLike, CryptoClientLike, CurrencyClientLike, CommodityClientLike,
@@ -55,6 +55,12 @@ describe('barId helpers', () => {
     expect(parseBarId('AAPL')).toBeNull()
     expect(parseBarId('|AAPL')).toBeNull()
     expect(parseBarId('yfinance|')).toBeNull()
+  })
+  it('distinguishes spot/native assets from perpetual and dated derivatives', () => {
+    expect(isDerivativeBarId('alpaca|AAPL')).toBe(false)
+    expect(isDerivativeBarId('binance|BTC/USDT')).toBe(false)
+    expect(isDerivativeBarId('binance|AAPL/USDT:USDT')).toBe(true)
+    expect(isDerivativeBarId('okx|BTC/USD:USD-310613')).toBe(true)
   })
 })
 
@@ -116,9 +122,10 @@ describe('getBars — barId forms', () => {
     expect(deps.equityClient.getHistorical).toHaveBeenCalled()
   })
 
-  it('vendor barId without assetClass throws a clear error', async () => {
+  it('vendor barId without assetClass resolves an exact catalog match', async () => {
     const svc = createBarService(makeDeps())
-    await expect(svc.getBars({ barId: 'yfinance|AAPL' }, { interval: '1d' })).rejects.toThrow(/needs an assetClass/)
+    expect((await svc.getBars({ barId: 'yfinance|AAPL' }, { interval: '1d' })).meta.barId).toBe('yfinance|AAPL')
+    await expect(svc.getBars({ barId: 'yfinance|AA' }, { interval: '1d' })).rejects.toThrow(/Cannot uniquely resolve/)
   })
 
   it('invalid barId throws', async () => {
@@ -209,12 +216,10 @@ describe('getBars — UTA branch', () => {
     expect(bars.map((b) => b.date)).toEqual(['2026-02-17', '2026-06-25']) // date-only, no time, no DST flip
   })
 
-  it('count-only request becomes a START WINDOW, not a broker `limit` (alpaca count-anchoring bug)', async () => {
-    // A count-only request must reach the broker as a start-bounded window — NOT
-    // as `limit: count` with no start. Alpaca's getBarsV2 anchors `limit` to a
-    // default start and returns the FIRST N bars ascending, so `1d count=60`
-    // collapsed to a single in-progress daily bar. We over-fetch a window and
-    // tail-slice instead. Regression guard for the 2026-06-25 repro.
+  it('count-only request carries both a bounded window and a tail limit', async () => {
+    // The synthesized start bounds broker work; limit means "most-recent N"
+    // according to BarParams. Each adapter owns translating that semantic to
+    // upstream APIs that otherwise return the first N rows from `start`.
     const getHistorical = vi.fn(async (_ref: unknown, params: { start?: Date; limit?: number }) => {
       void params
       return WIRE
@@ -227,8 +232,8 @@ describe('getBars — UTA branch', () => {
     const svc = createBarService(makeDeps({ utaManager }))
     await svc.getBars({ barId: 'alpaca-paper|AAPL' }, { interval: '1d', count: 60 })
     const params = getHistorical.mock.calls[0][1]
-    expect(params.start).toBeInstanceOf(Date)       // count → synthesized start window
-    expect(params.limit).toBeUndefined()            // count is NOT forwarded as limit
+    expect(params.start).toBeInstanceOf(Date)
+    expect(params.limit).toBe(60)
   })
 })
 
@@ -328,6 +333,45 @@ describe('searchBarSources — federated candidates', () => {
     expect(out[0].barCapability).toBe('iex')
   })
 
+  it('ranks the real asset ahead of a fresher same-ticker synthetic derivative', async () => {
+    const utaManager = {
+      has: async () => true,
+      get: async () => undefined,
+      searchContracts: async () => [
+        {
+          source: 'binance-readonly',
+          contract: {
+            aliceId: 'binance-readonly|AAPL/USDT:USDT',
+            symbol: 'AAPL',
+            secType: 'CRYPTO_PERP',
+          },
+          derivativeSecTypes: ['CRYPTO_PERP'],
+          assetClass: 'crypto',
+        },
+        {
+          source: 'alpaca-paper',
+          contract: { aliceId: 'alpaca-paper|AAPL', symbol: 'AAPL', secType: 'STK' },
+          derivativeSecTypes: [],
+          assetClass: 'equity',
+        },
+      ],
+      getBarCapabilities: async () => ({
+        'binance-readonly': 'realtime',
+        'alpaca-paper': 'iex',
+      }),
+    } as never
+
+    const out = await createBarService(makeDeps({ utaManager })).searchBarSources('AAPL')
+
+    expect(out[0]).toMatchObject({
+      barId: 'alpaca-paper|AAPL',
+      assetClass: 'equity',
+      barCapability: 'iex',
+    })
+    expect(out.findIndex((candidate) => candidate.barId === 'binance-readonly|AAPL/USDT:USDT'))
+      .toBeGreaterThan(out.findIndex((candidate) => candidate.barId === 'yfinance|AAPL'))
+  })
+
   it('survives one side failing (vendor still returns if UTA throws)', async () => {
     const utaManager = {
       has: async () => true,
@@ -339,4 +383,63 @@ describe('searchBarSources — federated candidates', () => {
     expect(out.some((c) => c.source === 'vendor')).toBe(true)
     expect(out.some((c) => c.source === 'uta')).toBe(false)
   })
+})
+
+describe('raw bar contract', () => {
+  it.each([
+    { interval: '2h' }, { interval: '1d', count: 0 }, { interval: '1d', count: 5001 },
+    { interval: '1d', start: '2024-02-30' }, { interval: '1d', start: '2024-02-01', end: '2024-01-01' },
+    { interval: '1d', asOf: '2024-01-01', end: '2024-01-02' },
+  ])('rejects invalid windows before contacting providers: %j', async opts => {
+    const deps = makeDeps()
+    await expect(createBarService(deps).getBars({ symbol: 'AAPL', assetClass: 'equity' }, opts)).rejects.toThrow()
+    expect(deps.equityClient.getHistorical).not.toHaveBeenCalled()
+  })
+  it('honors asOf and explicit lower bounds even when a vendor ignores them', async () => {
+    const result = await createBarService(makeDeps()).getBars({ symbol: 'AAPL', assetClass: 'equity' }, { interval: '1d', start: '2024-01-02', asOf: '2024-01-02' })
+    expect(result.bars.map(bar => bar.date)).toEqual(['2024-01-02'])
+    expect(result.meta).toMatchObject({ interval: '1d', limit: 5000, truncatedRows: 0, asOf: '2024-01-02' })
+  })
+  it('does not label daily commodity vendor prices as intraday', async () => {
+    await expect(createBarService(makeDeps()).getBars({ symbol: 'gold', assetClass: 'commodity' }, { interval: '1h' })).rejects.toThrow('only 1d')
+  })
+})
+
+describe('real-use bar window regressions', () => {
+  it('does not ask for months of data for twenty five-minute candles', async () => {
+    const deps = makeDeps()
+    await createBarService(deps).getBars({ barId: 'yfinance|AAPL', assetClass: 'equity' }, { interval: '5m', count: 20 })
+    const call = vi.mocked(deps.equityClient.getHistorical).mock.calls[0][0]
+    expect(Date.now() - Date.parse(call.start_date as string)).toBeLessThan(12 * 86400000)
+  })
+  it('explains unsupported 4h instead of leaking enum errors or returning daily data', async () => {
+    for (const source of ['yfinance', 'eastmoney', 'twse']) {
+      await expect(createBarService(makeDeps()).getBars({ barId: `${source}|AAPL`, assetClass: 'equity' }, { interval: '4h' })).rejects.toThrow('does not supply 4h')
+    }
+  })
+  it('preserves the full broker end day, filters over-returned bars and keeps midnight timestamps', async () => {
+    const getHistorical = vi.fn(async () => ['2024-01-01T23:00:00Z', '2024-01-02T00:00:00Z', '2024-01-02T23:00:00Z', '2024-01-03T00:00:00Z'].map(timestamp => ({ timestamp, open: '1', high: '2', low: '0', close: '1', volume: '10' })) as unknown as Bar[])
+    const svc = createBarService(makeDeps({ utaManager: { has: async () => true, get: async () => ({ getHistorical }), searchContracts: async () => [] } }))
+    const result = await svc.getBars({ barId: 'test|AAPL' }, { interval: '1h', start: '2024-01-02', asOf: '2024-01-02' })
+    expect(result.bars.map(b => b.date)).toEqual(['2024-01-02T00:00:00.000Z', '2024-01-02T23:00:00.000Z'])
+    expect(getHistorical.mock.calls[0]).toEqual([{ aliceId: 'test|AAPL' }, expect.objectContaining({ end: new Date('2024-01-02T23:59:59.999Z') })])
+  })
+})
+
+it('explains excluded OHLC rows before count selection and respects the requested window', async () => {
+  const service = createBarService(makeDeps())
+  const result = await service.getBars({ symbol: 'AAPL', assetClass: 'equity' }, { interval: '1d', count: 1 })
+  expect(result.bars).toHaveLength(1)
+  expect(result.meta.quality).toMatchObject({ inspectedRows: 4, excludedRows: 1, latestExcludedRecordAt: '2024-01-04', latestExcludedFields: ['open', 'close'] })
+  const historical = await service.getBars({ symbol: 'AAPL', assetClass: 'equity' }, { interval: '1d', end: '2024-01-03' })
+  expect(historical.meta.quality?.excludedRows).toBe(0)
+})
+
+it('refuses ambiguous catalogs and never substitutes another provider', async () => {
+  const deps = makeDeps()
+  deps.marketSearch.cryptoClient.search = vi.fn(async () => [{ symbol: 'AAPL' }]) as never
+  const svc = createBarService(deps)
+  await expect(svc.getBars({ barId: 'yfinance|AAPL' }, { interval: '1d' })).rejects.toThrow(/Cannot uniquely resolve/)
+  await expect(svc.getBars({ barId: 'unavailable|AAPL' }, { interval: '1d' })).rejects.toThrow(/Cannot uniquely resolve/)
+  expect(deps.equityClient.getHistorical).not.toHaveBeenCalled()
 })

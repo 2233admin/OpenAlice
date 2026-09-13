@@ -15,6 +15,8 @@ export interface WorkspaceAcceptanceReceipt {
     readonly cliEnvironmentInjected: boolean
     readonly allCliManifestsLoaded: boolean
     readonly shellCliRoundTrip: boolean
+    readonly scheduledIssueDispatched: boolean
+    readonly scheduledIssueAutoCompleted: boolean
     readonly managedPiAssistantReply: boolean
     readonly managedPiStructuredOutput: boolean
     readonly managedPiDiagnosticCompaction: boolean
@@ -25,6 +27,7 @@ export interface WorkspaceAcceptanceReceipt {
 
 const ACCEPTANCE_MARKER = 'OPENALICE_PACKAGED_WORKSPACE_CLI_ACCEPTANCE'
 const SHELL_ISSUE_ID = 'openalice-shell-cli-contract'
+const SCHEDULED_ISSUE_ID = 'openalice-scheduled-agent-acceptance'
 const AGENT_ISSUE_ID = 'openalice-agent-cli-acceptance'
 const ASSISTANT_TEXT = 'OpenAlice Workspace CLI acceptance completed.'
 
@@ -44,6 +47,7 @@ export async function runRendererWorkspaceAcceptanceSmoke(
     if (!bridge) throw new Error('window.openAlice.pty missing')
     const aiBaseUrl = ${serializedBaseUrl}
     const shellIssueId = '${SHELL_ISSUE_ID}'
+    const scheduledIssueId = '${SCHEDULED_ISSUE_ID}'
     const agentIssueId = '${AGENT_ISSUE_ID}'
     const shellMarker = '__OPENALICE_WORKSPACE_CLI_CONTRACT_OK__'
     const shellFailureMarker = '__OPENALICE_WORKSPACE_CLI_STEP_FAILED__'
@@ -53,6 +57,8 @@ export async function runRendererWorkspaceAcceptanceSmoke(
       cliEnvironmentInjected: false,
       allCliManifestsLoaded: false,
       shellCliRoundTrip: false,
+      scheduledIssueDispatched: false,
+      scheduledIssueAutoCompleted: false,
       managedPiAssistantReply: false,
       managedPiStructuredOutput: false,
       managedPiDiagnosticCompaction: false,
@@ -70,14 +76,28 @@ export async function runRendererWorkspaceAcceptanceSmoke(
       const owner = snapshot?.workspaces?.find((row) => row.wsId === workspaceId)
       return Boolean(owner?.issues?.some((issue) => issue.id === issueId))
     }
-    const waitForHeadlessRun = async (taskId) => {
+    const waitForScheduledRun = async (workspaceId, issueId) => {
       const deadline = Date.now() + 120000
       while (Date.now() < deadline) {
-        const record = await json(await fetch('/api/headless/' + encodeURIComponent(taskId)))
-        if (record.status !== 'running') return record
+        const detail = await json(await fetch(
+          '/api/issues/' + encodeURIComponent(workspaceId) + '/' + encodeURIComponent(issueId),
+        ))
+        const record = detail?.runs?.[0]
+        if (record && record.status !== 'running') return { record, detail }
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
-      throw new Error('managed Pi Automation run timed out: ' + taskId)
+      throw new Error('scheduled managed Pi Automation run timed out: ' + issueId)
+    }
+    const waitForIssueStatus = async (workspaceId, issueId, status) => {
+      const deadline = Date.now() + 10000
+      while (Date.now() < deadline) {
+        const detail = await json(await fetch(
+          '/api/issues/' + encodeURIComponent(workspaceId) + '/' + encodeURIComponent(issueId),
+        ))
+        if (detail?.issue?.status === status) return detail
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      throw new Error('scheduled Issue did not reach status ' + status + ': ' + issueId)
     }
     const decode = (value) => {
       if (typeof value === 'string') return value
@@ -90,18 +110,40 @@ export async function runRendererWorkspaceAcceptanceSmoke(
       let output = ''
       let attachedResolve
       let attachedReject
+      let shellReadyResolve
+      let shellReadyReject
+      let helperReadyResolve
+      let helperReadyReject
       let markerResolve
       let markerReject
+      let scheduledResolve
+      let scheduledReject
+      let scheduledTimer = null
+      let scheduledPending = false
       const attached = new Promise((resolve, reject) => {
         attachedResolve = resolve
         attachedReject = reject
+      })
+      const shellReady = new Promise((resolve, reject) => {
+        shellReadyResolve = resolve
+        shellReadyReject = reject
+      })
+      const helperReady = new Promise((resolve, reject) => {
+        helperReadyResolve = resolve
+        helperReadyReject = reject
       })
       const marker = new Promise((resolve, reject) => {
         markerResolve = resolve
         markerReject = reject
       })
+      const scheduledCreated = new Promise((resolve, reject) => {
+        scheduledResolve = resolve
+        scheduledReject = reject
+      })
       const attachedTimer = setTimeout(() => attachedReject(new Error('PTY attached timeout')), 10000)
-      const markerTimer = setTimeout(() => markerReject(new Error('Workspace CLI contract timeout: ' + output.slice(-4000))), 20000)
+      let shellReadyTimer = null
+      let helperReadyTimer = null
+      let markerTimer = null
       connectionId = bridge.connect({ sessionId, cols: 120, rows: 32 })
       const offMessage = bridge.onMessage(connectionId, (msg) => {
         if (msg.type === 'control') {
@@ -117,6 +159,14 @@ export async function runRendererWorkspaceAcceptanceSmoke(
           return
         }
         output += decode(msg.data)
+        if (output.includes('__OPENALICE_SHELL_READY__')) {
+          if (shellReadyTimer) clearTimeout(shellReadyTimer)
+          shellReadyResolve(output)
+        }
+        if (output.includes('__OPENALICE_STEP_HELPER_READY__')) {
+          if (helperReadyTimer) clearTimeout(helperReadyTimer)
+          helperReadyResolve(output)
+        }
         if (output.includes('__OPENALICE_CLI_ENV_OK__')) checks.cliEnvironmentInjected = true
         if (output.includes('__OPENALICE_CLI_MANIFESTS_OK__')) checks.allCliManifestsLoaded = true
         if (output.includes('__OPENALICE_GIT_OK__')) checks.gitReady = true
@@ -125,17 +175,25 @@ export async function runRendererWorkspaceAcceptanceSmoke(
           markerReject(new Error('Workspace CLI contract step failed: ' + output.slice(-4000)))
         }
         if (output.includes(shellMarker)) {
-          clearTimeout(markerTimer)
+          if (markerTimer) clearTimeout(markerTimer)
           markerResolve(output)
+        }
+        if (output.includes('__OPENALICE_SCHEDULED_ISSUE_OK__')) {
+          if (scheduledTimer) clearTimeout(scheduledTimer)
+          scheduledResolve(output)
         }
       })
       const offClose = bridge.onClose(connectionId, (event) => {
         const error = new Error('PTY closed before Workspace CLI contract completed: ' + event.code + ' ' + event.reason)
         attachedReject(error)
+        shellReadyReject(error)
+        helperReadyReject(error)
         markerReject(error)
+        if (scheduledPending) scheduledReject(error)
       })
       try {
         await attached
+        const shellQuote = (value) => "'" + String(value).replaceAll("'", "'\\\"'\\\"'") + "'"
         const stepHelper = 'oa_step() { oa_label="$1"; shift; oa_output=$("$@" 2>&1); oa_status=$?; if test "$oa_status" -ne 0; then printf "__OPENALICE_WORKSPACE_%s_FAILED__ %s %s\\\\n%s\\\\n" "CLI_STEP" "$oa_label" "$oa_status" "$oa_output"; return "$oa_status"; fi; }'
         const command = [
           'test "$AQ_WS_ID" = "' + workspaceId + '"',
@@ -161,16 +219,58 @@ export async function runRendererWorkspaceAcceptanceSmoke(
           // Split the sentinel so terminal command echo cannot satisfy it.
           "printf '__OPENALICE_%s_OK__\\\\n' 'WORKSPACE_CLI_CONTRACT'",
         ].join(' && ')
-        // Keep each PTY write below the Windows ConPTY input boundary. The
-        // helper is a separate shell line so adding diagnostics cannot
-        // truncate the contract's trailing carriage return.
-        bridge.send(connectionId, new TextEncoder().encode(stepHelper + '\\r'))
+        // PTY attachment means the bridge is connected, not that the login
+        // shell has drawn its prompt or can safely consume multiple writes.
+        // Advance one acknowledged line at a time so a slow Intel runner (or
+        // ConPTY) cannot splice the helper and contract into one command.
+        shellReadyTimer = setTimeout(
+          () => shellReadyReject(new Error('Workspace shell-ready timeout: ' + output.slice(-4000))),
+          10000,
+        )
+        bridge.send(connectionId, new TextEncoder().encode(
+          "printf '__OPENALICE_%s_READY__\\\\n' 'SHELL'\\r",
+        ))
+        await shellReady
+        helperReadyTimer = setTimeout(
+          () => helperReadyReject(new Error('Workspace CLI helper-ready timeout: ' + output.slice(-4000))),
+          10000,
+        )
+        bridge.send(connectionId, new TextEncoder().encode(
+          stepHelper + "; printf '__OPENALICE_%s_READY__\\\\n' 'STEP_HELPER'\\r",
+        ))
+        await helperReady
+        markerTimer = setTimeout(
+          () => markerReject(new Error('Workspace CLI contract timeout: ' + output.slice(-4000))),
+          20000,
+        )
         bridge.send(connectionId, new TextEncoder().encode(command + '\\r'))
         await marker
+        const scheduledAt = new Date(Date.now() + 1500).toISOString()
+        const schedule = JSON.stringify({ kind: 'at', at: scheduledAt })
+        const scheduledWhat =
+          '${ACCEPTANCE_MARKER}: preserve these literal characters & | < > ^ % ! "quoted" 中文, ' +
+          'execute the requested Workspace CLI acceptance action, then report completion.'
+        const scheduledCommand = [
+          'alice-workspace issue create --id ' + scheduledIssueId +
+            ' --title "OpenAlice scheduled agent acceptance"' +
+            ' --assignee @new-each-run --agent pi --when ' + shellQuote(schedule) +
+            ' --what ' + shellQuote(scheduledWhat) + ' >/dev/null',
+          "printf '__OPENALICE_%s_OK__\\\\n' 'SCHEDULED_ISSUE'",
+        ].join(' && ')
+        scheduledTimer = setTimeout(
+          () => scheduledReject(new Error('Scheduled Issue CLI creation timeout: ' + output.slice(-4000))),
+          20000,
+        )
+        scheduledPending = true
+        bridge.send(connectionId, new TextEncoder().encode(scheduledCommand + '\\r'))
+        await scheduledCreated
+        scheduledPending = false
         checks.shellCliRoundTrip = true
       } finally {
+        scheduledPending = false
         clearTimeout(attachedTimer)
         clearTimeout(markerTimer)
+        if (scheduledTimer) clearTimeout(scheduledTimer)
         offMessage()
         offClose()
         if (connectionId) bridge.close(connectionId)
@@ -185,10 +285,21 @@ export async function runRendererWorkspaceAcceptanceSmoke(
       const created = await json(await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tag, template: 'chat', agents: ['shell', 'pi'] }),
+        body: JSON.stringify({ tag, template: 'chat' }),
       }))
       workspaceId = created.workspace.id
       checks.workspaceCreated = true
+
+      await json(await fetch('/api/workspaces/' + encodeURIComponent(workspaceId) + '/agent-config/pi', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          baseUrl: aiBaseUrl,
+          apiKey: 'oa_test_ok',
+          model: 'openalice-workspace-acceptance',
+          wireShape: 'openai-chat',
+        }),
+      }))
 
       const spawned = await json(await fetch('/api/workspaces/' + encodeURIComponent(workspaceId) + '/sessions/spawn', {
         method: 'POST',
@@ -202,29 +313,20 @@ export async function runRendererWorkspaceAcceptanceSmoke(
       if (!issueExists(shellIssues, workspaceId, shellIssueId)) {
         throw new Error('shell CLI issue side effect was not visible through /api/issues')
       }
+      if (!issueExists(shellIssues, workspaceId, scheduledIssueId)) {
+        throw new Error('scheduled Issue was not visible through /api/issues')
+      }
 
-      await json(await fetch('/api/workspaces/' + encodeURIComponent(workspaceId) + '/agent-config/pi', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          baseUrl: aiBaseUrl,
-          apiKey: 'oa_test_ok',
-          model: 'openalice-workspace-acceptance',
-          wireShape: 'openai-chat',
-        }),
-      }))
-
-      const headless = await json(await fetch('/api/workspaces/' + encodeURIComponent(workspaceId) + '/headless', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          agent: 'pi',
-          timeoutMs: 120000,
-          prompt: '${ACCEPTANCE_MARKER}: execute the requested Workspace CLI acceptance action, then report completion.',
-        }),
-      }))
-      const headlessRecord = await waitForHeadlessRun(headless.taskId)
-      const headlessOutput = await json(await fetch('/api/headless/' + encodeURIComponent(headless.taskId) + '/output'))
+      const scheduledRun = await waitForScheduledRun(workspaceId, scheduledIssueId)
+      const headlessRecord = scheduledRun.record
+      if (
+        headlessRecord.issueId !== scheduledIssueId ||
+        headlessRecord.processStarted !== true
+      ) {
+        throw new Error('scheduled Issue did not produce a process-backed run: ' + JSON.stringify(headlessRecord))
+      }
+      checks.scheduledIssueDispatched = true
+      const headlessOutput = await json(await fetch('/api/headless/' + encodeURIComponent(headlessRecord.taskId) + '/output'))
       if (headlessRecord.status !== 'done' || headlessRecord.killed || headlessRecord.exitCode !== 0) {
         throw new Error('managed Pi headless run failed: ' + JSON.stringify({
           status: headlessRecord.status,
@@ -255,6 +357,8 @@ export async function runRendererWorkspaceAcceptanceSmoke(
         throw new Error('managed Pi diagnostic log retained transient updates')
       }
       checks.managedPiDiagnosticCompaction = true
+      await waitForIssueStatus(workspaceId, scheduledIssueId, 'done')
+      checks.scheduledIssueAutoCompleted = true
 
       const agentIssues = await json(await fetch('/api/issues'))
       if (!issueExists(agentIssues, workspaceId, agentIssueId)) {

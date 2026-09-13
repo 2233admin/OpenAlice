@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Moon, RotateCcw, Sun } from 'lucide-react'
-import { api, type AppConfig } from '../api'
+import { useState, useEffect, useCallback, useId, useMemo } from 'react'
+import { ChevronDown, Moon, RotateCcw, Sun } from 'lucide-react'
+import { api } from '../api'
 import type { ToolInfo } from '../api/tools'
 import { Toggle } from '../components/Toggle'
 import { SaveIndicator } from '../components/SaveIndicator'
@@ -20,8 +20,15 @@ import {
   type ThemePreferenceSlot,
 } from '../theme/palettes'
 import { useThemeStore, type AppTheme } from '../theme/store'
+import {
+  UI_STYLE_PROFILES,
+  type UiStyleProfileDefinition,
+  type UiStyleProfileId,
+} from '../theme/styleProfiles'
 import { useEffectivePreferenceSlot } from '../theme/useEffectiveTheme'
 import { AboutOpenAliceSection } from '../components/settings/AboutOpenAliceSection'
+import { Button } from '../components/ui/button'
+import { getBackendConnection } from '../auth/backendConnection'
 
 // ==================== Appearance ====================
 
@@ -31,19 +38,33 @@ function paletteDefinition(id: ThemePaletteId): ThemePaletteDefinition {
   return THEME_PALETTES.find((palette) => palette.id === id)!
 }
 
-export function AppearanceSection() {
+export function AppearanceSection({ standalone = false }: { standalone?: boolean } = {}) {
   const { t } = useTranslation()
   const theme = useThemeStore((s) => s.theme)
   const dayPalette = useThemeStore((s) => s.dayPalette)
   const nightPalette = useThemeStore((s) => s.nightPalette)
+  const uiStyle = useThemeStore((s) => s.uiStyle)
+  const stylePaletteMode = useThemeStore((s) => s.stylePaletteMode)
   const setTheme = useThemeStore((s) => s.setTheme)
   const setDayPalette = useThemeStore((s) => s.setDayPalette)
   const setNightPalette = useThemeStore((s) => s.setNightPalette)
+  const setUiStyle = useThemeStore((s) => s.setUiStyle)
+  const setStylePaletteMode = useThemeStore((s) => s.setStylePaletteMode)
   const effectiveSlot = useEffectivePreferenceSlot()
   const [editingSlot, setEditingSlot] = useState<ThemePreferenceSlot>(effectiveSlot)
   const [paletteFilter, setPaletteFilter] = useState<PaletteLibraryFilter>('recommended')
+  const [customizingPalettes, setCustomizingPalettes] = useState(false)
+  const paletteEditorId = useId()
   const modes: readonly AppTheme[] = ['auto', 'day', 'night']
-  const activePalette = effectiveSlot === 'day' ? dayPalette : nightPalette
+  const activeStyleDefinition: UiStyleProfileDefinition = UI_STYLE_PROFILES.find(
+    (profile) => profile.id === uiStyle,
+  )!
+  const recommendedPalettePair = activeStyleDefinition.recommendedPalettePair
+  const recommendedPaletteApplied = recommendedPalettePair != null && stylePaletteMode === 'recommended'
+  const effectivePalettePair = recommendedPaletteApplied ? recommendedPalettePair : undefined
+  const activePalette = effectiveSlot === 'day'
+    ? effectivePalettePair?.day ?? dayPalette
+    : effectivePalettePair?.night ?? nightPalette
   const activePaletteDefinition = paletteDefinition(activePalette)
   const editingPalette = editingSlot === 'day' ? dayPalette : nightPalette
   const recommendedAppearance = editingSlot === 'day' ? 'light' : 'dark'
@@ -61,20 +82,100 @@ export function AppearanceSection() {
     setPaletteFilter('recommended')
   }
 
+  const editSlot = (slot: ThemePreferenceSlot) => {
+    chooseSlot(slot)
+    setCustomizingPalettes(true)
+  }
+
   const choosePalette = (palette: ThemePaletteId) => {
+    if (recommendedPaletteApplied) setStylePaletteMode('saved')
     if (editingSlot === 'day') setDayPalette(palette)
     else setNightPalette(palette)
   }
 
   const resetPair = () => {
+    if (recommendedPaletteApplied) setStylePaletteMode('saved')
     setDayPalette(DEFAULT_DAY_PALETTE)
     setNightPalette(DEFAULT_NIGHT_PALETTE)
     setPaletteFilter('recommended')
   }
 
-  return (
-    <ConfigSection title={t('settings.appearance.title')} description={t('settings.appearance.description')}>
+  const applyRecommendedPalette = () => {
+    if (!recommendedPalettePair) return
+    setStylePaletteMode(recommendedPaletteApplied ? 'saved' : 'recommended')
+  }
+
+  const content = (
+    <>
       <div className="border-b border-border/60 pb-5">
+        <div>
+          <span className="text-sm font-medium text-foreground">
+            {t('settings.appearance.interfaceStyle')}
+          </span>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+            {t('settings.appearance.interfaceStyleDescription')}
+          </p>
+        </div>
+        <div
+          className="mt-3 grid gap-2.5 sm:grid-cols-3"
+          role="radiogroup"
+          aria-label={t('settings.appearance.interfaceStyle')}
+        >
+          {UI_STYLE_PROFILES.map((profile) => (
+            <StyleProfileCard
+              key={profile.id}
+              profile={profile.id}
+              label={t(profile.labelKey)}
+              description={t(profile.descriptionKey)}
+              selected={uiStyle === profile.id}
+              onSelect={setUiStyle}
+            />
+          ))}
+        </div>
+        {recommendedPalettePair && (
+          <div
+            data-palette-preview={recommendedPalettePair.day}
+            className="oa-palette-preview mt-3 flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-center"
+          >
+            <span className="oa-palette-preview-shell flex h-11 w-full shrink-0 overflow-hidden rounded border sm:w-24" aria-hidden>
+              <span className="oa-palette-preview-sidebar flex w-6 shrink-0 items-center justify-center border-r">
+                <span className="oa-palette-preview-sidebar-dot h-2 w-2 rounded-full" />
+              </span>
+              <span className="oa-palette-preview-canvas flex min-w-0 flex-1 flex-col justify-center gap-1.5 px-2">
+                <span className="oa-palette-preview-primary-line h-1.5 w-3/5 rounded-full" />
+                <span className="oa-palette-preview-muted-line h-1 w-full rounded-full" />
+                <span className="oa-palette-preview-muted-line h-1 w-3/4 rounded-full" />
+              </span>
+            </span>
+            <div className="min-w-0 flex-1">
+              <span className="block text-[12px] font-semibold text-foreground">
+                {t('settings.appearance.recommendedPalette', {
+                  style: t(activeStyleDefinition.labelKey),
+                })}
+              </span>
+              <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground">
+                {t('settings.appearance.recommendedPaletteDescription', {
+                  palette: t(paletteDefinition(recommendedPalettePair.day).labelKey),
+                })}
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={applyRecommendedPalette}
+              aria-pressed={recommendedPaletteApplied}
+              variant={recommendedPaletteApplied ? 'default' : 'outline'}
+              size="sm"
+              className="min-h-10 shrink-0 sm:min-h-8"
+            >
+              {t(recommendedPaletteApplied
+                ? 'settings.appearance.useSavedPalettes'
+                : 'settings.appearance.applyRecommendedPalette')}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="border-b border-border/60 py-5">
         <div>
           <span className="text-sm font-medium text-foreground">
             {t('settings.appearance.colorMode')}
@@ -93,7 +194,7 @@ export function AppearanceSection() {
                 if (mode !== 'auto') chooseSlot(mode)
               }}
               aria-pressed={theme === mode}
-              className={`oa-pressable rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors ${
+              className={`oa-pressable min-h-10 rounded-md border px-3 py-1.5 text-[12px] leading-[18px] font-medium transition-colors sm:min-h-0 ${
                 theme === mode
                   ? 'border-primary bg-primary-muted text-primary'
                   : 'border-border bg-background text-muted-foreground hover:text-foreground'
@@ -105,7 +206,7 @@ export function AppearanceSection() {
         </div>
         <div
           data-palette-preview={activePalette}
-          className="mt-3 inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px]"
+          className="mt-3 inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] leading-[15px]"
           aria-live="polite"
         >
           <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
@@ -116,8 +217,8 @@ export function AppearanceSection() {
             })}
           </span>
           {theme === 'auto' && (
-            <span className="oa-palette-preview-muted shrink-0">
-              · {t('settings.appearance.followsSystem')}
+            <span className="oa-palette-preview-muted ml-1 shrink-0">
+              {t('settings.appearance.followsSystem')}
             </span>
           )}
         </div>
@@ -133,35 +234,48 @@ export function AppearanceSection() {
               {t('settings.appearance.themePairDescription')}
             </p>
           </div>
-          <button
+          <Button
             type="button"
-            onClick={resetPair}
-            disabled={isDefaultPair}
-            className="oa-pressable inline-flex min-h-8 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-45"
+            onClick={() => setCustomizingPalettes((current) => !current)}
+            aria-expanded={customizingPalettes}
+            aria-controls={paletteEditorId}
+            variant="outline"
+            size="sm"
+            className="min-h-10 sm:min-h-8"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
-            {t('settings.appearance.resetPair')}
-          </button>
+            {t(customizingPalettes
+              ? 'settings.appearance.hidePaletteEditor'
+              : 'settings.appearance.customizePalettes')}
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform duration-[var(--motion-fast)] ${customizingPalettes ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </Button>
         </div>
 
-        <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-3">
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:gap-3">
           <PaletteSlotCard
             slot="day"
             palette={paletteDefinition(dayPalette)}
             active={effectiveSlot === 'day'}
             editing={editingSlot === 'day'}
-            onSelect={() => chooseSlot('day')}
+            onSelect={() => editSlot('day')}
           />
           <PaletteSlotCard
             slot="night"
             palette={paletteDefinition(nightPalette)}
             active={effectiveSlot === 'night'}
             editing={editingSlot === 'night'}
-            onSelect={() => chooseSlot('night')}
+            onSelect={() => editSlot('night')}
           />
         </div>
 
-        <div className="mt-4 rounded-xl border border-border/70 bg-secondary/35 p-3 sm:p-4">
+        <div
+          id={paletteEditorId}
+          hidden={!customizingPalettes}
+          inert={!customizingPalettes ? true : undefined}
+          className="mt-4 border-t border-border/60 pt-4"
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <span className="text-sm font-medium text-foreground">
@@ -171,26 +285,39 @@ export function AppearanceSection() {
                 {t('settings.appearance.paletteLibraryDescription')}
               </p>
             </div>
-            <div
-              className="inline-flex rounded-md border border-border bg-background p-0.5"
-              role="group"
-              aria-label={t('settings.appearance.paletteFilter')}
-            >
-              {(['recommended', 'all'] as const).map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => setPaletteFilter(filter)}
-                  aria-pressed={paletteFilter === filter}
-                  className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                    paletteFilter === filter
-                      ? 'bg-primary-muted text-primary'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {t(`settings.appearance.paletteFilterOption.${filter}`)}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                onClick={resetPair}
+                disabled={isDefaultPair}
+                variant="outline"
+                size="sm"
+                className="min-h-10 text-muted-foreground sm:min-h-8"
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                {t('settings.appearance.resetPair')}
+              </Button>
+              <div
+                className="inline-flex rounded-md border border-border bg-background p-0.5"
+                role="group"
+                aria-label={t('settings.appearance.paletteFilter')}
+              >
+                {(['recommended', 'all'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setPaletteFilter(filter)}
+                    aria-pressed={paletteFilter === filter}
+                    className={`min-h-10 rounded px-2.5 py-1 text-[11px] font-medium transition-colors sm:min-h-0 ${
+                      paletteFilter === filter
+                        ? 'bg-primary-muted text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {t(`settings.appearance.paletteFilterOption.${filter}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -204,7 +331,53 @@ export function AppearanceSection() {
         </div>
       </div>
 
+    </>
+  )
+
+  if (standalone) return content
+
+  return (
+    <ConfigSection title={t('settings.appearance.title')} description={t('settings.appearance.description')}>
+      {content}
     </ConfigSection>
+  )
+}
+
+function StyleProfileCard({
+  profile,
+  label,
+  description,
+  selected,
+  onSelect,
+}: {
+  profile: UiStyleProfileId
+  label: string
+  description: string
+  selected: boolean
+  onSelect: (profile: UiStyleProfileId) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={label}
+      data-ui-style-preview={profile}
+      data-selected={selected}
+      onClick={() => onSelect(profile)}
+      className="oa-style-profile-card oa-pressable min-h-24 min-w-0 border border-border bg-background p-2.5 text-left"
+    >
+      <span className="oa-style-profile-preview flex h-10 overflow-hidden border border-border bg-card" aria-hidden>
+        <span className="oa-style-profile-rail w-3.5 shrink-0 border-r border-border bg-sidebar" />
+        <span className="flex min-w-0 flex-1 flex-col gap-1 p-1.5">
+          <span className="oa-style-profile-toolbar h-1.5 w-full bg-muted" />
+          <span className="oa-style-profile-row h-2 w-4/5 border border-border bg-background" />
+          <span className="oa-style-profile-row h-2 w-3/5 border border-border bg-background" />
+        </span>
+      </span>
+      <span className="mt-2 block text-[12px] font-semibold text-foreground">{label}</span>
+      <span className="mt-0.5 block text-[10.5px] leading-snug text-muted-foreground">{description}</span>
+    </button>
   )
 }
 
@@ -234,38 +407,38 @@ function PaletteSlotCard({
         palette: t(palette.labelKey),
       })}
       onClick={onSelect}
-      className="oa-palette-preview oa-pressable min-w-0 rounded-xl border p-3 text-left shadow-sm transition-[border-color,box-shadow,transform]"
+      className="oa-palette-preview oa-pressable min-w-0 rounded-lg border p-2.5 text-left shadow-sm transition-[border-color,box-shadow,transform] sm:p-3"
     >
-      <span className="flex min-w-0 items-start justify-between gap-3">
+      <span className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
         <span className="min-w-0">
-          <span className="flex items-center gap-1.5 text-[11px] font-medium">
+          <span className="flex items-center gap-1.5 text-[11px] leading-[15px] font-medium">
             <Icon className="h-3.5 w-3.5" />
             {t(`theme.mode.${slot}`)}
           </span>
           <span className="mt-1 block truncate text-[14px] font-semibold">{t(palette.labelKey)}</span>
-          <span className="oa-palette-preview-muted mt-0.5 block text-[10.5px] leading-snug">
+          <span className="oa-palette-preview-muted mt-0.5 hidden text-[10.5px] leading-snug sm:block">
             {t(palette.descriptionKey)}
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1">
           {active && (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-[9px] font-semibold text-primary-foreground">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] leading-[14px] font-semibold text-primary-foreground">
               {t('settings.appearance.activeSlot')}
             </span>
           )}
           {editing && (
-            <span className="rounded-full border border-primary/35 bg-primary/10 px-2 py-0.5 text-[9px] font-semibold text-primary">
+            <span className="rounded-full border border-primary/35 bg-primary/10 px-2 py-0.5 text-[10px] leading-[14px] font-semibold text-primary">
               {t('settings.appearance.editingSlot')}
             </span>
           )}
         </span>
       </span>
-      <span className="mt-3 flex items-center gap-1.5" aria-hidden>
-        <span className="h-2.5 flex-1 rounded-sm bg-primary" />
-        <span className="h-2.5 flex-1 rounded-sm bg-success" />
-        <span className="h-2.5 flex-1 rounded-sm bg-warning" />
-        <span className="h-2.5 flex-1 rounded-sm bg-destructive" />
-        <span className="h-2.5 flex-1 rounded-sm bg-ai-action" />
+      <span className="mt-2.5 flex items-center gap-1 sm:mt-3 sm:gap-1.5" aria-hidden>
+        <span className="h-2 flex-1 rounded-sm bg-primary sm:h-2.5" />
+        <span className="h-2 flex-1 rounded-sm bg-success sm:h-2.5" />
+        <span className="h-2 flex-1 rounded-sm bg-warning sm:h-2.5" />
+        <span className="h-2 flex-1 rounded-sm bg-destructive sm:h-2.5" />
+        <span className="h-2 flex-1 rounded-sm bg-ai-action sm:h-2.5" />
       </span>
     </button>
   )
@@ -357,26 +530,28 @@ function PalettePicker({
 
 // ==================== Language ====================
 
-function LanguageSection() {
+export function LanguageSection() {
   const { t } = useTranslation()
   const locale = useLocale()
   const setLocale = useSetLocale()
   return (
     <ConfigSection title={t('settings.language.title')} description={t('settings.language.description')}>
-      <div className="flex flex-wrap gap-2 py-1">
+      <div
+        className="flex flex-wrap gap-2 py-1"
+        role="group"
+        aria-label={t('settings.language.title')}
+      >
         {(['en', 'zh', 'ja', 'zh-Hant'] as const).map((l) => (
-          <button
+          <Button
             key={l}
             type="button"
             onClick={() => setLocale(l)}
-            className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-              locale === l
-                ? 'border-primary text-primary bg-primary/10'
-                : 'border-border text-muted-foreground hover:text-foreground'
-            }`}
+            aria-pressed={locale === l}
+            variant={locale === l ? 'secondary' : 'outline'}
+            className={`min-h-10 sm:min-h-8 ${locale === l ? 'text-primary' : 'text-muted-foreground'}`}
           >
             {LOCALE_LABELS[l]}
-          </button>
+          </Button>
         ))}
       </div>
     </ConfigSection>
@@ -388,6 +563,7 @@ function LanguageSection() {
 export function DataHomeSection() {
   const { t } = useTranslation()
   const bridge = window.openAlice?.dataHome
+  const backendConnection = getBackendConnection()
   const [status, setStatus] = useState<OpenAliceDataHomeStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -407,13 +583,21 @@ export function DataHomeSection() {
         description={t('settings.dataHome.description')}
       >
         <div className="rounded-lg border border-border/60 bg-secondary/50 px-3 py-3">
-          <p className="text-[13px] text-foreground">{t('settings.dataHome.browserOnly')}</p>
-          <p className="mt-2 break-all font-mono text-[12px] text-muted-foreground">
-            openalice start --home &lt;path&gt;
-          </p>
-          <p className="mt-1 break-all font-mono text-[12px] text-muted-foreground">
-            pnpm dev -- --home &lt;path&gt;
-          </p>
+          {backendConnection.kind === 'remote' ? (
+            <p className="text-[13px] leading-relaxed text-foreground">
+              {t('settings.dataHome.remoteManaged')}
+            </p>
+          ) : (
+            <>
+              <p className="text-[13px] text-foreground">{t('settings.dataHome.browserOnly')}</p>
+              <p className="mt-2 break-all font-mono text-[12px] leading-[18px] text-muted-foreground">
+                openalice start --home &lt;path&gt;
+              </p>
+              <p className="mt-1 break-all font-mono text-[12px] leading-[18px] text-muted-foreground">
+                pnpm dev -- --home &lt;path&gt;
+              </p>
+            </>
+          )}
         </div>
       </ConfigSection>
     )
@@ -459,16 +643,16 @@ export function DataHomeSection() {
     >
       <div className="rounded-lg border border-border/60 bg-secondary/50 px-3 py-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-[12px] font-medium text-muted-foreground">
             {t('settings.dataHome.current')}
           </p>
           {status && (
-            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] leading-[14px] text-muted-foreground">
               {t(`settings.dataHome.source.${status.source}`)}
             </span>
           )}
         </div>
-        <p data-testid="data-home-current" className="mt-1 break-all font-mono text-[12px] text-foreground">
+        <p data-testid="data-home-current" className="mt-1 break-all font-mono text-[12px] leading-[18px] text-foreground">
           {status?.currentHome ?? t('settings.dataHome.loading')}
         </p>
         <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
@@ -477,28 +661,31 @@ export function DataHomeSection() {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
-          className="btn-secondary-sm"
+          variant="outline"
+          size="sm"
+          className="min-h-10 sm:min-h-8"
           disabled={!status || busy}
           onClick={() => void bridge.openCurrent()
             .then((message) => { if (message) setError(t('settings.dataHome.openError')) })
             .catch(() => setError(t('settings.dataHome.openError')))}
         >
           {t('settings.dataHome.open')}
-        </button>
-        <button
+        </Button>
+        <Button
           data-testid="data-home-choose"
           type="button"
-          className="btn-primary-sm"
+          size="sm"
+          className="min-h-10 sm:min-h-8"
           disabled={!status || busy || restarting || status.selectionLocked}
           onClick={() => void runAction(() => bridge.chooseAndRestart())}
         >
           {restarting ? t('settings.dataHome.restarting') : t('settings.dataHome.chooseAndRestart')}
-        </button>
+        </Button>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
+      <div className="mt-4 flex min-h-12 items-center justify-between gap-4 rounded-lg border border-border/60 px-3 py-2.5">
         <div className="flex-1">
           <p className="text-[13px] font-medium text-foreground">{t('settings.dataHome.askOnStartup')}</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -515,23 +702,25 @@ export function DataHomeSection() {
 
       {recentHomes.length > 0 && (
         <div className="mt-4">
-          <p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="mb-2 text-[12px] font-medium text-muted-foreground">
             {t('settings.dataHome.recent')}
           </p>
           <div className="space-y-2">
             {recentHomes.map((path) => (
-              <div key={path} className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground" title={path}>
+              <div key={path} className="flex min-h-12 items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[18px] text-foreground" title={path}>
                   {path}
                 </span>
-                <button
+                <Button
                   type="button"
-                  className="btn-secondary-sm shrink-0"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-10 shrink-0 sm:min-h-8"
                   disabled={busy || restarting || status?.selectionLocked}
                   onClick={() => void runAction(() => bridge.useRecentAndRestart(path))}
                 >
                   {t('settings.dataHome.useAndRestart')}
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -622,10 +811,10 @@ function WorkspaceShellSection() {
         </Field>
       )}
       <div className="rounded-lg border border-border/60 bg-secondary/50 px-3 py-2.5 mb-3">
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <p className="text-[12px] font-medium text-muted-foreground">
           {t('settings.workspaceShell.resolved')}
         </p>
-        <p className="mt-1 break-all font-mono text-[12px] text-foreground">
+        <p className="mt-1 break-all font-mono text-[12px] leading-[18px] text-foreground">
           {status.resolvedPath ?? t('settings.workspaceShell.notFound')}
         </p>
         <p className={`mt-1 text-[11px] ${status.valid ? 'text-success' : 'text-destructive'}`}>
@@ -635,14 +824,15 @@ function WorkspaceShellSection() {
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <button
+        <Button
           type="button"
-          className="btn-primary-sm"
+          size="sm"
+          className="min-h-10 sm:min-h-8"
           disabled={saving || (mode === 'custom' && customPath.trim().length === 0)}
           onClick={() => void save()}
         >
           {saving ? t('settings.workspaceShell.saving') : t('settings.workspaceShell.save')}
-        </button>
+        </Button>
         {error && <span className="text-[11px] text-destructive">{error}</span>}
       </div>
     </ConfigSection>
@@ -652,19 +842,10 @@ function WorkspaceShellSection() {
 // ==================== Settings Section ====================
 
 function SettingsSection() {
-  const { t } = useTranslation()
-  const [config, setConfig] = useState<AppConfig | null>(null)
-
-  useEffect(() => {
-    api.config.load().then(setConfig).catch(() => {})
-  }, [])
-
-  if (!config) return <PageLoading />
-
   return (
     <div className="mx-auto w-full max-w-[1100px]">
-      {/* Appearance */}
-      <AppearanceSection />
+      {/* Installation + current AliceProject identity */}
+      <AboutOpenAliceSection />
 
       {/* Language */}
       <LanguageSection />
@@ -674,91 +855,7 @@ function SettingsSection() {
 
       {/* Windows-only workspace shell */}
       <WorkspaceShellSection />
-
-      {/* Persona */}
-      <ConfigSection title={t('settings.persona.title')} description={t('settings.persona.description')}>
-        <PersonaEditor />
-      </ConfigSection>
-
-      {/* Runtime version + manual update entry point */}
-      <AboutOpenAliceSection />
     </div>
-  )
-}
-
-// ==================== Persona Editor ====================
-
-function PersonaEditor() {
-  const { t } = useTranslation()
-  const [content, setContent] = useState('')
-  const [filePath, setFilePath] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [dirty, setDirty] = useState(false)
-
-  useEffect(() => {
-    api.persona.get()
-      .then(({ content, path }) => {
-        setContent(content)
-        setFilePath(path)
-      })
-      .catch(() => setError(t('settings.persona.loadError')))
-      .finally(() => setLoading(false))
-  }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    setError(null)
-    setSaved(false)
-    try {
-      await api.persona.update(content)
-      setDirty(false)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch {
-      setError(t('settings.persona.saveError'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (loading) return <div className="text-sm text-muted-foreground">{t('settings.persona.loading')}</div>
-
-  return (
-    <>
-      <textarea
-        className={`${inputClass} min-h-[200px] max-h-[400px] resize-y font-mono text-xs leading-relaxed`}
-        value={content}
-        onChange={(e) => { setContent(e.target.value); setDirty(true) }}
-      />
-      <div className="flex items-center gap-2 mt-2">
-        <button
-          onClick={handleSave}
-          disabled={saving || !dirty}
-          className="btn-primary-sm"
-        >
-          {saving ? t('settings.persona.saving') : t('settings.persona.save')}
-        </button>
-        {saved && (
-          <span className="inline-flex items-center gap-1.5 text-[11px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            <span className="text-muted-foreground">{t('settings.persona.saved')}</span>
-          </span>
-        )}
-        {error && (
-          <span className="inline-flex items-center gap-1.5 text-[11px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
-            <span className="text-destructive">{error}</span>
-          </span>
-        )}
-        {dirty && !saved && !error && (
-          <span className="text-[11px] text-muted-foreground">{t('settings.persona.unsaved')}</span>
-        )}
-      </div>
-      {filePath && <p className="text-[11px] text-muted-foreground mt-1">{filePath}</p>}
-    </>
   )
 }
 
@@ -769,7 +866,7 @@ interface ToolGroup {
   tools: ToolInfo[]
 }
 
-function ToolsSection() {
+export function ToolsSection() {
   const { t } = useTranslation()
   const groupLabel = (key: string): string => {
     switch (key) {
@@ -789,15 +886,25 @@ function ToolsSection() {
   const [inventory, setInventory] = useState<ToolInfo[]>([])
   const [disabled, setDisabled] = useState<Set<string>>(new Set())
   const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    api.tools.load().then((res) => {
+  const loadTools = useCallback(async () => {
+    setLoaded(false)
+    setLoadError(false)
+    try {
+      const res = await api.tools.load()
       setInventory(res.inventory)
       setDisabled(new Set(res.disabled))
       setLoaded(true)
-    }).catch(() => {})
+    } catch {
+      setLoadError(true)
+    }
   }, [])
+
+  useEffect(() => {
+    void loadTools()
+  }, [loadTools])
 
   const groups = useMemo<ToolGroup[]>(() => {
     const map = new Map<string, ToolInfo[]>()
@@ -854,7 +961,16 @@ function ToolsSection() {
   return (
     <div className="mx-auto w-full max-w-[1100px]">
       {!loaded ? (
-        <PageLoading />
+        loadError ? (
+          <div role="alert" className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="text-sm font-medium text-foreground">{t('settings.tools.loadError')}</p>
+            <Button type="button" variant="outline" size="sm" className="mt-4 min-h-10 sm:min-h-8" onClick={() => void loadTools()}>
+              {t('common.retry')}
+            </Button>
+          </div>
+        ) : (
+          <PageLoading />
+        )
       ) : groups.length === 0 ? (
         <EmptyState title={t('settings.tools.emptyTitle')} description={t('settings.tools.emptyDescription')} />
       ) : (
@@ -908,19 +1024,23 @@ function ToolGroupCard({
 }: ToolGroupCardProps) {
   const enabledCount = group.tools.filter((t) => !disabled.has(t.name)).length
   const noneEnabled = enabledCount === 0
+  const toolListId = useId()
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       {/* Group header */}
       <div className="flex items-center gap-3 px-4 py-2.5 bg-secondary">
         <button
+          type="button"
           onClick={onToggleExpanded}
-          className="flex items-center gap-2 flex-1 text-left min-w-0"
+          className="-my-2.5 flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md py-2.5 text-left focus-visible:outline-none focus-visible:[box-shadow:var(--oa-focus-shadow)]"
+          aria-expanded={expanded}
+          aria-controls={toolListId}
         >
           <svg
             width="14" height="14" viewBox="0 0 24 24"
             fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className={`shrink-0 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+            className={`shrink-0 transition-transform duration-[var(--motion-fast)] ${expanded ? 'rotate-90' : ''}`}
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
@@ -930,6 +1050,7 @@ function ToolGroupCard({
           </span>
         </button>
         <Toggle
+          ariaLabel={`${label} tools`}
           size="sm"
           checked={!noneEnabled}
           onChange={(v) => onToggleGroup(group.tools, v)}
@@ -938,9 +1059,10 @@ function ToolGroupCard({
 
       {/* Tool list */}
       <div
-        className={`transition-all duration-150 ${
-          expanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
-        } overflow-hidden`}
+        id={toolListId}
+        aria-hidden={!expanded}
+        inert={!expanded ? true : undefined}
+        hidden={!expanded}
       >
         <div className="divide-y divide-border">
           {group.tools.map((t) => {
@@ -948,12 +1070,12 @@ function ToolGroupCard({
             return (
               <div
                 key={t.name}
-                className={`flex items-center gap-3 px-4 py-2 ${
+                className={`flex min-h-12 items-center gap-3 px-4 py-2 ${
                   enabled ? '' : 'opacity-50'
                 }`}
               >
                 <div className="flex-1 min-w-0">
-                  <span className="text-[13px] text-foreground font-mono">{t.name}</span>
+                  <span className="text-[13px] leading-[18px] text-foreground font-mono">{t.name}</span>
                   {t.description && (
                     <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
                       {t.description}
@@ -961,6 +1083,7 @@ function ToolGroupCard({
                   )}
                 </div>
                 <Toggle
+                  ariaLabel={t.name}
                   size="sm"
                   checked={enabled}
                   onChange={() => onToggleTool(t.name)}
@@ -974,44 +1097,42 @@ function ToolGroupCard({
   )
 }
 
-// ==================== Page ====================
-
-type Tab = 'settings' | 'tools'
-
-const TABS: { key: Tab; labelKey: 'settings.tab.settings' | 'settings.tab.tools' }[] = [
-  { key: 'settings', labelKey: 'settings.tab.settings' },
-  { key: 'tools', labelKey: 'settings.tab.tools' },
-]
-
 export function SettingsPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<Tab>('settings')
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <PageHeader title={t('settings.title')} />
+      <PageHeader title={t('settings.category.general')} />
+      <SettingsScrollArea className="px-4 py-5 md:px-8">
+        <SettingsSection />
+      </SettingsScrollArea>
+    </div>
+  )
+}
 
-      <div className="px-4 md:px-6 border-b border-border/60">
-        <div className="flex gap-1">
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setTab(item.key)}
-              className={`px-3 py-2 text-sm font-medium transition-colors relative ${
-                tab === item.key ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {t(item.labelKey)}
-              {tab === item.key && (
-                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t" />
-              )}
-            </button>
-          ))}
+export function AppearanceSettingsPage() {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <PageHeader title={t('settings.appearance.title')} />
+      <SettingsScrollArea className="px-4 py-5 md:px-8">
+        <div className="mx-auto w-full max-w-[1100px]">
+          <AppearanceSection standalone />
         </div>
-      </div>
+      </SettingsScrollArea>
+    </div>
+  )
+}
 
-      <SettingsScrollArea className="px-4 py-6 md:px-8">
-        {tab === 'settings' ? <SettingsSection /> : <ToolsSection />}
+export function ToolsSettingsPage() {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <PageHeader title={t('settings.category.tools')} />
+      <SettingsScrollArea className="px-4 py-5 md:px-8">
+        <ToolsSection />
       </SettingsScrollArea>
     </div>
   )

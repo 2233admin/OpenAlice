@@ -42,7 +42,8 @@ Options:
   --ai-credential <slug>
                       Run a real, two-turn conversation using one credential
                       from Alice's local vault (never copied into the image)
-  --ai-agent <id>     claude (default), codex, opencode, or pi
+  --ai-agent <id>     claude (default), codex, grok, opencode, or pi
+                      grok is PATH-detected only and is not pinned in the image
   --keep              Keep the container, volume, and owned image for debugging
   --keep-image        Keep only the temporary image built by this run
   -h, --help          Show this help
@@ -223,8 +224,8 @@ async function runCredentialedConversation(baseUrl, workspaceId, agent, model) {
     resumeId: first.resumeId,
     prompt: [
       'Use the Bash tool to run these commands in order:',
-      `alice-workspace issue create --title "${issueId}" --what "Docker CLI marker ${dataMarker}"`,
-      `alice-workspace issue show --id "${issueId}"`,
+      `alice issue create --title "${issueId}" --what "Docker CLI marker ${dataMarker}"`,
+      `alice issue show --id "${issueId}"`,
       `Only if the second command output contains ${dataMarker}, reply exactly: CLI_DATA_OK ${dataMarker}`,
     ].join('\n'),
   })
@@ -437,7 +438,6 @@ try {
     body: JSON.stringify({
       tag: `docker-smoke-${suffix}`,
       template: 'chat',
-      agents: ['shell', ...(aiCredential ? [aiAgent] : [])],
     }),
   }, 201)
   const workspaceId = created?.workspace?.id

@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { api, type ToolCallRecord } from '../api'
+import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from 'lucide-react'
+import { api, type AgentConversationRecord, type ToolCallRecord } from '../api'
 import { getIntlLocale } from '../lib/intl'
-import { Skeleton } from '../components/StateViews'
+import { AgentRuntimeIcon } from '../lib/agentRuntimeIcon'
+import { EmptyState, Skeleton } from '../components/StateViews'
+import { SegmentedControl } from '../components/SegmentedControl'
+import { Button } from '../components/ui/button'
 
 // ==================== Helpers ====================
 
@@ -36,6 +40,12 @@ function statusColor(status: string): string {
   return status === 'error' ? 'text-destructive' : 'text-success'
 }
 
+function conversationStatusColor(status: AgentConversationRecord['status']): string {
+  if (status === 'failed' || status === 'interrupted') return 'text-destructive'
+  if (status === 'running') return 'text-warning'
+  return 'text-success'
+}
+
 /** Try to pretty-print JSON output, fall back to raw string. */
 function formatOutput(output: string): string {
   try {
@@ -57,6 +67,7 @@ function ToolCallLogSection() {
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [toolNames, setToolNames] = useState<string[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -72,8 +83,10 @@ function ToolCallLogSection() {
       setPage(result.page)
       setTotalPages(result.totalPages)
       setTotal(result.total)
+      setFailed(false)
     } catch (err) {
       console.warn('Failed to load tool calls:', err)
+      setFailed(true)
     } finally {
       setLoading(false)
     }
@@ -109,7 +122,7 @@ function ToolCallLogSection() {
 
   const goToPage = useCallback((p: number) => {
     fetchPage(p, nameFilter || undefined)
-    containerRef.current?.scrollTo(0, 0)
+    containerRef.current?.scrollTo?.(0, 0)
   }, [fetchPage, nameFilter])
 
   return (
@@ -119,7 +132,7 @@ function ToolCallLogSection() {
         <select
           value={nameFilter}
           onChange={(e) => handleNameChange(e.target.value)}
-          className="bg-muted text-foreground text-sm rounded-md border border-border px-2 py-1.5 outline-none focus:border-primary"
+          className="oa-field-control h-8 rounded-md border border-input bg-muted px-2 text-sm text-foreground outline-none"
         >
           <option value="">All tools</option>
           {toolNames.map((n) => (
@@ -127,21 +140,25 @@ function ToolCallLogSection() {
           ))}
         </select>
 
-        <button
+        <Button
+          type="button"
+          variant="outline"
           onClick={() => setPaused(!paused)}
-          className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${
+          className={`text-xs ${
             paused
               ? 'border-warning-border text-warning hover:bg-warning-background'
-              : 'border-border text-muted-foreground hover:bg-muted'
+              : 'text-muted-foreground'
           }`}
         >
           {paused ? 'Resume' : 'Pause'}
-        </button>
+        </Button>
 
         <span className="text-xs text-muted-foreground ml-auto">
-          {total > 0
-            ? `Page ${page} of ${totalPages} \u00b7 ${total} calls`
-            : '0 calls'
+          {failed && entries.length === 0
+            ? 'Tool calls unavailable'
+            : total > 0
+              ? `Page ${page} of ${totalPages} — ${total} calls`
+              : '0 calls'
           }
           {nameFilter && ' (filtered)'}
         </span>
@@ -154,6 +171,24 @@ function ToolCallLogSection() {
       >
         {loading && entries.length === 0 ? (
           <LogRowsSkeleton />
+        ) : failed && entries.length === 0 ? (
+          <div
+            role="alert"
+            className="flex h-full min-h-64 flex-col items-center justify-center gap-3 px-6 text-center font-sans"
+          >
+            <div>
+              <p className="text-sm font-medium text-foreground">Could not load tool calls</p>
+              <p className="mt-1 text-xs text-muted-foreground">The read-only audit log was not changed.</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void fetchPage(page, nameFilter || undefined)}
+              className="text-xs text-muted-foreground"
+            >
+              Retry
+            </Button>
+          </div>
         ) : entries.length === 0 ? (
           <div className="px-4 py-8 text-center text-muted-foreground">No tool calls yet</div>
         ) : (
@@ -180,37 +215,49 @@ function ToolCallLogSection() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 shrink-0">
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            aria-label="First page"
             onClick={() => goToPage(1)}
             disabled={page <= 1 || loading}
-            className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            &laquo;&laquo;
-          </button>
-          <button
+            <ChevronFirst />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            aria-label="Previous page"
             onClick={() => goToPage(page - 1)}
             disabled={page <= 1 || loading}
-            className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            &laquo;
-          </button>
+            <ChevronLeft />
+          </Button>
           <span className="text-xs text-muted-foreground px-2">
             {page} / {totalPages}
           </span>
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            aria-label="Next page"
             onClick={() => goToPage(page + 1)}
             disabled={page >= totalPages || loading}
-            className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            &raquo;
-          </button>
-          <button
+            <ChevronRight />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            aria-label="Last page"
             onClick={() => goToPage(totalPages)}
             disabled={page >= totalPages || loading}
-            className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            &raquo;&raquo;
-          </button>
+            <ChevronLast />
+          </Button>
         </div>
       )}
     </div>
@@ -235,21 +282,24 @@ function ToolCallRow({ record }: { record: ToolCallRecord }) {
         <td className={`px-3 py-1.5 text-center ${statusColor(record.status)}`}>{record.status}</td>
         <td className="px-3 py-1.5 text-muted-foreground truncate max-w-0">
           {inputPreview}
-          <span className="ml-1 text-primary">{expanded ? '\u25be' : '\u25b8'}</span>
+          <ChevronRight
+            aria-hidden
+            className={`ml-1 inline size-3 text-primary transition-transform duration-110 motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}
+          />
         </td>
       </tr>
       {expanded && (
         <tr className="border-t border-border/30">
           <td colSpan={6} className="px-3 py-2 space-y-2">
             <div>
-              <span className="text-muted-foreground text-[11px] uppercase tracking-wide">Input</span>
-              <pre className="text-muted-foreground whitespace-pre-wrap break-all bg-muted rounded p-2 text-[11px] mt-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Input</span>
+              <pre className="mt-1 rounded-md bg-muted p-2 text-[11px] leading-[15px] text-muted-foreground whitespace-pre-wrap break-all">
                 {JSON.stringify(record.input, null, 2)}
               </pre>
             </div>
             <div>
-              <span className="text-muted-foreground text-[11px] uppercase tracking-wide">Output</span>
-              <pre className="text-muted-foreground whitespace-pre-wrap break-all bg-muted rounded p-2 text-[11px] mt-1 max-h-64 overflow-y-auto">
+              <span className="text-[11px] font-medium text-muted-foreground">Output</span>
+              <pre className="mt-1 max-h-64 overflow-y-auto rounded-md bg-muted p-2 text-[11px] leading-[15px] text-muted-foreground whitespace-pre-wrap break-all">
                 {formatOutput(record.output)}
               </pre>
             </div>
@@ -260,10 +310,339 @@ function ToolCallRow({ record }: { record: ToolCallRecord }) {
   )
 }
 
-export function LogsPage() {
+// ==================== Agent Conversation Log ====================
+
+const CONVERSATION_PAGE_SIZE = 50
+
+function sourceLabel(source: AgentConversationRecord['source']): string {
+  if (source.kind === 'human') return 'Human'
+  if (source.kind === 'workspace') return source.workspaceId
+  return `${source.workspaceId} / ${source.agent}`
+}
+
+function targetLabel(target: AgentConversationRecord['target']): string {
+  return `${target.workspaceId} / ${target.agent}`
+}
+
+function requestedTargetLabel(target: AgentConversationRecord['requestedTarget']): string {
+  switch (target.kind) {
+    case 'resume':
+      return `Session ${target.resumeId}`
+    case 'workspace':
+      return `Workspace ${target.workspaceId}`
+    case 'harness':
+      return `Harness ${target.harness}`
+    case 'inbox':
+      return `Inbox ${target.inboxEntryId}`
+    case 'issue':
+      return `Issue ${target.workspaceId}/${target.issueId}`
+    case 'report':
+      return `Report ${target.workspaceId}/${target.path}`
+    case 'trade-decision':
+      return `Trade decision ${target.accountId}/${target.decisionId}`
+  }
+}
+
+function ConversationLogSection() {
+  const [entries, setEntries] = useState<AgentConversationRecord[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const fetchPage = useCallback(async (nextPage: number) => {
+    setLoading(true)
+    try {
+      const result = await api.agentConversations.query({
+        page: nextPage,
+        pageSize: CONVERSATION_PAGE_SIZE,
+      })
+      setEntries(result.entries)
+      setPage(result.page)
+      setTotalPages(result.totalPages)
+      setTotal(result.total)
+      setFailed(false)
+    } catch (error) {
+      console.warn('Failed to load Agent conversations:', error)
+      setFailed(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void fetchPage(1) }, [fetchPage])
+
+  useEffect(() => {
+    if (paused || page !== 1) return
+    const interval = setInterval(() => { void fetchPage(1) }, 3000)
+    return () => clearInterval(interval)
+  }, [paused, page, fetchPage])
+
+  const goToPage = useCallback((nextPage: number) => {
+    void fetchPage(nextPage)
+    containerRef.current?.scrollTo?.(0, 0)
+  }, [fetchPage])
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 px-4 md:px-6 py-5">
-      <ToolCallLogSection />
+    <div className="flex flex-col gap-3 min-h-0 flex-1">
+      <div className="flex items-center gap-3 shrink-0">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setPaused((value) => !value)}
+          className={`text-xs ${
+            paused
+              ? 'border-warning-border text-warning hover:bg-warning-background'
+              : 'text-muted-foreground'
+          }`}
+        >
+          {paused ? 'Resume live updates' : 'Pause live updates'}
+        </Button>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {total > 0 ? `Page ${page} of ${totalPages} — ${total} conversations` : '0 conversations'}
+        </span>
+      </div>
+
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 bg-background rounded-lg border border-border overflow-auto"
+      >
+        {loading && entries.length === 0 ? (
+          <LogRowsSkeleton />
+        ) : failed && entries.length === 0 ? (
+          <div className="flex h-full min-h-64 flex-col items-center justify-center gap-3 px-6 text-center">
+            <div>
+              <p className="text-sm font-medium text-foreground">Could not load Agent conversations</p>
+              <p className="mt-1 text-xs text-muted-foreground">The private log was not changed.</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void fetchPage(page)}
+              className="text-xs text-muted-foreground"
+            >
+              Retry
+            </Button>
+          </div>
+        ) : entries.length === 0 ? (
+          <EmptyState
+            title="No Agent conversations yet"
+            description="Messages dispatched between Workspaces will appear here."
+          />
+        ) : (
+          <table className="w-full min-w-[760px] text-xs">
+            <thead className="sticky top-0 z-10 bg-secondary">
+              <tr className="text-left text-muted-foreground">
+                <th className="w-32 px-3 py-2">Time</th>
+                <th className="w-40 px-3 py-2">From</th>
+                <th className="w-40 px-3 py-2">To</th>
+                <th className="w-32 px-3 py-2">Resolution</th>
+                <th className="w-20 px-3 py-2">Status</th>
+                <th className="px-3 py-2">Prompt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((record) => (
+                <ConversationRow key={record.taskId} record={record} />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {failed && entries.length > 0 && (
+        <div className="text-xs text-warning" role="status">
+          Refresh failed; showing the last successful page.
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1 || loading}
+            className="text-xs text-muted-foreground"
+          >
+            Previous
+          </Button>
+          <span className="px-2 text-xs text-muted-foreground">{page} / {totalPages}</span>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages || loading}
+            className="text-xs text-muted-foreground"
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ConversationRow({ record }: { record: AgentConversationRecord }) {
+  const [expanded, setExpanded] = useState(false)
+  const preview = record.prompt.original.replace(/\s+/g, ' ').trim()
+  const promptChanged = record.prompt.original !== record.prompt.delivered
+
+  return (
+    <>
+      <tr className="border-t border-border/50 align-top hover:bg-muted/30">
+        <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
+          {formatDateTime(record.dispatchedAt)}
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5 font-medium text-foreground">
+            {record.source.kind === 'session' && (
+              <AgentRuntimeIcon agentId={record.source.agent} className="size-4 shrink-0" />
+            )}
+            <span>{sourceLabel(record.source)}</span>
+          </div>
+          <div className="mt-0.5 font-mono text-[10px] leading-[14px] text-muted-foreground">{record.source.kind}</div>
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5 font-medium text-foreground">
+            <AgentRuntimeIcon agentId={record.target.agent} className="size-4 shrink-0" />
+            <span>{targetLabel(record.target)}</span>
+          </div>
+          <div className="mt-0.5 font-mono text-[10px] leading-[14px] text-muted-foreground">{record.target.resumeId}</div>
+        </td>
+        <td className="px-3 py-2">
+          <div className="text-foreground">
+            {record.resolution.mode === 'exact' ? 'Exact session' : 'Reconstructed provenance'}
+          </div>
+          {record.prompt.mode === 'reconstruction' && (
+            <div className="mt-1 inline-flex rounded-full border border-warning-border bg-warning-background px-1.5 py-0.5 text-[10px] leading-[14px] text-warning">
+              Guidance injected
+            </div>
+          )}
+        </td>
+        <td className={`px-3 py-2 font-medium ${conversationStatusColor(record.status)}`}>
+          {record.status}
+          {record.durationMs !== undefined && (
+            <div className="mt-0.5 font-normal text-[10px] text-muted-foreground">
+              {formatDuration(record.durationMs)}
+            </div>
+          )}
+        </td>
+        <td className="px-3 py-2">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="oa-nav-row flex w-full items-start gap-2 rounded-md px-1 py-0.5 text-left text-muted-foreground hover:text-foreground focus-visible:outline-none"
+          >
+            <span className="min-w-0 flex-1 line-clamp-2">{preview}</span>
+            <ChevronRight
+              aria-hidden
+              className={`mt-0.5 size-3.5 shrink-0 text-primary transition-transform duration-110 motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}
+            />
+          </button>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-t border-border/30 bg-muted/10">
+          <td colSpan={6} className="px-4 py-4">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <ConversationTextPanel title="Original prompt" text={record.prompt.original} />
+              {promptChanged ? (
+                <ConversationTextPanel
+                  title="Delivered prompt — reconstruction guidance applied"
+                  text={record.prompt.delivered}
+                  tone="warning"
+                />
+              ) : (
+                <ConversationTextPanel
+                  title={record.status === 'running' ? 'Agent reply — running' : 'Agent reply'}
+                  text={record.assistantText ?? record.error ?? 'No reply recorded.'}
+                  tone={record.error ? 'error' : 'default'}
+                />
+              )}
+              {promptChanged && (
+                <ConversationTextPanel
+                  title={record.status === 'running' ? 'Agent reply — running' : 'Agent reply'}
+                  text={record.assistantText ?? record.error ?? 'No reply recorded.'}
+                  tone={record.error ? 'error' : 'default'}
+                />
+              )}
+              <div className="rounded-lg border border-border/70 bg-background p-3">
+                <div className="text-[10px] leading-[14px] font-semibold text-muted-foreground">
+                  Routing
+                </div>
+                <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 font-mono text-[11px] leading-[15px]">
+                  <dt className="text-muted-foreground">Requested</dt>
+                  <dd className="break-all text-foreground">{requestedTargetLabel(record.requestedTarget)}</dd>
+                  <dt className="text-muted-foreground">Task</dt>
+                  <dd className="break-all text-foreground">{record.taskId}</dd>
+                  <dt className="text-muted-foreground">Resume</dt>
+                  <dd className="break-all text-foreground">{record.target.resumeId}</dd>
+                  {record.parentTaskId && (
+                    <>
+                      <dt className="text-muted-foreground">Parent</dt>
+                      <dd className="break-all text-foreground">{record.parentTaskId}</dd>
+                    </>
+                  )}
+                  {record.resolution.reason && (
+                    <>
+                      <dt className="text-muted-foreground">Reason</dt>
+                      <dd className="break-all text-foreground">{record.resolution.reason}</dd>
+                    </>
+                  )}
+                </dl>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function ConversationTextPanel({
+  title,
+  text,
+  tone = 'default',
+}: {
+  title: string
+  text: string
+  tone?: 'default' | 'warning' | 'error'
+}) {
+  const toneClass = tone === 'warning'
+    ? 'border-warning-border bg-warning-background/30'
+    : tone === 'error'
+      ? 'border-destructive/30 bg-destructive/5'
+      : 'border-border/70 bg-background'
+  return (
+    <section className={`min-w-0 rounded-lg border p-3 ${toneClass}`}>
+      <h3 className="text-[10px] leading-[14px] font-semibold text-muted-foreground">{title}</h3>
+      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-foreground">
+        {text}
+      </pre>
+    </section>
+  )
+}
+
+export function LogsPage() {
+  const [view, setView] = useState<'tool-calls' | 'agent-conversations'>('agent-conversations')
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 gap-4 px-4 md:px-6 py-5">
+      <SegmentedControl
+        value={view}
+        onChange={setView}
+        ariaLabel="Log type"
+        options={[
+          { value: 'agent-conversations', label: 'Agent conversations' },
+          { value: 'tool-calls', label: 'Tool calls' },
+        ]}
+      />
+      {view === 'agent-conversations' ? <ConversationLogSection /> : <ToolCallLogSection />}
     </div>
   )
 }

@@ -7,8 +7,9 @@
  *
  * Runtime-specific request knobs do not belong here. `reasoning` records the
  * model contract; Pi/opencode project that contract into their native custom-
- * model capability bit, while every adapter projects a resolved effort into
- * its own native field only when the registry or user supplies one.
+ * model capability bit, while every adapter projects effort into its own
+ * native field only when the user explicitly selects one. A documented
+ * provider default is descriptive metadata, never an implicit launch value.
  */
 
 export type ModelReasoningMode = 'none' | 'optional' | 'adaptive' | 'required'
@@ -21,8 +22,9 @@ export type ModelReasoningEffort =
   | 'high'
   | 'xhigh'
   | 'max'
+  | 'ultra'
 
-export const MODEL_REASONING_EFFORTS: readonly ModelReasoningEffort[] = [
+export const MODEL_REASONING_EFFORTS = [
   'none',
   'minimal',
   'low',
@@ -30,7 +32,8 @@ export const MODEL_REASONING_EFFORTS: readonly ModelReasoningEffort[] = [
   'high',
   'xhigh',
   'max',
-]
+  'ultra',
+] as const satisfies readonly ModelReasoningEffort[]
 
 export function isModelReasoningEffort(value: unknown): value is ModelReasoningEffort {
   return typeof value === 'string' && MODEL_REASONING_EFFORTS.includes(value as ModelReasoningEffort)
@@ -76,13 +79,17 @@ const GEMINI_3_CONTEXT = 1_048_576
  * Facts are sourced from provider documentation and live compatibility checks:
  *
  * - OpenAI model/reasoning guides: https://developers.openai.com/api/docs/guides/latest-model
- * - Anthropic extended/adaptive thinking: https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
- * - Gemini thinking: https://ai.google.dev/gemini-api/docs/generate-content/thinking
- * - MiniMax Anthropic API: https://platform.minimax.io/docs/api-reference/text-anthropic-api
- * - MiniMax OpenAI `reasoning_split`: https://platform.minimax.io/docs/api-reference/text-openai-api
- * - Kimi thinking models: https://platform.kimi.ai/docs/guide/use-kimi-k2-thinking-model
+ * - Anthropic Opus 5 and effort: https://platform.claude.com/docs/en/about-claude/models/whats-new-opus-5
+ * - Gemini latest models/thinking: https://ai.google.dev/gemini-api/docs/latest-model
+ * - MiniMax M3/Anthropic API: https://platform.minimax.io/docs/api-reference/text-chat-anthropic
+ * - MiniMax OpenAI `reasoning_split`: https://platform.minimax.io/docs/api-reference/text-chat-openai
+ * - Kimi K3/reasoning effort: https://www.kimi.com/help/kimi-api/api-model-selection
+ * - DeepSeek models/limits: https://api-docs.deepseek.com/quick_start/pricing
  * - DeepSeek thinking: https://api-docs.deepseek.com/guides/thinking_mode
  * - LongCat Chat API: https://longcat.chat/platform/docs/api/chat.html
+ * - xAI Grok 4.6 reasoning: https://docs.x.ai/developers/model-capabilities/text/reasoning
+ * - OpenRouter Claude Code / Anthropic skin: https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration
+ * - OpenRouter model slugs: https://openrouter.ai/models
  *
  * GLM 5.2's reasoning capability is also covered by the provider announcement;
  * its exact context limit is intentionally omitted because public surfaces do
@@ -102,6 +109,16 @@ export const MODEL_SEMANTICS_BY_VENDOR: Registry = {
     },
     'claude-opus-4-8': {
       contextWindow: 1_000_000,
+      reasoning: {
+        mode: 'adaptive',
+        efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
+    },
+    'claude-opus-5': {
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
       reasoning: {
         mode: 'adaptive',
         efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -136,7 +153,7 @@ export const MODEL_SEMANTICS_BY_VENDOR: Registry = {
     'gpt-5.6': { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: OPENAI_56_REASONING },
     'gpt-5.6-sol': { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: OPENAI_56_REASONING },
     'gpt-5.6-terra': { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: OPENAI_56_REASONING },
-    'gpt-5.6-luna': { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: OPENAI_56_REASONING },
+    'gpt-5.6-luna': { contextWindow: 400_000, maxOutputTokens: 128_000, reasoning: OPENAI_56_REASONING },
     'gpt-5.5': {
       contextWindow: 1_050_000,
       maxOutputTokens: 128_000,
@@ -156,7 +173,43 @@ export const MODEL_SEMANTICS_BY_VENDOR: Registry = {
       },
     },
   },
+  xai: {
+    'grok-4.6': {
+      contextWindow: 500_000,
+      reasoning: {
+        mode: 'required',
+        efforts: ['low', 'medium', 'high', 'xhigh'],
+        defaultEffort: 'high',
+      },
+    },
+    'grok-4.5': {
+      contextWindow: 500_000,
+      reasoning: {
+        mode: 'required',
+        efforts: ['low', 'medium', 'high'],
+        defaultEffort: 'high',
+      },
+    },
+  },
   google: {
+    'gemini-3.6-flash': {
+      contextWindow: GEMINI_3_CONTEXT,
+      maxOutputTokens: 65_536,
+      reasoning: {
+        mode: 'adaptive',
+        efforts: ['medium', 'high'],
+        defaultEffort: 'medium',
+      },
+    },
+    'gemini-3.5-flash-lite': {
+      contextWindow: GEMINI_3_CONTEXT,
+      maxOutputTokens: 65_536,
+      reasoning: {
+        mode: 'adaptive',
+        efforts: ['minimal', 'medium', 'high'],
+        defaultEffort: 'minimal',
+      },
+    },
     'gemini-3.5-flash': {
       contextWindow: GEMINI_3_CONTEXT,
       maxOutputTokens: 65_536,
@@ -223,7 +276,20 @@ export const MODEL_SEMANTICS_BY_VENDOR: Registry = {
     'glm-5.2': { reasoning: { mode: 'adaptive', efforts: ['high', 'max'] } },
   },
   kimi: {
+    'kimi-k3': {
+      contextWindow: 1_048_576,
+      reasoning: {
+        mode: 'required',
+        efforts: ['low', 'high', 'max'],
+        defaultEffort: 'max',
+        interleaved: true,
+      },
+    },
     'kimi-k2.7-code': {
+      contextWindow: 256_000,
+      reasoning: { mode: 'required', interleaved: true },
+    },
+    'kimi-k2.7-code-highspeed': {
       contextWindow: 256_000,
       reasoning: { mode: 'required', interleaved: true },
     },
@@ -233,6 +299,16 @@ export const MODEL_SEMANTICS_BY_VENDOR: Registry = {
     },
   },
   deepseek: {
+    'deepseek-v4-flash': {
+      contextWindow: 1_000_000,
+      maxOutputTokens: 384_000,
+      reasoning: {
+        mode: 'optional',
+        efforts: ['low', 'high', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
+    },
     'deepseek-v4-pro': {
       contextWindow: 1_000_000,
       maxOutputTokens: 384_000,
@@ -250,6 +326,122 @@ export const MODEL_SEMANTICS_BY_VENDOR: Registry = {
       // LongCat documents thinking as enabled by default, but does not expose
       // provider-native effort tiers. Keep that distinct from an effort value.
       reasoning: { mode: 'optional', defaultEnabled: true },
+    },
+  },
+  openrouter: {
+    // OpenRouter slugs are `origin/id`. Facts below match the origin vendor
+    // entries for the same generation when those exist; unknown pasted IDs
+    // stay unregistered.
+    'anthropic/claude-sonnet-5': {
+      contextWindow: 1_000_000,
+      reasoning: {
+        mode: 'adaptive',
+        efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
+    },
+    'anthropic/claude-opus-5': {
+      contextWindow: 1_000_000,
+      maxOutputTokens: 128_000,
+      reasoning: {
+        mode: 'adaptive',
+        efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
+    },
+    'anthropic/claude-fable-5': {
+      contextWindow: 1_000_000,
+      reasoning: {
+        mode: 'required',
+        efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
+    },
+    'openai/gpt-5.6-sol': {
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+      reasoning: OPENAI_56_REASONING,
+    },
+    'openai/gpt-5.6-terra': {
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+      reasoning: OPENAI_56_REASONING,
+    },
+    'openai/gpt-5.6-luna': {
+      contextWindow: 400_000,
+      maxOutputTokens: 128_000,
+      reasoning: OPENAI_56_REASONING,
+    },
+    'deepseek/deepseek-v4-flash-0731': {
+      contextWindow: 1_000_000,
+      maxOutputTokens: 384_000,
+      reasoning: {
+        mode: 'optional',
+        efforts: ['low', 'high', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
+    },
+    'tencent/hy3': {
+      contextWindow: 262_144,
+      reasoning: {
+        mode: 'optional',
+        efforts: ['none', 'low', 'high'],
+        defaultEffort: 'none',
+      },
+    },
+    'z-ai/glm-5.2': {
+      reasoning: { mode: 'adaptive', efforts: ['high', 'max'] },
+    },
+    'xiaomi/mimo-v2.5': {
+      contextWindow: 1_048_576,
+    },
+    'minimax/minimax-m3': {
+      contextWindow: 1_000_000,
+      reasoning: { mode: 'adaptive', interleaved: true },
+    },
+    'x-ai/grok-4.6': {
+      contextWindow: 500_000,
+      reasoning: {
+        mode: 'required',
+        efforts: ['low', 'medium', 'high', 'xhigh'],
+        defaultEffort: 'high',
+      },
+    },
+    // Gemini 3.7 Flash is current on OpenRouter (2026-08-14) and is not yet
+    // the first-party Gemini catalog default. Register the advertised 1M
+    // window; effort tiers follow the 3.x Flash family until Google publishes
+    // a distinct 3.7 contract.
+    'google/gemini-3.7-flash': {
+      contextWindow: GEMINI_3_CONTEXT,
+      maxOutputTokens: 65_536,
+      reasoning: {
+        mode: 'adaptive',
+        efforts: ['medium', 'high'],
+        defaultEffort: 'medium',
+      },
+    },
+    'moonshotai/kimi-k3': {
+      contextWindow: 1_048_576,
+      reasoning: {
+        mode: 'required',
+        efforts: ['low', 'high', 'max'],
+        defaultEffort: 'max',
+        interleaved: true,
+      },
+    },
+    'deepseek/deepseek-v4-pro': {
+      contextWindow: 1_000_000,
+      maxOutputTokens: 384_000,
+      reasoning: {
+        mode: 'optional',
+        efforts: ['high', 'max'],
+        defaultEffort: 'high',
+        interleaved: true,
+      },
     },
   },
 }

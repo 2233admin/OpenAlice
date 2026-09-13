@@ -37,6 +37,8 @@ export interface AgentRuntimeReadinessRow {
   readonly displayName: string
   readonly installed: boolean
   readonly binPath: string | null
+  /** Binary identity this probe result was produced against. */
+  readonly fingerprint?: string | null
   readonly status: AgentRuntimeReadinessStatus
   readonly ready: boolean
   readonly source: AgentRuntimeReadinessSource
@@ -52,6 +54,64 @@ export interface AgentRuntimeReadinessSnapshot {
   readonly checkedAt: string | null;
 }
 
+export interface AgentRuntimeReadinessProbeInFlight {
+  readonly identity: string
+  readonly epoch: symbol
+  readonly promise: Promise<AgentRuntimeReadinessRow>
+}
+
+export interface AgentRuntimeReadinessProbeAuthority {
+  readonly identity: string
+  readonly epoch: symbol
+}
+
+function runtimeReadinessProbeIdentity(
+  agent: string,
+  availability: AgentAvailability | undefined,
+): string {
+  return JSON.stringify([
+    agent,
+    availability?.installed ?? true,
+    availability?.path ?? null,
+    availability?.fingerprint ?? null,
+  ])
+}
+
+/** Share only probes that target the same executable identity. A package
+ * manager may replace a binary in place while the old probe is still running;
+ * that fresh path/fingerprint must start its own probe instead of inheriting
+ * the result Promise for the retired executable. */
+export function shareRuntimeReadinessProbe(
+  inFlight: Map<string, AgentRuntimeReadinessProbeInFlight>,
+  authority: Map<string, AgentRuntimeReadinessProbeAuthority>,
+  agent: string,
+  availability: AgentAvailability | undefined,
+  start: (mayPublish: () => boolean) => Promise<AgentRuntimeReadinessRow>,
+): Promise<AgentRuntimeReadinessRow> {
+  const identity = runtimeReadinessProbeIdentity(agent, availability)
+  const existing = inFlight.get(agent)
+  if (
+    existing?.identity === identity
+    && authority.get(agent)?.epoch === existing.epoch
+  ) {
+    return existing.promise
+  }
+
+  // Identity is repeatable (A -> B -> A), so it cannot itself be publication
+  // authority. Every newly started probe gets a unique epoch that outlives its
+  // in-flight entry; only the latest epoch may publish to the cache.
+  const epoch = Symbol(`${agent}:runtime-readiness-probe`)
+  authority.set(agent, { identity, epoch })
+  const promise = start(() => authority.get(agent)?.epoch === epoch)
+  const entry = { identity, epoch, promise }
+  inFlight.set(agent, entry)
+  const clear = () => {
+    if (inFlight.get(agent) === entry) inFlight.delete(agent)
+  }
+  void promise.then(clear, clear)
+  return promise
+}
+
 export function initialRuntimeReadinessRow(
   adapter: CliAdapter,
   availability: AgentAvailability | undefined,
@@ -62,6 +122,7 @@ export function initialRuntimeReadinessRow(
     displayName: adapter.displayName,
     installed,
     binPath: availability?.path ?? null,
+    fingerprint: availability?.fingerprint ?? null,
     status: installed ? 'unknown' : 'not_installed',
     ready: false,
     source: 'unknown',
@@ -87,11 +148,38 @@ export function checkingRuntimeReadinessRow(row: AgentRuntimeReadinessRow): Agen
 export function snapshotRuntimeReadiness(
   adapters: readonly CliAdapter[],
   availability: Record<string, AgentAvailability>,
-  cache: ReadonlyMap<string, AgentRuntimeReadinessRow>,
+  cache: Map<string, AgentRuntimeReadinessRow>,
+  authority?: Map<string, AgentRuntimeReadinessProbeAuthority>,
 ): AgentRuntimeReadinessSnapshot {
-  const rows = adapters.map((adapter) =>
-    cache.get(adapter.id) ?? initialRuntimeReadinessRow(adapter, availability[adapter.id]),
-  );
+  const rows = adapters.map((adapter) => {
+    const freshAvailability = availability[adapter.id]
+    const fresh = initialRuntimeReadinessRow(adapter, freshAvailability);
+    const activeAuthority = authority?.get(adapter.id)
+    if (
+      activeAuthority
+      && activeAuthority.identity !== runtimeReadinessProbeIdentity(adapter.id, freshAvailability)
+      && authority?.get(adapter.id) === activeAuthority
+    ) {
+      // Discovery is authoritative even while a probe is running. Retiring
+      // the epoch prevents a late result for a replaced or uninstalled binary
+      // from repopulating the cache after this snapshot invalidates it.
+      authority.delete(adapter.id)
+    }
+    const cached = cache.get(adapter.id);
+    if (
+      cached
+      && cached.installed === fresh.installed
+      && cached.binPath === fresh.binPath
+      && (cached.fingerprint ?? null) === (fresh.fingerprint ?? null)
+    ) {
+      return cached;
+    }
+    // Discovery is authoritative for install identity. A probe made against a
+    // prior executable must not survive an install, uninstall, PATH change, or
+    // in-place package-manager replacement.
+    cache.set(adapter.id, fresh);
+    return fresh;
+  });
   const checked = rows
     .map((row) => row.checkedAt)
     .filter((value): value is string => value !== null)
@@ -112,6 +200,7 @@ export function notInstalledRuntimeReadinessRow(
     displayName: adapter.displayName,
     installed: false,
     binPath: availability?.path ?? null,
+    fingerprint: availability?.fingerprint ?? null,
     status: 'not_installed',
     ready: false,
     source: 'unknown',
@@ -133,6 +222,7 @@ export function readyRuntimeReadinessRow(opts: {
     displayName: opts.adapter.displayName,
     installed: true,
     binPath: opts.availability?.path ?? null,
+    fingerprint: opts.availability?.fingerprint ?? null,
     status: 'ready',
     ready: true,
     source: opts.source,
@@ -154,21 +244,26 @@ export function failedRuntimeReadinessRow(opts: {
     displayName: opts.adapter.displayName,
     installed: true,
     binPath: opts.availability?.path ?? null,
+    fingerprint: opts.availability?.fingerprint ?? null,
     status,
     ready: false,
     source: opts.source ?? 'unknown',
     checkedAt: new Date().toISOString(),
     durationMs: opts.result.durationMs,
-    repairTarget: repairTargetForStatus(status, opts.adapter.id),
+    repairTarget: repairTargetForStatus(status, opts.adapter),
     message: summarizeRuntimeReadinessFailure(opts.result, status),
   };
 }
 
 export function classifyRuntimeReadinessFailure(
-  result: Pick<HeadlessTaskResult, 'killed' | 'exitCode' | 'stdoutTail' | 'stderrTail' | 'assistantText'>,
+  result: Pick<
+    HeadlessTaskResult,
+    'killed' | 'exitCode' | 'stdoutTail' | 'stderrTail' | 'assistantText' | 'structured'
+  >,
 ): AgentRuntimeReadinessStatus {
   if (result.killed) return 'timeout';
-  const text = `${result.stderrTail}\n${result.stdoutTail}`.toLowerCase();
+  const structuredError = latestStructuredRuntimeError(result);
+  const text = `${structuredError ?? ''}\n${result.stderrTail}\n${result.stdoutTail}`.toLowerCase();
   if (/\b(unauthorized|unauthorised|forbidden|401|403|oauth|log in|login|sign in|signin|auth|authentication|not authenticated)\b/.test(text)) {
     return 'auth_required';
   }
@@ -176,6 +271,10 @@ export function classifyRuntimeReadinessFailure(
     return 'provider_required';
   }
   if (result.exitCode !== 0) return 'failed';
+  // Some CLIs exit 0 after reporting an in-band provider/runtime error. That
+  // is a recognized failure, not an unknown output shape. Preserve it so the
+  // launch surface can show the actual provider response (for example 429).
+  if (structuredError) return 'failed';
   if (!result.assistantText?.trim()) return 'output_unrecognized';
   return 'failed';
 }
@@ -187,12 +286,18 @@ export function runtimeProbeSucceeded(result: HeadlessTaskResult): boolean {
 
 function repairTargetForStatus(
   status: AgentRuntimeReadinessStatus,
-  agentId: string,
+  adapter: CliAdapter,
 ): AgentRuntimeRepairTarget {
   if (status === 'auth_required') {
-    return agentId === 'claude' || agentId === 'codex' ? 'cli-login' : 'ai-provider';
+    return adapter.capabilities.aiProvider?.credentialSource === 'runtime-or-workspace'
+      ? 'cli-login'
+      : 'ai-provider';
   }
-  if (status === 'provider_required') return 'ai-provider';
+  if (status === 'provider_required') {
+    return adapter.capabilities.aiProvider?.credentialSource === 'runtime-or-workspace'
+      ? 'cli-login'
+      : 'ai-provider';
+  }
   if (status === 'not_installed') return 'runtime-install';
   return 'retry';
 }
@@ -207,13 +312,27 @@ function summarizeRuntimeReadinessFailure(
   if (status === 'output_unrecognized') {
     return 'The runtime exited successfully, but OpenAlice could not read an assistant reply from its structured output.';
   }
-  const tail = `${result.stderrTail || result.stdoutTail}`.trim().replace(/\s+/g, ' ');
+  const structuredError = latestStructuredRuntimeError(result);
+  const tail = `${structuredError || result.stderrTail || result.stdoutTail}`.trim().replace(/\s+/g, ' ');
   const detail = tail ? ` ${tail.slice(0, 280)}` : '';
   if (status === 'auth_required') {
     return `The runtime appears to need CLI login or authentication.${detail}`;
   }
   if (status === 'provider_required') {
-    return `The runtime appears to need provider or API-key configuration.${detail}`;
+    return `The runtime appears to need native CLI login or provider configuration.${detail}`;
+  }
+  if (structuredError) {
+    return `The runtime reported an error:${detail}`;
   }
   return `The runtime readiness probe failed.${detail}`;
+}
+
+function latestStructuredRuntimeError(
+  result: Pick<HeadlessTaskResult, 'structured'>,
+): string | null {
+  for (let index = result.structured.blocks.length - 1; index >= 0; index -= 1) {
+    const block = result.structured.blocks[index];
+    if (block?.type === 'error' && block.message.trim()) return block.message.trim();
+  }
+  return null;
 }

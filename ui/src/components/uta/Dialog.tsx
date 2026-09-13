@@ -1,27 +1,58 @@
-import { useCallback, useEffect } from 'react'
+import { useRef, type ReactNode, type RefObject } from 'react'
 
-/** Generic modal dialog used by the UTA wizard + edit flows. */
-export function Dialog({ onClose, width, children }: {
+import {
+  Dialog as DialogPrimitive,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
+
+/** Generic modal dialog used by settings, Workspace, and UTA flows. */
+export function Dialog({
+  onClose,
+  width,
+  ariaLabel,
+  mobileFullscreen = false,
+  initialFocusRef,
+  children,
+}: {
   onClose: () => void
   width?: string
-  children: React.ReactNode
+  ariaLabel: string
+  mobileFullscreen?: boolean
+  initialFocusRef?: RefObject<HTMLElement | null>
+  children: ReactNode
 }) {
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose()
-  }, [onClose])
-
-  useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
+  const restoreFocusRef = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
 
   return (
-    // z-[60] keeps dialogs above the mobile nav drawers (z-50).
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="oa-dialog-backdrop absolute inset-0 bg-backdrop" onClick={onClose} />
-      <div className={`oa-dialog-surface relative ${width || 'w-full sm:w-[560px]'} max-w-[95vw] max-h-[85vh] bg-background rounded-xl border border-border shadow-2xl flex flex-col overflow-hidden`}>
+    <DialogPrimitive
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent
+        aria-modal="true"
+        aria-describedby={undefined}
+        showCloseButton={false}
+        initialFocus={initialFocusRef}
+        finalFocus={restoreFocusRef}
+        className={cn(
+          'flex flex-col gap-0 overflow-hidden p-0',
+          width || 'w-full sm:w-[560px]',
+          mobileFullscreen
+            ? 'h-full max-h-none max-w-none rounded-none sm:h-auto sm:max-h-[85vh] sm:max-w-[95vw] sm:rounded-2xl'
+            : 'max-h-[85vh] max-w-[95vw] rounded-2xl',
+        )}
+      >
+        <DialogTitle className="sr-only">{ariaLabel}</DialogTitle>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </DialogPrimitive>
   )
 }

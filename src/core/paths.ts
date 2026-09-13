@@ -52,7 +52,7 @@ export function runtimePath(...parts: string[]): string {
   return resolve(USER_DATA_HOME, 'runtime', ...parts)
 }
 
-/** Path under `default/` — shipped templates (persona, heartbeat, skills). */
+/** Path under `default/` — shipped compatibility assets and skills. */
 export function defaultPath(...parts: string[]): string {
   return resolve(APP_RESOURCES_HOME, 'default', ...parts)
 }
@@ -72,7 +72,7 @@ export function uiBundlePath(): string {
  * default/ does: dev points to repo source, packaged points to wherever
  * the bundler copied the templates inside .app/Contents/Resources/.
  *
- * `build.files` in package.json ships `src/workspaces/templates/**`, so the
+ * `build.extraResources` in package.json ships `src/workspaces/templates/**`, so the
  * `.mjs` bootstraps + their READMEs land in the packaged .app.
  */
 export function templatesPath(): string {
@@ -87,7 +87,7 @@ export function templatesPath(): string {
  *
  * Rides APP_RESOURCES_HOME exactly like templatesPath(): repo source in dev,
  * the bundler-copied location in a packaged .app. The same packaging caveat
- * applies — build.files in package.json must ship `src/workspaces/cli/**`.
+ * applies — build.extraResources in package.json must ship `src/workspaces/cli/**`.
  */
 export function cliBinPath(): string {
   return resolve(APP_RESOURCES_HOME, 'src', 'workspaces', 'cli', 'bin')

@@ -1,4 +1,5 @@
 import type { InboxEntry } from '../api/inbox'
+import { inboxScan } from '../lib/inbox-presentation'
 
 /**
  * Inbox threading.
@@ -50,22 +51,14 @@ export function groupThreads(entries: readonly InboxEntry[]): InboxThread[] {
 }
 
 /**
- * Second-line preview text for a sidebar row — the latest push's comment
- * first line, else its first doc path. Mirrors the per-entry preview the
- * flat list used.
+ * Scan subject for one push. Presentation-only; the stored comments stay
+ * intact. Empty comments/docs return '' so callers can apply their own
+ * untitled fallback.
  */
 export function previewForEntry(entry: InboxEntry): string {
-  const c = (entry.comments ?? '').trim()
-  if (c) {
-    const firstLine = c.split('\n').find((l) => l.trim().length > 0) ?? ''
-    return firstLine.replace(/^[#>*\-]+\s*/, '').trim()
-  }
-  if (entry.docs && entry.docs.length > 0) {
-    const d = entry.docs[0]
-    if (d) {
-      const suffix = entry.docs.length > 1 ? ` · +${entry.docs.length - 1} more` : ''
-      return `📄 ${d.path}${suffix}`
-    }
-  }
-  return ''
+  return inboxScan(entry, {
+    untitled: '',
+    unreadLabel: '',
+    moreAttachments: (count) => `+${count}`,
+  }).subject
 }

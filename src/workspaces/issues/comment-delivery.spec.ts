@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { WorkspaceConversationControl } from '../../core/workspace-tool-center.js'
-import { dispatchIssueCommentReply, recordIssueCommentReply } from './comment-delivery.js'
+import { dispatchIssueCommentReply, issueCommentReplyPrompt, recordIssueCommentReply } from './comment-delivery.js'
 import { appendIssueComment, readIssueComments, type IssueComment } from './comments.js'
 import type { IssueRecord } from './declaration.js'
 import { createIssue } from './mutate.js'
@@ -45,13 +45,102 @@ function conversation(result: Awaited<ReturnType<WorkspaceConversationControl['a
   } as unknown as WorkspaceConversationControl
 }
 
+describe('issueCommentReplyPrompt', () => {
+  it('wraps an ordinary comment in the historical default', () => {
+    expect(issueCommentReplyPrompt({
+      issueWorkspaceId: 'ws-home',
+      issue: issue('@resume-owner'),
+      comment,
+    })).toContain('Issue ws-home/audit (Audit the close)')
+    expect(issueCommentReplyPrompt({
+      issueWorkspaceId: 'ws-home',
+      issue: issue('@resume-owner'),
+      comment,
+    })).toContain('What changed?')
+  })
+
+  it('uses a stored commentPrompt template as the whole Input Prompt', () => {
+    expect(issueCommentReplyPrompt({
+      issueWorkspaceId: 'ws-home',
+      issue: { ...issue('@resume-owner'), commentPrompt: '{comment}' },
+      comment,
+    })).toBe('What changed?')
+  })
+})
+
 describe('dispatchIssueCommentReply', () => {
-  it('keeps workspace-owned Issues as notes without recruiting a worker', async () => {
+  it.each([undefined, '15m', '60m'] as const)('uses the Issue timeout %s for owner replies', async (timeout) => {
+    const ask = vi.fn(async () => ({ status: 'dispatched', taskId: 'run-reply', resumeId: 'resume-owner' }))
+    await dispatchIssueCommentReply({
+      conversation: { ask } as unknown as WorkspaceConversationControl,
+      issueWorkspaceId: 'ws-home', issue: { ...issue('@resume-owner'), timeout }, comment,
+      source: { kind: 'human' },
+    })
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({
+      timeoutMs: timeout === undefined ? undefined : timeout === '15m' ? 900_000 : 3_600_000,
+    }))
+  })
+
+  it('keeps agent-authored workspace-owned comments as notes', async () => {
     expect(await dispatchIssueCommentReply({
       issueWorkspaceId: 'ws-home',
-      issue: issue('@workspace'),
+      issue: issue('@new-each-run'),
       comment,
-    })).toEqual({ status: 'not_requested', reason: 'no_fixed_owner' })
+      source: { kind: 'workspace', workspaceId: 'ws-home' },
+    })).toEqual({ status: 'not_requested', reason: 'non_human_note' })
+  })
+
+  it('asks the creator or reconstructs for a human comment without a fixed owner', async () => {
+    const control = conversation({
+      status: 'dispatched',
+      taskId: 'run-reconstructed-reply',
+      resumeId: 'resume-reconstructed',
+      workspaceId: 'ws-home',
+      workspace: 'home-desk',
+      agent: 'codex',
+      resolution: {
+        mode: 'reconstructed',
+        workspaceId: 'ws-home',
+        reason: 'missing-origin',
+        origin: {
+          kind: 'session',
+          workspaceId: 'ws-home',
+          resumeId: 'resume-reconstructed',
+          agent: 'codex',
+        },
+      },
+    })
+    expect(await dispatchIssueCommentReply({
+      conversation: control,
+      issueWorkspaceId: 'ws-home',
+      issue: issue('@unassigned'),
+      comment,
+      source: { kind: 'human' },
+    })).toEqual({
+      status: 'scheduled',
+      delivery: {
+        state: 'pending',
+        targetResumeId: 'resume-reconstructed',
+        taskId: 'run-reconstructed-reply',
+      },
+    })
+    expect(control.ask).toHaveBeenCalledWith(expect.objectContaining({
+      target: {
+        kind: 'issue',
+        workspaceId: 'ws-home',
+        issueId: 'audit',
+        action: 'created',
+      },
+      reconstruct: true,
+      source: { kind: 'human' },
+      subject: {
+        kind: 'issue',
+        workspaceId: 'ws-home',
+        issueId: 'audit',
+        relation: 'creator',
+        commentId: 'comment-1',
+      },
+    }))
   })
 
   it('does not notify an owner about their own comment', async () => {
@@ -190,5 +279,28 @@ describe('recordIssueCommentReply', () => {
     expect(comments.ok && comments.comments[0]?.delivery).toEqual({
       state: 'failed', targetResumeId: 'resume-owner', taskId: 'run-reply', error: 'runtime unavailable',
     })
+  })
+})
+
+describe('fresh Issue owner comments', () => {
+  it.each(['@new-then-resume', '@new-each-run'])('does not ask the historical creator for %s', async (assignee) => {
+    const ask = vi.fn()
+    const replyToIssue = vi.fn(async () => ({ taskId: 'new-run', resumeId: 'resume-new' }))
+    const result = await dispatchIssueCommentReply({
+      conversation: { ask, read: vi.fn(), replyToIssue }, issueWorkspaceId: 'ws-home',
+      issue: issue(assignee), comment, source: { kind: 'human' },
+    })
+    expect(ask).not.toHaveBeenCalled()
+    expect(replyToIssue).toHaveBeenCalledWith(expect.objectContaining({ issueId: 'audit', commentId: comment.id }))
+    expect(result).toEqual({ status: 'scheduled', delivery: { state: 'pending', taskId: 'new-run', targetResumeId: 'resume-new' } })
+  })
+  it('fails explicitly rather than falling back to the old creator when recruitment fails', async () => {
+    const ask = vi.fn()
+    const result = await dispatchIssueCommentReply({
+      conversation: { ask, read: vi.fn(), replyToIssue: async () => { throw new Error('busy') } },
+      issueWorkspaceId: 'ws-home', issue: issue('@new-then-resume'), comment, source: { kind: 'human' },
+    })
+    expect(result).toEqual({ status: 'failed', delivery: { state: 'failed', error: 'busy' } })
+    expect(ask).not.toHaveBeenCalled()
   })
 })

@@ -1,52 +1,32 @@
-/**
- * CLI export registry — the public `alice* <group> <verb>` surface, split into
- * independently-exported binaries by tool CATEGORY.
- *
- * Each export is one PATH binary (the shim self-detects which via argv[0]) over
- * one tool-center scope:
- *   - `alice`           (key `data`)      → global ToolCenter — market/research
- *                                            DATA sources (finance-domain; swapped
- *                                            out when the workspace's domain changes).
- *   - `alice-workspace` (key `workspace`) → WorkspaceToolCenter — AGENT
- *                                            COLLABORATION (inbox push + entity
- *                                            tracking); scoped per workspace,
- *                                            launcher-universal (survives a domain swap).
- *   - `traderhub`       (key `traderhub`) → global ToolCenter — LOW-FREQUENCY
- *                                            market data via the TraderHub-first
- *                                            client chain (boards, fundamentals,
- *                                            macro series, calendars). Named after
- *                                            the hosted hub so the binary name IS
- *                                            the domain name.
- *   - `alice-uta`       (key `uta`)       → global ToolCenter — TRADING (accounts,
- *                                            portfolio, orders, trading-as-git approval
- *                                            flow). Boundary-reviewed 2026-06-11: broker
- *                                            mutations are deliberate product surface
- *                                            (users want agent trading); cron stays
- *                                            MCP-only — no scheduling from the CLI.
- *
- * The (group, verb) → internal-tool-name map IS each export's contract,
- * deliberately decoupled from internal tool names: a verb like `rss grep` maps
- * to `grepRss`, so internal renames don't break the CLI and vice-versa. Adding
- * a row makes the command reachable in every workspace with zero client change —
- * the `alice*` client is manifest-driven, and the gateway only lets an export
- * invoke tools listed in ITS map.
+/** Public CLI exports. alice combines research and Workspace collaboration;
+ * dispatch retains each tool's global or Workspace registry ownership.
+ * The workspace export remains a compatibility endpoint for old shims.
  */
 
 export interface CliExport {
   /** PATH binary name. The shim is one file; siblings are byte-identical copies. */
   readonly binary: string
   /** Which registry backs this export — global catalog vs per-workspace scoped. */
-  readonly scope: 'global' | 'scoped'
+  readonly scope: 'global' | 'scoped' | 'mixed'
   readonly description: string
+  /** Short intent-first help for each command group. The live manifest exposes
+   * this separately from verb descriptions so old Workspace skills can recover
+   * from the CLI itself without guessing which namespace owns an action. */
+  readonly groupDescriptions: Record<string, string>
   /** group -> verb -> internal tool name. */
   readonly commands: Record<string, Record<string, string>>
 }
 
-export const CLI_EXPORTS: Record<string, CliExport> = {
+const BASE_EXPORTS: Record<string, CliExport> = {
   data: {
     binary: 'alice',
     scope: 'global',
     description: 'Market & research data sources',
+    groupDescriptions: {
+      rss: 'Search and read the user\'s collected subscribed-feed archive',
+      market: 'Discover symbols, bar sources, and optional market-data vendors',
+      analysis: 'Read dated K-lines and calculate indicators',
+    },
     commands: {
       // `rss`, not `news`: the backing store is the RSS collector's archive —
       // only what the user's subscribed feeds pulled. Naming it "news" baited
@@ -61,6 +41,8 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
       },
       market: {
         search: 'marketSearchForResearch',
+        'search-bars': 'searchBars',
+        bars: 'getMarketBars',
         // Discover data sources + drive them: `vendors` lists what's available,
         // each with on/off state and a usage note (symbol convention, search
         // language); `vendor-set` flips one on/off, live on the next search.
@@ -68,15 +50,11 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         'vendor-set': 'setMarketVendor',
       },
       analysis: {
+        // Shipped alias; new raw-data workflows use market search-bars.
         'search-bars': 'searchBars',
         quant: 'calculateQuant',
-        // Honest as-of read (dated bars, no-lookahead, freshness contract) + a
-        // path-dependent backtest. The Retrospective / Time-Machine primitives.
+        // Dated as-of read with a freshness contract for retrospective analysis.
         snapshot: 'marketSnapshot',
-        simulate: 'simulate',
-      },
-      think: {
-        calc: 'calculate',
       },
     },
   },
@@ -84,6 +62,17 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
     binary: 'traderhub',
     scope: 'global',
     description: 'Low-frequency market data — boards, fundamentals, macro, calendars (TraderHub-first)',
+    groupDescriptions: {
+      board: 'Read finished market boards and sector rotation',
+      equity: 'Read company profiles, fundamentals, estimates, and calendars',
+      etf: 'Search ETFs and inspect holdings or sector exposure',
+      economy: 'Read US and euro-area macro series',
+      global: 'Compare cross-country economic indicators',
+      shipping: 'Inspect ports and maritime chokepoints',
+      fed: 'Read FOMC documents, the Fed balance sheet, and dealer positioning',
+      crypto: 'Inspect crypto derivatives markets',
+      index: 'Discover index identifiers',
+    },
     commands: {
       board: {
         get: 'marketGetBoard',
@@ -145,12 +134,36 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
   workspace: {
     binary: 'alice-workspace',
     scope: 'scoped',
-    description: 'Workspace collaboration and management — Inbox, Issues, peers, provenance, and managed template upgrades',
+    description: 'Workspace collaboration — address peers, talk to Agents, deliver reports, coordinate Issues, and inspect provenance',
+    groupDescriptions: {
+      peer: 'Discover active desks, their Sessions, and absolute filesystem locations',
+      conversation: 'Send ordinary Agent-to-Agent requests and retrieve their replies',
+      inbox: 'Send outward-facing notifications and reports to the human Inbox; inspect and follow up on deliveries',
+      issue: 'Read the shared work board and manage this Workspace\'s durable work',
+      provenance: 'Trace business artifacts to attributable product Sessions',
+      signature: 'Show this Session\'s safe product identity',
+      session: 'Rename or inspect this Workspace\'s product Sessions',
+      track: 'Maintain the shared index of durable assets and topics',
+      harness: 'Review and update Project-provided Skill files while respecting Workspace preferences',
+      template: 'Preview or apply managed Workspace-template updates',
+    },
     commands: {
-      // inbox push: surface doc(s) + comment to the user's Inbox tab. Attach
-      // files with repeatable `--doc <path>` (the shim folds them into the
-      // `docs: [{ path }]` array; bare paths wrap, JSON objects pass through);
-      // `--comments` carries the markdown note. At least one of the two.
+      // Peer commands only provide collaboration addresses. Coding Agents use
+      // their own native file/search/Git tools once `path` resolves a desk.
+      peer: {
+        list: 'workspace_list',
+        path: 'workspace_path',
+        sessions: 'workspace_sessions',
+      },
+      conversation: {
+        create: 'conversation_create',
+        ask: 'conversation_ask',
+        await: 'conversation_await',
+        collect: 'conversation_collect',
+        read: 'conversation_read',
+      },
+      // inbox push: one Markdown body with inline Workspace file references.
+      // --body-file publishes Markdown read from a local file.
       // inbox read: look back at the inbox stream — `--self` narrows to this
       // workspace's own pushes (whose doc paths are cwd-relative, so readable
       // with the shell); `--limit N` caps the newest-first window.
@@ -158,19 +171,6 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         push: 'inbox_push',
         read: 'inbox_read',
         ask: 'inbox_ask',
-      },
-      // peer path: resolve another workspace's absolute dir by id (the
-      // `workspaceId` an inbox_read entry carries), so the agent can read/edit
-      // that peer's files with native tools — cross-workspace collaboration.
-      peer: {
-        list: 'workspace_list',
-        path: 'workspace_path',
-        sessions: 'workspace_sessions',
-      },
-      // track: the durable cross-workspace tracked-entity index ([[name]]).
-      track: {
-        add: 'entity_upsert',
-        search: 'entity_search',
       },
       // issue: the issue board. READS are GLOBAL — `list` scans every
       // workspace's titles, `show <name>` resolves a name across the board and
@@ -184,6 +184,8 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         list: 'issue_list',
         show: 'issue_show',
         ask: 'issue_ask',
+        run: 'issue_run',
+        retry: 'issue_retry',
       },
       provenance: {
         show: 'provenance_show',
@@ -191,14 +193,17 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
       signature: {
         show: 'session_signature',
       },
-      conversation: {
-        ask: 'conversation_ask',
-        await: 'conversation_await',
-        collect: 'conversation_collect',
-        read: 'conversation_read',
+      session: {
+        rename: 'session_rename',
+      },
+      // track: the durable cross-workspace tracked-entity index ([[name]]).
+      track: {
+        add: 'entity_upsert',
+        search: 'entity_search',
       },
       // Current-Workspace managed template reconciliation. Preview is the
       // default; `--apply` explicitly performs the reviewed safe operation.
+      harness: { upgrade: 'alice_harness_upgrade' },
       template: {
         upgrade: 'workspace_template_upgrade',
       },
@@ -208,6 +213,15 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
     binary: 'alice-uta',
     scope: 'global',
     description: 'Trading — accounts, portfolio, orders, and the trading-as-git approval flow',
+    groupDescriptions: {
+      account: 'Read trading accounts and portfolios',
+      contract: 'Resolve broker instruments and quotes before trading',
+      order: 'Inspect or mutate broker orders',
+      position: 'Close an existing position',
+      git: 'Review, commit, push, reject, or synchronize staged trading decisions',
+      market: 'Read broker market-clock state',
+      sim: 'Drive the MockBroker simulator only',
+    },
     commands: {
       account: {
         list: 'listUTAs',
@@ -219,6 +233,9 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         details: 'getContractDetails',
         quote: 'getQuote',
         expand: 'expandContract',
+        'option-contracts': 'getOptionContracts',
+        'option-chain': 'getOptionChain',
+        'order-book': 'getOrderBook',
       },
       order: {
         list: 'getOrders',
@@ -254,13 +271,34 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
   // cron: deliberately NOT exported — scheduling stays MCP-only.
 }
 
+// Fail loudly if future namespaces collide instead of silently hiding commands.
+for (const group of Object.keys(BASE_EXPORTS.workspace.commands)) {
+  if (group in BASE_EXPORTS.data.commands) throw new Error(`Duplicate alice command group: ${group}`)
+}
+export const CLI_EXPORTS: Record<string, CliExport> = {
+  ...BASE_EXPORTS,
+  data: {
+    ...BASE_EXPORTS.data,
+    scope: 'mixed',
+    description: 'OpenAlice research, assets and Workspace collaboration',
+    commands: { ...BASE_EXPORTS.data.commands, ...BASE_EXPORTS.workspace.commands },
+    groupDescriptions: { ...BASE_EXPORTS.data.groupDescriptions, ...BASE_EXPORTS.workspace.groupDescriptions },
+  },
+}
+
+export function toolRegistryScope(exp: CliExport, name: string): 'global' | 'scoped' {
+  if (exp.scope !== 'mixed') return exp.scope
+  return Object.values(BASE_EXPORTS.workspace.commands).some(verbs => Object.values(verbs).includes(name)) ? 'scoped' : 'global'
+}
+
 /**
- * Map a PATH binary name to its export key. `alice` → `data`; `alice-<x>` →
+ * Map a PATH binary name to its export key. `alice` and its legacy alias
+ * `alice-workspace` → `data`; other `alice-<x>` →
  * `<x>`; any other bare name (e.g. `traderhub`) is its own key. Mirrored in
  * the shim (bin/alice).
  */
 export function exportKeyForBinary(binary: string): string {
-  return binary === 'alice' ? 'data' : binary.replace(/^alice-/, '')
+  return (binary === 'alice' || binary === 'alice-workspace') ? 'data' : binary.replace(/^alice-/, '')
 }
 
 /** The export descriptor for a key, or null. */
@@ -275,6 +313,19 @@ export function mappedToolNames(exportKey: string): Set<string> {
   if (!exp) return names
   for (const verbs of Object.values(exp.commands)) {
     for (const toolName of Object.values(verbs)) names.add(toolName)
+  }
+  return names
+}
+
+/** Every tool exposed by any CLI export sharing one registry scope. Used by
+ * manifest diagnostics so a tool owned by `alice-uta` is not falsely reported
+ * as an unmapped capability merely because the caller opened `alice` help. */
+export function mappedToolNamesForScope(scope: CliExport['scope']): Set<string> {
+  const names = new Set<string>()
+  for (const [key, exp] of Object.entries(CLI_EXPORTS)) {
+    for (const name of mappedToolNames(key)) {
+      if (scope === 'mixed' || toolRegistryScope(exp, name) === scope) names.add(name)
+    }
   }
   return names
 }

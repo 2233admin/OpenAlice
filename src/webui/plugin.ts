@@ -1,3 +1,4 @@
+import { prepareProjectWorkspaces } from '../workspaces/project-workspace-setup.js'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { createAdaptorServer, serve } from '@hono/node-server'
@@ -18,7 +19,9 @@ import { createTradingProxyRoutes } from './routes/trading-proxy.js'
 import { createTradingConfigRoutes } from './routes/trading-config.js'
 import { createToolsRoutes } from './routes/tools.js'
 import { createAgentStatusRoutes } from './routes/agent-status.js'
-import { createPersonaRoutes } from './routes/persona.js'
+import { createAgentConversationRoutes } from './routes/agent-conversations.js'
+import { createAgentRuntimeLogRoutes } from './routes/agent-runtime.js'
+import { createOfficeRoutes } from './routes/office.js'
 import { createNewsRoutes } from './routes/news.js'
 import { createMarketRoutes } from './routes/market.js'
 import { createBarsRoutes } from './routes/bars.js'
@@ -27,8 +30,11 @@ import { createInboxRoutes } from './routes/inbox.js'
 import { createEntityRoutes } from './routes/entities.js'
 import { createWikilinkRoutes } from './routes/wikilink.js'
 import { createVersionRoutes } from './routes/version.js'
+import { createAliceProjectRoutes } from './routes/alice-project.js'
+import { createHarnessSurfaceRoutes } from './routes/harness-surfaces.js'
 import { createAuthRoutes } from './routes/auth.js'
 import { createPreferencesRoutes } from './routes/preferences.js'
+import { createUiLayoutRoutes } from './routes/ui-layout.js'
 import { initializeWindowsWorkspaceShellPreference } from '../core/windows-workspace-shell.js'
 import { createAuthMiddleware } from './middleware/auth.js'
 import { mountMarketDataCompat } from '../server/market-data-compat.js'
@@ -53,8 +59,10 @@ import { createHeadlessRoutes } from './routes/headless.js'
 import { attachWorkspacesWS, type AttachedWS } from './workspaces-ws.js'
 import { attachWorkspacesIpc, type AttachedWorkspaceIpc } from './workspaces-ipc.js'
 import { attachWebIpc, type AttachedWebIpc } from './web-ipc.js'
+import { registerCliRoutes } from '../server/cli.js'
 import { mountLocalToolGateway } from '../server/local-tool-gateway.js'
 import type { Server as HttpServer } from 'node:http'
+import { proxyHarnessSurface, attachHarnessSurfaceWS, type AttachedHarnessSurfaceWS } from './harness-surface-proxy.js'
 
 export interface WebConfig {
   /** Effective web port (env-overridden if guardian injected, else from config file). */
@@ -71,6 +79,8 @@ export interface WebConfig {
   listen?: boolean
   /** Optional Unix socket / named pipe for workspace CLI shims in app mode. */
   cliSocketPath?: string
+  /** Internal packaged-acceptance seam; normal runtime leaves this undefined. */
+  scheduleScannerIntervalMs?: number
 }
 
 export class WebPlugin implements Plugin {
@@ -83,6 +93,10 @@ export class WebPlugin implements Plugin {
   private workspacesIpc: AttachedWorkspaceIpc | null = null
   private webIpc: AttachedWebIpc | null = null
   private cliSocketServer: HttpServer | null = null
+  private surfaceGatewayServer: HttpServer | null = null
+  private surfaceGatewayPort: number | null = null
+  private surfaceWs: AttachedHarnessSurfaceWS | null = null
+  private surfaceGatewayWs: AttachedHarnessSurfaceWS | null = null
 
   constructor(
     private config: WebConfig,
@@ -168,6 +182,15 @@ export class WebPlugin implements Plugin {
       return c.json({ error: err.message }, 500)
     })
 
+    // Harness web surfaces use opaque host routing. Resolve them before Alice
+    // auth/static routes so no OpenAlice cookie or API surface crosses into a
+    // Harness-owned process.
+    app.use('*', async (c, next) => {
+      const target = this.workspaceService?.harnessSurfaces.resolveHost(c.req.header('host'))
+      if (!target) return next()
+      return proxyHarnessSurface(c.req.raw, target)
+    })
+
     app.use('/api/*', cors())
 
     if (this.config.localCliOnWeb) {
@@ -208,14 +231,25 @@ export class WebPlugin implements Plugin {
       disabled: authDisabled,
     }))
 
+    registerCliRoutes(app, {
+      toolCenter: ctx.toolCenter,
+      workspaceToolCenter: ctx.workspaceToolCenter,
+      inboxStore: ctx.inboxStore,
+      entityStore: ctx.entityStore,
+      getWorkspaceService: () => this.workspaceServiceRef?.current ?? this.workspaceService,
+    }, true)
+
     // ==================== Mount route modules ====================
     // /api/channels remains the compatibility boundary for legacy web
     // channels; Workspace Chat uses the Workspace APIs instead.
     app.route('/api/channels', createChannelsRoutes({ sessions, sseByChannel: this.sseByChannel }))
     app.route('/api/media', createMediaRoutes())
     app.route('/api/config', createConfigRoutes({ ctx }))
-    app.route('/api/connectors', createConnectorRoutes())
+    app.route('/api/connectors', createConnectorRoutes({
+      getWorkspaceService: () => this.workspaceService,
+    }))
     app.route('/api/preferences', createPreferencesRoutes())
+    app.route('/api/ui-layout', createUiLayoutRoutes())
     app.route('/api/market-data', createMarketDataRoutes(ctx))
     app.route('/api/trading/config', createTradingConfigRoutes(ctx))
     // `/api/trading/*` and `/api/simulator/*` are proxied to the UTA carrier.
@@ -236,9 +270,9 @@ export class WebPlugin implements Plugin {
     app.route('/api/market', createMarketRoutes(ctx))
     app.route('/api/bars', createBarsRoutes(ctx))
     app.route('/api/reference', createReferenceRoutes(ctx))
-    app.route('/api/persona', createPersonaRoutes())
-    app.route('/api/inbox', createInboxRoutes({ inboxStore: ctx.inboxStore }))
+    app.route('/api/inbox', createInboxRoutes({ inboxStore: ctx.inboxStore, resolveWorkspace: id => this.workspaceService?.registry.get(id) }))
     app.route('/api/version', createVersionRoutes())
+    app.route('/api/alice-project', createAliceProjectRoutes())
 
     // ==================== Workspaces (launcher-style PTY) ====================
     // Self-contained subsystem ported from auto-quant-launcher. Owns its own
@@ -249,13 +283,28 @@ export class WebPlugin implements Plugin {
       toolBaseUrl: this.config.toolBaseUrl,
       ...(this.config.cliSocketPath ? { toolSocketPath: this.config.cliSocketPath } : {}),
       mcpBaseUrl: this.config.mcpBaseUrl,
+      ...(this.config.scheduleScannerIntervalMs !== undefined
+        ? { scheduleScannerIntervalMs: this.config.scheduleScannerIntervalMs }
+        : {}),
       inboxStore: ctx.inboxStore,
     })
+    await prepareProjectWorkspaces(this.workspaceService, {
+      onProgress: (workspace, error) => {
+        if (error) console.warn(`[workspace setup] ${workspace}: ${error}. Retry from Quick Start or restart the project.`)
+        else console.log(`[workspace setup] Preparing ${workspace}…`)
+      },
+    }).catch((error: unknown) => console.warn('[workspace setup] Could not read setup request:', error))
     this.workspacesIpc = attachWorkspacesIpc(this.workspaceService)
     if (this.workspaceServiceRef) this.workspaceServiceRef.current = this.workspaceService
     app.route('/api/workspaces', createWorkspaceRoutes(this.workspaceService))
+    app.route('/api/harness-surfaces', createHarnessSurfaceRoutes(this.workspaceService.harnessSurfaces, {
+      getGatewayPort: () => this.surfaceGatewayPort,
+    }))
     app.route('/api/agent-runtimes', createAgentRuntimeRoutes(this.workspaceService))
     app.route('/api/headless', createHeadlessRoutes(this.workspaceService))
+    app.route('/api/agent-conversations', createAgentConversationRoutes(this.workspaceService.agentConversationLog))
+    app.route('/api/agent-runtime', createAgentRuntimeLogRoutes(this.workspaceService))
+    app.route('/api/office', createOfficeRoutes(this.workspaceService))
     app.route('/api/schedule', createScheduleRoutes(this.workspaceService))
     app.route('/api/issues', createIssuesRoutes(this.workspaceService))
     app.route('/api/inquiries', createInquiryRoutes({
@@ -300,6 +349,32 @@ export class WebPlugin implements Plugin {
 
     this.webIpc = attachWebIpc(app)
 
+    if (this.config.listen === false && this.workspaceService) {
+      // Electron's main UI remains app:// + IPC. Harness Studios need native
+      // streaming/SSE/WS, so expose only the opaque Surface Router on a
+      // separate loopback listener; Alice APIs and UI assets are not mounted.
+      const gateway = new Hono()
+      gateway.all('*', (c) => {
+        const target = this.workspaceService?.harnessSurfaces.resolveHost(c.req.header('host'))
+        return target
+          ? proxyHarnessSurface(c.req.raw, target)
+          : c.text('Harness surface not found', 404)
+      })
+      const server = createAdaptorServer({ fetch: gateway.fetch }) as HttpServer
+      await new Promise<void>((resolveListen, rejectListen) => {
+        server.once('error', rejectListen)
+        server.listen(0, '127.0.0.1', () => {
+          server.off('error', rejectListen)
+          const address = server.address()
+          this.surfaceGatewayPort = typeof address === 'object' && address ? address.port : null
+          resolveListen()
+        })
+      })
+      this.surfaceGatewayServer = server
+      this.surfaceGatewayWs = attachHarnessSurfaceWS(server, this.workspaceService.harnessSurfaces)
+      console.log(`Harness Surface Gateway listening on 127.0.0.1:${this.surfaceGatewayPort}`)
+    }
+
     if (this.config.cliSocketPath) {
       if (process.platform !== 'win32') await rm(this.config.cliSocketPath, { force: true })
       const server = createAdaptorServer({ fetch: (request, env) => app.fetch(request, env) }) as HttpServer
@@ -336,6 +411,7 @@ export class WebPlugin implements Plugin {
 
     // Attach WS upgrade handler for /api/workspaces/pty onto the same http.Server.
     if (this.workspaceService) {
+      this.surfaceWs = attachHarnessSurfaceWS(this.server as HttpServer, this.workspaceService.harnessSurfaces)
       this.workspacesWs = attachWorkspacesWS(this.server as HttpServer, this.workspaceService)
     }
   }
@@ -346,6 +422,13 @@ export class WebPlugin implements Plugin {
     this.webIpc = null
     this.cliSocketServer?.close()
     this.cliSocketServer = null
+    this.surfaceGatewayWs?.dispose()
+    this.surfaceGatewayWs = null
+    this.surfaceGatewayServer?.close()
+    this.surfaceGatewayServer = null
+    this.surfaceGatewayPort = null
+    this.surfaceWs?.dispose()
+    this.surfaceWs = null
     this.workspacesIpc?.dispose()
     this.workspacesIpc = null
     this.workspacesWs?.dispose()

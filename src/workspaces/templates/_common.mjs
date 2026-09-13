@@ -2,11 +2,11 @@
  * Shared helpers for the Node workspace bootstrap scripts — the cross-platform
  * port of `_common.sh`.
  *
- * Plain ESM, run directly by the Electron-bundled Node (the launcher spawns it
- * via `process.execPath` + `ELECTRON_RUN_AS_NODE`). So: NO TypeScript syntax,
- * only `node:*` builtins + `dugite`. Resolved via node walk-up from the
- * template dir to the app's `node_modules` (works in dev and in the packaged
- * `asar:false` app).
+ * Plain ESM, run by the Electron-bundled Node or by the Bun standalone's
+ * internal bootstrap role. So: NO TypeScript syntax, only `node:*` builtins
+ * plus the launcher-owned dugite executor. Node resolves dugite through the
+ * source dependency tree; archived Electron and compiled Bun bootstrap roles
+ * inject the launcher-owned executor.
  *
  * This is the SOLE importer of `dugite` among the templates: all git goes
  * through `git()` so workspace creation uses OpenAlice's bundled git — no
@@ -17,7 +17,10 @@
 
 import { existsSync, mkdirSync, copyFileSync, appendFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { exec } from 'dugite'
+const injectedGitExec = globalThis.__OPENALICE_BOOTSTRAP_GIT_EXEC__
+const exec = typeof injectedGitExec === 'function'
+  ? injectedGitExec
+  : (await import('dugite')).exec
 
 /**
  * Run a git command via the bundled git, rooted at `cwd`. Throws on a non-zero
@@ -62,11 +65,14 @@ const DEFAULT_EXCLUDES = [
   '.codex/auth.json',
   '.codex/env.json',
   '.codex/config.toml',
+  '.codex/openalice-provider.json',
+  '.codex/openalice-home/',
   'opencode.json',
   'tui.json',
   '.opencode/openalice-provider.json',
   '.pi/settings.json',
   '.pi/openalice-provider.json',
+  '.pi/extensions/openalice-provider.ts',
   // Pre-#662 compatibility: never commit an old redirected Pi agent home
   // before the runtime migration has reconciled and removed it.
   '.pi-agent/',
@@ -75,8 +81,8 @@ const DEFAULT_EXCLUDES = [
 /**
  * Append defensive entries to `<outDir>/.git/info/exclude` (per-clone,
  * untracked). Most can carry a per-workspace API key; Pi's local files carry
- * provider selection and reversible injection metadata while the key remains
- * in Pi's user model registry. None should reach a commit. `extra` paths are
+ * provider selection, local registration, and reversible injection metadata.
+ * None should reach a commit. `extra` paths are
  * appended too. Caller must have run `git init`/`clone` first (`.git/` must
  * exist).
  */

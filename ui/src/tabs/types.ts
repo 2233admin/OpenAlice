@@ -13,10 +13,11 @@
  * a data-model change.
  */
 
-export type WorkspaceSource = 'chat'
+export type WorkspaceSource = 'chat' | 'auto-quant' | 'prediction'
+export type FileViewerSource = WorkspaceSource | 'tracked'
 
-/** One source of truth for the Dev sidebar and `/dev/:tab` URL contract. */
-export const DEV_TABS = ['tools', 'onboarding', 'snapshots', 'logs', 'simulator'] as const
+/** One source of truth for the Developer section and its Settings URL contract. */
+export const DEV_TABS = ['frontend', 'tools', 'onboarding', 'snapshots', 'logs', 'runs', 'api', 'simulator'] as const
 export type DevTab = typeof DEV_TABS[number]
 
 export function isDevTab(value: string): value is DevTab {
@@ -24,6 +25,8 @@ export function isDevTab(value: string): value is DevTab {
 }
 
 export type ViewSpec =
+  | { kind: 'quick-start'; params: Record<string, never> }
+  | { kind: 'workspace-details'; params: { wsId: string; source: WorkspaceSource } }
   | { kind: 'workspace-list'; params: Record<string, never> }
   | { kind: 'workspace';      params: { wsId: string; sessionId?: string; source?: WorkspaceSource } }
   | { kind: 'template-catalog'; params: Record<string, never> }
@@ -35,19 +38,32 @@ export type ViewSpec =
   | { kind: 'issue-detail';   params: { wsId: string; id: string } }
   | { kind: 'tracked-issue-detail'; params: { wsId: string; id: string } }
   | { kind: 'automation';     params: { section: 'runs' | 'api' } }
-  | { kind: 'news';           params: Record<string, never> }
+  | { kind: 'office';         params: Record<string, never> }
+  | { kind: 'news';           params: { category?: string; view?: string } }
   | { kind: 'market-list';    params: Record<string, never> }
   | { kind: 'market-rotation'; params: Record<string, never> }
   | { kind: 'market-board';   params: { board: 'movers' | 'calendar' | 'macro' | 'term-structure' | 'global-macro' | 'shipping' | 'fed' } }
   | { kind: 'market-detail';  params: { assetClass: 'equity' | 'crypto' | 'currency' | 'commodity'; symbol: string; source?: string } }
-  | { kind: 'settings';       params: { category: 'general' | 'ai-provider' | 'agent-permissions' | 'trading' | 'issues' | 'connectors' | 'mcp' | 'market-data' | 'news-collector' } }
+  | { kind: 'settings';       params: { category: 'general' | 'appearance' | 'activity-bar' | 'ai-provider' | 'workspace-injection' | 'agent-runtimes' | 'agent-permissions' | 'tools' | 'trading' | 'issues' | 'harness' | 'connectors' | 'mcp' | 'market-data' | 'news-collector' | 'beta' } }
   | { kind: 'uta-detail';     params: { id: string } }
   | { kind: 'onboarding';     params: Record<string, never> }
   | { kind: 'design-project'; params: { project: string } }
   | { kind: 'dev';            params: { tab: DevTab } }
   | { kind: 'inbox';               params: Record<string, never> }
-  | { kind: 'tracked';             params: Record<string, never> }
-  | { kind: 'chat-landing';        params: { targetWsId?: string } }
+  | {
+      kind: 'tracked'
+      params: {
+        /** Selected entity encoded in the URL without creating another Tracked tab. */
+        entity?: string
+        /** Selected Workspace Issue encoded as a stable composite identity. */
+        workspace?: string
+        issue?: string
+      }
+    }
+  | { kind: 'chat-landing';        params: { targetWsId?: string; initialPrompt?: string } }
+  | { kind: 'auto-quant-landing';  params: { targetWsId?: string; initialPrompt?: string } }
+  | { kind: 'auto-prediction-landing'; params: { targetWsId?: string; initialPrompt?: string } }
+  | { kind: 'harness-surface'; params: { wsId: string; capability: 'studio'; source: 'auto-quant' | 'prediction' } }
   | { kind: 'workspace-manager';   params: { sessionId?: string } }
   | {
       kind: 'file-viewer'
@@ -55,9 +71,11 @@ export type ViewSpec =
         wsId: string
         path: string
         /** Preserve the product area that opened this Workspace artifact. */
-        source?: WorkspaceSource
+        source?: FileViewerSource
         /** Exact Session materialization to restore when leaving the artifact. */
         returnSessionId?: string
+        /** Tracked entity selection to restore when leaving a backlink artifact. */
+        returnTrackedName?: string
       }
     }
 
@@ -69,19 +87,20 @@ export type ViewKind = ViewSpec['kind']
  * owns them, not in the app shell.
  */
 export type ActivitySection =
+  | 'quick-start'
   | 'chat'
+  | 'auto-quant'
+  | 'prediction'
   | 'inbox'
   | 'tracked'
   | 'workspaces'
-  | 'trading-as-git'
   | 'connectors'
   | 'settings'
-  | 'dev'
   | 'market'
   | 'portfolio'
   | 'issue'
   | 'automation'
-  | 'news'
+  | 'office'
 
 export interface Tab {
   id: string
@@ -129,6 +148,16 @@ export function specEquals(a: ViewSpec, b: ViewSpec): boolean {
     if (aParams[k] !== bParams[k]) return false
   }
   return true
+}
+
+/**
+ * Whether an existing tab owns the same product surface as a requested spec.
+ * Tracked remains one navigator tab: query parameters restore its selection
+ * rather than creating a separate editor identity for every anchor.
+ */
+export function specTabIdentityEquals(a: ViewSpec, b: ViewSpec): boolean {
+  if (a.kind === b.kind && (a.kind === 'tracked' || a.kind === 'news')) return true
+  return specEquals(a, b)
 }
 
 /** Phase 1 helper: workspace tree is always a leaf, so this just unwraps it. */

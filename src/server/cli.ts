@@ -1,3 +1,7 @@
+import { registerConnectorModelRoutes } from './connector-model.js'
+import { registerMarketReferenceRoute } from './market-reference.js'
+import { registerWorkspaceFileRoutes } from './workspace-files.js'
+import { registerProjectCliRoutes } from './project-cli.js'
 /**
  * CLI gateway — the third adapter over the tool registry.
  *
@@ -10,20 +14,19 @@
  * Mounted on the MCP server's Hono app (open posture, no admin-token gate — the
  * workspace CLI carries no secret). Identity rides the URL path (`:wsId`), like
  * `/mcp/:wsId`. The `:export` segment selects a CliExport (data / workspace /
- * …) — the binary the agent invoked (`alice` vs `alice-workspace`) maps to it.
+ * …) — the binary maps to its public export (`alice` and its legacy alias use `data`).
  *
  *   GET  /cli/:wsId/:export/manifest   grouped command tree + per-verb JSON
  *                                      schema (powers `--help`), plus the
  *                                      registered-but-unmapped tools in scope.
  *   POST /cli/:wsId/:export/invoke     { tool, args } -> validate + execute.
  *
- * Each export resolves tools from ONE scope (global ToolCenter for `data`,
- * the per-workspace WorkspaceToolCenter for `workspace`) and invoke is gated to
- * that export's own map — so `alice` can't reach a collaboration tool and
- * vice-versa, and trading/cron stay off entirely (no `uta` export yet).
+ * alice combines both registry scopes, selecting the owner per mapped tool.
+ * Legacy workspace requests stay scoped. Trading retains the separate uta map.
  */
 
 import type { Hono } from 'hono'
+import { readAliceHarnessConfig, cliGroupEnabled, DEFAULT_ALICE_HARNESS_CONFIG } from '../workspaces/alice-harness-policy.js'
 import { z } from 'zod'
 import type { Tool } from 'ai'
 import type { ToolCenter } from '../core/tool-center.js'
@@ -33,12 +36,19 @@ import {
   makeWorkspaceResolver,
 } from '../core/workspace-tool-center.js'
 import type { IInboxStore, InboxOrigin } from '../core/inbox-store.js'
+import { sessionCoworkerLabel } from '../workspaces/session-registry.js'
 import type { IEntityStore } from '../core/entity-store.js'
 import { sessionOriginFromInboxOrigin } from '../core/provenance-store.js'
 import type { WorkspaceService } from '../workspaces/service.js'
 import { logger as launcherLogger } from '../workspaces/logger.js'
 import { extractMcpShape, wrapToolExecute } from '../core/mcp-export.js'
-import { type CliExport, getExport, mappedToolNames } from './cli-commands.js'
+import {
+  type CliExport,
+  toolRegistryScope,
+  getExport,
+  mappedToolNames,
+  mappedToolNamesForScope,
+} from './cli-commands.js'
 import { resolveInboxOrigin } from './inbox-origin.js'
 import { extractTradeDecisionRefs } from './trade-provenance.js'
 import { createWorkspaceConversationControl } from '../workspaces/conversation-control.js'
@@ -53,11 +63,17 @@ export interface CliGatewayDeps {
   getWorkspaceService: () => WorkspaceService | null
 }
 
-type WsMeta = { id: string; tag: string }
+type WsMeta = { id: string; tag: string; dir?: string }
 
 /** Mount /cli/:wsId/:export/* onto an existing Hono app (the MCP server's app). */
-export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
+export function registerCliRoutes(app: Hono, deps: CliGatewayDeps, manifestOnly = false): void {
   const { toolCenter, workspaceToolCenter, inboxStore, entityStore, getWorkspaceService } = deps
+  if (!manifestOnly) {
+    registerConnectorModelRoutes(app, getWorkspaceService)
+    registerProjectCliRoutes(app, toolCenter)
+    registerMarketReferenceRoute(app, toolCenter)
+    registerWorkspaceFileRoutes(app, id => getWorkspaceService()?.registry.get(id))
+  }
 
   /** Resolve + validate the workspace from the URL path. */
   const resolveWs = (wsId: string): { meta: WsMeta } | { error: 'unavailable' | 'unknown' } => {
@@ -68,22 +84,28 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
     // identity can share the CLI without entering the business registry.
     const meta = svc.resolveRuntimeWorkspace?.(wsId) ?? svc.registry.get(wsId)
     if (!meta) return { error: 'unknown' }
-    return { meta: { id: meta.id, tag: meta.tag } }
+    return { meta: { id: meta.id, tag: meta.tag, dir: meta.dir } }
   }
 
   /**
-   * A per-request lookup over ONE export's scope: global catalog for `data`,
-   * the (per-workspace) scoped catalog for `workspace`. Never crosses scopes —
-   * an export only sees the tools its category owns.
+   * Per-request dispatch preserves Workspace context when a mixed export
+   * resolves collaboration tools; global tools never shadow scoped tools.
    */
   const exportCatalog = (
     exp: CliExport,
     ws: WsMeta,
     origin?: InboxOrigin,
   ): { resolve: (name: string) => Tool | null; inventoryNames: () => string[] } => {
+    if (exp.scope === 'mixed') {
+      const scoped = exportCatalog(getExport('workspace')!, ws, origin)
+      return {
+        resolve: name => toolRegistryScope(exp, name) === 'scoped' ? scoped.resolve(name) : toolCenter.get(name),
+        inventoryNames: () => [...new Set([...toolCenter.getInventory().map(t => t.name), ...scoped.inventoryNames()])],
+      }
+    }
     if (exp.scope === 'scoped') {
       // GLOBAL issue-board reader, backed by the live WorkspaceService.
-      // Built here so issue_list / issue_show on `alice-workspace` read EVERY
+      // Built here so issue_list / issue_show on `alice` read EVERY
       // workspace's issues (reads global), while create/update/comment stay
       // caller-local. Absent when the service isn't up yet → tools self-read.
       const svc = getWorkspaceService()
@@ -94,7 +116,20 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         entityStore,
         ...(svc ? { provenanceStore: svc.provenanceStore } : {}),
         ...(svc ? { conversation: createWorkspaceConversationControl(svc) } : {}),
-        ...(svc ? { templateUpgrades: svc.templateUpgrades } : {}),
+        ...(svc ? { templateUpgrades: svc.templateUpgrades, aliceHarnessUpgrades: svc.aliceHarnessUpgrades } : {}),
+        ...(svc ? {
+          setSessionDisplayName: async (input) => {
+            const identity = await svc.setSessionDisplayName({
+              wsId: ws.id,
+              resumeId: input.resumeId,
+              displayName: input.displayName,
+            })
+            return {
+              resumeId: identity.resumeId,
+              ...(identity.displayName ? { displayName: identity.displayName } : {}),
+            }
+          },
+        } : {}),
         // Lets workspace_path resolve ANY peer's dir (not just the caller) —
         // the in-workspace cross-workspace addressing path. Shared with the
         // mcp.ts build site so the two never drift.
@@ -102,13 +137,13 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         ...(svc ? {
           workspaceInventory: async () => Promise.all(svc.registry.list().map(async (meta) => {
             await svc.sessionRegistry.ensureLoaded(meta.id)
+            void svc.refreshSessionTitles?.(meta)
             const sessions = svc.sessionRegistry.listFor(meta.id)
             const activity = svc.workspaceRuntimeActivity(meta.id)
             return {
               id: meta.id,
               tag: meta.tag,
               ...(meta.template ? { template: meta.template } : {}),
-              agents: meta.agents,
               createdAt: meta.createdAt,
               sessions: {
                 total: sessions.length,
@@ -120,7 +155,10 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
                   .map((session) => ({
                     resumeId: session.resumeId,
                     agent: session.agent,
-                    title: session.title?.trim() || session.name,
+                    title: sessionCoworkerLabel(
+                      session,
+                      svc.resumeRegistry.get(session.resumeId)?.displayName,
+                    ) ?? session.name,
                     state: session.state,
                     lastActiveAt: session.lastActiveAt,
                   })),
@@ -145,6 +183,7 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         } : {}),
         ...(svc
           ? {
+              issueRuns: { start: (w: string, i: string, r?: string) => svc.startIssueRun(w, i, r) },
               board: {
                 snapshot: () => svc.issuesSnapshot(),
                 detail: (w: string, i: string) => svc.issueDetail(w, i),
@@ -156,6 +195,7 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         // (resolved server-side). Only the invoke path passes it; manifest omits
         // it (no execution, no push). Absent → undefined.
         ...(origin ? { origin } : {}),
+        ...(origin?.kind === 'headless' && origin.runId && svc ? { callerRun: svc.headlessTasks.get(origin.runId) ?? undefined } : {}),
       })
       return {
         resolve: (name) => wsTools[name] ?? null,
@@ -186,9 +226,12 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
     return { ok: true, exp, ws: ws.meta }
   }
 
-  app.get('/cli/:wsId/:export/manifest', (c) => {
+  app.get(manifestOnly ? '/api/workspaces/:wsId/cli/:export/manifest' : '/cli/:wsId/:export/manifest', async (c) => {
     const r = resolveCtx(c.req.param('wsId'), c.req.param('export'))
     if (!r.ok) return c.json({ error: r.error }, r.status)
+    let policy
+    try { policy = r.ws.dir ? await readAliceHarnessConfig(r.ws.dir) : DEFAULT_ALICE_HARNESS_CONFIG }
+    catch (error) { return c.json({ error: (error as Error).message }, 503) }
     const cat = exportCatalog(r.exp, r.ws)
 
     const groups: Record<
@@ -196,6 +239,7 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
       Record<string, { tool: string; description: string; schema: unknown }>
     > = {}
     for (const [group, verbs] of Object.entries(r.exp.commands)) {
+      if (!cliGroupEnabled(policy, r.exp.binary, group)) continue
       for (const [verb, toolName] of Object.entries(verbs)) {
         const tool = cat.resolve(toolName)
         if (!tool) continue
@@ -219,13 +263,28 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
       }
     }
 
-    // No-silent-caps: surface tools registered IN THIS SCOPE but not reachable
-    // via this export, so coverage gaps are visible rather than implied-complete.
-    const mapped = mappedToolNames(c.req.param('export'))
+    // No-silent-caps diagnostics: surface tools registered in this registry
+    // scope but not owned by ANY public CLI. Sibling global exports deliberately
+    // share ToolCenter, so a UTA tool must not look like a missing `alice` verb.
+    const mapped = mappedToolNamesForScope(r.exp.scope)
     const unmapped = cat.inventoryNames().filter((n) => !mapped.has(n))
 
-    return c.json({ export: c.req.param('export'), description: r.exp.description, groups, unmapped })
+    // Discovery must remain usable even if the optional upgrade receipt is unreadable.
+    const upgradeWarning = !manifestOnly && r.ws.dir
+      ? await getWorkspaceService()?.aliceHarnessUpgrades?.upgradeNotice(r.ws.id).catch(() => undefined)
+      : undefined
+    return c.json({
+      ...(upgradeWarning ? { warnings: [upgradeWarning] } : {}),
+      export: c.req.param('export'),
+      description: r.exp.description,
+      groupDescriptions: r.exp.groupDescriptions,
+      groups,
+      unmapped,
+    })
   })
+
+  // UI documentation exposes discovery only, never an invocation alias.
+  if (manifestOnly) return
 
   app.post('/cli/:wsId/:export/invoke', async (c) => {
     const r = resolveCtx(c.req.param('wsId'), c.req.param('export'))
@@ -236,6 +295,12 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
     if (!mappedToolNames(c.req.param('export')).has(toolName)) {
       return c.json({ error: `Unknown CLI command tool: ${toolName || '(none)'}` }, 404)
     }
+    let policy
+    try { policy = r.ws.dir ? await readAliceHarnessConfig(r.ws.dir) : DEFAULT_ALICE_HARNESS_CONFIG }
+    catch (error) { return c.json({ error: (error as Error).message }, 503) }
+    const enabled = Object.entries(r.exp.commands).some(([group, verbs]) =>
+      cliGroupEnabled(policy, r.exp.binary, group) && Object.values(verbs).includes(toolName))
+    if (!enabled) return c.json({ error: `CLI command disabled by Workspace configuration: ${toolName}` }, 403)
     // Out-of-band identity (agent never sees it): the `alice` shim forwards the
     // spawn-injected AQ_RUN_ID (headless) / AQ_SESSION_ID (interactive) here as
     // mutually-exclusive headers, resolved server-side to an authoritative origin

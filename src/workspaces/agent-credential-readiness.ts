@@ -13,20 +13,12 @@ import type { CliAdapter, WorkspaceAiCred } from './cli-adapter.js'
 import type { Logger } from './logger.js'
 import type { WorkspaceMeta } from './workspace-registry.js'
 
-/**
- * Provider-agnostic runtimes that cannot rely on a first-party CLI login in
- * OpenAlice's launch path. They need either a usable workspace AI config file
- * or an Alice vault credential we can inject before spawn/headless dispatch.
- */
-export const LOGINLESS_AGENTS = new Set(['opencode', 'pi'])
-
 export type AgentCredentialSource =
   | 'runtime-login'
   | 'workspace-config'
   | 'launcher-vault'
   | 'missing'
   | 'unknown-agent'
-  | 'disabled-agent'
 
 export interface AgentCredentialReadiness {
   readonly agent: string
@@ -61,6 +53,14 @@ export class AgentCredentialError extends Error {
   }
 }
 
+function requiresWorkspaceCredential(adapter: CliAdapter | undefined): boolean {
+  return adapter?.capabilities.aiProvider?.credentialSource === 'workspace-required'
+}
+
+function hasInjectableProviderBinding(cred: WorkspaceAiCred | null | undefined): boolean {
+  return trimString(cred?.apiKey).length > 0 && trimString(cred?.model).length > 0
+}
+
 function trimString(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -71,22 +71,25 @@ function trimString(value: string | null | undefined): string {
  * first-party OpenAI/Anthropic-compatible defaults; apiKey + model are the
  * load-bearing fields for OpenAlice-managed opencode/Pi configs.
  */
-export function isUsableWorkspaceAiCred(agentId: string, cred: WorkspaceAiCred | null | undefined): boolean {
-  if (!LOGINLESS_AGENTS.has(agentId)) return true
-  return trimString(cred?.apiKey).length > 0 && trimString(cred?.model).length > 0
+export function isUsableWorkspaceAiCred(
+  adapter: CliAdapter,
+  cred: WorkspaceAiCred | null | undefined,
+): boolean {
+  if (!requiresWorkspaceCredential(adapter)) return true
+  return hasInjectableProviderBinding(cred)
 }
 
 function injectableCredentials(
   credentials: Record<string, Credential>,
-  agentId: string,
+  adapter: CliAdapter,
 ): Array<[string, Credential, WorkspaceAiCred]> {
   const out: Array<[string, Credential, WorkspaceAiCred]> = []
-  for (const [slug, credential] of compatibleCredentials(credentials, agentId)) {
+  for (const [slug, credential] of compatibleCredentials(credentials, adapter)) {
     const model = resolveInjectionModel(credential)
-    const wsCred = credentialToWorkspaceAiCred(credential, agentId, {
+    const wsCred = credentialToWorkspaceAiCred(credential, adapter, {
       ...(model ? { model } : {}),
     })
-    if (wsCred && isUsableWorkspaceAiCred(agentId, wsCred)) out.push([slug, credential, wsCred])
+    if (wsCred && hasInjectableProviderBinding(wsCred)) out.push([slug, credential, wsCred])
   }
   return out
 }
@@ -117,40 +120,35 @@ export async function getAgentCredentialReadiness(opts: {
       message: `unknown agent runtime: ${agentId}`,
     }
   }
-  if (!meta.agents.includes(agentId)) {
-    return {
-      agent: agentId,
-      ready: false,
-      requiresCredential: LOGINLESS_AGENTS.has(agentId),
-      source: 'disabled-agent',
-      hasWorkspaceConfig: false,
-      hasUsableWorkspaceConfig: false,
-      detectedCredentialSlug: null,
-      compatibleCredentialSlugs: [],
-      injectableCredentialSlugs: [],
-      message: `agent "${agentId}" is not enabled on this workspace`,
-    }
-  }
-  if (!LOGINLESS_AGENTS.has(agentId)) {
+  if (!requiresWorkspaceCredential(adapter)) {
+    const cfg = await readWorkspaceConfig(meta, adapter)
+    // Native runtime readiness must not become dependent on OpenAlice's vault.
+    // The vault lookup is only metadata for identifying an existing binding.
+    const credentials = cfg === null
+      ? {}
+      : opts.credentials ?? await readCredentials().catch(() => ({}))
+    const detectedCredentialSlug = matchCredentialByApiKey(credentials, cfg?.apiKey)
+    const compatible = compatibleCredentials(credentials, adapter)
+    const injectable = injectableCredentials(credentials, adapter)
     return {
       agent: agentId,
       ready: true,
       requiresCredential: false,
-      source: 'runtime-login',
-      hasWorkspaceConfig: false,
-      hasUsableWorkspaceConfig: false,
-      detectedCredentialSlug: null,
-      compatibleCredentialSlugs: [],
-      injectableCredentialSlugs: [],
+      source: cfg === null ? 'runtime-login' : 'workspace-config',
+      hasWorkspaceConfig: cfg !== null,
+      hasUsableWorkspaceConfig: cfg !== null,
+      detectedCredentialSlug,
+      compatibleCredentialSlugs: compatible.map(([slug]) => slug),
+      injectableCredentialSlugs: injectable.map(([slug]) => slug),
     }
   }
 
   const credentials = opts.credentials ?? await readCredentials()
   const cfg = await readWorkspaceConfig(meta, adapter)
   const detectedCredentialSlug = matchCredentialByApiKey(credentials, cfg?.apiKey)
-  const compatible = compatibleCredentials(credentials, agentId)
-  const injectable = injectableCredentials(credentials, agentId)
-  const hasUsableWorkspaceConfig = isUsableWorkspaceAiCred(agentId, cfg)
+  const compatible = compatibleCredentials(credentials, adapter)
+  const injectable = injectableCredentials(credentials, adapter)
+  const hasUsableWorkspaceConfig = isUsableWorkspaceAiCred(adapter, cfg)
 
   if (hasUsableWorkspaceConfig) {
     return {
@@ -195,6 +193,13 @@ export async function getAgentCredentialReadiness(opts: {
   }
 }
 
+/**
+ * Apply a credential to native project configuration for compatibility with a
+ * CLI launched outside OpenAlice.
+ *
+ * @deprecated Managed probes, interactive Sessions, WebPi, and headless runs
+ * must resolve a Session runtime binding instead of calling this mutating gate.
+ */
 export async function ensureAgentCredentialReady(opts: {
   readonly meta: WorkspaceMeta
   readonly agentId: string
@@ -204,7 +209,8 @@ export async function ensureAgentCredentialReady(opts: {
   readonly logger?: Logger
 }): Promise<AgentCredentialReadiness> {
   const { meta, agentId, adapter, pickedCredentialSlug, logger } = opts
-  if (!LOGINLESS_AGENTS.has(agentId)) {
+  const required = requiresWorkspaceCredential(adapter)
+  if (!required && !pickedCredentialSlug) {
     return getAgentCredentialReadiness({ meta, agentId, adapter })
   }
   if (!adapter?.writeAiConfig) {
@@ -213,8 +219,8 @@ export async function ensureAgentCredentialReady(opts: {
 
   const credentials = await readCredentials()
   const cfg = await readWorkspaceConfig(meta, adapter)
-  const compatible = compatibleCredentials(credentials, agentId)
-  const injectable = injectableCredentials(credentials, agentId)
+  const compatible = compatibleCredentials(credentials, adapter)
+  const injectable = injectableCredentials(credentials, adapter)
   const injectableMap = new Map(injectable.map(([slug, credential, wsCred]) => [slug, { credential, wsCred }]))
   const detectedCredentialSlug = matchCredentialByApiKey(credentials, cfg?.apiKey)
   const picked = pickedCredentialSlug && injectableMap.has(pickedCredentialSlug) ? pickedCredentialSlug : null
@@ -224,11 +230,13 @@ export async function ensureAgentCredentialReady(opts: {
   // auth mode, model, and context window; Quick Chat sends the visible provider
   // pill on every turn, including immediately after creation-time defaults were
   // injected.
-  if ((!picked || picked === detectedCredentialSlug) && isUsableWorkspaceAiCred(agentId, cfg)) {
+  if ((!picked || picked === detectedCredentialSlug) && cfg !== null && (
+    required ? isUsableWorkspaceAiCred(adapter, cfg) : true
+  )) {
     return {
       agent: agentId,
       ready: true,
-      requiresCredential: true,
+      requiresCredential: required,
       source: 'workspace-config',
       hasWorkspaceConfig: cfg !== null,
       hasUsableWorkspaceConfig: true,
@@ -238,16 +246,15 @@ export async function ensureAgentCredentialReady(opts: {
     }
   }
 
-  const chosenSlug =
-    picked ??
-    (detectedCredentialSlug && injectableMap.has(detectedCredentialSlug) ? detectedCredentialSlug : null) ??
-    injectable[0]?.[0] ??
-    null
+  const chosenSlug = picked ?? (required
+    ? (detectedCredentialSlug && injectableMap.has(detectedCredentialSlug)
+        ? detectedCredentialSlug
+        : injectable[0]?.[0] ?? null)
+    : null)
   if (!chosenSlug) {
-    throw new AgentCredentialError(
-      agentId,
-      `agent "${agentId}" needs a workspace AI config or an Alice credential with a remembered/default model`,
-    )
+    throw new AgentCredentialError(agentId, required
+      ? `agent "${agentId}" needs a workspace AI config or an Alice credential with a remembered/default model`
+      : `the selected Alice credential cannot be injected into agent "${agentId}"`)
   }
   const chosen = injectableMap.get(chosenSlug)
   if (!chosen) throw new AgentCredentialError(agentId)
@@ -267,7 +274,7 @@ export async function ensureAgentCredentialReady(opts: {
   return {
     agent: agentId,
     ready: true,
-    requiresCredential: true,
+    requiresCredential: required,
     source: 'launcher-vault',
     hasWorkspaceConfig: true,
     hasUsableWorkspaceConfig: true,

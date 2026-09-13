@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Tool } from 'ai'
+import { resolve } from 'node:path'
 import { inboxReadFactory } from './inbox-read.js'
 import { createMemoryInboxStore, type InboxOrigin } from '../core/inbox-store.js'
 import type { WorkspaceToolContext } from '../core/workspace-tool-center.js'
@@ -18,8 +19,12 @@ async function run(tool: Tool, args: Record<string, unknown>) {
       mine: boolean
       workspaceId: string
       workspace: string
-      comments?: string
-      docs: string[]
+      body: string
+      files: Array<{
+        relativePath: string
+        absolutePath: string | null
+        revision?: string
+      }>
       docRevisions?: Record<string, string>
       origin?: InboxOrigin
     }>
@@ -28,28 +33,38 @@ async function run(tool: Tool, args: Record<string, unknown>) {
 
 async function seeded(): Promise<WorkspaceToolContext> {
   const inboxStore = createMemoryInboxStore()
-  await inboxStore.append({ workspaceId: WS, workspaceLabel: 'Mine', docs: [{ path: 'a.md' }], comments: 'first' })
+  await inboxStore.append({
+    workspaceId: WS,
+    workspaceLabel: 'Mine',
+    body: "first\n\n[[a.md]]"
+  })
   await inboxStore.append({
     workspaceId: OTHER,
     workspaceLabel: 'Theirs',
-    comments: 'from elsewhere',
     origin: {
       kind: 'headless',
       runId: 'run-peer',
       issueId: 'daily-scan',
       agent: 'pi',
     },
+    body: 'from elsewhere'
   })
   await inboxStore.append({
     workspaceId: WS,
     workspaceLabel: 'Mine',
-    docs: [{ path: 'b.md', revision: 'sha256:bbbb' }, { path: 'c.md' }],
+    body: "[[b.md]]\n\n[[c.md]]",
+    fileRevisions: Object.fromEntries(([{ path: 'b.md', revision: 'sha256:bbbb' }, { path: 'c.md' }]).map(doc => [doc.path, doc.revision!]))
   })
   return {
     workspaceId: WS,
     workspaceLabel: 'Mine',
     inboxStore,
     entityStore: {} as never,
+    resolveWorkspace: (id) => ({
+      id,
+      tag: id === WS ? 'Mine' : 'Theirs',
+      dir: resolve('/workspaces', id),
+    }),
     resolveInboxOrigin: (entry) => entry.origin?.runId === 'run-peer'
       ? { ...entry.origin, resumeId: 'resume-peer' }
       : entry.origin,
@@ -73,8 +88,8 @@ describe('inbox_read', () => {
     expect(res.count).toBe(2)
     expect(res.entries.every((e) => e.mine)).toBe(true)
     // newest self entry carries both attachments, as plain relative paths
-    expect(res.entries[0].docs).toEqual(['b.md', 'c.md'])
-    expect(res.entries[1].docs).toEqual(['a.md'])
+    expect(res.entries[0].files.map(file => file.relativePath)).toEqual(['b.md', 'c.md'])
+    expect(res.entries[1].files.map(file => file.relativePath)).toEqual(['a.md'])
   })
 
   it('surfaces the dir-resolvable workspaceId on every entry (the peer-path handle)', async () => {
@@ -103,8 +118,32 @@ describe('inbox_read', () => {
 
   it('keeps path compatibility and adds published revision metadata', async () => {
     const res = await run(inboxReadFactory.build(await seeded()), { self: true })
-    expect(res.entries[0].docs).toEqual(['b.md', 'c.md'])
-    expect(res.entries[0].docRevisions).toEqual({ 'b.md': 'sha256:bbbb' })
+    expect(res.entries[0].files.map(file => file.relativePath)).toEqual(['b.md', 'c.md'])
+    expect(res.entries[0].body).toContain('[[b.md]]')
+    expect(res.entries[0].files).toEqual([
+      {
+        relativePath: 'b.md',
+        absolutePath: null,
+        revision: 'sha256:bbbb',
+      },
+      {
+        relativePath: 'c.md',
+        absolutePath: null,
+      },
+    ])
+  })
+
+  it('returns a null absolute path instead of escaping the Workspace root', async () => {
+    const inboxStore = createMemoryInboxStore()
+    await inboxStore.append({
+      workspaceId: OTHER,
+      body: "[[../outside.md]]"
+    })
+    const base = await seeded()
+    const res = await run(inboxReadFactory.build({ ...base, inboxStore }), {})
+
+    expect(res.entries[0].files).toEqual([])
+    expect(res.entries[0].body).toBe('[[../outside.md]]')
   })
 
   it('`limit` caps the newest-first window and reports hasMore', async () => {

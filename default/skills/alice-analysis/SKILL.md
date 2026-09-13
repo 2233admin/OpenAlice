@@ -1,18 +1,9 @@
 ---
 name: alice-analysis
 description: >
-  How to compute technical analysis with OpenAlice's Quant Calculator (v2) via
-  `alice analysis` — a small Python/pandas-subset scripting language over
-  K-lines, keyed by barId so you compute on a SPECIFIC source — prefer a
-  broker's bars (matches what you trade, realtime) over a free vendor like
-  yfinance (delayed fallback) — and can batch many
-  timeframes/symbols/indicators in ONE call. Use whenever the task is
-  technical/quantitative on price data: "RSI on BTC", "is AAPL above its
-  200-day", "50/200 golden cross check", "multi-timeframe momentum", "how
-  extended is X (z-score)", "does this track the sector (correlation)", "trend
-  strength", "compare 1h/4h/12h at once". Reach it with
-  `alice analysis search-bars` (find a barId) then `alice analysis quant`
-  (compute).
+  Optional technical-analysis formulas and snapshots through alice analysis.
+  Documents the bounded expression language, barId source selection and panels.
+  Raw K-lines for local scripts are available through alice market bars.
 ---
 
 # `alice analysis` — Quant Calculator (v2)
@@ -21,27 +12,25 @@ A bounded, side-effect-free expression language for technical analysis. You writ
 a short script; it fetches K-lines by **barId** and returns a value (or a panel
 of values). Get barIds from `alice analysis search-bars` first.
 
-## The loop
+## Example
 
 ```bash
-alice analysis search-bars --query AAPL
-# Pick a broker barId if one came back (realtime, matches your fills); fall back to a vendor only if not.
+alice market search-bars --query AAPL
 alice analysis quant --script $'s = bars("alpaca-paper|AAPL", "1d", count=250)\nsma(s.close, 50)'
 ```
 
 ## Choosing a source
 
-`search-bars` federates broker bars and vendor bars (freshest-first). Pick in
-this order:
+`search-bars` federates broker and vendor bars. Choose a source by the asset,
+coverage and entitlement needed for the task. A broker feed is not necessarily
+realtime or complete; metadata reports its advertised capability. Different
+sources for the same asset remain separate barIds.
 
-1. **A broker you actually trade** (`barCapability: "realtime"`) — freshest, and
-   the chart matches your fills. Always prefer this when it's in the results.
-2. **A paid vendor** (`fmp`, …) when no broker source exists.
-3. **`yfinance` — free fallback only.** Its end-of-day bars can lag a **day or
-   two**, so never use it for anything time-sensitive (a fresh signal, an entry
-   check) or to chart a live position when a broker source is available.
+For custom processing, `alice market bars ... --output bars.json` returns raw
+OHLCV and metadata for local scripts. The calculator is an optional shortcut.
 
-Vendor barIds (`yfinance|…`, `fmp|…`) need `asset=`; broker barIds infer it.
+Vendor barIds infer the asset class from an exact catalog match. If lookup is
+unavailable or ambiguous, the calculator accepts an explicit `asset=` hint.
 Keyless exchange data sources such as `binance-readonly` are opt-in in
 Trading settings, so do not assume they exist before `search-bars` returns them.
 
@@ -63,8 +52,8 @@ sma(s.close, 50) - sma(s.close, 200)        # +ve = 50 above 200 (uptrend)
 **`bars(barId, interval, count=, asOf=, start=, end=, asset=)`**
 - `barId`: `"{source}|{symbol}"` from search-bars. Broker (`alpaca-paper|AAPL`)
   or opt-in keyless exchange data (`binance-readonly|BTC/USDT`) needs NO
-  `asset=`; vendor (`yfinance|AAPL`, `fmp|AAPL`) needs
-  `asset="equity"|"crypto"|"currency"|"commodity"`.
+  `asset=`. Vendor sources resolve exact catalog matches; pass
+  `asset="equity"|"crypto"|"currency"|"commodity"` when an explicit hint is needed.
 - `interval`: `1m 5m 15m 30m 1h 4h 1d 1w`.
 - Window: `count=N` (most-recent N bars — the natural window for indicators), OR
   `start=/end=` (YYYY-MM-DD date range), OR `end=+count=` (point-in-time backtest).
@@ -90,10 +79,10 @@ d1 = bars("yfinance|BTC-USD", "1d", count=250, asset="crypto")
 ```
 → `{ "1h": 53.2, "4h": 48.9, "1d": 61.4 }`
 
-## Sibling verbs — dated reads & backtests
+## Sibling verbs — dated reads
 
 `quant` returns latest scalars with no dates. When you need the time axis or a
-hypothetical trade, reach for these instead (see the `retrospective` skill for
+dated research input, reach for these instead (see the `retrospective` skill for
 the full workflow):
 
 - **`alice analysis snapshot --query XLE [--asOf YYYY-MM-DD]`** — the honest
@@ -101,11 +90,9 @@ the full workflow):
   (close + vs-prevClose + day high/low + amplitude), compact levels, and a
   **freshness contract** (`isLatestActual` / `staleTradingDays`). Use this for
   "what does/did X look like", not a hand-rolled quant dump.
-- **`alice analysis simulate --query XLE --entryDate … --exitRule …`** —
-  backtest one entry + one exit (`trailing_stop`/`ma_break`/`stop`/`target`/
-  `hold`); returns entry/exit, returnPct, MFE/MAE.
 - **`alice analysis quant … --dates`** — opt-in date axis on a quant result
-  (`dates[barId]`), to map a dumped series back to days.
+  (`dates[barId]` for one interval; `dates["barId@interval"]` when the same
+  barId is used at multiple intervals), to map a dumped series back to days.
 
 ## Function catalog
 
@@ -165,10 +152,15 @@ supported here).
 
 - Indicators return the latest **scalar** — never `[-1]` them; only raw columns
   are series.
-- Vendor barIds need `asset=`; broker barIds infer it.
+- Ambiguous or unavailable vendor catalog lookups need an explicit `asset=`.
 - **Source freshness:** `yfinance`/`fmp` are delayed (yfinance EOD can lag a day
   or two). Prefer a broker barId for anything you trade or anything time-sensitive.
 - No conditionals/booleans (no `if`, no crossover operator) — compute the parts
   and compare in your own reasoning, or return them in a panel.
 - For arbitrary/looping logic beyond these primitives, spawn a separate
   Auto-Quant workspace, not this tool.
+
+## Raw data and chart delivery
+
+See the `market-data` skill for raw OHLCV reads and `[[market/{barId}/{interval}]]`
+references that display charts in GUI chat and supported Connectors.

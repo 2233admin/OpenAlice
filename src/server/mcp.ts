@@ -18,6 +18,7 @@ import { extractMcpShape, wrapToolExecute } from '../core/mcp-export.js'
 import { registerCliRoutes } from './cli.js'
 import { resolveInboxOrigin } from './inbox-origin.js'
 import { createWorkspaceConversationControl } from '../workspaces/conversation-control.js'
+import { sessionCoworkerLabel } from '../workspaces/session-registry.js'
 
 /**
  * MCP Plugin — exposes OpenAlice tools via Streamable HTTP, plus the CLI gateway.
@@ -106,19 +107,32 @@ export class McpPlugin implements Plugin {
         ...(svc ? { provenanceStore: svc.provenanceStore } : {}),
         ...(svc ? { conversation: createWorkspaceConversationControl(svc) } : {}),
         ...(svc ? { templateUpgrades: svc.templateUpgrades } : {}),
+        ...(svc ? {
+          setSessionDisplayName: async (input) => {
+            const identity = await svc.setSessionDisplayName({
+              wsId,
+              resumeId: input.resumeId,
+              displayName: input.displayName,
+            })
+            return {
+              resumeId: identity.resumeId,
+              ...(identity.displayName ? { displayName: identity.displayName } : {}),
+            }
+          },
+        } : {}),
         // Parity with the CLI gateway so external MCP consumers get the same
         // workspace_path resolution — shared helper, so the two can't drift.
         resolveWorkspace: makeWorkspaceResolver(getWorkspaceService),
         ...(svc ? {
           workspaceInventory: async () => Promise.all(svc.registry.list().map(async (meta) => {
             await svc.sessionRegistry.ensureLoaded(meta.id)
+            void svc.refreshSessionTitles?.(meta)
             const sessions = svc.sessionRegistry.listFor(meta.id)
             const activity = svc.workspaceRuntimeActivity(meta.id)
             return {
               id: meta.id,
               tag: meta.tag,
               ...(meta.template ? { template: meta.template } : {}),
-              agents: meta.agents,
               createdAt: meta.createdAt,
               sessions: {
                 total: sessions.length,
@@ -130,7 +144,10 @@ export class McpPlugin implements Plugin {
                   .map((session) => ({
                     resumeId: session.resumeId,
                     agent: session.agent,
-                    title: session.title?.trim() || session.name,
+                    title: sessionCoworkerLabel(
+                      session,
+                      svc.resumeRegistry.get(session.resumeId)?.displayName,
+                    ) ?? session.name,
                     state: session.state,
                     lastActiveAt: session.lastActiveAt,
                   })),
@@ -155,6 +172,7 @@ export class McpPlugin implements Plugin {
         } : {}),
         ...(svc
           ? {
+              issueRuns: { start: (w: string, i: string, r?: string) => svc.startIssueRun(w, i, r) },
               board: {
                 snapshot: () => svc.issuesSnapshot(),
                 detail: (w: string, i: string) => svc.issueDetail(w, i),
@@ -165,6 +183,7 @@ export class McpPlugin implements Plugin {
         // Agent-invisible run provenance from the out-of-band header (resolved
         // server-side from the authoritative registry). Absent → undefined.
         ...(origin ? { origin } : {}),
+        ...(origin?.kind === 'headless' && origin.runId && svc ? { callerRun: svc.headlessTasks.get(origin.runId) ?? undefined } : {}),
       })
       const mcp = new McpServer({ name: 'open-alice-workspace', version: '1.0.0' })
       for (const [name, t] of Object.entries(tools)) {

@@ -28,6 +28,10 @@ interface Window {
    * sync with apps/desktop/src/preload.ts; never expose raw ipcRenderer.
    */
   readonly openAlice?: {
+    readonly windowChrome?: {
+      readonly platform: string
+      setTheme?(theme: { color: string; symbolColor: string }): Promise<void>
+    }
     readonly runtime: {
       info(): Promise<{
         mode: 'electron-dev' | 'electron-packaged'
@@ -35,6 +39,13 @@ interface Window {
         ports: { web: number | null; mcp: number | null; uta: number | null }
         userDataHome: string
         appHome: string
+        aliceProject: {
+          id: string
+          key: string
+          displayName: string
+          home: string
+          appRoot: string | null
+        }
       }>
     }
     readonly keyboard: {
@@ -52,6 +63,11 @@ interface Window {
         | { phase: 'available'; version?: string; releaseUrl?: string }
         | { phase: 'downloading'; version?: string; percent?: number }
         | { phase: 'downloaded'; version: string; releaseUrl: string }
+        | {
+            phase: 'installing'
+            version: string
+            stage: 'preparing' | 'stopping-services' | 'releasing-runtime' | 'handing-off'
+          }
         | { phase: 'error'; message: string }
         | null
       >
@@ -63,6 +79,11 @@ interface Window {
         | { phase: 'available'; version?: string; releaseUrl?: string }
         | { phase: 'downloading'; version?: string; percent?: number }
         | { phase: 'downloaded'; version: string; releaseUrl: string }
+        | {
+            phase: 'installing'
+            version: string
+            stage: 'preparing' | 'stopping-services' | 'releasing-runtime' | 'handing-off'
+          }
         | { phase: 'error'; message: string }
       ) => void): () => void
       installAndRestart(): Promise<unknown>

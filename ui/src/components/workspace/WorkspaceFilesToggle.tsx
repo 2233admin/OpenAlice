@@ -1,36 +1,41 @@
 import type { ReactElement } from 'react'
+import { useHarnessWorkbenchContext } from '../harness/context'
 import { PanelRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { useIsDesktop } from '../../live/use-is-desktop'
 import { useWorkspaceSidePanels } from '../../live/workspace-side-panels'
+import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip'
+import { Button } from '../ui/button'
 
-/**
- * Top-bar toggle for the workspace right pane (the Files panel). One click
- * folds the whole column away so the terminal gets full width, instead of
- * leaving a narrow always-on column. Lives next to "Settings" in
- * WorkspacePage's header; replaces the old Layout popover.
- *
- * State is user-level + persisted (fold it once, it stays folded) — see
- * `useWorkspaceSidePanels`.
- */
+/** Harness header: one icon disclosure with an accessible name and tooltip.
+ * Standalone workspace views retain their existing Files control. */
 export function WorkspaceFilesToggle(): ReactElement {
   const { t } = useTranslation()
-  const files = useWorkspaceSidePanels((s) => s.files)
-  const toggleFiles = useWorkspaceSidePanels((s) => s.toggleFiles)
-  return (
-    <button
-      type="button"
-      onClick={toggleFiles}
-      aria-pressed={files}
-      title={files ? t('workspace.hideFilesTitle') : t('workspace.showFilesTitle')}
-      className={`workspace-files-toggle flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors ${
-        files
+  const workbench = useHarnessWorkbenchContext()
+  const isDesktop = useIsDesktop()
+  const { files, autoHideMobile, mobileFilesOpen, toggleFiles, toggleMobileFiles } =
+    useWorkspaceSidePanels()
+  const usesMobileOverlay = !isDesktop && autoHideMobile
+  const filesVisible = workbench ? workbench.open : usesMobileOverlay ? mobileFilesOpen : files
+  const label = workbench ? t('workbench.title') : t('workspace.files')
+  const button = (
+    <Button
+      variant="ghost"
+      size={workbench ? "icon" : "sm"}
+      onClick={workbench ? workbench.toggle : usesMobileOverlay ? toggleMobileFiles : toggleFiles}
+      aria-pressed={filesVisible}
+      aria-label={label}
+      aria-expanded={filesVisible}
+      className={`workspace-files-toggle text-[11px] ${
+        filesVisible
           ? 'text-foreground bg-muted'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+          : 'text-muted-foreground'
       }`}
     >
-      <PanelRight size={13} strokeWidth={1.8} aria-hidden />
-      {t('workspace.files')}
-    </button>
+      <PanelRight size={workbench ? 17 : 13} strokeWidth={1.8} aria-hidden />
+      {!workbench && label}
+    </Button>
   )
+  return <Tooltip><TooltipTrigger render={button} /><TooltipContent>{label}</TooltipContent></Tooltip>
 }

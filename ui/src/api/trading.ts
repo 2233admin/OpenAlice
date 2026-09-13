@@ -1,5 +1,5 @@
 import { fetchJson } from './client'
-import type { UTASummary, AccountInfo, SubAccountRef, Position, WalletCommitLog, ReconnectResult, UTAConfig, WalletStatus, WalletPushResult, WalletRejectResult, TestConnectionResult, BrokerPreset, BrokerEngine, BrokerPackStatus, UTASnapshotSummary, EquityCurvePoint, PlaceOrderRequest, ClosePositionRequest, CancelOrderRequest, OrderErrorResponse, OrderHistoryEntry, TradeHistoryEntry } from './types'
+import type { UTASummary, AccountInfo, SubAccountRef, Position, WalletCommitLog, ReconnectResult, UTAConfig, WalletStatus, WalletPushResult, WalletRejectResult, TestConnectionResult, BrokerPreset, BrokerEngine, BrokerPackStatus, BrokerPackReadinessResponse, UTASnapshotSummary, EquityCurvePoint, PlaceOrderRequest, ClosePositionRequest, CancelOrderRequest, OrderErrorResponse, OrderHistoryEntry, TradeHistoryEntry } from './types'
 
 /** Thrown by the one-shot order endpoints when the server returns non-2xx. Carries the phase. */
 export class OrderEntryError extends Error {
@@ -133,11 +133,18 @@ export const tradingApi = {
     return fetchJson(`/api/trading/uta/${utaId}/wallet/status`)
   },
 
-  async walletReject(utaId: string, reason?: string): Promise<WalletRejectResult> {
+  async walletReject(
+    utaId: string,
+    reason: string | undefined,
+    expectedPendingHash: string,
+  ): Promise<WalletRejectResult> {
     const res = await fetch(`/api/trading/uta/${utaId}/wallet/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reason ? { reason } : {}),
+      body: JSON.stringify({
+        ...(reason ? { reason } : {}),
+        expectedPendingHash,
+      }),
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
@@ -146,8 +153,12 @@ export const tradingApi = {
     return res.json()
   },
 
-  async walletPush(utaId: string): Promise<WalletPushResult> {
-    const res = await fetch(`/api/trading/uta/${utaId}/wallet/push`, { method: 'POST' })
+  async walletPush(utaId: string, expectedPendingHash: string): Promise<WalletPushResult> {
+    const res = await fetch(`/api/trading/uta/${utaId}/wallet/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedPendingHash }),
+    })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.error || `Push failed (${res.status})`)
@@ -179,7 +190,7 @@ export const tradingApi = {
     return fetchJson('/api/trading/config/broker-presets')
   },
 
-  async getBrokerPacks(): Promise<{ packs: BrokerPackStatus[] }> {
+  async getBrokerPacks(): Promise<BrokerPackReadinessResponse> {
     return fetchJson('/api/trading/config/broker-packs')
   },
 
@@ -272,16 +283,19 @@ export const tradingApi = {
   // ==================== Contract search ====================
 
   /**
-   * Heuristic broker-side search across all configured UTAs. Used by the
-   * Market workbench to surface tradeable contracts matching a data-vendor
-   * symbol — the bridge is intentionally fuzzy / display-only.
+   * Heuristic broker-side search across configured UTAs, optionally narrowed
+   * to one account. The Market workbench searches broadly to bridge a
+   * data-vendor symbol; manual order entry scopes to its open UTA so identical
+   * symbols cannot surface a different account's canonical aliceId.
    */
   async searchContracts(
     pattern: string,
     assetClass?: 'equity' | 'crypto' | 'currency' | 'commodity',
+    source?: string,
   ): Promise<ContractSearchResponse> {
     const qs = new URLSearchParams({ pattern })
     if (assetClass) qs.set('assetClass', assetClass)
+    if (source) qs.set('source', source)
     return fetchJson(`/api/trading/contracts/search?${qs}`)
   },
 

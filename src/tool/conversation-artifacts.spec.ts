@@ -44,8 +44,8 @@ describe('inbox_ask', () => {
     const inboxStore = createMemoryInboxStore()
     const entry = await inboxStore.append({
       workspaceId: 'ws-peer',
-      comments: 'result',
       origin: { kind: 'headless', runId: 'run-old', agent: 'pi' },
+      body: 'result'
     })
     const ask = dispatchedAsk()
     const tool = inboxAskFactory.build(baseContext({
@@ -65,13 +65,16 @@ describe('inbox_ask', () => {
       prompt: 'why?',
       target: { kind: 'resume', resumeId: 'resume-peer' },
       subject: { kind: 'inbox', entryId: entry.id },
-      timeoutMs: 300_000,
+      source: { kind: 'workspace', workspaceId: 'ws-caller' },
     })
   })
 
   it('uses the Inbox provenance resolver with a Workspace fallback for unattributed entries', async () => {
     const inboxStore = createMemoryInboxStore()
-    const entry = await inboxStore.append({ workspaceId: 'ws-peer', comments: 'manual result' })
+    const entry = await inboxStore.append({
+      workspaceId: 'ws-peer',
+      body: 'manual result'
+    })
     const ask = dispatchedAsk()
     const tool = inboxAskFactory.build(baseContext({
       inboxStore,
@@ -81,6 +84,21 @@ describe('inbox_ask', () => {
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({
       target: { kind: 'inbox', inboxEntryId: entry.id, workspaceId: 'ws-peer' },
     }))
+  })
+
+  it('forwards an explicit reconstruction request', async () => {
+    const inboxStore = createMemoryInboxStore()
+    const entry = await inboxStore.append({
+      workspaceId: 'ws-peer',
+      body: 'manual result'
+    })
+    const ask = dispatchedAsk()
+    const tool = inboxAskFactory.build(baseContext({
+      inboxStore,
+      conversation: { ask, read: vi.fn() },
+    }))
+    await run(tool, { id: entry.id, prompt: 'reconstruct this', reconstruct: true })
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ reconstruct: true }))
   })
 })
 
@@ -167,7 +185,7 @@ describe('issue_ask', () => {
       id: 'audit', runId: 'run-from-a-follow-up', prompt: 'what happened?',
     })).resolves.toMatchObject({
       ok: false,
-      error: expect.stringContaining('alice-workspace issue show --id audit'),
+      error: expect.stringContaining('alice issue show --id audit'),
     })
   })
 })

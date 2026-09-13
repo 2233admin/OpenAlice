@@ -1,12 +1,13 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useId, useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { SettingsScrollArea, inputClass } from '../components/form'
-import { Skeleton } from '../components/StateViews'
+import { EmptyState as SharedEmptyState, RecoverySurface, Skeleton } from '../components/StateViews'
 import { Toggle } from '../components/Toggle'
 import { useTradingConfig } from '../hooks/useTradingConfig'
 import { useAccountHealth } from '../hooks/useAccountHealth'
+import { useBrokerPackReadiness, deriveAccountInteractionPolicy } from '../hooks/useBrokerPackReadiness'
 import { PageHeader } from '../components/PageHeader'
-import { HealthBadge } from '../components/uta/HealthBadge'
+import { AccountReadinessBadge } from '../components/uta/BrokerPackGate'
 import { CreateUTADialog } from '../components/uta/CreateUTADialog'
 import { EditUTADialog } from '../components/uta/EditUTADialog'
 import { fmt } from '../lib/format'
@@ -14,6 +15,8 @@ import { api } from '../api'
 import type { TradingServiceStatus } from '../api/trading'
 import { useWorkspace } from '../tabs/store'
 import type { UTAConfig, BrokerPreset, BrokerHealthInfo, BrokerPackStatus } from '../api/types'
+import { Button } from '../components/ui/button'
+import type { AccountPackReadiness } from '../hooks/useBrokerPackReadiness'
 
 // ==================== External order monitoring cadence ====================
 //
@@ -65,10 +68,13 @@ async function saveTradingRuntimeConfigPatch(patch: Partial<TradingRuntimeConfig
   return next
 }
 
-function ExternalOrderMonitoringRow() {
+export function ExternalOrderMonitoringRow() {
   const [value, setValue] = useState<string | null>(null)
   const [runtimeConfig, setRuntimeConfig] = useState<TradingRuntimeConfig | null>(null)
   const [msg, setMsg] = useState('')
+  const selectId = useId()
+  const descriptionId = `${selectId}-description`
+  const statusId = `${selectId}-status`
 
   useEffect(() => {
     let cancelled = false
@@ -105,20 +111,31 @@ function ExternalOrderMonitoringRow() {
   if (value === null) return null
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 border border-border rounded-lg">
+    <div className="flex min-h-12 flex-col items-stretch gap-3 rounded-lg border border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <div className="text-[12px] font-medium text-foreground">External order monitoring</div>
-        <div className="text-[11px] text-muted-foreground">
+        <label htmlFor={selectId} className="text-[12px] font-medium text-foreground">
+          External order monitoring
+        </label>
+        <div id={descriptionId} className="text-[11px] text-muted-foreground">
           How often to scan for orders placed outside Alice (exchange app, direct API).
           Known pending orders are tracked every 10s regardless.
         </div>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {msg && <span className="text-[11px] text-muted-foreground">{msg}</span>}
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+        <span
+          id={statusId}
+          role="status"
+          aria-atomic="true"
+          className="text-[11px] text-muted-foreground"
+        >
+          {msg}
+        </span>
         <select
+          id={selectId}
+          aria-describedby={`${descriptionId} ${statusId}`}
           value={value}
           onChange={(e) => { void save(e.target.value) }}
-          className={inputClass + ' w-auto'}
+          className={`${inputClass} w-full sm:w-auto`}
         >
           {OBSERVE_CADENCE_OPTIONS.map((v) => (
             <option key={v} value={v}>{v === 'off' ? 'Off' : `Every ${v}`}</option>
@@ -129,9 +146,9 @@ function ExternalOrderMonitoringRow() {
   )
 }
 
-export function KeylessDataSourcesRow({ ccxtPack, onPackInstalled }: {
+export function KeylessDataSourcesRow({ ccxtPack, onInstall }: {
   ccxtPack?: BrokerPackStatus
-  onPackInstalled: (status: BrokerPackStatus) => void
+  onInstall: () => Promise<void>
 }) {
   const [runtimeConfig, setRuntimeConfig] = useState<TradingRuntimeConfig | null>(null)
   const [msg, setMsg] = useState('')
@@ -173,8 +190,7 @@ export function KeylessDataSourcesRow({ ccxtPack, onPackInstalled }: {
     setInstalling(true)
     setMsg('Installing crypto data support…')
     try {
-      const installed = await api.trading.installBrokerPack('ccxt')
-      onPackInstalled(installed)
+      await onInstall()
       setMsg('Installed — choose the feeds you want')
     } catch (err) {
       setMsg(err instanceof Error ? err.message : 'Install failed')
@@ -197,9 +213,9 @@ export function KeylessDataSourcesRow({ ccxtPack, onPackInstalled }: {
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           {msg && <span className="text-[11px] text-muted-foreground">{msg}</span>}
           {ccxtPack && !ccxtPack.installed && (
-            <button className="btn-secondary" disabled={installing} onClick={() => { void install() }}>
+            <Button type="button" variant="outline" disabled={installing} onClick={() => { void install() }}>
               {installing ? 'Installing…' : ccxtPack.source === 'broken' ? 'Repair data support' : 'Install data support'}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -207,7 +223,7 @@ export function KeylessDataSourcesRow({ ccxtPack, onPackInstalled }: {
         {KEYLESS_DATA_SOURCE_OPTIONS.map((source) => {
           const checked = runtimeConfig.keylessDataSources.includes(source.id)
           return (
-            <div key={source.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2">
+            <div key={source.id} className="flex min-h-12 items-center justify-between gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2">
               <span className="text-[12px] text-foreground">{source.label}</span>
               <Toggle
                 size="sm"
@@ -239,22 +255,24 @@ interface EquitySummary {
   accounts: Array<{ id: string; label: string; equity: string; cash: string }>
 }
 
-export function MissingBrokerPacksNotice({ packs, onInstalled }: {
+export function MissingBrokerPacksNotice({ packs, onInstall }: {
   packs: BrokerPackStatus[]
-  onInstalled: (status: BrokerPackStatus) => void
+  onInstall: (engine: Exclude<BrokerPackStatus['engine'], 'mock'>) => Promise<void>
 }) {
-  const missing = packs.filter((pack) => !pack.installed && pack.requiredBy.length > 0)
+  const actionable = packs.filter(
+    (pack) => (!pack.installed || pack.updateAvailable) && pack.requiredBy.length > 0,
+  )
   const [installing, setInstalling] = useState<string | null>(null)
   const [error, setError] = useState('')
 
-  if (missing.length === 0) return null
+  if (actionable.length === 0) return null
 
   const install = async (pack: BrokerPackStatus) => {
     if (pack.engine === 'mock') return
     setInstalling(pack.engine)
     setError('')
     try {
-      onInstalled(await api.trading.installBrokerPack(pack.engine))
+      await onInstall(pack.engine)
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to install ${pack.engine} support`)
     } finally {
@@ -267,25 +285,38 @@ export function MissingBrokerPacksNotice({ packs, onInstalled }: {
       <div className="flex items-start gap-2.5">
         <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-medium text-foreground">Optional broker support is missing</div>
+          <div className="text-[12px] font-medium text-foreground">Broker support needs attention</div>
           <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-            OpenAlice itself can keep running. Install only the integrations used by these accounts or K-line sources.
+            Update or repair only the integrations already used by these accounts or K-line sources.
           </p>
-          <div className="mt-3 space-y-2">
-            {missing.map((pack) => (
-              <div key={pack.engine} className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
+          <div className="mt-3 divide-y divide-border/60 border-y border-border/60">
+            {actionable.map((pack) => (
+              <div key={pack.engine} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <div className="text-[12px] font-medium uppercase text-foreground">{pack.engine}</div>
+                  <div className="text-[12px] font-medium text-foreground">{pack.engine}</div>
                   <div className="truncate text-[11px] text-muted-foreground">Required by {pack.requiredBy.join(', ')}</div>
+                  {pack.updateAvailable && pack.version && (
+                    <div className="mt-0.5 text-[11px] text-warning">
+                      Installed support is from OpenAlice {pack.version}
+                    </div>
+                  )}
                   {pack.reason && <div className="mt-0.5 text-[11px] text-warning">{pack.reason}</div>}
                 </div>
-                <button
-                  className="btn-secondary shrink-0"
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
                   disabled={installing !== null}
                   onClick={() => { void install(pack) }}
                 >
-                  {installing === pack.engine ? 'Installing…' : pack.source === 'broken' ? 'Repair' : 'Install'}
-                </button>
+                  {installing === pack.engine
+                    ? 'Installing…'
+                    : pack.source === 'broken'
+                      ? 'Repair'
+                      : pack.updateAvailable
+                        ? 'Update'
+                        : 'Install'}
+                </Button>
               </div>
             ))}
           </div>
@@ -301,6 +332,7 @@ export function MissingBrokerPacksNotice({ packs, onInstalled }: {
 export function TradingPage() {
   const tc = useTradingConfig()
   const healthMap = useAccountHealth()
+  const brokerReadiness = useBrokerPackReadiness()
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
   const setSidebar = useWorkspace((s) => s.setSidebar)
   const [showAdd, setShowAdd] = useState(false)
@@ -309,18 +341,19 @@ export function TradingPage() {
   const [equity, setEquity] = useState<EquitySummary | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [serviceStatus, setServiceStatus] = useState<TradingServiceStatus | null>(null)
-  const [brokerPacks, setBrokerPacks] = useState<BrokerPackStatus[]>([])
-
-  const updateBrokerPack = (status: BrokerPackStatus) => {
-    setBrokerPacks((rows) => [...rows.filter((row) => row.engine !== status.engine), status])
-  }
+  const brokerPacks = brokerReadiness.data?.packs ?? []
 
   useEffect(() => {
     api.trading.getBrokerPresets().then(r => setPresets(r.presets)).catch(() => {})
-    api.trading.getBrokerPacks().then(r => setBrokerPacks(r.packs)).catch(() => {})
   }, [])
 
+  const hasReadableAccount = tc.utas.some((uta) => brokerReadiness.forAccount(uta).operational && uta.enabled !== false)
+
   useEffect(() => {
+    if (!hasReadableAccount) {
+      setServiceStatus(null)
+      return
+    }
     let cancelled = false
     const refresh = async () => {
       try {
@@ -342,26 +375,31 @@ export function TradingPage() {
     void refresh()
     const id = setInterval(refresh, 15_000)
     return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  }, [hasReadableAccount])
 
   // Per-card liveness signal — `equity()` lets each card show "this
   // connection actually returned an account balance" rather than just
   // "ping went through". 60s cadence is enough; trend/sparkline/aggregate
   // moved to Portfolio.
   useEffect(() => {
+    if (!hasReadableAccount) {
+      setEquity(null)
+      setLastUpdated(null)
+      return
+    }
     let cancelled = false
     const refresh = async () => {
       const eq = await api.trading.equity().catch(() => null)
       if (cancelled) return
-      if (eq) {
+      if (eq && eq.accounts.length > 0) {
         setEquity(eq)
         setLastUpdated(new Date())
       }
     }
-    refresh()
+    void refresh()
     const id = setInterval(refresh, 60_000)
     return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  }, [hasReadableAccount])
 
   const editingUTA = editingId ? tc.utas.find(u => u.id === editingId) : null
   const editingPreset = editingUTA ? presets.find(p => p.id === editingUTA.presetId) : undefined
@@ -373,7 +411,7 @@ export function TradingPage() {
   }
 
   if (tc.loading) return (
-    <PageShell subtitle="Configure your UTAs (Unified Trading Accounts).">
+    <PageShell>
       <div className="max-w-[820px] mx-auto space-y-2.5" aria-hidden="true">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="flex items-center gap-3 px-4 py-3.5 rounded-lg border border-border bg-secondary">
@@ -390,9 +428,13 @@ export function TradingPage() {
   )
   if (tc.error) {
     return (
-      <PageShell subtitle="Failed to load trading configuration.">
-        <p className="text-[13px] text-destructive">{tc.error}</p>
-        <button onClick={tc.refresh} className="mt-2 btn-secondary">Retry</button>
+      <PageShell scroll={false}>
+        <RecoverySurface
+          title="Failed to load trading configuration"
+          description={tc.error}
+          actionLabel="Retry"
+          onAction={tc.refresh}
+        />
       </PageShell>
     )
   }
@@ -401,43 +443,54 @@ export function TradingPage() {
     <div className="flex flex-col flex-1 min-h-0">
       <PageHeader
         title="Trading"
-        description="Configure your UTAs (Unified Trading Accounts)."
-        live={tc.utas.length > 0 ? { lastUpdated } : undefined}
+        live={lastUpdated && equity?.accounts.some((row) => brokerReadiness.data?.accounts.some(
+          (account) => account.accountId === row.id && account.operational,
+        )) ? { lastUpdated } : undefined}
       />
 
       <SettingsScrollArea className="px-4 py-5 md:px-6">
         <div className="max-w-[820px] mx-auto space-y-4">
           {serviceStatus?.available === false && <TradingServiceOfflineBanner status={serviceStatus} />}
-          <MissingBrokerPacksNotice packs={brokerPacks} onInstalled={updateBrokerPack} />
+          <MissingBrokerPacksNotice packs={brokerPacks} onInstall={brokerReadiness.install} />
           {tc.utas.length === 0 ? (
-            <EmptyState onAdd={() => setShowAdd(true)} />
+            <div className="rounded-lg border border-dashed border-border pb-8 text-center">
+              <SharedEmptyState
+                title="No UTAs configured"
+                description="Connect a crypto exchange or brokerage to start automated trading."
+              />
+              <Button type="button" onClick={() => setShowAdd(true)}>+ Add UTA</Button>
+            </div>
           ) : (
             <div className="space-y-2.5">
               {tc.utas.map((uta) => {
                 const equityRow = equity?.accounts.find(a => a.id === uta.id) ?? null
+                const readiness = brokerReadiness.forAccount(uta)
                 return (
                   <UTACard
                     key={uta.id}
                     uta={uta}
                     preset={presets.find(p => p.id === uta.presetId)}
                     health={healthMap[uta.id]}
+                    readiness={readiness}
                     equity={equityRow}
                     onClick={() => setEditingId(uta.id)}
                   />
                 )
               })}
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setShowAdd(true)}
-                className="w-full py-2.5 text-[12px] text-muted-foreground hover:text-foreground border border-dashed border-border hover:border-muted-foreground/40 rounded-lg transition-colors"
+                className="h-auto min-h-12 w-full border-dashed text-muted-foreground"
               >
                 + Add UTA
-              </button>
+              </Button>
             </div>
           )}
 
           <KeylessDataSourcesRow
             ccxtPack={brokerPacks.find((row) => row.engine === 'ccxt')}
-            onPackInstalled={updateBrokerPack}
+            onInstall={() => brokerReadiness.install('ccxt')}
           />
           {tc.utas.length > 0 && <ExternalOrderMonitoringRow />}
         </div>
@@ -465,7 +518,7 @@ export function TradingPage() {
             setEditingId(id)
           }}
           onClose={() => setShowAdd(false)}
-          onPackInstalled={updateBrokerPack}
+          onPackInstalled={() => { void brokerReadiness.refresh() }}
         />
       )}
 
@@ -474,6 +527,16 @@ export function TradingPage() {
           uta={editingUTA}
           preset={editingPreset}
           health={healthMap[editingUTA.id]}
+          readiness={brokerReadiness.forAccount(editingUTA)}
+          policy={deriveAccountInteractionPolicy({
+            account: editingUTA,
+            readiness: brokerReadiness.forAccount(editingUTA),
+            health: healthMap[editingUTA.id],
+            tradingMode: serviceStatus?.mode ?? 'lite',
+          })}
+          installingEngine={brokerReadiness.installingEngine}
+          onInstallBrokerPack={brokerReadiness.install}
+          onRetryBrokerPack={brokerReadiness.refresh}
           onSave={async (next) => { await tc.saveUTA(next) }}
           onDelete={async () => {
             await tc.deleteUTA(editingUTA.id)
@@ -489,11 +552,11 @@ export function TradingPage() {
 
 // ==================== Page Shell ====================
 
-function PageShell({ subtitle, children }: { subtitle: string; children?: React.ReactNode }) {
+function PageShell({ children, scroll = true }: { children?: React.ReactNode; scroll?: boolean }) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <PageHeader title="Trading" description={subtitle} />
-      <SettingsScrollArea className="px-4 py-5 md:px-6">{children}</SettingsScrollArea>
+      <PageHeader title="Trading" />
+      <SettingsScrollArea scroll={scroll} className={scroll ? 'px-4 py-5 md:px-6' : ''}>{children}</SettingsScrollArea>
     </div>
   )
 }
@@ -512,24 +575,6 @@ function TradingServiceOfflineBanner({ status }: { status: TradingServiceStatus 
     </div>
   )
 }
-
-// ==================== Empty State ====================
-
-function EmptyState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border p-6 text-center sm:p-12">
-      <h3 className="text-[16px] font-semibold text-foreground mb-2">No UTAs configured</h3>
-      <p className="text-[13px] text-muted-foreground mb-6 max-w-[320px] mx-auto leading-relaxed">
-        Connect a crypto exchange or brokerage to start automated trading.
-      </p>
-      <button onClick={onAdd} className="btn-primary">
-        + Add UTA
-      </button>
-    </div>
-  )
-}
-
-// ==================== Portfolio banner (hero) ====================
 
 // ==================== Subtitle builder ====================
 
@@ -551,22 +596,20 @@ function buildSubtitle(uta: UTAConfig, preset?: BrokerPreset): string {
       parts.push(`${sf.prefix ?? ''}${display}`)
     }
   }
-  return parts.join(' · ') || preset.label
+  return parts.join(', ') || preset.label
 }
 
 // ==================== UTA Card ====================
 
-function UTACard({ uta, preset, health, equity, onClick }: {
+function UTACard({ uta, preset, health, readiness, equity, onClick }: {
   uta: UTAConfig
   preset?: BrokerPreset
   health?: BrokerHealthInfo
+  readiness: AccountPackReadiness
   equity?: { equity: string; cash: string } | null
   onClick: () => void
 }) {
   const isDisabled = health?.disabled || uta.enabled === false
-  const badge = preset
-    ? { text: preset.badge, color: `${preset.badgeColor} ${preset.badgeColor.replace('text-', 'bg-')}/10` }
-    : { text: uta.presetId.slice(0, 2).toUpperCase(), color: 'text-muted-foreground bg-muted-foreground/10' }
 
   // Per-card equity is a liveness signal, not a portfolio view —
   // proves the connection returned a real account balance, not just
@@ -579,30 +622,24 @@ function UTACard({ uta, preset, health, equity, onClick }: {
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full text-left rounded-lg border border-border bg-secondary/30 px-4 py-3 transition-all hover:border-muted-foreground/40 hover:bg-muted/20 ${isDisabled ? 'opacity-50' : ''}`}
+      className={`oa-pressable w-full rounded-lg border border-border bg-card px-4 py-3 text-left transition-[border-color,background-color,opacity] duration-[var(--motion-fast)] hover:border-muted-foreground/40 hover:bg-muted/20 ${isDisabled ? 'opacity-50' : ''}`}
     >
       <div className="flex items-center gap-3">
-        <span className={`text-[10px] font-bold px-2 py-1 rounded-md shrink-0 ${badge.color}`}>
-          {badge.text}
-        </span>
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-medium text-foreground truncate">{uta.label || uta.id}</div>
-          <div className="text-[11px] text-muted-foreground truncate mt-0.5 font-mono">
-            {uta.id}
-            <span className="mx-1.5 text-muted-foreground/40">·</span>
-            {buildSubtitle(uta, preset)}
-            {uta.guards.length > 0 && <span className="ml-1.5 text-muted-foreground/50">{uta.guards.length} guard{uta.guards.length > 1 ? 's' : ''}</span>}
+          <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-2 text-[11px] text-muted-foreground">
+            <span className="truncate font-mono">{uta.id}</span>
+            <span className="truncate font-mono">{buildSubtitle(uta, preset)}</span>
+            {uta.guards.length > 0 && <span className="text-muted-foreground/70">{uta.guards.length} guard{uta.guards.length > 1 ? 's' : ''}</span>}
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-3">
           {equityNode && (
             <span className="text-[11px] text-muted-foreground/80 hidden sm:inline">{equityNode}</span>
           )}
-          {uta.enabled === false
-            ? <span className="text-[11px] text-muted-foreground">Disabled</span>
-            : <HealthBadge health={health} />
-          }
+          <AccountReadinessBadge readiness={readiness} health={health} />
         </div>
       </div>
     </button>

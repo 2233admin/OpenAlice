@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ConnectorDefinition, PublicConnectorConfig } from '../api'
-import { getConnectorSetupState } from './connector-setup-state'
+import { getConnectorServiceState, getConnectorSetupState } from './connector-setup-state'
 
 const definition: ConnectorDefinition = {
   id: 'telegram',
@@ -54,5 +54,45 @@ describe('Connector setup lifecycle', () => {
       }),
       serviceEnabled: false,
     })).toMatchObject({ stage: 'linked_offline', linked: true })
+  })
+
+  it('ignores a stale runtime owner while Settings is clearing learned fields', () => {
+    expect(getConnectorSetupState({
+      definition,
+      adapter: {
+        enabled: true,
+        configuredSecrets: ['botToken'],
+        settings: { ownerUserId: '', chatId: '' },
+      },
+      serviceEnabled: true,
+      runtime: { id: 'telegram', enabled: true, status: 'healthy', owner: 'owner-1' },
+    })).toMatchObject({ stage: 'awaiting_link', linked: false })
+  })
+
+  it('reports an enabled adapter as an error when the service is unreachable', () => {
+    expect(getConnectorSetupState({
+      definition,
+      adapter: adapter({
+        enabled: true,
+        configuredSecrets: ['botToken'],
+        settings: { ownerUserId: 'owner-1', chatId: 'chat-1' },
+      }),
+      serviceEnabled: true,
+      serviceStatus: 'degraded',
+    })).toMatchObject({ stage: 'error', linked: true })
+  })
+})
+
+describe('Connector service lifecycle', () => {
+  it('distinguishes a reachable degraded service from an unavailable process', () => {
+    expect(getConnectorServiceState(null)).toBe('stopped')
+    expect(getConnectorServiceState({ enabled: false, status: 'disabled' })).toBe('stopped')
+    expect(getConnectorServiceState({ enabled: true, status: 'healthy' })).toBe('healthy')
+    expect(getConnectorServiceState({
+      enabled: true,
+      status: 'degraded',
+      service: { status: 'degraded', startedAt: '2026-08-30T00:00:00.000Z', adapters: [] },
+    })).toBe('running')
+    expect(getConnectorServiceState({ enabled: true, status: 'degraded' })).toBe('unavailable')
   })
 })

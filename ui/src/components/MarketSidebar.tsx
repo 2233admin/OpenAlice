@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { ChevronDown, X } from 'lucide-react'
 import { type AssetClass, type BarSourceCandidate } from '../api/market'
 import { useAssetSearch } from './market/useAssetSearch'
 import { useWorkspace } from '../tabs/store'
@@ -8,6 +11,9 @@ import { getFocusedTab, type ViewSpec } from '../tabs/types'
 import { SidebarRow } from './SidebarRow'
 import { SidebarSectionHeader } from './SidebarSectionHeader'
 import { Spinner } from './StateViews'
+import { Button } from './ui/button'
+import { inputClass } from './form'
+import { NewsMarketNavigation } from './market/NewsMarketNavigation.js'
 
 const ASSET_CLASS_COLORS: Record<string, string> = {
   equity: 'bg-primary/15 text-primary',
@@ -37,15 +43,26 @@ function routeAssetClass(c: BarSourceCandidate['assetClass']): AssetClass {
  *
  * Search results are debounced 300ms.
  */
-export function MarketSidebar() {
+export function MarketSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const [watchlistOpen, setWatchlistOpen] = useState(true)
   // Shared with the main search box — one search logic, no drift.
   const { results, loading } = useAssetSearch(query)
+  const [highlight, setHighlight] = useState(0)
+
+  useEffect(() => {
+    setHighlight(0)
+  }, [results])
 
   const watchlist = useWatchlist((s) => s.entries)
   const removeFromWatchlist = useWatchlist((s) => s.remove)
-  const openOrFocus = useWorkspace((s) => s.openOrFocus)
+  const openTab = useWorkspace((s) => s.openOrFocus)
+  const openOrFocus = (spec: ViewSpec) => {
+    openTab(spec)
+    onNavigate?.()
+  }
 
   const focusedSpec = useWorkspace((state) => getFocusedTab(state)?.spec)
   const isFocused = (kind: ViewSpec['kind']) => focusedSpec?.kind === kind
@@ -61,40 +78,161 @@ export function MarketSidebar() {
     openOrFocus({ kind: 'market-detail', params: { assetClass: routeAssetClass(c.assetClass), symbol: c.symbol, source: c.barId } })
   }
 
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      if (!query) return
+      event.preventDefault()
+      setQuery('')
+      return
+    }
+    if (loading || results.length === 0) return
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setHighlight((current) => Math.min(current + 1, results.length - 1))
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlight((current) => Math.max(current - 1, 0))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      handleSelectResult(results[highlight])
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-3 h-full overflow-hidden">
+    <div className="flex flex-col gap-1 h-full overflow-hidden">
       {/* Search box */}
       <div className="px-3 pt-2 shrink-0">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleSearchKeyDown}
           placeholder={t('market.searchPlaceholder')}
-          className="w-full px-2.5 py-1.5 bg-background text-foreground border border-border/70 rounded-md text-[13px] outline-none focus:border-primary"
+          aria-label={t('market.searchPlaceholder')}
+          className={`${inputClass} px-2.5 text-[13px]`}
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {/* Browse */}
-        <SidebarSectionHeader>{t('market.browseSection')}</SidebarSectionHeader>
-        <SidebarRow
-          label={t('market.browseMarkets')}
-          active={isFocused('market-list')}
-          onClick={() => openOrFocus({ kind: 'market-list', params: {} })}
-        />
-        <SidebarRow
-          label={t('market.sectorRotation')}
-          active={isFocused('market-rotation')}
-          onClick={() => openOrFocus({ kind: 'market-rotation', params: {} })}
-        />
-        {/* Boards — a distinct cluster from the two nav rows above, on the
-            same kinship rail the Inbox uses for grouped sub-rows. */}
-        <div className="ml-[18px] border-l border-border/50">
+      <div className="flex-1 overflow-y-auto min-h-0 pb-4">
+        {/* Search results — only when query is non-empty */}
+        {query.trim() && (
+          <>
+            <SidebarSectionHeader>
+              {t('market.searchResults')}{loading ? ` (${t('common.searching')})` : results.length ? ` (${results.length})` : ''}
+            </SidebarSectionHeader>
+            {loading && (
+              <div className="flex items-center gap-2 px-3 py-2 text-[12px] leading-[18px] text-muted-foreground">
+                <Spinner size="sm" />
+                <span>{t('common.searching')}</span>
+              </div>
+            )}
+            {!loading && results.length === 0 && (
+              <p className="px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">{t('market.noMatches')}</p>
+            )}
+            {results.map((c, index) => (
+              <div
+                key={c.barId}
+                data-keyboard-highlighted={index === highlight ? 'true' : 'false'}
+                onMouseEnter={() => setHighlight(index)}
+                className={index === highlight ? 'bg-muted/70' : undefined}
+              >
+                <SidebarRow
+                  label={
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-mono font-semibold shrink-0">{c.symbol}</span>
+                      {c.name && <span className="text-muted-foreground truncate">{c.name}</span>}
+                    </span>
+                  }
+                  active={isFocusedDetail(routeAssetClass(c.assetClass), c.symbol, c.barId)}
+                  onClick={() => handleSelectResult(c)}
+                  trail={<SourceTrail c={c} />}
+                />
+              </div>
+            ))}
+          </>
+        )}
+
+        <NewsMarketNavigation active={isFocused('news')} category={focusedSpec?.kind === 'news' ? focusedSpec.params.category ?? null : null} onSelect={(category) => {
+            const next = new URLSearchParams()
+            if (focusedSpec?.kind === 'news' && focusedSpec.params.view) next.set('view', focusedSpec.params.view)
+            if (category) next.set('category', category)
+            else next.delete('category')
+            navigate({ pathname: '/market/news', search: next.toString() })
+            onNavigate?.()
+          }} />
+        <MarketSection label={t('market.marketsSection')}>
+          <SidebarRow
+            label={t('market.browseMarkets')}
+            active={isFocused('market-list')}
+            onClick={() => openOrFocus({ kind: 'market-list', params: {} })}
+          />
+          <Collapsible open={watchlistOpen} onOpenChange={setWatchlistOpen}>
+            <CollapsibleTrigger aria-label={t('market.watchlist')} className="oa-nav-row group mx-2 flex min-h-10 w-[calc(100%-1rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-sidebar-foreground hover:bg-sidebar-accent/60 focus-visible:outline-2 focus-visible:outline-ring md:min-h-8">
+              <span>{t('market.watchlist')}</span>
+              {watchlist.length > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{watchlist.length}</span>}
+              <ChevronDown aria-hidden className="ml-auto size-3.5 text-muted-foreground transition-transform duration-[180ms] group-aria-[expanded=false]:-rotate-90 motion-reduce:transition-none" />
+            </CollapsibleTrigger>
+            <CollapsibleContent aria-hidden={!watchlistOpen} inert={!watchlistOpen}>
+              <div className="ml-3 border-l border-border/50">
+                {watchlist.length === 0 ? (
+                  <p className="px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                    {t('market.emptyWatchlistHint')}
+                  </p>
+                ) : (
+                  watchlist.map((entry) => (
+                    <SidebarRow
+                      key={`${entry.assetClass}:${entry.symbol}`}
+                      label={<span className="font-mono font-semibold truncate">{entry.symbol}</span>}
+                      active={isFocusedDetail(entry.assetClass, entry.symbol)}
+                      onClick={() =>
+                        openOrFocus({
+                          kind: 'market-detail',
+                          params: { assetClass: entry.assetClass, symbol: entry.symbol },
+                        })
+                      }
+                      trail={
+                        <>
+                          <AssetClassChip cls={entry.assetClass} />
+                          <Button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeFromWatchlist(entry.assetClass, entry.symbol)
+                            }}
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground/70 hover:text-destructive focus-visible:text-destructive"
+                            aria-label={t('market.removeFromWatchlist', { symbol: entry.symbol })}
+                          >
+                            <X className="size-3" aria-hidden />
+                          </Button>
+                        </>
+                      }
+                    />
+                  ))
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </MarketSection>
+        <MarketSection label={t('market.analyticsSection')}>
           <SidebarRow
             label={t('market.boardMovers')}
             active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'movers'}
             onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'movers' } })}
           />
+          <SidebarRow
+            label={t('market.sectorRotation')}
+            active={isFocused('market-rotation')}
+            onClick={() => openOrFocus({ kind: 'market-rotation', params: {} })}
+          />
+          <SidebarRow
+            label={t('market.boardTermStructure')}
+            active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'term-structure'}
+            onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'term-structure' } })}
+          />
+        </MarketSection>
+        <MarketSection label={t('market.macroSection')}>
           <SidebarRow
             label={t('market.boardCalendar')}
             active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'calendar'}
@@ -104,11 +242,6 @@ export function MarketSidebar() {
             label={t('market.boardMacro')}
             active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'macro'}
             onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'macro' } })}
-          />
-          <SidebarRow
-            label={t('market.boardTermStructure')}
-            active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'term-structure'}
-            onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'term-structure' } })}
           />
           <SidebarRow
             label={t('market.boardGlobalMacro')}
@@ -125,87 +258,30 @@ export function MarketSidebar() {
             active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'shipping'}
             onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'shipping' } })}
           />
-        </div>
-
-        {/* Search results — only when query is non-empty */}
-        {query.trim() && (
-          <>
-            <SidebarSectionHeader>
-              {t('market.searchResults')}{loading ? ` (${t('common.searching')})` : results.length ? ` (${results.length})` : ''}
-            </SidebarSectionHeader>
-            {loading && (
-              <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted-foreground">
-                <Spinner size="sm" />
-                <span>{t('common.searching')}</span>
-              </div>
-            )}
-            {!loading && results.length === 0 && (
-              <p className="px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">{t('market.noMatches')}</p>
-            )}
-            {results.map((c) => (
-              <SidebarRow
-                key={c.barId}
-                label={
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-mono font-semibold shrink-0">{c.symbol}</span>
-                    {c.name && <span className="text-muted-foreground truncate">{c.name}</span>}
-                  </span>
-                }
-                active={isFocusedDetail(routeAssetClass(c.assetClass), c.symbol, c.barId)}
-                onClick={() => handleSelectResult(c)}
-                trail={<SourceTrail c={c} />}
-              />
-            ))}
-          </>
-        )}
-
-        {/* Watchlist */}
-        <SidebarSectionHeader>{t('market.watchlist')}{watchlist.length ? ` (${watchlist.length})` : ''}</SidebarSectionHeader>
-        {watchlist.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
-            {t('market.emptyWatchlistHint')}
-          </p>
-        ) : (
-          watchlist.map((entry) => (
-            <SidebarRow
-              key={`${entry.assetClass}:${entry.symbol}`}
-              label={<span className="font-mono font-semibold truncate">{entry.symbol}</span>}
-              active={isFocusedDetail(entry.assetClass, entry.symbol)}
-              onClick={() =>
-                openOrFocus({
-                  kind: 'market-detail',
-                  params: { assetClass: entry.assetClass, symbol: entry.symbol },
-                })
-              }
-              trail={
-                <>
-                  <AssetClassChip cls={entry.assetClass} />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeFromWatchlist(entry.assetClass, entry.symbol)
-                    }}
-                    className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-                    aria-label={t('market.removeFromWatchlist', { symbol: entry.symbol })}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                  </button>
-                </>
-              }
-            />
-          ))
-        )}
+        </MarketSection>
       </div>
     </div>
   )
 }
 
+function MarketSection({ label, children, count }: {
+  label: string
+  children: ReactNode
+  count?: number
+}) {
+  return (
+    <section role="group" aria-label={label} className="mt-3">
+      <SidebarSectionHeader hierarchy trailing={count ? <span className="text-[11px] tabular-nums text-muted-foreground">{count}</span> : undefined}>
+        {label}
+      </SidebarSectionHeader>
+      <div className="ml-3">{children}</div>
+    </section>
+  )
+}
+
 function AssetClassChip({ cls }: { cls: string }) {
   return (
-    <span className={`shrink-0 text-[9px] uppercase tracking-wide px-1 rounded ${ASSET_CLASS_COLORS[cls] ?? ASSET_CLASS_COLORS.unknown}`}>
+    <span className={`shrink-0 rounded-sm px-1 font-mono text-[10px] leading-[14px] ${ASSET_CLASS_COLORS[cls] ?? ASSET_CLASS_COLORS.unknown}`}>
       {cls}
     </span>
   )
@@ -217,7 +293,7 @@ function SourceTrail({ c }: { c: BarSourceCandidate }) {
   // Provider is the disambiguator; keep it compact so the ticker is never
   // crushed. (Asset class is shown in the wider main search box, not here.)
   return (
-    <span className="flex items-center gap-1 shrink-0" title={`${c.barId}${c.barCapability ? ` · ${c.barCapability}` : ''}`}>
+    <span className="flex shrink-0 items-center gap-1" title={`${c.barId}${c.barCapability ? `, ${c.barCapability}` : ''}`}>
       <span className="text-[10px] text-foreground/75 font-medium truncate max-w-[96px]">{c.sourceId}</span>
       {c.barCapability && (
         <span className={`text-[9px] ${CAPABILITY_COLOR[c.barCapability] ?? 'text-muted-foreground'}`}>{c.barCapability}</span>

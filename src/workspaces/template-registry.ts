@@ -6,7 +6,7 @@ import type { Logger } from './logger.js';
 import type { CredentialWireShape } from '@/core/config.js';
 
 /**
- * A template's declaration that an enabled agent should be seeded, at
+ * A template's declaration that a registered agent should be seeded, at
  * workspace-create time, from a named credential in Alice's central store.
  * `credentialSlug` points into `aiProviderSchema.credentials`; `model` and the
  * adapter-specific knobs feed `credentialToWorkspaceAiCred`. Sourced from
@@ -27,6 +27,22 @@ export interface AgentCredentialDecl {
   readonly authMode?: 'x-api-key' | 'bearer';
   /** Codex only. */
   readonly wireApi?: 'chat' | 'responses';
+}
+
+export interface TemplateSourceVersion {
+  /** Exact release/tag name shown at Workspace creation. */
+  readonly version: string;
+  /** Full immutable upstream commit for that release. */
+  readonly commit: string;
+}
+
+export interface TemplateSourceCatalog {
+  /** Canonical upstream repository cloned by the template bootstrap. */
+  readonly repository: string;
+  /** Version selected when the caller does not make an explicit choice. */
+  readonly defaultVersion: string;
+  /** Small launcher-approved set; floating branches and ranges are excluded. */
+  readonly versions: readonly TemplateSourceVersion[];
 }
 
 export interface TemplateMeta {
@@ -83,21 +99,28 @@ export interface TemplateMeta {
    * Launcher-owned context injection, post-bootstrap, gated per template
    * (defaults preserve each template's pre-standardization behavior):
    *   injectTools   — inject the per-CLI playbooks (alice / alice-uta /
-   *                   alice-workspace / traderhub skills) so the agent knows the `alice*` CLI
+   *                   traderhub skills) so the agent knows the `alice*` CLI
    *                   surface. The launcher injects NO MCP into workspaces;
    *                   `false` = a template that ships its own tool docs
    *                   (e.g. auto-quant).
-   *   injectPersona — compose Alice persona + this template's instruction.md
-   *                   into CLAUDE.md / AGENTS.md
+   *   injectInstructions — copy this template's instruction.md into
+   *                        CLAUDE.md / AGENTS.md
    *   bundledSkills — names under `default/skills/` to copy into the
    *                   workspace's `.claude/skills` + `.agents/skills`
    */
   readonly injectTools: boolean;
-  readonly injectPersona: boolean;
+  readonly injectInstructions: boolean;
   readonly bundledSkills: readonly string[];
   /**
+   * Optional immutable upstream-source catalog. This is deliberately separate
+   * from the OpenAlice template README version: one versions launcher-owned
+   * guidance, the other pins the external Harness tree materialized into a
+   * newly created Workspace.
+   */
+  readonly source?: TemplateSourceCatalog;
+  /**
    * Opt-in lifecycle policy for merging launcher-managed assets into older
-   * Workspaces. `managed-context` means README/persona/skill files can use the
+   * Workspaces. `managed-context` means README/instruction/skill files can use the
    * three-way Template Upgrade flow. Absence deliberately means recreate or
    * migrate with template-specific tooling; bootstrap output is never guessed
    * to be safely mergeable.
@@ -170,8 +193,9 @@ export class TemplateRegistry {
         version,
         defaultAgents: tplMeta.defaultAgents,
         injectTools: tplMeta.injectTools,
-        injectPersona: tplMeta.injectPersona,
+        injectInstructions: tplMeta.injectInstructions,
         bundledSkills: tplMeta.bundledSkills,
+        ...(tplMeta.source !== undefined ? { source: tplMeta.source } : {}),
         ...(tplMeta.upgradeStrategy !== undefined
           ? { upgradeStrategy: tplMeta.upgradeStrategy }
           : {}),
@@ -221,8 +245,9 @@ interface ParsedTemplateMeta {
   readonly community?: boolean;
   readonly defaultAgents: readonly string[];
   readonly injectTools: boolean;
-  readonly injectPersona: boolean;
+  readonly injectInstructions: boolean;
   readonly bundledSkills: readonly string[];
+  readonly source?: TemplateSourceCatalog;
   readonly upgradeStrategy?: 'managed-context';
   readonly agentCredentials?: Readonly<Record<string, AgentCredentialDecl>>;
 }
@@ -277,7 +302,7 @@ function extractVersion(raw: string): string {
 
 async function readTemplateMeta(path: string): Promise<ParsedTemplateMeta> {
   const fallback: ParsedTemplateMeta = {
-    defaultAgents: ['claude'], injectTools: false, injectPersona: false, bundledSkills: [],
+    defaultAgents: ['claude'], injectTools: false, injectInstructions: false, bundledSkills: [],
   };
   try {
     if (!statSync(path).isFile()) return fallback;
@@ -300,7 +325,12 @@ async function readTemplateMeta(path: string): Promise<ParsedTemplateMeta> {
       ? obj['defaultAgents'].filter((a): a is string => typeof a === 'string')
       : null;
     const injectTools = obj['injectTools'] === true;
-    const injectPersona = obj['injectPersona'] === true;
+    // `injectPersona` shipped in 0.89.3-beta as the old manifest spelling.
+    // Keep that spelling as a narrow parser alias for released third-party
+    // templates, but map it only to the template-owned instruction copy. It
+    // must never resurrect the retired installation-wide Persona layer.
+    const injectInstructions =
+      obj['injectInstructions'] === true || obj['injectPersona'] === true;
     // Skill names become directory names under `.claude/skills/` — reject any
     // with path separators / traversal as a defensive measure.
     const bundledSkills = Array.isArray(obj['bundledSkills'])
@@ -308,6 +338,7 @@ async function readTemplateMeta(path: string): Promise<ParsedTemplateMeta> {
           (s): s is string => typeof s === 'string' && !s.includes('/') && !s.includes('..'),
         )
       : [];
+    const source = parseTemplateSource(obj['source']);
     const upgradeStrategy = obj['upgradeStrategy'] === 'managed-context'
       ? 'managed-context' as const
       : undefined;
@@ -319,14 +350,52 @@ async function readTemplateMeta(path: string): Promise<ParsedTemplateMeta> {
       ...(community !== undefined ? { community } : {}),
       defaultAgents: defaultAgents && defaultAgents.length > 0 ? defaultAgents : ['claude'],
       injectTools,
-      injectPersona,
+      injectInstructions,
       bundledSkills,
+      ...(source !== undefined ? { source } : {}),
       ...(upgradeStrategy !== undefined ? { upgradeStrategy } : {}),
       ...(agentCredentials !== undefined ? { agentCredentials } : {}),
     };
   } catch {
     return fallback;
   }
+}
+
+function parseTemplateSource(raw: unknown): TemplateSourceCatalog | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const value = raw as Record<string, unknown>;
+  const repository = typeof value['repository'] === 'string'
+    ? value['repository'].trim()
+    : '';
+  const defaultVersion = typeof value['defaultVersion'] === 'string'
+    ? value['defaultVersion'].trim()
+    : '';
+  if (repository.length === 0 || defaultVersion.length === 0 || !Array.isArray(value['versions'])) {
+    return undefined;
+  }
+  const versions: TemplateSourceVersion[] = [];
+  const seen = new Set<string>();
+  for (const entry of value['versions']) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const candidate = entry as Record<string, unknown>;
+    const version = typeof candidate['version'] === 'string'
+      ? candidate['version'].trim()
+      : '';
+    const commit = typeof candidate['commit'] === 'string'
+      ? candidate['commit'].trim().toLowerCase()
+      : '';
+    if (
+      version.length === 0
+      || seen.has(version)
+      || !/^[0-9a-f]{40}$/.test(commit)
+    ) {
+      continue;
+    }
+    seen.add(version);
+    versions.push({ version, commit });
+  }
+  if (!versions.some((entry) => entry.version === defaultVersion)) return undefined;
+  return { repository, defaultVersion, versions };
 }
 
 /**

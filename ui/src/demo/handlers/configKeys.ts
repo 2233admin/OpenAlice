@@ -1,4 +1,12 @@
 import { http, HttpResponse } from 'msw'
+import type { NewsCollectorConfig, NewsCollectorFeed } from '../../api/types'
+import { createDemoNewsConfig } from '../fixtures/newsConfig'
+
+let demoNewsConfig = createDemoNewsConfig()
+
+export function resetDemoNewsConfig(): void {
+  demoNewsConfig = createDemoNewsConfig()
+}
 
 export const demoCredentialPresets = [
   {
@@ -7,7 +15,7 @@ export const demoCredentialPresets = [
     description: 'Pay per token via Anthropic API',
     category: 'official',
     defaultName: 'Claude (API Key)',
-    hint: 'Opus is the recommended complex-agent default; Sonnet balances capability and cost, while Fable is the highest-capability premium tier.',
+    hint: 'Opus 5 is the recommended complex-agent default; Sonnet balances capability and cost, while Fable is the highest-capability premium tier.',
     setup: {
       apiKeyLabel: 'Anthropic API key',
       apiKeyPlaceholder: 'sk-ant-...',
@@ -16,9 +24,10 @@ export const demoCredentialPresets = [
     },
     models: [
       { id: 'claude-fable-5', label: 'Claude Fable 5 (Highest capability)', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'required', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' } } },
-      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (Complex agents)', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
+      { id: 'claude-opus-5', label: 'Claude Opus 5 (Complex agents)', semantics: { contextWindow: 1_000_000, maxOutputTokens: 128_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
       { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (Balanced)', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
       { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 (Fastest)', semantics: { contextWindow: 200_000, reasoning: { mode: 'optional', interleaved: true } } },
+      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (Previous generation)', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
       { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Previous generation)', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'max'], defaultEffort: 'high', interleaved: true } } },
     ],
     schema: {
@@ -27,12 +36,13 @@ export const demoCredentialPresets = [
         apiKey: { type: 'string' },
         model: {
           type: 'string',
-          default: 'claude-opus-4-8',
+          default: 'claude-opus-5',
           oneOf: [
             { const: 'claude-fable-5', title: 'Claude Fable 5 (Highest capability)' },
-            { const: 'claude-opus-4-8', title: 'Claude Opus 4.8 (Complex agents)' },
+            { const: 'claude-opus-5', title: 'Claude Opus 5 (Complex agents)' },
             { const: 'claude-sonnet-5', title: 'Claude Sonnet 5 (Balanced)' },
             { const: 'claude-haiku-4-5', title: 'Claude Haiku 4.5 (Fastest)' },
+            { const: 'claude-opus-4-8', title: 'Claude Opus 4.8 (Previous generation)' },
             { const: 'claude-sonnet-4-6', title: 'Claude Sonnet 4.6 (Previous generation)' },
           ],
         },
@@ -53,9 +63,9 @@ export const demoCredentialPresets = [
       modelHelp: 'Choose a model enabled for this API project, or paste another exact ID.',
     },
     models: [
-      { id: 'gpt-5.6', label: 'GPT 5.6 (Sol alias)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
+      { id: 'gpt-5.6-sol', label: 'GPT 5.6 Sol (Power)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
       { id: 'gpt-5.6-terra', label: 'GPT 5.6 Terra (Balanced)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
-      { id: 'gpt-5.6-luna', label: 'GPT 5.6 Luna (Cost-efficient)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
+      { id: 'gpt-5.6-luna', label: 'GPT 5.6 Luna (Cost-efficient)', semantics: { contextWindow: 400_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
       { id: 'gpt-5.5', label: 'GPT 5.5 (Previous generation)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' } } },
       { id: 'gpt-5.4', label: 'GPT 5.4 (Previous generation)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh'], defaultEffort: 'none' } } },
     ],
@@ -65,9 +75,9 @@ export const demoCredentialPresets = [
         apiKey: { type: 'string' },
         model: {
           type: 'string',
-          default: 'gpt-5.6',
+          default: 'gpt-5.6-sol',
           oneOf: [
-            { const: 'gpt-5.6', title: 'GPT 5.6 (Sol alias)' },
+            { const: 'gpt-5.6-sol', title: 'GPT 5.6 Sol (Power)' },
             { const: 'gpt-5.6-terra', title: 'GPT 5.6 Terra (Balanced)' },
             { const: 'gpt-5.6-luna', title: 'GPT 5.6 Luna (Cost-efficient)' },
             { const: 'gpt-5.5', title: 'GPT 5.5 (Previous generation)' },
@@ -77,6 +87,73 @@ export const demoCredentialPresets = [
       },
     },
     regions: [{ id: 'official', label: 'OpenAI (api.openai.com)', wires: { 'openai-responses': '', 'openai-chat': '' } }],
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    description: 'One key for many models via OpenRouter',
+    category: 'third-party',
+    defaultName: 'OpenRouter',
+    hint: 'OpenRouter is a gateway. Use provider/model IDs from openrouter.ai.',
+    setup: {
+      apiKeyLabel: 'OpenRouter API key',
+      apiKeyPlaceholder: 'sk-or-...',
+      apiKeyHelp: 'Use a key from openrouter.ai.',
+      modelHelp: 'Use the exact OpenRouter model ID, or paste another catalog ID.',
+    },
+    models: [
+      { id: 'openai/gpt-5.6-luna', label: 'GPT 5.6 Luna (Suggested default)', semantics: { contextWindow: 400_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
+      { id: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
+      { id: 'deepseek/deepseek-v4-flash-0731', label: 'DeepSeek V4 Flash 0731 (Top weekly)', semantics: { contextWindow: 1_000_000, maxOutputTokens: 384_000, reasoning: { mode: 'optional', efforts: ['low', 'high', 'max'], defaultEffort: 'high', interleaved: true } } },
+      { id: 'tencent/hy3', label: 'Tencent Hy3 (Top weekly)', semantics: { contextWindow: 262_144, reasoning: { mode: 'optional', efforts: ['none', 'low', 'high'], defaultEffort: 'none' } } },
+      { id: 'z-ai/glm-5.2', label: 'GLM 5.2 (Top weekly)', semantics: { reasoning: { mode: 'adaptive', efforts: ['high', 'max'] } } },
+      { id: 'xiaomi/mimo-v2.5', label: 'Xiaomi MiMo-V2.5 (Top weekly)', semantics: { contextWindow: 1_048_576 } },
+      { id: 'anthropic/claude-opus-5', label: 'Claude Opus 5 (Complex agents)', semantics: { contextWindow: 1_000_000, maxOutputTokens: 128_000, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
+      { id: 'anthropic/claude-fable-5', label: 'Claude Fable 5 (Highest capability)', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'required', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high', interleaved: true } } },
+      { id: 'openai/gpt-5.6-sol', label: 'GPT 5.6 Sol (Power)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
+      { id: 'openai/gpt-5.6-terra', label: 'GPT 5.6 Terra (Balanced)', semantics: { contextWindow: 1_050_000, maxOutputTokens: 128_000, reasoning: { mode: 'optional', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' } } },
+      { id: 'x-ai/grok-4.6', label: 'Grok 4.6 (Flagship)', semantics: { contextWindow: 500_000, reasoning: { mode: 'required', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' } } },
+      { id: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash (Fast / current)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['medium', 'high'], defaultEffort: 'medium' } } },
+      { id: 'minimax/minimax-m3', label: 'MiniMax M3', semantics: { contextWindow: 1_000_000, reasoning: { mode: 'adaptive', interleaved: true } } },
+      { id: 'moonshotai/kimi-k3', label: 'Kimi K3', semantics: { contextWindow: 1_048_576, reasoning: { mode: 'required', efforts: ['low', 'high', 'max'], defaultEffort: 'max', interleaved: true } } },
+      { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro', semantics: { contextWindow: 1_000_000, maxOutputTokens: 384_000, reasoning: { mode: 'optional', efforts: ['high', 'max'], defaultEffort: 'high', interleaved: true } } },
+    ],
+    schema: {
+      type: 'object',
+      properties: {
+        apiKey: { type: 'string' },
+        model: {
+          type: 'string',
+          default: 'openai/gpt-5.6-luna',
+          oneOf: [
+            { const: 'openai/gpt-5.6-luna', title: 'GPT 5.6 Luna (Suggested default)' },
+            { const: 'anthropic/claude-sonnet-5', title: 'Claude Sonnet 5' },
+            { const: 'deepseek/deepseek-v4-flash-0731', title: 'DeepSeek V4 Flash 0731 (Top weekly)' },
+            { const: 'tencent/hy3', title: 'Tencent Hy3 (Top weekly)' },
+            { const: 'z-ai/glm-5.2', title: 'GLM 5.2 (Top weekly)' },
+            { const: 'xiaomi/mimo-v2.5', title: 'Xiaomi MiMo-V2.5 (Top weekly)' },
+            { const: 'anthropic/claude-opus-5', title: 'Claude Opus 5 (Complex agents)' },
+            { const: 'anthropic/claude-fable-5', title: 'Claude Fable 5 (Highest capability)' },
+            { const: 'openai/gpt-5.6-sol', title: 'GPT 5.6 Sol (Power)' },
+            { const: 'openai/gpt-5.6-terra', title: 'GPT 5.6 Terra (Balanced)' },
+            { const: 'x-ai/grok-4.6', title: 'Grok 4.6 (Flagship)' },
+            { const: 'google/gemini-3.7-flash', title: 'Gemini 3.7 Flash (Fast / current)' },
+            { const: 'minimax/minimax-m3', title: 'MiniMax M3' },
+            { const: 'moonshotai/kimi-k3', title: 'Kimi K3' },
+            { const: 'deepseek/deepseek-v4-pro', title: 'DeepSeek V4 Pro' },
+          ],
+        },
+      },
+    },
+    regions: [{
+      id: 'default',
+      label: 'OpenRouter (openrouter.ai)',
+      wires: {
+        'openai-chat': 'https://openrouter.ai/api/v1',
+        'openai-responses': 'https://openrouter.ai/api/v1',
+        anthropic: 'https://openrouter.ai/api',
+      },
+    }],
   },
   {
     id: 'gemini',
@@ -92,9 +169,11 @@ export const demoCredentialPresets = [
       modelHelp: 'Choose a Gemini model exposed by Google’s native API.',
     },
     models: [
-      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Stable)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'medium' } } },
-      { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview, paid)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high'], defaultEffort: 'high' } } },
-      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite (Stable)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'minimal' } } },
+      { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (Agentic default)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['medium', 'high'], defaultEffort: 'medium' } } },
+      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (Fastest / economical)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['minimal', 'medium', 'high'], defaultEffort: 'minimal' } } },
+      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Previous generation)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'medium' } } },
+      { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Previous preview, paid)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['low', 'medium', 'high'], defaultEffort: 'high' } } },
+      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite (Previous generation)', semantics: { contextWindow: 1_048_576, maxOutputTokens: 65_536, reasoning: { mode: 'adaptive', efforts: ['minimal', 'low', 'medium', 'high'], defaultEffort: 'minimal' } } },
       { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Previous generation)', semantics: { contextWindow: 1_048_576, reasoning: { mode: 'required' } } },
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Previous generation)', semantics: { contextWindow: 1_048_576, reasoning: { mode: 'optional' } } },
       { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite (Previous generation)', semantics: { contextWindow: 1_048_576, reasoning: { mode: 'optional' } } },
@@ -105,11 +184,13 @@ export const demoCredentialPresets = [
         apiKey: { type: 'string' },
         model: {
           type: 'string',
-          default: 'gemini-3.1-flash-lite',
+          default: 'gemini-3.6-flash',
           oneOf: [
-            { const: 'gemini-3.5-flash', title: 'Gemini 3.5 Flash (Stable)' },
-            { const: 'gemini-3.1-pro-preview', title: 'Gemini 3.1 Pro (Preview, paid)' },
-            { const: 'gemini-3.1-flash-lite', title: 'Gemini 3.1 Flash-Lite (Stable)' },
+            { const: 'gemini-3.6-flash', title: 'Gemini 3.6 Flash (Agentic default)' },
+            { const: 'gemini-3.5-flash-lite', title: 'Gemini 3.5 Flash-Lite (Fastest / economical)' },
+            { const: 'gemini-3.5-flash', title: 'Gemini 3.5 Flash (Previous generation)' },
+            { const: 'gemini-3.1-pro-preview', title: 'Gemini 3.1 Pro (Previous preview, paid)' },
+            { const: 'gemini-3.1-flash-lite', title: 'Gemini 3.1 Flash-Lite (Previous generation)' },
             { const: 'gemini-2.5-pro', title: 'Gemini 2.5 Pro (Previous generation)' },
             { const: 'gemini-2.5-flash', title: 'Gemini 2.5 Flash (Previous generation)' },
             { const: 'gemini-2.5-flash-lite', title: 'Gemini 2.5 Flash-Lite (Previous generation)' },
@@ -134,6 +215,12 @@ export const demoCredentialPresets = [
   },
 ]
 
+function isValidDuration(value: string): boolean {
+  const match = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(value.trim())
+  if (!match) return false
+  return Number(match[1] ?? 0) > 0 || Number(match[2] ?? 0) > 0 || Number(match[3] ?? 0) > 0
+}
+
 export const configKeysHandlers = [
   http.get('/api/config/api-keys/status', () => HttpResponse.json({})),
   http.put('/api/config/apiKeys', () => new HttpResponse(null, { status: 204 })),
@@ -141,7 +228,28 @@ export const configKeysHandlers = [
   // and useConfigPage adopts the echo, so `{}` here would wipe the page.
   http.put('/api/config/marketData', async ({ request }) => HttpResponse.json(await request.json())),
   http.put('/api/config/trading', async ({ request }) => HttpResponse.json(await request.json())),
-  http.put('/api/config/snapshot', async ({ request }) => HttpResponse.json(await request.json())),
+  http.put('/api/config/snapshot', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const every = typeof body.every === 'string' ? body.every.trim() : '15m'
+    if (
+      (Object.prototype.hasOwnProperty.call(body, 'enabled') && typeof body.enabled !== 'boolean')
+      || !isValidDuration(every)
+    ) {
+      return HttpResponse.json({ error: 'Validation failed' }, { status: 400 })
+    }
+    return HttpResponse.json({
+      enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
+      every,
+    })
+  }),
+  http.put('/api/config/news', async ({ request }) => {
+    const body = await request.json().catch(() => null)
+    if (!isNewsCollectorConfig(body)) {
+      return HttpResponse.json({ error: 'invalid_news_config' }, { status: 400 })
+    }
+    demoNewsConfig = structuredClone(body)
+    return HttpResponse.json(demoNewsConfig)
+  }),
 
   http.get('/api/config', () =>
     HttpResponse.json({
@@ -158,6 +266,7 @@ export const configKeysHandlers = [
         providerKeys: {},
         hub: { enabled: true, baseUrl: 'https://traderhub.openalice.ai' },
       },
+      news: demoNewsConfig,
       ports: { web: 47331 },
     }),
   ),
@@ -170,7 +279,7 @@ export const configKeysHandlers = [
     HttpResponse.json({
       credentials: [
         { slug: 'anthropic-1', vendor: 'anthropic', label: 'Anthropic', authType: 'api-key', wires: { anthropic: '' }, apiKey: null, hasApiKey: true, lastModel: 'claude-opus-4-8' },
-        { slug: 'openai-1', vendor: 'openai', label: 'OpenAI', authType: 'api-key', wires: { 'openai-responses': '', 'openai-chat': '' }, apiKey: null, hasApiKey: true, lastModel: 'gpt-5.6' },
+        { slug: 'openai-1', vendor: 'openai', label: 'OpenAI', authType: 'api-key', wires: { 'openai-responses': '', 'openai-chat': '' }, apiKey: null, hasApiKey: true, lastModel: 'gpt-5.6-sol' },
       ],
     }),
   ),
@@ -211,3 +320,42 @@ export const configKeysHandlers = [
     return HttpResponse.json({ agent: typeof body.agent === 'string' ? body.agent : null })
   }),
 ]
+
+function isNewsCollectorConfig(value: unknown): value is NewsCollectorConfig {
+  if (!isRecord(value)) return false
+  return typeof value.enabled === 'boolean'
+    && isPositiveInteger(value.intervalMinutes)
+    && isPositiveInteger(value.maxInMemory)
+    && isPositiveInteger(value.retentionDays)
+    && Array.isArray(value.feeds)
+    && value.feeds.every(isNewsCollectorFeed)
+}
+
+function isNewsCollectorFeed(value: unknown): value is NewsCollectorFeed {
+  if (!isRecord(value)) return false
+  return typeof value.name === 'string'
+    && typeof value.url === 'string'
+    && isUrl(value.url)
+    && typeof value.source === 'string'
+    && (value.categories === undefined
+      || (Array.isArray(value.categories) && value.categories.every((item) => typeof item === 'string')))
+    && (value.description === undefined || typeof value.description === 'string')
+    && (value.enabled === undefined || typeof value.enabled === 'boolean')
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+function isUrl(value: string): boolean {
+  try {
+    new URL(value)
+    return true
+  } catch {
+    return false
+  }
+}

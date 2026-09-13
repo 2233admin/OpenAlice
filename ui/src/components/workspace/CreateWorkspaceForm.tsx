@@ -20,6 +20,8 @@ import { useTranslation } from 'react-i18next'
 
 import { TAG_HINT, defaultTagFor, useCreateWorkspace } from '../../hooks/useCreateWorkspace'
 import { useWorkspaces } from '../../contexts/workspaces-context'
+import { inputClass } from '../form'
+import { Button } from '../ui/button'
 import type { TemplateInfo, Workspace } from './api'
 
 export interface CreateWorkspaceFormProps {
@@ -42,9 +44,8 @@ export interface CreateWorkspaceFormProps {
   readonly submitLabel?: string
 }
 
-const FIELD =
-  'w-full px-3 py-2 text-[13px] bg-background border border-border rounded text-foreground focus:outline-none focus:border-primary'
-const LABEL = 'block text-[11px] uppercase tracking-wider text-muted-foreground/70'
+const FIELD = `${inputClass} text-[13px]`
+const LABEL = 'block text-[12px] font-medium text-muted-foreground'
 const HINT = 'text-[11px] text-muted-foreground/70'
 
 export function CreateWorkspaceForm(props: CreateWorkspaceFormProps): ReactElement {
@@ -65,11 +66,20 @@ export function CreateWorkspaceForm(props: CreateWorkspaceFormProps): ReactEleme
 
   const effectiveTemplate = presetTemplate ?? selected
   const selectedMeta = templates.find((t) => t.name === effectiveTemplate)
+  const [sourceVersion, setSourceVersion] = useState('')
+  const effectiveSourceVersion = selectedMeta?.source
+    ? sourceVersion || selectedMeta.source.defaultVersion
+    : undefined
 
   const create = useCreateWorkspace({
     template: effectiveTemplate,
+    sourceVersion: effectiveSourceVersion,
     onCreated: props.onCreated,
   })
+
+  useEffect(() => {
+    setSourceVersion(selectedMeta?.source?.defaultVersion ?? '')
+  }, [effectiveTemplate, selectedMeta?.source?.defaultVersion])
 
   // Tag auto-derivation: `<template>-<date>[-n]`, recomputed when the
   // template changes — until the user types into the field, which makes
@@ -154,26 +164,52 @@ export function CreateWorkspaceForm(props: CreateWorkspaceFormProps): ReactEleme
         <p className={HINT}>{TAG_HINT}</p>
       </div>
 
-      {create.error && <div className="text-[12px] text-destructive">{create.error}</div>}
+      {selectedMeta?.source && (
+        <div className="space-y-1.5">
+          <label htmlFor="cw-source-version" className={LABEL}>
+            {t('createWorkspace.sourceVersionLabel')}
+          </label>
+          <select
+            id="cw-source-version"
+            value={effectiveSourceVersion}
+            onChange={(e) => setSourceVersion(e.target.value)}
+            disabled={create.creating}
+            className={FIELD}
+          >
+            {selectedMeta.source.versions.map((entry) => (
+              <option key={entry.version} value={entry.version}>
+                {entry.version}
+              </option>
+            ))}
+          </select>
+          <p className={HINT}>
+            {t('createWorkspace.sourceVersionHint', {
+              commit: selectedMeta.source.versions
+                .find((entry) => entry.version === effectiveSourceVersion)
+                ?.commit.slice(0, 12) ?? '',
+            })}
+          </p>
+        </div>
+      )}
+
+      {create.error && <div role="alert" className="text-[12px] text-destructive">{create.error}</div>}
 
       <div className="flex items-center justify-end gap-2 pt-1">
         {onCancel && (
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={onCancel}
             disabled={create.creating}
-            className="px-3 py-2 text-[13px] rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             {t('createWorkspace.cancel')}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="submit"
           disabled={create.creating || create.tag.length === 0 || effectiveTemplate === ''}
-          className="btn-primary"
         >
           {create.creating ? t('createWorkspace.creating') : (props.submitLabel ?? t('createWorkspace.create'))}
-        </button>
+        </Button>
       </div>
     </form>
   )

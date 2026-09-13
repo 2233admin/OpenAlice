@@ -21,15 +21,15 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "test": "vitest run --config vitest.config.ts",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "test:all": "vitest run --config vitest.config.ts && vitest run --config vitest.e2e.config.ts",
+    "test:external:readonly": "node ../../scripts/run-tests.mjs --lane external-readonly --package @traderalice/ibkr",
+    "test:live-paper": "node ../../scripts/run-tests.mjs --lane live-paper --package @traderalice/ibkr",
     "typecheck": "tsc --noEmit",
     "generate:proto": "bash generate-proto.sh"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.11.0",
     "decimal.js": "^10.6.0",
-    "protobufjs": "^7.5.5"
+    "protobufjs": "^7.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",

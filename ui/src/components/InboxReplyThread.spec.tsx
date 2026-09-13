@@ -54,10 +54,31 @@ describe('InboxReplyThread', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Reply to this update…' }), {
       target: { value: 'Which data did you use?' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+    const reply = screen.getByRole('button', { name: 'Reply' })
+    expect(reply.className).toContain('h-10')
+    expect(reply.className).toContain('w-10')
+    expect(reply.className).toContain('sm:h-8')
+    fireEvent.click(reply)
 
     await waitFor(() => expect(ask).toHaveBeenCalledWith('Which data did you use?'))
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+  })
+
+  it('sends with Enter and keeps Shift+Enter for a new line', async () => {
+    const load = vi.fn().mockResolvedValue([])
+    const ask = vi.fn().mockResolvedValue({ status: 'dispatched' })
+
+    render(
+      <InboxReplyThread sender="pi" hasExactSender load={load} ask={ask} />,
+    )
+
+    const textbox = await screen.findByRole('textbox', { name: 'Reply to this update…' })
+    fireEvent.change(textbox, { target: { value: 'First line' } })
+    fireEvent.keyDown(textbox, { key: 'Enter', code: 'Enter', shiftKey: true })
+    expect(ask).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(textbox, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(ask).toHaveBeenCalledWith('First line'))
   })
 
   it('renders completed and running replies as one chronological thread', async () => {
@@ -91,5 +112,38 @@ describe('InboxReplyThread', () => {
     expect(screen.getByText('Reconstructed')).toBeTruthy()
     expect(screen.getByText('Can you verify it once more?')).toBeTruthy()
     expect(screen.getByText('Working on a reply…')).toBeTruthy()
+  })
+
+  it('replaces the waiting line with live progress blocks', async () => {
+    const load = vi.fn().mockResolvedValue([
+      record({
+        taskId: 'ask_progress',
+        status: 'running',
+        startedAt: Date.now(),
+        assistantText: null,
+        progress: {
+          updatedAt: Date.now(),
+          assistantText: 'Checking the close.',
+          blocks: [
+            { type: 'text', text: 'Checking the close.' },
+            { type: 'tool', id: 't1', name: 'Read', status: 'running' },
+          ],
+          metrics: { textBlocks: 1, toolCalls: 1, toolFailures: 0 },
+        },
+        inquiry: {
+          subject: { kind: 'inbox', entryId: 'inbox_123' },
+          question: 'Can you verify it once more?',
+          resolution: { mode: 'exact' },
+        },
+      }),
+    ])
+
+    render(
+      <InboxReplyThread sender="pi" hasExactSender load={load} ask={vi.fn()} />,
+    )
+
+    expect(await screen.findByText('Checking the close.')).toBeTruthy()
+    expect(screen.getByText('Read')).toBeTruthy()
+    expect(screen.queryByText('Working on a reply…')).toBeNull()
   })
 })

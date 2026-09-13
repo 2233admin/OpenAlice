@@ -1,9 +1,11 @@
 import { http, HttpResponse } from 'msw'
-import type { IssuePriority, IssueStatus } from '../../api/issues'
+import type { ModelReasoningEffort } from '../../api'
+import { ISSUE_TIMEOUTS, type IssuePriority, type IssueStatus, type IssueTimeout } from '../../api/issues'
 import {
   demoIssueAddComment,
   demoIssueDetail,
   demoIssueRetry,
+  demoIssueRunNow,
   demoIssueUpdate,
   demoIssuesSnapshot,
 } from '../fixtures/issues'
@@ -26,6 +28,16 @@ const ISSUE_PRIORITIES = [
   'low',
   'none',
 ] as const satisfies readonly IssuePriority[]
+const MODEL_REASONING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+] as const satisfies readonly ModelReasoningEffort[]
 
 const COMMENT_MAX = 16_000
 
@@ -61,13 +73,31 @@ export const issuesHandlers = [
       priority?: unknown
       assignee?: unknown
       agent?: unknown
+      credential?: unknown
+      credentialSource?: unknown
+      model?: unknown
+      effort?: unknown
+      timeout?: unknown
       what?: unknown
+      commentPrompt?: unknown
     } | null
     if (!body || typeof body !== 'object') {
       return HttpResponse.json({ error: 'invalid_body' }, { status: 400 })
     }
 
-    const patch: { status?: IssueStatus; priority?: IssuePriority; assignee?: string; agent?: string | null; what?: string } = {}
+    const patch: {
+      status?: IssueStatus
+      priority?: IssuePriority
+      assignee?: string
+      agent?: string | null
+      credential?: string | null
+      credentialSource?: 'native' | null
+      model?: string | null
+      effort?: ModelReasoningEffort | null
+      timeout?: IssueTimeout | null
+      what?: string
+      commentPrompt?: string | null
+    } = {}
     if (body.status !== undefined) {
       if (!ISSUE_STATUSES.includes(body.status as IssueStatus)) {
         return HttpResponse.json({ error: 'invalid_status' }, { status: 400 })
@@ -93,10 +123,55 @@ export const issuesHandlers = [
         return HttpResponse.json({ error: 'invalid_agent' }, { status: 400 })
       } else {
         const agent = body.agent.trim()
-        if (!['claude', 'codex', 'opencode', 'pi'].includes(agent)) {
+        if (!['claude', 'codex', 'cursor', 'agy', 'grok', 'omp', 'opencode', 'pi'].includes(agent)) {
           return HttpResponse.json({ error: 'invalid_agent' }, { status: 400 })
         }
         patch.agent = agent
+      }
+    }
+    if (body.credential !== undefined) {
+      if (body.credential === null || body.credential === '') {
+        patch.credential = null
+      } else if (typeof body.credential !== 'string' || !body.credential.trim()) {
+        return HttpResponse.json({ error: 'invalid_credential' }, { status: 400 })
+      } else {
+        patch.credential = body.credential.trim()
+      }
+    }
+    if (body.credentialSource !== undefined) {
+      if (body.credentialSource === null || body.credentialSource === '') {
+        patch.credentialSource = null
+      } else if (body.credentialSource !== 'native') {
+        return HttpResponse.json({ error: 'invalid_credential_source' }, { status: 400 })
+      } else {
+        patch.credentialSource = 'native'
+      }
+    }
+    if (body.model !== undefined) {
+      if (body.model === null || body.model === '') {
+        patch.model = null
+      } else if (typeof body.model !== 'string' || !body.model.trim()) {
+        return HttpResponse.json({ error: 'invalid_model' }, { status: 400 })
+      } else {
+        patch.model = body.model.trim()
+      }
+    }
+    if (body.effort !== undefined) {
+      if (body.effort === null || body.effort === '') {
+        patch.effort = null
+      } else if (!MODEL_REASONING_EFFORTS.includes(body.effort as ModelReasoningEffort)) {
+        return HttpResponse.json({ error: 'invalid_effort' }, { status: 400 })
+      } else {
+        patch.effort = body.effort as ModelReasoningEffort
+      }
+    }
+    if (body.timeout !== undefined) {
+      if (body.timeout === null || body.timeout === '') {
+        patch.timeout = null
+      } else if (!(ISSUE_TIMEOUTS as readonly string[]).includes(String(body.timeout))) {
+        return HttpResponse.json({ error: 'invalid_timeout' }, { status: 400 })
+      } else {
+        patch.timeout = body.timeout as IssueTimeout
       }
     }
     if (body.what !== undefined) {
@@ -105,12 +180,27 @@ export const issuesHandlers = [
       }
       patch.what = body.what.trim()
     }
+    if (body.commentPrompt !== undefined) {
+      if (body.commentPrompt === null || body.commentPrompt === '') {
+        patch.commentPrompt = null
+      } else if (typeof body.commentPrompt !== 'string') {
+        return HttpResponse.json({ error: 'invalid_comment_prompt' }, { status: 400 })
+      } else {
+        patch.commentPrompt = body.commentPrompt
+      }
+    }
     if (
       patch.status === undefined &&
       patch.priority === undefined &&
       patch.assignee === undefined &&
       patch.agent === undefined
+      && patch.credential === undefined
+      && patch.credentialSource === undefined
+      && patch.model === undefined
+      && patch.effort === undefined
+      && patch.timeout === undefined
       && patch.what === undefined
+      && patch.commentPrompt === undefined
     ) {
       return HttpResponse.json({ error: 'no_fields' }, { status: 400 })
     }
@@ -145,6 +235,15 @@ export const issuesHandlers = [
       : HttpResponse.json({
           error: 'not_retryable',
           message: 'Only the latest failed or interrupted scheduled run can be retried.',
+        }, { status: 409 })
+  }),
+  http.post('/api/issues/:wsId/:id/run', ({ params }) => {
+    const detail = demoIssueRunNow(String(params.wsId), String(params.id))
+    return detail
+      ? HttpResponse.json(detail, { status: 202 })
+      : HttpResponse.json({
+          error: 'not_fireable',
+          message: 'Only a live scheduled Issue can be run now.',
         }, { status: 409 })
   }),
 ]

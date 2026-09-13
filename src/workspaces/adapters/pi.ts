@@ -1,14 +1,23 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { createReadStream, existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 
 import { runtimeProfileFromEnv } from '@/core/runtime-profile.js';
 import { resolveBashPath } from '@/core/shell-resolver.js';
+import { cliBinPath } from '@/core/paths.js';
 
-import type { CliAdapter, SpawnContext, WorkspaceAiCred } from '../cli-adapter.js';
+import type {
+  CliAdapter,
+  ResolvedSessionRuntimeBinding,
+  SpawnContext,
+  WorkspaceAiCred,
+} from '../cli-adapter.js';
 import type { HeadlessOutputEvent } from '../headless-output.js';
 import {
+  buildPiProvider,
   migrateLegacyPiAgentDir,
+  localizePiWorkspaceProvider,
   PI_BINDING_STATE_PATH,
   readPiWorkspaceConfig,
   resolvePiAgentDir,
@@ -18,8 +27,43 @@ import {
 } from './pi-config.js';
 
 const PI_TRUST_FILENAME = 'trust.json';
+const PI_SESSION_PROVIDER_ID = 'openalice-session';
+const PI_SESSION_PROVIDER_ENV = 'OPENALICE_PI_SESSION_PROVIDER';
 
 let piTrustWriteQueue: Promise<void> = Promise.resolve();
+
+export async function readPiSessionTitleFile(path: string): Promise<string | null> {
+  let title: string | undefined;
+  try {
+    const lines = createInterface({
+      input: createReadStream(path, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of lines) {
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (entry['type'] === 'session_info') {
+        title = typeof entry['name'] === 'string' ? entry['name'].trim() || undefined : undefined;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return title ?? null;
+}
+
+function piSessionDir(cwd: string): string {
+  const configured = process.env['PI_CODING_AGENT_SESSION_DIR']?.trim();
+  if (configured) {
+    return resolve(configured.replace(/^~(?=$|[/\\])/, process.env['HOME']?.trim() || ''));
+  }
+  const safeCwd = resolve(cwd).replace(/^[/\\]/, '').replace(/[/\\:]/g, '-');
+  return join(resolvePiAgentDir(process.env), 'sessions', `--${safeCwd}--`);
+}
 
 function piCommandHead(env: Readonly<Record<string, string | undefined>>): readonly string[] {
   const profile = runtimeProfileFromEnv(env);
@@ -155,12 +199,12 @@ function piHeadlessApproveArgs(env: Readonly<Record<string, string | undefined>>
  * `.pi/extensions/openalice-bridge.ts` MCP bridge was removed when the launcher
  * went CLI-only. See memory feedback_cli_injection_over_mcp_bridge.
  *
- * PROVIDER override: Pi has no project-local `models.json`, so OpenAlice adds a
- * namespaced provider to Pi's real user agent directory and selects it through
- * the native `<cwd>/.pi/settings.json` project layer. This preserves Pi's own
- * global settings, packages, auth, resources, sessions, and fallback behavior.
- * Reset restores the pre-injection project defaults and removes only the
- * OpenAlice-owned provider node.
+ * PROVIDER override: Pi has no project-local `models.json`, so OpenAlice writes
+ * one generic managed extension under `<cwd>/.pi/extensions/`. It registers the
+ * provider stored in the sensitive local binding sidecar, while native project
+ * settings select the model. Pi's global models/auth/settings/packages/sessions
+ * remain untouched. Reset restores the prior project defaults and removes only
+ * the unchanged OpenAlice-owned extension and sidecar.
  *
  * RESUME is first-class by-id (claude-level), via launcher-ASSIGNED id rather
  * than disk harvesting: `--session-id <id>` is create-or-reopen
@@ -187,6 +231,54 @@ export const piAdapter: CliAdapter = {
     // immune to pi's lazy transcript write.
     assignsSessionId: true,
     headless: true,
+    // Pi's RPC mode has no per-tool permission prompt; the Web surface launches
+    // it approved like headless does. The launcher mints the id at spawn, so
+    // a fresh Session always arrives here with a concrete `--session-id`.
+    web: { wire: 'pi-rpc', permissionPrompts: false, freshSession: true },
+    aiProvider: {
+      credentialSource: 'runtime-or-workspace',
+      wirePreference: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
+      defaultWire: 'openai-chat',
+      vendorPolicies: {
+        minimax: {
+          wirePreference: ['anthropic'],
+          legacyRequestedWireFallbacks: { 'openai-chat': 'anthropic' },
+        },
+      },
+      modelRegistration: {
+        contextWindow: true,
+        reasoning: true,
+      },
+    },
+  },
+
+  sessionRuntime: {
+    project(ctx, runtime: ResolvedSessionRuntimeBinding) {
+      const ai = runtime.ai;
+      const customProvider = !!ai && !!(ai.apiKey || ai.baseUrl);
+      const model = runtime.binding.model;
+      const args = [
+        ...(customProvider
+          ? [
+              '--extension',
+              join(cliBinPath(), 'pi-session-provider.ts'),
+              '--provider', PI_SESSION_PROVIDER_ID,
+            ]
+          : []),
+        ...(model ? ['--model', model] : []),
+        ...(runtime.binding.reasoningEffort
+          ? ['--thinking', runtime.binding.reasoningEffort === 'none' ? 'off' : runtime.binding.reasoningEffort]
+          : []),
+      ];
+      const env: Record<string, string> = {};
+      if (customProvider && ai) {
+        env[PI_SESSION_PROVIDER_ENV] = JSON.stringify({
+          providerId: PI_SESSION_PROVIDER_ID,
+          provider: buildPiProvider(ctx.cwd, ai),
+        });
+      }
+      return { env, interactiveArgs: args, headlessArgs: args, webArgs: args };
+    },
   },
 
   lifecycle: {
@@ -195,6 +287,7 @@ export const piAdapter: CliAdapter = {
     // project choices.
     async prepareWorkspace({ cwd }): Promise<void> {
       await migrateLegacyPiAgentDir(cwd);
+      await localizePiWorkspaceProvider(cwd);
       await syncPiWorkspaceTheme(cwd);
       await syncPiWindowsShellPath(cwd);
       await syncPiProjectTrust(cwd);
@@ -208,7 +301,7 @@ export const piAdapter: CliAdapter = {
     // The runtime lifecycle records trust for this OpenAlice-managed Workspace
     // before every launch. Keeping argv free of `--approve` preserves
     // compatibility with external Pi 0.78.x runtimes that predate the flag.
-    const head = [...piCommandHead(ctx.env)];
+    const head = [...piCommandHead(ctx.env), ...(ctx.sessionRuntime?.interactiveArgs ?? [])];
     // Quick-chat seed: `pi [--session-id <id>] <messages…>` opens the
     // interactive TUI seeded with that first message. UNLIKE the other adapters,
     // pi appends the seed REGARDLESS of the resume branch: pi assigns its own id
@@ -225,17 +318,31 @@ export const piAdapter: CliAdapter = {
     return [...head, '--session-id', ctx.resume.sessionId, ...seed];
   },
 
-  // WebPi is a second VIEW over the same Pi session, not another runtime.
-  // RPC stays completely separate from the TUI argv above: selecting WebPi
-  // cannot change ordinary Pi startup, trust prompts, input handling, or PTY
-  // behavior. It is always by-id so switching surfaces reopens the exact
+  async readSessionTitle(cwd: string, sessionId: string): Promise<string | null> {
+    let files: string[];
+    try {
+      files = await readdir(piSessionDir(cwd));
+    } catch {
+      return null;
+    }
+    const filename = files.find((name) => name.endsWith(`_${sessionId}.jsonl`));
+    return filename
+      ? readPiSessionTitleFile(join(piSessionDir(cwd), filename))
+      : null;
+  },
+
+  // The Web surface is a second VIEW over the same Pi session, not another
+  // runtime. RPC stays completely separate from the TUI argv above: selecting
+  // it cannot change ordinary Pi startup, trust prompts, input handling, or
+  // PTY behavior. It is always by-id so switching surfaces reopens the exact
   // conversation that the OpenAlice resume registry already owns.
   composeWebCommand(_base: readonly string[], ctx: SpawnContext): readonly string[] {
     if (!ctx.resume || ctx.resume === 'last') {
-      throw new Error('WebPi requires a concrete Pi session id');
+      throw new Error('the Pi Web surface requires a concrete Pi session id');
     }
     return [
       ...piCommandHead(ctx.env),
+      ...(ctx.sessionRuntime?.webArgs ?? ctx.sessionRuntime?.interactiveArgs ?? []),
       ...(ctx.approveProject ? ['--approve'] : piHeadlessApproveArgs(ctx.env)),
       ...(ctx.appendSystemPrompt ? ['--append-system-prompt', ctx.appendSystemPrompt] : []),
       ...(ctx.skills ?? []).flatMap((path) => ['--skill', path]),
@@ -254,10 +361,15 @@ export const piAdapter: CliAdapter = {
   // REJECTS a `--` end-of-options terminator ("Unknown option: --", verified
   // 0.78.1), so the prompt is a bare trailing positional — a prompt literally
   // starting with `-`/`--` is unprotected on pi (rare for task prompts).
-  composeHeadlessCommand(_base: readonly string[], _ctx: SpawnContext, prompt: string): readonly string[] {
+  composeHeadlessCommand(
+    _base: readonly string[],
+    _ctx: SpawnContext,
+    prompt: string,
+  ): readonly string[] {
     return [
       ...piCommandHead(_ctx.env),
       ...piHeadlessApproveArgs(_ctx.env),
+      ...(_ctx.sessionRuntime?.headlessArgs ?? []),
       ...(_ctx.resume === 'last'
         ? ['--continue']
         : _ctx.resume
@@ -384,12 +496,13 @@ export const piAdapter: CliAdapter = {
     // download missing runtime tools during startup. A user or launcher can
     // still opt into Pi's offline behavior by setting PI_OFFLINE in the base
     // process environment, which composeSpawnInputs preserves.
-    // In particular, never inject PI_CODING_AGENT_DIR: Pi's normal project
-    // settings layer selects the Workspace provider while its user agent dir
-    // continues to own packages, auth, settings, resources, and sessions.
+    // In particular, never inject PI_CODING_AGENT_DIR: Pi's user agent dir
+    // continues to own packages, auth, settings, resources, and sessions. The
+    // project provider layer below is deprecated compatibility state only.
     return {};
   },
 
+  /** @deprecated Native-project compatibility export; managed Sessions use sessionRuntime. */
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {
     const shellPath = process.platform === 'win32'
       ? resolveBashPath(process.env, 'win32')
@@ -397,6 +510,7 @@ export const piAdapter: CliAdapter = {
     await writePiWorkspaceConfig(cwd, cred, { shellPath });
   },
 
+  /** @deprecated Compatibility inspection for legacy Session bindings only. */
   async readAiConfig(cwd: string): Promise<WorkspaceAiCred | null> {
     return readPiWorkspaceConfig(cwd);
   },

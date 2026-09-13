@@ -57,10 +57,41 @@ describe('HeadlessTaskRegistry', () => {
   it('complete updates status; get returns it; runningCount drops', async () => {
     const reg = await HeadlessTaskRegistry.load(path, noopLogger)
     const a = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1 })
+    await reg.setProgress(a.taskId, {
+      updatedAt: 1,
+      assistantText: 'working',
+      blocks: [{ type: 'text', text: 'working' }],
+      metrics: { textBlocks: 1, toolCalls: 0, toolFailures: 0 },
+    })
     await reg.complete(a.taskId, { status: 'done', exitCode: 0, durationMs: 5, finishedAt: 2 })
     expect(reg.get(a.taskId)?.status).toBe('done')
     expect(reg.get(a.taskId)?.exitCode).toBe(0)
+    expect(reg.get(a.taskId)?.progress).toBeUndefined()
     expect(reg.runningCount()).toBe(0)
+  })
+
+  it('persists process startup evidence and typed launch failures', async () => {
+    const reg = await HeadlessTaskRegistry.load(path, noopLogger)
+    const task = await createTask(reg, {
+      wsId: 'w1',
+      agent: 'pi',
+      prompt: 'x',
+      startedAt: 1,
+    })
+    await reg.complete(task.taskId, {
+      status: 'failed',
+      finishedAt: 2,
+      processStarted: false,
+      launchErrorCode: 'unsupported_windows_batch_shim',
+      exitCode: -1,
+      error: 'batch-only shim',
+    })
+    const reloaded = await HeadlessTaskRegistry.load(path, noopLogger)
+    expect(reloaded.get(task.taskId)).toMatchObject({
+      processStarted: false,
+      launchErrorCode: 'unsupported_windows_batch_shim',
+      error: 'batch-only shim',
+    })
   })
 
   it('list filters by wsId / status / limit', async () => {
@@ -75,14 +106,64 @@ describe('HeadlessTaskRegistry', () => {
 
   it('records a composite Issue trigger when an issue fired the run', async () => {
     const reg = await HeadlessTaskRegistry.load(path, noopLogger)
-    const fired = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1, trigger: { kind: 'issue', workspaceId: 'home', issueId: 'daily-scan' } })
+    const fired = await createTask(reg, {
+      wsId: 'w1',
+      agent: 'codex',
+      prompt: 'x',
+      startedAt: 1,
+      trigger: {
+        kind: 'issue',
+        workspaceId: 'home',
+        issueId: 'daily-scan',
+        retryOfTaskId: 'failed-occurrence',
+        metadata: { kind: 'connector-cron-issue', connectorId: 'telegram' },
+      },
+    })
     const manual = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'y', startedAt: 2 })
-    expect(fired.trigger).toEqual({ kind: 'issue', workspaceId: 'home', issueId: 'daily-scan' })
+    expect(fired.trigger).toEqual({
+      kind: 'issue',
+      workspaceId: 'home',
+      issueId: 'daily-scan',
+      retryOfTaskId: 'failed-occurrence',
+      metadata: { kind: 'connector-cron-issue', connectorId: 'telegram' },
+    })
     // Manual runs leave the field absent (not undefined-valued) so the JSON stays clean.
     expect('trigger' in manual).toBe(false)
     // Persists across reload.
     const reg2 = await HeadlessTaskRegistry.load(path, noopLogger)
-    expect(reg2.get(fired.taskId)?.trigger?.issueId).toBe('daily-scan')
+    expect(reg2.get(fired.taskId)?.trigger).toEqual(fired.trigger)
+  })
+
+  it('persists an explicit unlimited watchdog separately from historical absence', async () => {
+    const reg = await HeadlessTaskRegistry.load(path, noopLogger)
+    const unlimited = await createTask(reg, {
+      wsId: 'w1',
+      agent: 'codex',
+      prompt: 'x',
+      startedAt: 1,
+      trigger: { kind: 'issue', workspaceId: 'home', issueId: 'daily-scan' },
+    })
+    const manual = await createTask(reg, {
+      wsId: 'w1', agent: 'codex', prompt: 'y', startedAt: 2,
+    })
+
+    const reg2 = await HeadlessTaskRegistry.load(path, noopLogger)
+    expect(reg2.get(unlimited.taskId)).toHaveProperty('timeoutMs', null)
+    expect(reg2.get(manual.taskId)).not.toHaveProperty('timeoutMs')
+  })
+
+  it('persists requested one-run model and effort', async () => {
+    const reg = await HeadlessTaskRegistry.load(path, noopLogger)
+    const task = await createTask(reg, {
+      wsId: 'w1',
+      agent: 'codex',
+      model: 'gpt-5.6',
+      effort: 'high',
+      prompt: 'x',
+      startedAt: 1,
+    })
+    const reg2 = await HeadlessTaskRegistry.load(path, noopLogger)
+    expect(reg2.get(task.taskId)).toMatchObject({ model: 'gpt-5.6', effort: 'high' })
   })
 
   it('persists and reverse-filters business inquiry subjects', async () => {

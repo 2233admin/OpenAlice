@@ -19,6 +19,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react'
@@ -33,27 +34,38 @@ import {
   publishTerminalViewAttributes,
   useTerminalAppearance,
 } from '../components/workspace/terminalAppearance'
-import { WorkspaceAIConfigModal } from '../components/workspace/WorkspaceAIConfigModal'
+import { WorkspaceAIConfigModal, type Tab } from '../components/workspace/WorkspaceAIConfigModal'
 import {
   deleteSession as apiDeleteSession,
   type AgentId,
   getIssueDefaultAgent,
+  getAutoQuantDefaultWorkspace,
+  getAutoPredictionDefaultWorkspace,
   getWorkspaceManager,
+  getWorkspaceSessionDirectory,
   getWorkspaceDefaultAgent,
-  listAgents,
   listTemplates,
   listWorkspaces,
-  openWebPiSession as apiOpenWebPiSession,
+  initializeAutoQuantWorkspace as apiInitializeAutoQuantWorkspace,
+  initializeAutoPredictionWorkspace as apiInitializeAutoPredictionWorkspace,
+  initializeChatWorkspace as apiInitializeChatWorkspace,
+  openWebSession as apiOpenWebSession,
   openResumeSession,
   pauseSession as apiPauseSession,
   quickChat as apiQuickChat,
   quickStartWorkspaceManager as apiQuickStartWorkspaceManager,
   resumeSession as apiResumeSession,
+  setSessionDisplayName as apiSetSessionDisplayName,
+  setSessionPresence as apiSetSessionPresence,
+  type SessionPresence,
   setIssueDefaultAgent as apiSetIssueDefaultAgent,
+  setAutoQuantDefaultWorkspace as apiSetAutoQuantDefaultWorkspace,
+  setAutoPredictionDefaultWorkspace as apiSetAutoPredictionDefaultWorkspace,
   setWorkspaceDefaultAgent as apiSetWorkspaceDefaultAgent,
   spawnSession,
+  updatePausedSessionRuntime as apiUpdatePausedSessionRuntime,
   updateWorkspaceMetadata,
-  type AgentInfo,
+  type PausedSessionRuntimeUpdate,
   MANAGER_WORKSPACE_ID,
   type ManagerQuickStartResult,
   type ManagerWorkspaceSnapshot,
@@ -63,8 +75,20 @@ import {
 } from '../components/workspace/api'
 import { useWorkspace } from '../tabs/store'
 import type { WorkspaceSource } from '../tabs/types'
-import { WorkspacesContext, type SpawnOpts } from './workspaces-context'
+import {
+  WorkspacesContext,
+  type SpawnOpts,
+  type WorkspacesContextValue,
+} from './workspaces-context'
+import { WorkspaceActionsContext } from './workspace-actions-context'
 import { reconcileWorkspaceList } from './workspace-list-reconcile'
+import { reconcileJsonSnapshot } from '../lib/reconcile-json-state'
+import { useAgentRuntimes } from '../hooks/useAgentRuntimes'
+
+function deprecatedExportTab(agent: AgentId | undefined): Tab | undefined {
+  if (agent === 'claude' || agent === 'codex' || agent === 'opencode' || agent === 'pi') return agent
+  return undefined
+}
 
 const LIST_POLL_MS = 3000
 
@@ -72,7 +96,14 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [templates, setTemplates] = useState<TemplateInfo[]>([])
   const [templatesLoaded, setTemplatesLoaded] = useState(false)
-  const [agents, setAgents] = useState<AgentInfo[]>([])
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [autoQuantDefaultWorkspaceId, setAutoQuantDefaultWorkspaceId] = useState<string | null>(null)
+  const [autoQuantPreferenceLoaded, setAutoQuantPreferenceLoaded] = useState(false)
+  const [autoQuantPreferenceError, setAutoQuantPreferenceError] = useState<string | null>(null)
+  const [autoPredictionDefaultWorkspaceId, setAutoPredictionDefaultWorkspaceId] = useState<string | null>(null)
+  const [autoPredictionPreferenceLoaded, setAutoPredictionPreferenceLoaded] = useState(false)
+  const [autoPredictionPreferenceError, setAutoPredictionPreferenceError] = useState<string | null>(null)
+  const { agents } = useAgentRuntimes()
   const [defaultAgent, setDefaultAgentState] = useState<string | null>(null)
   const [issueDefaultAgent, setIssueDefaultAgentState] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
@@ -91,7 +122,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
   const [configuringAgentTarget, setConfiguringAgentTarget] = useState<{
     wsId: string
     agent?: AgentId
-    section?: 'general' | 'ai' | 'template' | 'absorb'
+    section?: 'general' | 'launch' | 'ai' | 'template' | 'absorb'
   } | null>(null)
   const [pendingSessionDelete, setPendingSessionDelete] = useState<{ wsId: string; sessionId: string } | null>(null)
   const { t } = useTranslation()
@@ -125,12 +156,48 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
 
   const refreshWorkspaceManager = useCallback(async (): Promise<void> => {
     try {
-      setWorkspaceManager(await getWorkspaceManager())
+      const incoming = await getWorkspaceManager()
+      setWorkspaceManager((current) => reconcileJsonSnapshot(current, incoming))
       setWorkspaceManagerError(null)
     } catch (err) {
       setWorkspaceManagerError((err as Error).message)
     } finally {
       setWorkspaceManagerLoaded(true)
+    }
+  }, [])
+
+  const refreshTemplates = useCallback(async (): Promise<void> => {
+    try {
+      setTemplates(await listTemplates())
+      setTemplatesError(null)
+    } catch (error) {
+      setTemplatesError((error as Error).message)
+    } finally {
+      setTemplatesLoaded(true)
+    }
+  }, [])
+
+  const refreshAutoQuantPreference = useCallback(async (): Promise<void> => {
+    try {
+      const status = await getAutoQuantDefaultWorkspace()
+      setAutoQuantDefaultWorkspaceId(status.defaultWorkspaceId)
+      setAutoQuantPreferenceError(null)
+    } catch (error) {
+      setAutoQuantPreferenceError((error as Error).message)
+    } finally {
+      setAutoQuantPreferenceLoaded(true)
+    }
+  }, [])
+
+  const refreshAutoPredictionPreference = useCallback(async (): Promise<void> => {
+    try {
+      const status = await getAutoPredictionDefaultWorkspace()
+      setAutoPredictionDefaultWorkspaceId(status.defaultWorkspaceId)
+      setAutoPredictionPreferenceError(null)
+    } catch (error) {
+      setAutoPredictionPreferenceError((error as Error).message)
+    } finally {
+      setAutoPredictionPreferenceLoaded(true)
     }
   }, [])
 
@@ -151,14 +218,12 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
   }, [refreshWorkspaceManager])
 
   useEffect(() => {
-    void listTemplates()
-      .then(setTemplates)
-      .catch(() => setTemplates([]))
-      .finally(() => setTemplatesLoaded(true))
-    void listAgents().then(setAgents).catch(() => setAgents([]))
+    void refreshTemplates()
     void getWorkspaceDefaultAgent().then(setDefaultAgentState).catch(() => setDefaultAgentState(null))
     void getIssueDefaultAgent().then(setIssueDefaultAgentState).catch(() => setIssueDefaultAgentState(null))
-  }, [])
+    void refreshAutoQuantPreference()
+    void refreshAutoPredictionPreference()
+  }, [refreshAutoPredictionPreference, refreshAutoQuantPreference, refreshTemplates])
 
   // Reconcile tabs against the workspaces list. If a workspace or session
   // disappeared (deleted on disk / on the server), close any tabs that
@@ -249,12 +314,27 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
     setDefaultAgentState(saved)
   }, [])
 
+  const [interactiveConsent, setInteractiveConsent] = useState<{ resolve: (confirmed: boolean) => void } | null>(null)
+  const confirmInteractiveSession = useCallback(async (wsId: string, resumeId: string): Promise<boolean> => {
+    if (wsId === MANAGER_WORKSPACE_ID) return true
+    const directory = await getWorkspaceSessionDirectory(wsId, resumeId)
+    const identity = directory.sessions.find((entry) => entry.resumeId === resumeId)
+    if (!identity?.issueAttached && identity?.rosterVisibility !== 'hidden') return true
+    return new Promise<boolean>((resolve) => {
+      setInteractiveConsent((previous) => {
+        previous?.resolve(false)
+        return { resolve }
+      })
+    })
+  }, [])
+
   const openHeadlessRun = useCallback(
     async (
       wsId: string,
       resumeId: string,
       opts: { title?: string } = {},
     ): Promise<void> => {
+      if (!await confirmInteractiveSession(wsId, resumeId)) return
       const { session } = await openResumeSession(wsId, resumeId, opts)
       let nextSession = session
       if (session.state === 'paused') {
@@ -295,7 +375,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
       })
       void refresh()
     },
-    [ensureTerminalAppearancePublished, openOrFocus, refresh, setSidebar],
+    [confirmInteractiveSession, ensureTerminalAppearancePublished, openOrFocus, refresh, setSidebar],
   )
 
   const setIssueDefaultAgent = useCallback(async (agent: string | null): Promise<void> => {
@@ -303,10 +383,76 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
     setIssueDefaultAgentState(saved)
   }, [])
 
+  const initializeAutoQuant = useCallback(async (): Promise<Workspace> => {
+    const workspace = await apiInitializeAutoQuantWorkspace()
+    setWorkspaces((current) => [
+      workspace,
+      ...current.filter((candidate) => candidate.id !== workspace.id),
+    ])
+    setAutoQuantDefaultWorkspaceId(workspace.id)
+    setAutoQuantPreferenceError(null)
+    void refresh()
+    return workspace
+  }, [refresh])
+
+  const initializeAutoPrediction = useCallback(async (): Promise<Workspace> => {
+    const workspace = await apiInitializeAutoPredictionWorkspace()
+    setWorkspaces((current) => [
+      workspace,
+      ...current.filter((candidate) => candidate.id !== workspace.id),
+    ])
+    setAutoPredictionDefaultWorkspaceId(workspace.id)
+    setAutoPredictionPreferenceError(null)
+    void refresh()
+    return workspace
+  }, [refresh])
+
+  const initializeChat = useCallback(async (): Promise<Workspace> => {
+    const workspace = await apiInitializeChatWorkspace()
+    setWorkspaces((current) => [
+      workspace,
+      ...current.filter((candidate) => candidate.id !== workspace.id),
+    ])
+    void refresh()
+    return workspace
+  }, [refresh])
+
+  const setAutoQuantDefaultWorkspace = useCallback(async (workspaceId: string): Promise<void> => {
+    const saved = await apiSetAutoQuantDefaultWorkspace(workspaceId)
+    setAutoQuantDefaultWorkspaceId(saved.defaultWorkspaceId)
+    setAutoQuantPreferenceError(null)
+  }, [])
+
+  const setAutoPredictionDefaultWorkspace = useCallback(async (workspaceId: string): Promise<void> => {
+    const saved = await apiSetAutoPredictionDefaultWorkspace(workspaceId)
+    setAutoPredictionDefaultWorkspaceId(saved.defaultWorkspaceId)
+    setAutoPredictionPreferenceError(null)
+  }, [])
+
   const quickChat = useCallback(
-    async (prompt: string, agent?: string, credentialSlug?: string, targetWsId?: string): Promise<string> => {
+    async (
+      prompt: string,
+      agent?: string,
+      credentialSlug?: string,
+      targetWsId?: string,
+      template?: 'chat' | 'auto-quant-v2' | 'auto-prediction',
+      model?: string | null,
+      reasoningEffort?: import('../api').ModelReasoningEffort,
+      credentialSource?: 'native',
+      surface?: 'terminal' | 'webpi',
+    ): Promise<string> => {
       await ensureTerminalAppearancePublished()
-      const { workspace, session } = await apiQuickChat(prompt, agent, credentialSlug, targetWsId)
+      const { workspace, session } = await apiQuickChat(
+        prompt,
+        agent,
+        credentialSlug,
+        targetWsId,
+        template,
+        model,
+        reasoningEffort,
+        credentialSource,
+        surface,
+      )
       const nowIso = new Date().toISOString()
       const newRecord: SessionRecord = {
         id: session.sessionId,
@@ -341,7 +487,13 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
       })
       openOrFocus({
         kind: 'workspace',
-        params: { wsId: workspace.id, sessionId: session.sessionId, source: 'chat' },
+        params: {
+          wsId: workspace.id,
+          sessionId: session.sessionId,
+          source: workspace.template === 'auto-quant-v2'
+            ? 'auto-quant'
+            : workspace.template === 'auto-prediction' ? 'prediction' : 'chat',
+        },
       })
       void refresh()
       return workspace.id
@@ -353,8 +505,18 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
     prompt: string,
     agent: string,
     credentialSlug?: string,
+    model?: string | null,
+    reasoningEffort?: import('../api').ModelReasoningEffort,
+    credentialSource?: 'native',
   ): Promise<ManagerQuickStartResult> => {
-    const result = await apiQuickStartWorkspaceManager(prompt, agent, credentialSlug)
+    const result = await apiQuickStartWorkspaceManager(
+      prompt,
+      agent,
+      credentialSlug,
+      model,
+      reasoningEffort,
+      credentialSource,
+    )
     setWorkspaceManager(result.manager)
     setWorkspaceManagerLoaded(true)
     setWorkspaceManagerError(null)
@@ -383,21 +545,21 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
 
   const resumeSession = useCallback(
     async (wsId: string, sessionId: string, source?: WorkspaceSource): Promise<void> => {
+      const record = workspaces.find((ws) => ws.id === wsId)?.sessions.find((entry) => entry.id === sessionId)
+      if (record && !await confirmInteractiveSession(wsId, record.resumeId)) throw new Error('Session opening was cancelled.')
       await ensureTerminalAppearancePublished()
       const resp = await apiResumeSession(wsId, sessionId)
-      if (resp) {
-        const patch = {
-          state: 'running' as const,
-          surface: 'terminal' as const,
-          pid: resp.pid,
-          startedAt: resp.startedAt,
-          lastActiveAt: new Date().toISOString(),
-        }
-        if (wsId === MANAGER_WORKSPACE_ID) {
-          setWorkspaceManager((current) => patchManagerSession(current, sessionId, patch))
-        } else {
-          setWorkspaces((prev) => patchSession(prev, wsId, sessionId, patch))
-        }
+      const patch = {
+        state: 'running' as const,
+        surface: 'terminal' as const,
+        pid: resp.pid,
+        startedAt: resp.startedAt,
+        lastActiveAt: new Date().toISOString(),
+      }
+      if (wsId === MANAGER_WORKSPACE_ID) {
+        setWorkspaceManager((current) => patchManagerSession(current, sessionId, patch))
+      } else {
+        setWorkspaces((prev) => patchSession(prev, wsId, sessionId, patch))
       }
       if (wsId === MANAGER_WORKSPACE_ID) {
         openOrFocus({ kind: 'workspace-manager', params: { sessionId } })
@@ -410,12 +572,14 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
         void refresh()
       }
     },
-    [ensureTerminalAppearancePublished, refresh, refreshWorkspaceManager, openOrFocus],
+    [confirmInteractiveSession, workspaces, ensureTerminalAppearancePublished, refresh, refreshWorkspaceManager, openOrFocus],
   )
 
-  const openWebPiSession = useCallback(
+  const openWebSession = useCallback(
     async (wsId: string, sessionId: string, source?: WorkspaceSource): Promise<void> => {
-      const snapshot = await apiOpenWebPiSession(wsId, sessionId)
+      const record = workspaces.find((ws) => ws.id === wsId)?.sessions.find((entry) => entry.id === sessionId)
+      if (record && !await confirmInteractiveSession(wsId, record.resumeId)) throw new Error('Session opening was cancelled.')
+      const snapshot = await apiOpenWebSession(wsId, sessionId)
       const patch = {
         state: 'running' as const,
         surface: 'webpi' as const,
@@ -436,7 +600,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
         void refresh()
       }
     },
-    [openOrFocus, refresh, refreshWorkspaceManager],
+    [confirmInteractiveSession, workspaces, openOrFocus, refresh, refreshWorkspaceManager],
   )
 
   const saveWorkspaceMetadata = useCallback(
@@ -472,7 +636,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
           : false
 
       // Deleting the Session currently on screen has a deterministic landing:
-      // its Workspace-level Session library. Open/focus that hub before closing
+      // its Workspace-level new-conversation composer. Open/focus that hub before closing
       // the pinned tab so closeTab's neighbour rule cannot send the user to an
       // unrelated editor.
       if (focusedOwnsSession) {
@@ -526,6 +690,185 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
     setPendingSessionDelete({ wsId, sessionId })
   }, [])
 
+  const setSessionPresence = useCallback(async (
+    wsId: string,
+    resumeId: string,
+    presence: SessionPresence,
+  ): Promise<void> => {
+    try {
+      await apiSetSessionPresence(wsId, resumeId, presence)
+      void refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('workspace.sessionPresenceFailed'))
+      throw err
+    }
+  }, [refresh, t, toast])
+
+  const setSessionDisplayName = useCallback(async (
+    wsId: string,
+    resumeId: string,
+    displayName: string | null,
+  ): Promise<void> => {
+    const result = await apiSetSessionDisplayName(wsId, resumeId, displayName)
+    // Clearing removes the field rather than writing an empty string.
+    setWorkspaces((prev) => prev.map((workspace) => {
+      if (workspace.id !== wsId) return workspace
+      return {
+        ...workspace,
+        sessions: workspace.sessions.map((session) => {
+          if (session.resumeId !== resumeId) return session
+          if (result.displayName) return { ...session, displayName: result.displayName }
+          const { displayName: _cleared, ...rest } = session
+          return rest
+        }),
+      }
+    }))
+    if (wsId === MANAGER_WORKSPACE_ID) {
+      setWorkspaceManager((current) => {
+        if (!current) return current
+        return {
+          ...current,
+          sessions: current.sessions.map((session) => {
+            if (session.resumeId !== resumeId) return session
+            if (result.displayName) return { ...session, displayName: result.displayName }
+            const { displayName: _cleared, ...rest } = session
+            return rest
+          }),
+        }
+      })
+      void refreshWorkspaceManager()
+    } else {
+      void refresh()
+    }
+  }, [refresh, refreshWorkspaceManager])
+
+  const updateSessionRuntime = useCallback(async (
+    wsId: string,
+    sessionId: string,
+    update: PausedSessionRuntimeUpdate,
+  ): Promise<void> => {
+    const updated = await apiUpdatePausedSessionRuntime(wsId, sessionId, update)
+    if (wsId === MANAGER_WORKSPACE_ID) {
+      setWorkspaceManager((current) => patchManagerSession(current, sessionId, {
+        runtime: updated.runtime,
+        ...(updated.displayName ? { displayName: updated.displayName } : {}),
+      }))
+      void refreshWorkspaceManager()
+    } else {
+      setWorkspaces((prev) => patchSession(prev, wsId, sessionId, {
+        runtime: updated.runtime,
+        ...(updated.displayName ? { displayName: updated.displayName } : {}),
+      }))
+      void refresh()
+    }
+  }, [refresh, refreshWorkspaceManager])
+
+  const openAgentConfig = useCallback((
+    wsId: string,
+    agent?: AgentId,
+    section?: 'general' | 'launch' | 'ai' | 'template' | 'absorb',
+  ): void => {
+    setConfiguringAgentTarget({
+      wsId,
+      ...(agent ? { agent } : {}),
+      ...(section ? { section } : {}),
+    })
+  }, [])
+
+  const workspaceActions = useMemo(() => ({ openHeadlessRun }), [openHeadlessRun])
+
+  const contextValue = useMemo<WorkspacesContextValue>(() => ({
+    workspaces,
+    templates,
+    agents,
+    defaultAgent,
+    issueDefaultAgent,
+    listError,
+    workspaceManager,
+    workspaceManagerLoaded,
+    workspaceManagerError,
+    hasLoaded,
+    templatesLoaded,
+    templatesError,
+    autoQuantDefaultWorkspaceId,
+    autoQuantPreferenceLoaded,
+    autoQuantPreferenceError,
+    autoPredictionDefaultWorkspaceId,
+    autoPredictionPreferenceLoaded,
+    autoPredictionPreferenceError,
+    refresh,
+    refreshTemplates,
+    refreshAutoQuantPreference,
+    refreshAutoPredictionPreference,
+    refreshWorkspaceManager,
+    quickStartWorkspaceManager,
+    spawn,
+    openHeadlessRun,
+    setDefaultAgent,
+    setIssueDefaultAgent,
+    initializeAutoQuant,
+    initializeAutoPrediction,
+    initializeChat,
+    setAutoQuantDefaultWorkspace,
+    setAutoPredictionDefaultWorkspace,
+    quickChat,
+    pauseSession,
+    resumeSession,
+    openWebSession,
+    requestDeleteSession,
+    setSessionPresence,
+    setSessionDisplayName,
+    updateSessionRuntime,
+    openAgentConfig,
+    saveWorkspaceMetadata,
+    renameWorkspace,
+  }), [
+    agents,
+    autoPredictionDefaultWorkspaceId,
+    autoPredictionPreferenceError,
+    autoPredictionPreferenceLoaded,
+    autoQuantDefaultWorkspaceId,
+    autoQuantPreferenceError,
+    autoQuantPreferenceLoaded,
+    defaultAgent,
+    hasLoaded,
+    initializeAutoQuant,
+    initializeAutoPrediction,
+    initializeChat,
+    issueDefaultAgent,
+    listError,
+    openAgentConfig,
+    openHeadlessRun,
+    openWebSession,
+    pauseSession,
+    quickChat,
+    quickStartWorkspaceManager,
+    refresh,
+    refreshAutoPredictionPreference,
+    refreshAutoQuantPreference,
+    refreshTemplates,
+    refreshWorkspaceManager,
+    renameWorkspace,
+    requestDeleteSession,
+    setSessionPresence,
+    setSessionDisplayName,
+    updateSessionRuntime,
+    resumeSession,
+    saveWorkspaceMetadata,
+    setAutoQuantDefaultWorkspace,
+    setAutoPredictionDefaultWorkspace,
+    setDefaultAgent,
+    setIssueDefaultAgent,
+    spawn,
+    templates,
+    templatesError,
+    templatesLoaded,
+    workspaceManager,
+    workspaceManagerError,
+    workspaceManagerLoaded,
+    workspaces,
+  ])
+
   const pendingDeleteSession = pendingSessionDelete
     ? (pendingSessionDelete.wsId === MANAGER_WORKSPACE_ID
         ? workspaceManager?.sessions.find((s) => s.id === pendingSessionDelete.sessionId) ?? null
@@ -536,77 +879,60 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
     pendingDeleteSession?.title?.trim() || pendingDeleteSession?.name || ''
 
   return (
-    <WorkspacesContext.Provider
-      value={{
-        workspaces,
-        templates,
-        agents,
-        defaultAgent,
-        issueDefaultAgent,
-        listError,
-        workspaceManager,
-        workspaceManagerLoaded,
-        workspaceManagerError,
-        hasLoaded,
-        templatesLoaded,
-        refresh,
-        refreshWorkspaceManager,
-        quickStartWorkspaceManager,
-        spawn,
-        openHeadlessRun,
-        setDefaultAgent,
-        setIssueDefaultAgent,
-        quickChat,
-        pauseSession,
-        resumeSession,
-        openWebPiSession,
-        requestDeleteSession,
-        openAgentConfig: (wsId: string, agent?: AgentId, section?: 'general' | 'ai' | 'template' | 'absorb') =>
-          setConfiguringAgentTarget({
-            wsId,
-            ...(agent ? { agent } : {}),
-            ...(section ? { section } : {}),
-          }),
-        saveWorkspaceMetadata,
-        renameWorkspace,
-      }}
-    >
-      {children}
-      {configuringAgentTarget !== null && (
-        <WorkspaceAIConfigModal
-          wsId={configuringAgentTarget.wsId}
-          initialAgent={configuringAgentTarget.agent}
-          initialSection={configuringAgentTarget.section ?? (configuringAgentTarget.agent ? 'ai' : 'general')}
-          onAiSaved={({ model, runtimeLabel, workspaceLabel }) => {
-            toast.success(model
-              ? t('workspaceSettings.ai.savedModelToast', {
-                  model,
-                  runtime: runtimeLabel,
-                  workspace: workspaceLabel,
-                })
-              : t('workspaceSettings.ai.savedConfigToast', {
-                  runtime: runtimeLabel,
-                  workspace: workspaceLabel,
-                }))
-          }}
-          onClose={() => setConfiguringAgentTarget(null)}
-        />
-      )}
-      {pendingSessionDelete !== null && (
-        <ConfirmDialog
-          title={t('chat.deleteSessionTitle')}
-          message={t('chat.deleteSessionMessage', {
-            title: pendingDeleteLabel || pendingSessionDelete.sessionId,
-          })}
-          confirmLabel={t('common.delete')}
-          onConfirm={async () => {
-            await deleteSession(pendingSessionDelete.wsId, pendingSessionDelete.sessionId)
-            setPendingSessionDelete(null)
-          }}
-          onClose={() => setPendingSessionDelete(null)}
-        />
-      )}
-    </WorkspacesContext.Provider>
+    <WorkspaceActionsContext.Provider value={workspaceActions}>
+      <WorkspacesContext.Provider value={contextValue}>
+        {children}
+        {configuringAgentTarget !== null && (
+          <WorkspaceAIConfigModal
+            wsId={configuringAgentTarget.wsId}
+            initialAgent={deprecatedExportTab(configuringAgentTarget.agent)}
+            initialSection={configuringAgentTarget.section ?? (
+              deprecatedExportTab(configuringAgentTarget.agent)
+                ? 'ai'
+                : configuringAgentTarget.agent
+                  ? 'launch'
+                  : 'general'
+            )}
+            onAiSaved={({ model, runtimeLabel, workspaceLabel }) => {
+              toast.success(model
+                ? t('workspaceSettings.ai.savedModelToast', {
+                    model,
+                    runtime: runtimeLabel,
+                    workspace: workspaceLabel,
+                  })
+                : t('workspaceSettings.ai.savedConfigToast', {
+                    runtime: runtimeLabel,
+                    workspace: workspaceLabel,
+                  }))
+            }}
+            onClose={() => setConfiguringAgentTarget(null)}
+          />
+        )}
+        {interactiveConsent && <ConfirmDialog
+          title={t('workspace.interactiveOwnership.title')}
+          message={t('workspace.interactiveOwnership.message')}
+          confirmLabel={t('workspace.interactiveOwnership.confirm')}
+          cancelLabel={t('common.cancel')}
+          variant="primary"
+          onConfirm={() => { interactiveConsent.resolve(true); setInteractiveConsent(null) }}
+          onClose={() => { interactiveConsent.resolve(false); setInteractiveConsent(null) }}
+        />}
+        {pendingSessionDelete !== null && (
+          <ConfirmDialog
+            title={t('chat.deleteSessionTitle')}
+            message={t('chat.deleteSessionMessage', {
+              title: pendingDeleteLabel || pendingSessionDelete.sessionId,
+            })}
+            confirmLabel={t('common.delete')}
+            onConfirm={async () => {
+              await deleteSession(pendingSessionDelete.wsId, pendingSessionDelete.sessionId)
+              setPendingSessionDelete(null)
+            }}
+            onClose={() => setPendingSessionDelete(null)}
+          />
+        )}
+      </WorkspacesContext.Provider>
+    </WorkspaceActionsContext.Provider>
   )
 }
 

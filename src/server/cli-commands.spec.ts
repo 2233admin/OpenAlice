@@ -1,3 +1,4 @@
+import { createMarketBarsTools } from '../tool/market-bars.js'
 import { describe, it, expect } from 'vitest'
 import { ToolCenter } from '../core/tool-center.js'
 import { WorkspaceToolCenter } from '../core/workspace-tool-center.js'
@@ -6,6 +7,7 @@ import {
   exportKeyForBinary,
   getExport,
   mappedToolNames,
+  mappedToolNamesForScope,
 } from './cli-commands.js'
 import { createNewsArchiveTools } from '../tool/news.js'
 import { createMarketSearchTools } from '../tool/market.js'
@@ -21,11 +23,12 @@ import { inboxReadFactory } from '../tool/inbox-read.js'
 import { workspacePathFactory } from '../tool/workspace-path.js'
 import { workspaceSessionsFactory } from '../tool/workspace-sessions.js'
 import { workspaceListFactory } from '../tool/workspace-list.js'
-import { workspaceTemplateUpgradeFactory } from '../tool/workspace-template-upgrade.js'
+import { workspaceTemplateUpgradeFactory, aliceHarnessUpgradeFactory } from '../tool/workspace-template-upgrade.js'
 import { entityUpsertFactory } from '../tool/entity-upsert.js'
 import { entitySearchFactory } from '../tool/entity-search.js'
 import { issueToolFactories } from '../tool/issue-tools.js'
 import { sessionSignatureFactory } from '../tool/session-signature.js'
+import { sessionRenameFactory } from '../tool/session-rename.js'
 import { provenanceShowFactory } from '../tool/provenance-show.js'
 import { conversationToolFactories } from '../tool/conversation.js'
 import { artifactConversationToolFactories } from '../tool/conversation-artifacts.js'
@@ -46,6 +49,7 @@ describe('CLI_EXPORTS — data export (global tools)', () => {
   tc.register(createVendorTools(any), 'market-vendors')
   tc.register(createEquityTools(any), 'equity')
   tc.register(createNewsArchiveTools(any), 'rss')
+  tc.register(createMarketBarsTools(any), 'market-bars')
   tc.register(createQuantTools(any), 'quant')
   tc.register(createSnapshotTools(any), 'snapshot')
   tc.register(createSimulateTools(any), 'simulate')
@@ -53,12 +57,26 @@ describe('CLI_EXPORTS — data export (global tools)', () => {
 
   it('every mapped verb resolves to a registered global tool', () => {
     for (const name of mappedToolNames('data')) {
+      if (mappedToolNames('workspace').has(name)) continue
       expect(tc.get(name), `data CLI maps to missing tool: ${name}`).not.toBeNull()
     }
   })
 
-  it('is scope: global', () => {
-    expect(getExport('data')?.scope).toBe('global')
+  it('does not export generic calculation or fixed trade simulation', () => {
+    expect(mappedToolNames('data')).not.toContain('calculate')
+    expect(mappedToolNames('data')).not.toContain('simulate')
+    expect(getExport('data')?.groupDescriptions).not.toHaveProperty('think')
+  })
+
+  it('includes every collaboration group at the top level without changing its map', () => {
+    for (const [group, verbs] of Object.entries(CLI_EXPORTS.workspace.commands)) {
+      expect(CLI_EXPORTS.data.commands[group]).toEqual(verbs)
+    }
+    expect(CLI_EXPORTS.data.commands).not.toHaveProperty('workspace')
+  })
+
+  it('combines registry scopes', () => {
+    expect(getExport('data')?.scope).toBe('mixed')
   })
 })
 
@@ -94,10 +112,12 @@ describe('CLI_EXPORTS — workspace export (scoped collaboration tools)', () => 
   wtc.register(workspaceSessionsFactory)
   wtc.register(workspaceListFactory)
   wtc.register(workspaceTemplateUpgradeFactory)
+  wtc.register(aliceHarnessUpgradeFactory)
   wtc.register(entityUpsertFactory)
   wtc.register(entitySearchFactory)
   for (const f of issueToolFactories) wtc.register(f)
   wtc.register(sessionSignatureFactory)
+  wtc.register(sessionRenameFactory)
   wtc.register(provenanceShowFactory)
   for (const f of conversationToolFactories) wtc.register(f)
   for (const f of artifactConversationToolFactories) wtc.register(f)
@@ -120,25 +140,55 @@ describe('CLI_EXPORTS — workspace export (scoped collaboration tools)', () => 
 })
 
 describe('CLI_EXPORTS — structure', () => {
-  it('no export maps the same tool from two verbs', () => {
+  it('describes every group exactly once for live intent-first help', () => {
+    for (const [key, exp] of Object.entries(CLI_EXPORTS)) {
+      expect(Object.keys(exp.groupDescriptions), `${key}: group help drift`).toEqual(
+        Object.keys(exp.commands),
+      )
+      for (const [group, description] of Object.entries(exp.groupDescriptions)) {
+        expect(description.trim().length, `${key} ${group}: empty group description`).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('keeps mapping targets unique except the shipped analysis search-bars alias', () => {
     for (const [key, exp] of Object.entries(CLI_EXPORTS)) {
       const seen = new Set<string>()
       for (const verbs of Object.values(exp.commands)) {
         for (const toolName of Object.values(verbs)) {
-          expect(seen.has(toolName), `${key}: duplicate mapping target: ${toolName}`).toBe(false)
+          if (!(key === 'data' && toolName === 'searchBars')) {
+            expect(seen.has(toolName), `${key}: duplicate mapping target: ${toolName}`).toBe(false)
+          }
           seen.add(toolName)
         }
       }
     }
   })
 
+  it('keeps the old bar discovery command as an exact alias', () => {
+    expect(CLI_EXPORTS.data.commands.market['search-bars']).toBe('searchBars')
+    expect(CLI_EXPORTS.data.commands.analysis['search-bars']).toBe('searchBars')
+  })
+
+  it('unions sibling exports without crossing registry scopes', () => {
+    const global = mappedToolNamesForScope('global')
+    const scoped = mappedToolNamesForScope('scoped')
+    expect(global).toEqual(new Set([
+      ...[...mappedToolNames('data')].filter(n => !scoped.has(n)),
+      ...mappedToolNames('traderhub'),
+      ...mappedToolNames('uta'),
+    ]))
+    expect(scoped).toEqual(mappedToolNames('workspace'))
+    for (const name of scoped) expect(global.has(name)).toBe(false)
+  })
+
   it('maps a binary name to its export key (alice -> data, alice-<x> -> <x>)', () => {
     expect(exportKeyForBinary('alice')).toBe('data')
-    expect(exportKeyForBinary('alice-workspace')).toBe('workspace')
+    expect(exportKeyForBinary('alice-workspace')).toBe('data')
     expect(exportKeyForBinary('alice-uta')).toBe('uta')
     // round-trips: each export's declared binary resolves back to its key
     for (const [key, exp] of Object.entries(CLI_EXPORTS)) {
-      expect(exportKeyForBinary(exp.binary)).toBe(key)
+      expect(exportKeyForBinary(exp.binary)).toBe(key === 'workspace' ? 'data' : key)
     }
   })
 

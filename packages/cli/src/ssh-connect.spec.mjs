@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  buildRemoteClientUrl,
   buildSshArgs,
   connectSsh,
   openBrowser,
@@ -55,6 +56,22 @@ describe('OpenAlice SSH connector', () => {
     ])
   })
 
+  it('puts remote connection identity in a client-only URL fragment', () => {
+    const clientUrl = buildRemoteClientUrl(
+      'http://127.0.0.1:40123',
+      parseSshConnectArgs(['alice@example.com', '--ssh-port', '2222', '--remote-port', '48000']),
+    )
+    const url = new URL(clientUrl)
+    const fragment = new URLSearchParams(url.hash.slice(1))
+
+    expect(url.origin).toBe('http://127.0.0.1:40123')
+    expect(fragment.get('openalice-remote')).toBe('1')
+    expect(fragment.get('target')).toBe('alice@example.com')
+    expect(fragment.get('ssh-port')).toBe('2222')
+    expect(fragment.get('runtime-port')).toBe('48000')
+    expect(url.search).toBe('')
+  })
+
   it('waits for the OpenAlice auth contract rather than accepting arbitrary HTTP', async () => {
     const fetchImpl = vi.fn()
       .mockRejectedValueOnce(new Error('refused'))
@@ -81,7 +98,9 @@ describe('OpenAlice SSH connector', () => {
       launchBrowser,
       stdout,
     })
-    await vi.waitFor(() => expect(launchBrowser).toHaveBeenCalledWith('http://127.0.0.1:40123'))
+    await vi.waitFor(() => expect(launchBrowser).toHaveBeenCalledWith(
+      'http://127.0.0.1:40123/#openalice-remote=1&target=host&ssh-port=22&runtime-port=47331',
+    ))
     child.emit('exit', 0, null)
     await expect(result).resolves.toBe(0)
     expect(spawnProcess).toHaveBeenCalledWith('ssh', expect.arrayContaining([
@@ -105,9 +124,32 @@ describe('OpenAlice SSH connector', () => {
     await vi.waitFor(() => expect(onReady).toHaveBeenCalledWith({
       localPort: 40124,
       localUrl: 'http://127.0.0.1:40124',
+      clientUrl: 'http://127.0.0.1:40124/#openalice-remote=1&target=host&ssh-port=22&runtime-port=47331',
     }))
     child.emit('exit', 0, null)
     await expect(result).resolves.toBe(0)
+  })
+
+  it('closes a TUI-owned tunnel when its abort signal fires', async () => {
+    const child = new FakeChild()
+    child.kill.mockImplementation(() => {
+      queueMicrotask(() => child.emit('exit', 0, 'SIGTERM'))
+      return true
+    })
+    const controller = new AbortController()
+    const result = connectSsh({
+      ...parseSshConnectArgs(['host', '--no-open']),
+      signal: controller.signal,
+    }, {
+      allocatePort: async () => 40123,
+      spawnProcess: () => child,
+      waitForRuntime: async () => ({ authed: true }),
+      stdout: { write: vi.fn() },
+    })
+    await vi.waitFor(() => expect(child.listenerCount('exit')).toBeGreaterThan(0))
+    controller.abort()
+    await expect(result).resolves.toBe(0)
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
   })
 
   it('falls back cleanly when a remembered port is occupied', async () => {

@@ -3,11 +3,17 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { ToastProvider } from './components/Toast'
+import { TooltipProvider } from './components/ui/tooltip'
 import { AuthProvider } from './auth/AuthContext'
 import { AuthGate } from './auth/AuthGate'
+import { initializeBackendConnection } from './auth/backendConnection'
+import { installBackendRequestObserver } from './auth/backendConnectivity'
 import './index.css'
 import './theme' // side-effect: resolve persisted mode + palette pair on <html>
 import './i18n' // side-effect: init react-i18next + seed locale before first render
+
+initializeBackendConnection()
+installBackendRequestObserver()
 
 if (import.meta.env.VITE_DEMO_MODE) {
   await (await import('./demo')).startWorker()
@@ -20,13 +26,15 @@ if (import.meta.env.VITE_DEMO_MODE) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <ToastProvider>
-        <AuthProvider>
-          <AuthGate>
-            <App />
-          </AuthGate>
-        </AuthProvider>
-      </ToastProvider>
+      <TooltipProvider delay={250} timeout={300}>
+        <ToastProvider>
+          <AuthProvider>
+            <AuthGate>
+              <App />
+            </AuthGate>
+          </AuthProvider>
+        </ToastProvider>
+      </TooltipProvider>
     </BrowserRouter>
   </StrictMode>,
 )

@@ -10,6 +10,7 @@
  */
 
 import type { ModelSemantics, Preset, PresetModel, SerializedRegion, WireShape } from '../api'
+import type { AgentInfo, AgentProviderCapabilities } from '../components/workspace/api'
 
 export interface LabeledOption {
   id: string
@@ -37,6 +38,10 @@ export const WIRE_SHAPE_GUIDANCE: Record<WireShape, string> = {
 export const AGENT_LABELS: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
+  cursor: 'Cursor Agent',
+  agy: 'Antigravity',
+  grok: 'Grok Build',
+  omp: 'Oh My Pi',
   opencode: 'opencode',
   pi: 'Pi',
 }
@@ -59,28 +64,25 @@ export function regionShapes(region: SerializedRegion | undefined): WireShape[] 
   return SHAPE_ORDER.filter((s) => s in region.wires)
 }
 
-/**
- * The wire shapes each agent can speak, in preference order — mirrors the
- * backend `AGENT_WIRE_PREFERENCE` (credential-injection.ts). A credential serves
- * an agent only if it declares a compatible wire (codex = Responses-only, so few
- * credentials can drive it — the intended funnel toward pi/opencode).
- */
-export const AGENT_WIRE_PREFERENCE: Record<string, WireShape[]> = {
-  claude: ['anthropic'],
-  codex: ['openai-responses'],
-  opencode: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
-  pi: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
+type AgentProviderInfo = Pick<AgentInfo, 'id' | 'capabilities'>
+
+function agentProviderCapabilities(
+  agents: readonly AgentProviderInfo[],
+  agentId: string,
+): AgentProviderCapabilities | undefined {
+  return agents.find((agent) => agent.id === agentId)?.capabilities.aiProvider
 }
 
-/** Keep provider-aware runtime support aligned with the backend injector. */
-export function agentWirePreference(agentId: string, vendor?: string | null): WireShape[] {
-  const preference = AGENT_WIRE_PREFERENCE[agentId] ?? SHAPE_ORDER
-  if (vendor !== 'minimax' || (agentId !== 'opencode' && agentId !== 'pi')) return preference
-  // MiniMax OpenAI Chat emits its separated thinking as the non-standard
-  // `reasoning_details[]` extension. Neither runtime's generic OpenAI adapter
-  // consumes it losslessly; both runtimes' native MiniMax integrations use the
-  // Anthropic endpoint instead.
-  return ['anthropic']
+/** Read provider-aware runtime support from the backend adapter declaration. */
+export function agentWirePreference(
+  agents: readonly AgentProviderInfo[],
+  agentId: string,
+  vendor?: string | null,
+): readonly WireShape[] {
+  const capabilities = agentProviderCapabilities(agents, agentId)
+  if (!capabilities) return []
+  return (vendor ? capabilities.vendorPolicies?.[vendor]?.wirePreference : undefined)
+    ?? capabilities.wirePreference
 }
 
 function inferredMinimaxAnthropicEndpoint(
@@ -112,11 +114,14 @@ function wireEndpoint(
 /** Pick the wire an agent should use from a credential's capabilities (null = none compatible). */
 export function pickAgentWire(
   wires: Partial<Record<WireShape, string>>,
+  agents: readonly AgentProviderInfo[],
   agentId: string,
   requestedShape?: WireShape,
   vendor?: string | null,
 ): { shape: WireShape; baseUrl: string } | null {
-  const pref = agentWirePreference(agentId, vendor)
+  const capabilities = agentProviderCapabilities(agents, agentId)
+  if (!capabilities) return null
+  const pref = agentWirePreference(agents, agentId, vendor)
   if (requestedShape !== undefined) {
     const requestedEndpoint = wireEndpoint(wires, requestedShape, vendor)
     if (pref.includes(requestedShape) && requestedEndpoint !== undefined) {
@@ -124,13 +129,14 @@ export function pickAgentWire(
     }
     // Transparently repair an old MiniMax OpenAI default when the credential
     // still carries the native Anthropic endpoint.
-    if (
-      vendor === 'minimax' &&
-      (agentId === 'opencode' || agentId === 'pi') &&
-      requestedShape === 'openai-chat' &&
-      wireEndpoint(wires, 'anthropic', vendor) !== undefined
-    ) {
-      return { shape: 'anthropic', baseUrl: wireEndpoint(wires, 'anthropic', vendor)! }
+    const fallbackShape = vendor
+      ? capabilities.vendorPolicies?.[vendor]?.legacyRequestedWireFallbacks?.[requestedShape]
+      : undefined
+    if (fallbackShape) {
+      const fallbackEndpoint = wireEndpoint(wires, fallbackShape, vendor)
+      if (fallbackEndpoint !== undefined) {
+        return { shape: fallbackShape, baseUrl: fallbackEndpoint }
+      }
     }
     return null
   }
@@ -144,23 +150,36 @@ export function pickAgentWire(
 /** All declared wire shapes this agent can speak, in runtime preference order. */
 export function agentWireShapes(
   wires: Partial<Record<WireShape, string>>,
+  agents: readonly AgentProviderInfo[],
   agentId: string,
   vendor?: string | null,
 ): WireShape[] {
-  const pref = agentWirePreference(agentId, vendor)
+  const pref = agentWirePreference(agents, agentId, vendor)
   return pref.filter((shape) => wireEndpoint(wires, shape, vendor) !== undefined)
 }
 
 /** Agent runtimes that can consume at least one declared wire shape. */
-export function compatibleAgentIds(wires: Partial<Record<WireShape, string>>): string[] {
-  return Object.keys(AGENT_WIRE_PREFERENCE).filter((agentId) => pickAgentWire(wires, agentId) !== null)
+export function compatibleAgentIds(
+  wires: Partial<Record<WireShape, string>>,
+  agents: readonly AgentProviderInfo[],
+): string[] {
+  return agents
+    .filter((agent) => agent.capabilities.aiProvider)
+    .filter((agent) => pickAgentWire(wires, agents, agent.id) !== null)
+    .map((agent) => agent.id)
 }
 
 /** Compatibility summary for a preset before a region has been selected. */
-export function presetCompatibleAgentIds(preset: Preset): string[] {
+export function presetCompatibleAgentIds(
+  preset: Preset,
+  agents: readonly AgentProviderInfo[],
+): string[] {
+  if (preset.directAgentId) {
+    return agents.some((agent) => agent.id === preset.directAgentId) ? [preset.directAgentId] : []
+  }
   const wires: Partial<Record<WireShape, string>> = {}
   for (const region of presetRegions(preset)) Object.assign(wires, region.wires)
-  return compatibleAgentIds(wires)
+  return compatibleAgentIds(wires, agents)
 }
 
 function schemaProps(schema: Preset['schema']): Record<string, Record<string, unknown>> {
@@ -228,12 +247,15 @@ export function isApiKeyPreset(p: Preset): boolean {
 export const VENDOR_BY_PRESET: Record<string, string> = {
   'claude-api': 'anthropic',
   'codex-api': 'openai',
+  'xai-api': 'xai',
   gemini: 'google',
   minimax: 'minimax',
   glm: 'glm',
   kimi: 'kimi',
   deepseek: 'deepseek',
   longcat: 'longcat',
+  openrouter: 'openrouter',
+  'cursor-dashboard': 'cursor',
   custom: 'custom',
 }
 
@@ -243,20 +265,66 @@ export function vendorPreset(vendor: string, presets: Preset[]): Preset | undefi
   return presets.find((p) => p.id === presetId) ?? presets.find((p) => p.id === 'custom')
 }
 
+/** Human vendor names for vault rows and launch pickers. */
+export const VENDOR_LABELS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  google: 'Google Gemini',
+  xai: 'xAI',
+  minimax: 'MiniMax',
+  glm: 'GLM',
+  kimi: 'Kimi',
+  deepseek: 'DeepSeek',
+  longcat: 'LongCat',
+  openrouter: 'OpenRouter',
+  cursor: 'Cursor',
+  custom: 'Custom',
+}
+
+export function vendorLabel(vendor: string): string {
+  return VENDOR_LABELS[vendor] ?? vendor
+}
+
+export function credentialSearchHaystack(cred: {
+  slug: string
+  vendor: string
+  label?: string
+  lastModel?: string
+}): string {
+  return [
+    cred.label,
+    cred.slug,
+    cred.vendor,
+    vendorLabel(cred.vendor),
+    cred.lastModel,
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
+export function credentialMatchesQuery(
+  cred: { slug: string; vendor: string; label?: string; lastModel?: string },
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  return credentialSearchHaystack(cred).includes(needle)
+}
+
 // Mirrors the backend baseUrl→vendor heuristic (src/core/credential-inference.ts
 // VENDORS_BY_BASEURL). Kept in sync by hand — it's a tiny, stable map.
 const VENDOR_BY_BASEURL: Array<[RegExp, string]> = [
   [/generativelanguage\.googleapis\.com/i, 'google'],
+  [/api\.x\.ai/i, 'xai'],
   [/bigmodel\.cn|z\.ai/i, 'glm'],
   [/minimaxi\.com|minimax\.io/i, 'minimax'],
   [/moonshot\.cn|moonshot\.ai/i, 'kimi'],
   [/deepseek\.com/i, 'deepseek'],
   [/longcat\.chat/i, 'longcat'],
+  [/openrouter\.ai/i, 'openrouter'],
 ]
 
 /** Mirror the backend's intentionally narrow Anthropic bearer inference. */
 export function anthropicAuthModeForBaseUrl(baseUrl: string | null | undefined): 'x-api-key' | 'bearer' {
-  return /api\.minimaxi\.com|api\.minimax\.io|api\.longcat\.chat/i.test(baseUrl ?? '')
+  return /api\.minimaxi\.com|api\.minimax\.io|api\.longcat\.chat|openrouter\.ai/i.test(baseUrl ?? '')
     ? 'bearer'
     : 'x-api-key'
 }

@@ -11,12 +11,15 @@
  *   GET  /api/issues               → list across all workspaces
  *   GET  /api/issues/:wsId/:id      → one issue's detail { issue, activity, runs, inboxReports }
  *   POST /api/issues/:wsId/:id/retry → rerun the latest failed/interrupted schedule now
+ *   POST /api/issues/:wsId/:id/run   → dispatch a scheduled Issue now without a failed last run
  *
  * Phase 2b adds the human/UI WRITE path (the agent edits the files directly /
  * via its own tools). Both writes go through the shared mutation helper
  * (`workspaces/issues/mutate.ts`) so the human and agent surfaces can never
  * drift on file format or validation; writes are working-tree only (no commit):
- *   PATCH /api/issues/:wsId/:id           body { status?, priority?, assignee?, what? }
+ *   PATCH /api/issues/:wsId/:id           body { status?, priority?, assignee?,
+ *                                          agent?, credential?, model?, effort?,
+ *                                          timeout?, what?, commentPrompt?, catchUp? }
  *   POST  /api/issues/:wsId/:id/comments  body { text }  (author = 'human';
  *     exact Session owners are notified and their final reply returns here)
  *
@@ -26,6 +29,11 @@
  */
 import { Hono } from 'hono'
 
+import {
+  MODEL_REASONING_EFFORTS,
+  isModelReasoningEffort,
+  type ModelReasoningEffort,
+} from '../../ai-providers/model-semantics.js'
 import type { WorkspaceConversationControl } from '../../core/workspace-tool-center.js'
 import { ACTIVITY_UPDATE_COALESCE_MS } from '../../core/provenance-store.js'
 import { createWorkspaceConversationControl } from '../../workspaces/conversation-control.js'
@@ -35,12 +43,16 @@ import { updateIssueCommentDelivery } from '../../workspaces/issues/comments.js'
 import {
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
+  isIssueTimeout,
   issueAssigneeResumeId,
   issueAssigneeSchema,
   type IssuePriority,
   type IssueStatus,
+  type IssueTimeout,
 } from '../../workspaces/issues/declaration.js'
 import { appendIssueComment, updateIssueFields } from '../../workspaces/issues/mutate.js'
+import { projectDeskComment } from '../../workspaces/issues/telegram-desk-project.js'
+import { deprecatedIssueAssigneeReplacement } from '../../workspaces/session-signature.js'
 import { isAgentRuntime } from '../../workspaces/cli-adapter.js'
 import { logger as launcherLogger } from '../../workspaces/logger.js'
 import {
@@ -120,11 +132,40 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
     }
   })
 
+  // POST /api/issues/:wsId/:id/run — operator-started dispatch. Same live Issue
+  // prompt/owner/runtime as the scanner; the cadence marker is not advanced.
+  app.post('/:wsId/:id/run', async (c) => {
+    const wsId = c.req.param('wsId')
+    const id = c.req.param('id')
+    if (!validId(wsId) || !validId(id)) return c.json({ error: 'not_found' }, 404)
+    try {
+      return c.json(await svc.runIssueNow(wsId, id), 202)
+    } catch (err) {
+      if (err instanceof IssueRetryError) {
+        const status = err.code === 'not_found' ? 404
+          : err.code === 'not_scheduled' ? 422
+          : 409
+        return c.json({ error: err.code, message: err.message }, status)
+      }
+      if (err instanceof HeadlessCapacityError) {
+        return c.json({ error: 'capacity_reached', message: err.message }, 429)
+      }
+      if (err instanceof HeadlessResumeError) {
+        return c.json({ error: err.code, message: err.message }, 409)
+      }
+      launcherLogger.warn('issue.run_failed', { wsId, id, err })
+      return c.json({
+        error: 'run_failed',
+        message: err instanceof Error ? err.message : String(err),
+      }, 500)
+    }
+  })
+
   // PATCH /api/issues/:wsId/:id — patch board fields { status?, priority?,
-  // assignee? } plus the scheduled runtime override { agent? } on one issue
-  // (the human/UI path). `agent: null` removes the override so future fires use
-  // the workspace default runtime. Other scheduling frontmatter (`when`)
-  // stays file-owned. Returns the updated detail shape; 404 when missing.
+  // assignee? } plus scheduled runtime { agent?, credential?, model?, effort?,
+  // timeout? } on one issue (the human/UI path). `timeout: null` removes the
+  // optional run watchdog. Other scheduling frontmatter (`when`) stays
+  // file-owned. Returns the updated detail shape; 404 when missing.
   app.patch('/:wsId/:id', async (c) => {
     const wsId = c.req.param('wsId')
     const id = c.req.param('id')
@@ -134,7 +175,20 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
 
     const body = await safeJson(c)
     const fields = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-    const patch: { status?: IssueStatus; priority?: IssuePriority; assignee?: string; agent?: string | null; what?: string } = {}
+    const patch: {
+      status?: IssueStatus
+      priority?: IssuePriority
+      assignee?: string
+      agent?: string | null
+      credential?: string | null
+      credentialSource?: 'native' | null
+      model?: string | null
+      effort?: ModelReasoningEffort | null
+      timeout?: IssueTimeout | null
+      what?: string
+      commentPrompt?: string | null
+      catchUp?: boolean
+    } = {}
     if ('status' in fields) {
       const s = fields['status']
       if (typeof s !== 'string' || !ISSUE_STATUSES.includes(s as IssueStatus)) {
@@ -151,9 +205,17 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
     }
     if ('assignee' in fields) {
       const a = fields['assignee']
-      const assignee = typeof a === 'string' ? issueAssigneeSchema.safeParse(a.trim()) : null
+      const rawAssignee = typeof a === 'string' ? a.trim() : ''
+      const replacement = deprecatedIssueAssigneeReplacement(rawAssignee)
+      if (replacement) {
+        return c.json({
+          error: 'deprecated_assignee',
+          message: `${rawAssignee} is deprecated; use ${replacement}`,
+        }, 400)
+      }
+      const assignee = typeof a === 'string' ? issueAssigneeSchema.safeParse(rawAssignee) : null
       if (!assignee?.success) {
-        return c.json({ error: 'invalid_assignee', message: 'assignee must be @workspace, @new, @human, @unassigned, or an exact @resumeId' }, 400)
+        return c.json({ error: 'invalid_assignee', message: 'assignee must be @new-each-run, @new-then-resume, @human, @unassigned, or an exact @resumeId' }, 400)
       }
       const resumeId = issueAssigneeResumeId(assignee.data)
       if (resumeId) {
@@ -188,10 +250,66 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
       } else {
         const agent = raw.trim()
         const adapter = svc.adapters.get(agent)
-        if (!adapter || !isAgentRuntime(adapter) || !meta.agents.includes(agent)) {
-          return c.json({ error: 'invalid_agent', message: `unknown or disabled agent runtime: ${agent}` }, 400)
+        if (!adapter || !isAgentRuntime(adapter)) {
+          return c.json({ error: 'invalid_agent', message: `unknown agent runtime: ${agent}` }, 400)
         }
         patch.agent = agent
+      }
+    }
+    if ('credential' in fields) {
+      const raw = fields['credential']
+      if (raw === null || raw === '') {
+        patch.credential = null
+      } else if (typeof raw !== 'string' || !raw.trim()) {
+        return c.json({ error: 'invalid_credential', message: 'credential must be a vault slug or null' }, 400)
+      } else {
+        patch.credential = raw.trim()
+      }
+    }
+    if ('credentialSource' in fields) {
+      const raw = fields['credentialSource']
+      if (raw === null || raw === '') {
+        patch.credentialSource = null
+      } else if (raw !== 'native') {
+        return c.json({ error: 'invalid_credential_source', message: 'credentialSource must be native or null' }, 400)
+      } else {
+        patch.credentialSource = 'native'
+      }
+    }
+    if ('model' in fields) {
+      const raw = fields['model']
+      if (raw === null || raw === '') {
+        patch.model = null
+      } else if (typeof raw !== 'string' || !raw.trim()) {
+        return c.json({ error: 'invalid_model', message: 'model must be a native model id or null' }, 400)
+      } else {
+        patch.model = raw.trim()
+      }
+    }
+    if ('effort' in fields) {
+      const raw = fields['effort']
+      if (raw === null || raw === '') {
+        patch.effort = null
+      } else if (!isModelReasoningEffort(raw)) {
+        return c.json({
+          error: 'invalid_effort',
+          message: `effort must be one of: ${MODEL_REASONING_EFFORTS.join(', ')}`,
+        }, 400)
+      } else {
+        patch.effort = raw
+      }
+    }
+    if ('timeout' in fields) {
+      const raw = fields['timeout']
+      if (raw === null || raw === '') {
+        patch.timeout = null
+      } else if (!isIssueTimeout(raw)) {
+        return c.json({
+          error: 'invalid_timeout',
+          message: 'timeout must be 15m, 30m, 45m, 60m, or null',
+        }, 400)
+      } else {
+        patch.timeout = raw
       }
     }
     if ('what' in fields) {
@@ -204,8 +322,27 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
       }
       patch.what = what.trim()
     }
+    if ('commentPrompt' in fields) {
+      const raw = fields['commentPrompt']
+      if (raw === null || raw === '') {
+        patch.commentPrompt = null
+      } else if (typeof raw !== 'string') {
+        return c.json({ error: 'invalid_comment_prompt', message: 'commentPrompt must be a template string or null' }, 400)
+      } else {
+        patch.commentPrompt = raw
+      }
+    }
+    if ('catchUp' in fields) {
+      if (typeof fields['catchUp'] !== 'boolean') {
+        return c.json({ error: 'invalid_catch_up', message: 'catchUp must be true or false' }, 400)
+      }
+      patch.catchUp = fields['catchUp']
+    }
     if (Object.keys(patch).length === 0) {
-      return c.json({ error: 'no_fields', message: 'provide at least one of status, priority, assignee, agent, what' }, 400)
+      return c.json({
+        error: 'no_fields',
+        message: 'provide at least one of status, priority, assignee, agent, credential, model, effort, timeout, what, commentPrompt, catchUp',
+      }, 400)
     }
 
     try {
@@ -237,8 +374,9 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
   // POST /api/issues/:wsId/:id/comments — append a structured markdown comment
   // to `<id>.comments.json`. Author is fixed to 'human' here (the agent path
   // stamps its signed resume id when one is available). A different fixed
-  // Session owner is notified in the background; workspace-owned Issues remain
-  // durable notes and never recruit a random worker. Returns updated detail.
+  // Session owner is notified in the background. Human comments without a
+  // fixed owner follow the same provenance-aware creator/reconstruction path
+  // as Inbox. Returns updated detail.
   app.post('/:wsId/:id/comments', async (c) => {
     const wsId = c.req.param('wsId')
     const id = c.req.param('id')
@@ -273,6 +411,7 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
         issueWorkspaceId: wsId,
         issue: res.issue,
         comment: res.comment,
+        source: { kind: 'human' },
       })
       if (dispatched.status !== 'not_requested') {
         const updated = await updateIssueCommentDelivery(meta.dir, id, res.comment.id, dispatched.delivery)
@@ -285,6 +424,9 @@ export function createIssuesRoutes(svc: WorkspaceService, deps: IssueRoutesDeps 
           })
         }
       }
+      await projectDeskComment(res.issue, res.comment, undefined, { workspaceId: wsId }).catch((err) => {
+        launcherLogger.warn('telegram_desk.comment_project_failed', { wsId, id, err })
+      })
       launcherLogger.info('issue.comment_added', { wsId, id, author: 'human' })
       const detail = await svc.issueDetail(wsId, id)
       return c.json(detail ?? { issue: res.issue, comments: [res.comment], runs: [], inboxReports: [], provenance: [], activity: [] })

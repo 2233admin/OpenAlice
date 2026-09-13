@@ -1,4 +1,7 @@
+import { headlessFailureSummary } from '../workspaces/headless-failure.js'
 import { tool } from 'ai'
+import { MODEL_REASONING_EFFORTS } from '../ai-providers/model-semantics.js'
+import type { SessionRuntimeSelection } from '../workspaces/session-runtime-binding.js'
 import { z } from 'zod'
 
 import type {
@@ -8,26 +11,35 @@ import type {
   WorkspaceToolContext,
   WorkspaceToolFactory,
 } from '../core/workspace-tool-center.js'
+import { sessionOriginFromInboxOrigin } from '../core/provenance-store.js'
 import type { HeadlessMessageBlock } from '../workspaces/headless-output.js'
 import type { HeadlessInquirySubject } from '../workspaces/headless-task-registry.js'
 
-const DEFAULT_TIMEOUT_MS = 300_000
-const MAX_TIMEOUT_MS = 1_800_000
+const MAX_TIMEOUT_MS = 2_147_478_647
 const MAX_PROMPT_CHARS = 16_000
 const AWAIT_POLL_MS = 250
 
+const conversationSelectionShape = {
+  credential: z.string().min(1).optional().describe('OpenAlice vault credential slug, never an API key. Omit to retain the Session or Workspace selection.'),
+  credentialSource: z.literal('native').optional().describe('Use the runtime own authentication; mutually exclusive with credential.'),
+  model: z.string().min(1).optional().describe('Optional model id; custom model ids are accepted.'),
+  effort: z.enum(MODEL_REASONING_EFFORTS).optional().describe('Optional reasoning effort.'),
+}
+
 export const conversationAskCommonShape = {
   prompt: z.string().trim().min(1).max(MAX_PROMPT_CHARS)
-    .describe('Question for the responsible Session or reconstructing worker.'),
+    .describe('First task for a new Session, or a follow-up message for an existing Session.'),
   agent: z.string().min(1).optional()
     .describe('Optional runtime for reconstructed/fresh work only; exact Session runtime cannot be overridden.'),
   timeoutMs: z.coerce.number().int().positive().max(MAX_TIMEOUT_MS).optional()
-    .describe(`Headless watchdog in milliseconds (default ${DEFAULT_TIMEOUT_MS}).`),
+    .describe('Optional headless watchdog in milliseconds. Omit to allow the Session to run without a time limit.'),
   await: z.boolean().optional().default(false)
-    .describe('Wait server-side for the final reply; on timeout, return the taskId for later await/read.'),
+    .describe('Wait server-side for a reply needed now; omit for asynchronous delegation and use the returned taskId later.'),
+  reconstruct: z.boolean().optional().default(false)
+    .describe('Explicitly add artifact-reconstruction guidance if OpenAlice must recruit a fallback worker.'),
 }
 
-function taskProjection(task: WorkspaceConversationTask, mode: 'summary' | 'detailed') {
+export function taskProjection(task: WorkspaceConversationTask, mode: 'summary' | 'detailed') {
   const structured = task.structured
   const tools = structured?.blocks
     .filter((block): block is Extract<HeadlessMessageBlock, { type: 'tool' }> => block.type === 'tool')
@@ -35,7 +47,7 @@ function taskProjection(task: WorkspaceConversationTask, mode: 'summary' | 'deta
   const errors = structured?.blocks
     .filter((block): block is Extract<HeadlessMessageBlock, { type: 'error' }> => block.type === 'error')
     .map((block) => block.message) ?? []
-  const compactError = task.error ?? errors.at(-1)
+  const compactError = headlessFailureSummary(task)
   return {
     taskId: task.taskId,
     resumeId: task.resumeId,
@@ -46,7 +58,12 @@ function taskProjection(task: WorkspaceConversationTask, mode: 'summary' | 'deta
     ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
     ...(task.durationMs !== undefined ? { durationMs: task.durationMs } : {}),
     ...(compactError ? { error: compactError } : {}),
+    ...(task.exitCode !== undefined ? { exitCode: task.exitCode } : {}),
+    ...(task.signal !== undefined ? { signal: task.signal } : {}),
+    ...(task.killed !== undefined ? { killed: task.killed } : {}),
+    ...(task.processStarted !== undefined ? { processStarted: task.processStarted } : {}),
     ...(mode === 'detailed' ? {
+      ...(task.stderrTail !== undefined ? { stderrTail: task.stderrTail, stderrTruncated: task.stderrTruncated ?? false } : {}),
       tools,
       errors,
       blocks: structured?.blocks ?? [],
@@ -54,15 +71,15 @@ function taskProjection(task: WorkspaceConversationTask, mode: 'summary' | 'deta
   }
 }
 
-async function awaitConversationTask(
+export async function awaitConversationTask(
   conversation: WorkspaceConversationControl,
   taskId: string,
-  timeoutMs: number,
+  timeoutMs?: number,
 ): Promise<WorkspaceConversationTask | null> {
-  const deadline = Date.now() + timeoutMs
+  const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs
   let task = await conversation.read(taskId)
   while (task?.status === 'running') {
-    const remaining = deadline - Date.now()
+    const remaining = deadline === null ? AWAIT_POLL_MS : deadline - Date.now()
     if (remaining <= 0) return task
     await new Promise((resolve) => setTimeout(resolve, Math.min(AWAIT_POLL_MS, remaining)))
     task = await conversation.read(taskId)
@@ -77,21 +94,28 @@ export async function askWorkspaceConversation(
     target: WorkspaceConversationTarget
     subject?: HeadlessInquirySubject
     agent?: string
+    selection?: SessionRuntimeSelection
     timeoutMs?: number
     await?: boolean
+    reconstruct?: boolean
   },
 ) {
   if (!ctx.conversation) {
     return { ok: false as const, error: 'workspace conversation control is unavailable' }
   }
   try {
-    const effectiveTimeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
     const result = await ctx.conversation.ask({
       prompt: input.prompt,
       target: input.target,
-      timeoutMs: effectiveTimeoutMs,
+      ...(input.selection ? { selection: input.selection } : {}),
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      source: sessionOriginFromInboxOrigin(ctx.workspaceId, ctx.origin) ?? {
+        kind: 'workspace',
+        workspaceId: ctx.workspaceId,
+      },
       ...(input.subject ? { subject: input.subject } : {}),
       ...(input.agent ? { agent: input.agent } : {}),
+      ...(input.reconstruct ? { reconstruct: true } : {}),
     })
     if (result.status === 'unavailable') {
       return {
@@ -113,7 +137,7 @@ export async function askWorkspaceConversation(
         : { mode: result.resolution.mode },
     }
     if (!input.await) return dispatched
-    const task = await awaitConversationTask(ctx.conversation, result.taskId, effectiveTimeoutMs)
+    const task = await awaitConversationTask(ctx.conversation, result.taskId, input.timeoutMs)
     if (!task) {
       return {
         ok: false as const,
@@ -126,11 +150,34 @@ export async function askWorkspaceConversation(
       ...taskProjection(task, 'summary'),
       awaited: task.status !== 'running',
       ...(task.status === 'running'
-        ? { next: `alice-workspace conversation await --task-id ${task.taskId}` }
+        ? { next: `alice conversation await --task-id ${task.taskId}` }
         : {}),
     }
   } catch (err) {
     return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+export async function resolveInboxConversationAddress(
+  ctx: WorkspaceToolContext,
+  inboxEntryId: string,
+): Promise<{
+  target: WorkspaceConversationTarget
+  subject: Extract<HeadlessInquirySubject, { kind: 'inbox' }>
+} | { error: string }> {
+  const entry = await ctx.inboxStore.get(inboxEntryId)
+  if (!entry) return { error: `inbox entry not found: ${inboxEntryId}` }
+  const origin = ctx.resolveInboxOrigin?.(entry) ?? entry.origin
+  const sessionOrigin = sessionOriginFromInboxOrigin(entry.workspaceId, origin)
+  return {
+    target: sessionOrigin
+      ? { kind: 'resume', resumeId: sessionOrigin.resumeId }
+      : {
+          kind: 'inbox',
+          inboxEntryId: entry.id,
+          workspaceId: entry.workspaceId,
+        },
+    subject: { kind: 'inbox', entryId: entry.id },
   }
 }
 
@@ -139,54 +186,118 @@ export const conversationAskFactory: WorkspaceToolFactory = {
   build(ctx) {
     return tool({
       description: [
-        'Ask a known product Session, an Issue owner, or a fresh worker in one Workspace.',
+        "Send a follow-up to a Session or attributable author. Use conversation create for a new Session; fresh-target flags here remain compatibility aliases.",
         '',
-        'Use exactly one addressing form: resumeId for an exact Session; issueId (optionally',
-        'scoped by wsId) for Issue provenance; or wsId alone to recruit a fresh worker.',
-        'The CLI exposes these as --resume-id, --issue-id, and --ws-id. It never requires',
-        'callers to construct an internal target object.',
+        'Use exactly one addressing form: resumeId for an exact Session; inboxId for the',
+        'sender of one delivery; issueId (optionally scoped by wsId) for Issue creation',
+        'provenance; wsId for a fresh worker in an exact desk; or harness for a fresh',
+        'worker in the current default Chat/AutoQuant desk.',
         '',
-        'Prefer --await for one question: the server waits without shell sleep loops.',
-        'Without --await the call returns a short taskId immediately, which lets several',
-        'questions run concurrently before conversation_await collects their replies.',
+        'Use --await when this turn needs the reply. Without it, the call returns a',
+        'short taskId immediately for delegated work or several concurrent questions;',
+        'retrieve those replies later with conversation_read/await/collect.',
+        '',
+        'Prompts are delivered unchanged by default. Use --reconstruct only when the',
+        'intent is to have a fresh worker reconstruct an artifact whose author is absent.',
       ].join('\n'),
       inputSchema: z.object({
         ...conversationAskCommonShape,
+        ...conversationSelectionShape,
         resumeId: z.string().min(1).optional()
-          .describe('Exact product Session to continue. Cannot be combined with wsId or issueId.'),
+          .describe('Exact product Session to continue. Cannot be combined with another target flag.'),
+        inboxId: z.string().min(1).optional()
+          .describe('Inbox entry whose attributable sender should answer; unattributed entries fall back only to their source Workspace.'),
         wsId: z.string().min(1).optional()
           .describe('Workspace for a fresh worker, or optional scope for issueId.'),
         issueId: z.string().min(1).optional()
-          .describe('Issue whose attributable Session should answer. Defaults to the current Workspace.'),
+          .describe("Issue whose attributable creator should answer. Defaults to the current Workspace; use `issue ask --owner` for the declared owner."),
+        harness: z.enum(['chat', 'autoquant', 'prediction']).optional()
+          .describe('Create a fresh Session in the default Chat, AutoQuant, or Prediction Workspace.'),
       }),
-      execute: async ({ prompt, resumeId, wsId, issueId, agent, timeoutMs, await: shouldAwait = false }) => {
+      execute: async ({
+        prompt,
+        resumeId,
+        inboxId,
+        wsId,
+        issueId,
+        harness,
+        agent,
+        credential, credentialSource, model, effort,
+        timeoutMs,
+        await: shouldAwait = false,
+        reconstruct = false,
+      }) => {
         if (!ctx.conversation) {
           return { ok: false as const, error: 'workspace conversation control is unavailable' }
         }
-        if (resumeId && (wsId || issueId)) {
+        if (credential && credentialSource) return { ok: false, error: 'credential and credential-source are mutually exclusive' }
+        const targetCount = Number(Boolean(resumeId))
+          + Number(Boolean(inboxId))
+          + Number(Boolean(issueId))
+          + Number(Boolean(harness))
+          + Number(Boolean(wsId && !issueId))
+        if (targetCount !== 1) {
           return {
             ok: false as const,
-            error: 'choose one target: --resume-id, --issue-id [--ws-id], or --ws-id',
+            error: 'choose exactly one target: --resume-id, --inbox-id, --issue-id [--ws-id], --ws-id, or --harness',
           }
         }
-        if (!resumeId && !issueId && !wsId) {
-          return {
-            ok: false as const,
-            error: 'provide --resume-id, --issue-id [--ws-id], or --ws-id',
-          }
+        const inboxAddress = inboxId
+          ? await resolveInboxConversationAddress(ctx, inboxId)
+          : null
+        if (inboxAddress && 'error' in inboxAddress) {
+          return { ok: false as const, error: inboxAddress.error }
         }
-        const target = resumeId
+        const target = inboxAddress
+          ? inboxAddress.target
+          : resumeId
           ? { kind: 'resume' as const, resumeId }
           : issueId
             ? { kind: 'issue' as const, workspaceId: wsId ?? ctx.workspaceId, issueId }
-            : { kind: 'workspace' as const, workspaceId: wsId! }
-        return askWorkspaceConversation(ctx, {
+            : harness
+              ? { kind: 'harness' as const, harness }
+              : { kind: 'workspace' as const, workspaceId: wsId! }
+        const result = await askWorkspaceConversation(ctx, {
           prompt,
+          ...((credential || credentialSource || model || effort) ? { selection: {
+            ...(credential ? { credentialSlug: credential } : {}),
+            ...(credentialSource ? { credentialSource } : {}),
+            ...(model ? { model } : {}),
+            ...(effort ? { reasoningEffort: effort } : {}),
+          } } : {}),
           target,
+          ...(inboxAddress ? { subject: inboxAddress.subject } : {}),
           ...(agent ? { agent } : {}),
-          ...(timeoutMs ? { timeoutMs } : {}),
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           await: shouldAwait,
+          reconstruct,
         })
+        return inboxAddress
+          ? { subject: { kind: 'inbox' as const, id: inboxAddress.subject.entryId }, ...result }
+          : result
+      },
+    })
+  },
+}
+
+/** Fresh creation has its own manifest, so no author/Session address can slip in. */
+export const conversationCreateFactory: WorkspaceToolFactory = {
+  name: 'conversation_create',
+  build(ctx) {
+    const ask = conversationAskFactory.build(ctx)
+    return tool({
+      description: 'Create a new Session and deliver its first prompt. Choose exactly one Workspace or Harness. Retain resumeId and use conversation ask for follow-ups; taskId identifies only this turn.',
+      inputSchema: z.object({
+        ...conversationAskCommonShape,
+        ...conversationSelectionShape,
+        wsId: z.string().min(1).optional().describe('Workspace in which to create a new Session.'),
+        harness: z.enum(['chat', 'autoquant', 'prediction']).optional().describe('Create in this Harness default Workspace.'),
+      }),
+      execute: async (input, options) => {
+        if (Number(Boolean(input.wsId)) + Number(Boolean(input.harness)) !== 1) {
+          return { ok: false, error: 'conversation create requires exactly one target: --ws-id or --harness; use conversation ask --resume-id to continue a Session' }
+        }
+        return ask.execute!(input, options)
       },
     })
   },
@@ -199,32 +310,29 @@ export const conversationAwaitFactory: WorkspaceToolFactory = {
       description: [
         'Wait server-side for one conversation task to finish.',
         '',
-        'Use after dispatching several conversation_ask calls so their headless runs execute',
-        'concurrently. This replaces hand-written sleep loops. If the wait budget expires,',
-        'the task remains running and can be awaited again or inspected with conversation_read.',
+        'Use after dispatching several conversation_create or conversation_ask calls so their headless runs execute',
+        'concurrently. This replaces hand-written sleep loops. With an explicit wait budget,',
+        'an expired wait returns while the task keeps running; without one, this waits until',
+        'the task reaches a terminal state.',
       ].join('\n'),
       inputSchema: z.object({
-        taskId: z.string().min(1).describe('Short taskId returned by conversation_ask.'),
+        taskId: z.string().min(1).describe('Short taskId returned by conversation create or ask.'),
         timeoutMs: z.coerce.number().int().positive().max(MAX_TIMEOUT_MS).optional()
-          .describe(`Server-side wait budget in milliseconds (default ${DEFAULT_TIMEOUT_MS}).`),
+          .describe('Optional server-side wait budget in milliseconds. Omit to wait until the task finishes.'),
       }),
       execute: async ({ taskId, timeoutMs }) => {
         if (!ctx.conversation) {
           return { ok: false as const, error: 'workspace conversation control is unavailable' }
         }
         try {
-          const task = await awaitConversationTask(
-            ctx.conversation,
-            taskId,
-            timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          )
+          const task = await awaitConversationTask(ctx.conversation, taskId, timeoutMs)
           if (!task) return { ok: false as const, error: `conversation task not found: ${taskId}` }
           return {
             ok: true as const,
             ...taskProjection(task, 'summary'),
             awaited: task.status !== 'running',
             ...(task.status === 'running'
-              ? { next: `alice-workspace conversation read --task-id ${task.taskId}` }
+              ? { next: `alice conversation read --task-id ${task.taskId}` }
               : {}),
           }
         } catch (err) {
@@ -250,7 +358,7 @@ export const conversationCollectFactory: WorkspaceToolFactory = {
         taskId: z.array(z.string().min(1)).min(1).max(32)
           .describe('Task id to collect. Repeat --task-id for multiple concurrent peers.'),
         timeoutMs: z.coerce.number().int().positive().max(MAX_TIMEOUT_MS).optional()
-          .describe(`Server-side wait budget per task in milliseconds (default ${DEFAULT_TIMEOUT_MS}).`),
+          .describe('Optional server-side wait budget per task in milliseconds. Omit to wait until every task finishes.'),
       }),
       execute: async ({ taskId, timeoutMs }) => {
         if (!ctx.conversation) {
@@ -261,7 +369,7 @@ export const conversationCollectFactory: WorkspaceToolFactory = {
           const tasks = await Promise.all(ids.map((id) => awaitConversationTask(
             ctx.conversation!,
             id,
-            timeoutMs ?? DEFAULT_TIMEOUT_MS,
+            timeoutMs,
           )))
           const results = tasks.map((task, index) => task
             ? {
@@ -301,15 +409,16 @@ export const conversationReadFactory: WorkspaceToolFactory = {
   build(ctx) {
     return tool({
       description: [
-        'Read one headless follow-up started by conversation_ask.',
+        'Read one turn started by conversation create or ask.',
         '',
         'Summary returns the latest assistant reply and one compact failure when present.',
         'Tool activity and normalized message blocks are available only in detailed mode.',
         'Running tasks may have partial output.',
       ].join('\n'),
       inputSchema: z.object({
-        taskId: z.string().min(1).describe('taskId returned by conversation_ask.'),
-        mode: z.enum(['summary', 'detailed']).optional().default('summary'),
+        taskId: z.string().min(1).describe('taskId returned by conversation create or ask.'),
+        mode: z.enum(['summary', 'detailed']).optional().default('summary')
+          .describe('`summary` returns status and assistant text; `detailed` also returns normalized tool, error, and message blocks.'),
       }),
       execute: async ({ taskId, mode }) => {
         if (!ctx.conversation) {
@@ -331,6 +440,7 @@ export const conversationReadFactory: WorkspaceToolFactory = {
 }
 
 export const conversationToolFactories: WorkspaceToolFactory[] = [
+  conversationCreateFactory,
   conversationAskFactory,
   conversationAwaitFactory,
   conversationCollectFactory,

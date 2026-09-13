@@ -9,7 +9,6 @@ import { tradingApi } from './trading'
 import { marketDataApi } from './openbb'
 import { toolsApi } from './tools'
 import { agentStatusApi } from './agentStatus'
-import { personaApi } from './persona'
 import { newsApi } from './news'
 import { marketApi } from './market'
 import { inboxApi } from './inbox'
@@ -19,6 +18,11 @@ import { headlessApi } from './headless'
 import { preferencesApi } from './preferences'
 import { inquiriesApi } from './inquiries'
 import { connectorsApi } from './connectors'
+import { agentConversationsApi } from './agentConversations'
+import { agentRuntimeLogApi, productActivityJournalApi } from './agentRuntimeLog'
+import { officeApi } from './office'
+import { aliceProjectApi } from './aliceProject'
+import { uiLayoutApi } from './ui-layout'
 export const api = {
   config: configApi,
   schedule: scheduleApi,
@@ -27,7 +31,6 @@ export const api = {
   marketData: marketDataApi,
   tools: toolsApi,
   agentStatus: agentStatusApi,
-  persona: personaApi,
   news: newsApi,
   market: marketApi,
   inbox: inboxApi,
@@ -37,7 +40,15 @@ export const api = {
   preferences: preferencesApi,
   inquiries: inquiriesApi,
   connectors: connectorsApi,
+  agentConversations: agentConversationsApi,
+  agentRuntime: agentRuntimeLogApi,
+  productActivity: productActivityJournalApi,
+  office: officeApi,
+  aliceProject: aliceProjectApi,
+  uiLayout: uiLayoutApi,
 }
+
+export type { AliceProject } from './aliceProject'
 
 // Re-export all types for convenience
 export type {
@@ -85,8 +96,20 @@ export type {
 } from './types'
 export type {
   ConnectorDefinition,
+  ConnectorAdapterMutation,
+  ConnectorAdapterMutationResult,
   PublicConnectorConfig,
   ConnectorHealth,
   ConnectorSettingsSnapshot,
+  ConnectorDesk,
+  ConnectorDeskSnapshot,
+  TelegramConnectorDesk,
+  TelegramConnectorDeskSnapshot,
 } from './connectors'
 export type { ToolCallQueryResult } from './agentStatus'
+export type {
+  AgentConversationQueryResult,
+  AgentConversationRecord,
+  AgentConversationSource,
+  AgentConversationTarget,
+} from './agentConversations'

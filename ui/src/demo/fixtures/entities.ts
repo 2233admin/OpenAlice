@@ -1,9 +1,15 @@
-import type { EntityListItem, EntityDetail } from '../../api/entities'
+import type {
+  EntityListItem,
+  EntityDetail,
+  EntityGraph,
+  EntityGraphArtifactNode,
+} from '../../api/entities'
+import { DEMO_CHAT_WORKSPACE_ID, demoChatWorkspace } from './workspaces'
 
 /**
- * Demo tracked-entities — mirrors the real chat-jun3 power / AI-infra graph
- * so the marketing demo shows the actual shape: a few assets + the theme that
- * ties them together, each referenced across the dated rotation notes.
+ * Demo tracked-entities — mirrors the power / AI-infra graph so the marketing
+ * demo shows the actual shape: a few assets + the theme that ties them
+ * together, each referenced across the dated rotation notes.
  *
  * Backlinks now also include ISSUE NOTES. Since `.alice/issues/<id>.md` bodies
  * feed the same `[[name]]` reverse index, an entity's backlinks can point at an
@@ -38,7 +44,13 @@ export const demoEntities: EntityListItem[] = [
   },
 ]
 
-const ws = { workspaceId: 'demo-ws-1', workspaceTag: 'chat-jun3' }
+// Plain-note backlinks belong to the registered demo Chat Workspace. Keeping
+// this identity aligned makes the file viewer's provenance label and Back
+// action resolve to a real Workspace instead of a stale fixture-only id.
+const ws = {
+  workspaceId: DEMO_CHAT_WORKSPACE_ID,
+  workspaceTag: demoChatWorkspace.tag,
+}
 // Workspaces that own the demo issues (see ./issues.ts). Issue-note backlinks
 // carry the issue's wsId + a `.alice/issues/<id>.md` path so the Tracked UI can
 // route them to the issue detail rather than rendering a raw file path.
@@ -77,3 +89,40 @@ export const demoEntityDetail: Record<string, EntityDetail> = {
     ],
   },
 }
+
+/** The demo graph is projected from the same details used by the list/detail
+ * handlers, so the marketing surface exercises shared-note clustering rather
+ * than a hand-authored decorative layout. */
+export const demoEntityGraph: EntityGraph = (() => {
+  const nodes: EntityGraph['nodes'] = demoEntities.map((entity) => ({
+    id: `entity:${encodeURIComponent(entity.name.toLowerCase())}`,
+    kind: 'entity',
+    label: entity.name,
+    entityType: entity.type,
+    description: entity.description,
+    createdAt: entity.createdAt,
+  }))
+  const artifacts = new Map<string, EntityGraphArtifactNode>()
+  const edges: EntityGraph['edges'] = []
+  for (const entity of demoEntities) {
+    const entityId = `entity:${encodeURIComponent(entity.name.toLowerCase())}`
+    for (const backlink of demoEntityDetail[entity.name]?.backlinks ?? []) {
+      const artifactId = `artifact:${encodeURIComponent(backlink.workspaceId)}:${encodeURIComponent(backlink.path)}`
+      if (!artifacts.has(artifactId)) {
+        const issue = backlink.path.startsWith('.alice/issues/') && backlink.path.endsWith('.md')
+        const basename = backlink.path.split('/').at(-1) ?? backlink.path
+        artifacts.set(artifactId, {
+          id: artifactId,
+          kind: 'artifact',
+          label: issue
+            ? backlink.path.slice('.alice/issues/'.length, -'.md'.length)
+            : basename.replace(/\.md$/, ''),
+          artifactType: issue ? 'issue' : 'note',
+          ...backlink,
+        })
+      }
+      edges.push({ id: `${artifactId}->${entityId}`, source: artifactId, target: entityId })
+    }
+  }
+  return { nodes: [...nodes, ...artifacts.values()], edges }
+})()

@@ -9,6 +9,7 @@ import { WorkspaceAIConfigModal } from './WorkspaceAIConfigModal'
 const mocks = vi.hoisted(() => ({
   useWorkspaces: vi.fn(),
   getAgentConfig: vi.fn(),
+  getWorkspaceLaunchPlan: vi.fn(),
   listCredentials: vi.fn(),
   saveAgentConfig: vi.fn(),
   saveCredential: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('./api', async (importOriginal) => {
   return {
     ...actual,
     getAgentConfig: mocks.getAgentConfig,
+    getWorkspaceLaunchPlan: mocks.getWorkspaceLaunchPlan,
     listCredentials: mocks.listCredentials,
     saveAgentConfig: mocks.saveAgentConfig,
     saveCredential: mocks.saveCredential,
@@ -54,9 +56,84 @@ beforeEach(async () => {
       dir: '/tmp/chat-1',
       createdAt: '2026-07-18T00:00:00.000Z',
       template: 'chat',
-      agents: ['pi'],
       sessions: [],
     }],
+    agents: [
+      {
+        id: 'claude',
+        displayName: 'Claude Code',
+        capabilities: {
+          parallelPerCwd: true,
+          resumeLast: false,
+          resumeById: true,
+          transcriptDiscovery: 'fs-watch',
+          aiProvider: {
+            credentialSource: 'runtime-or-workspace',
+            wirePreference: ['anthropic'],
+          },
+        },
+      },
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        capabilities: {
+          parallelPerCwd: true,
+          resumeLast: true,
+          resumeById: true,
+          transcriptDiscovery: 'subprocess',
+          aiProvider: {
+            credentialSource: 'runtime-or-workspace',
+            wirePreference: ['openai-responses'],
+          },
+        },
+      },
+      {
+        id: 'opencode',
+        displayName: 'opencode',
+        capabilities: {
+          parallelPerCwd: true,
+          resumeLast: true,
+          resumeById: true,
+          transcriptDiscovery: 'subprocess',
+          aiProvider: {
+            credentialSource: 'workspace-required',
+            wirePreference: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
+            vendorPolicies: {
+              minimax: {
+                wirePreference: ['anthropic'],
+                legacyRequestedWireFallbacks: { 'openai-chat': 'anthropic' },
+              },
+            },
+            modelRegistration: {
+              contextWindow: true,
+              reasoning: true,
+              effortVariants: true,
+            },
+          },
+        },
+      },
+      {
+        id: 'pi',
+        displayName: 'Pi',
+        capabilities: {
+          parallelPerCwd: true,
+          resumeLast: true,
+          resumeById: true,
+          transcriptDiscovery: 'none',
+          aiProvider: {
+            credentialSource: 'workspace-required',
+            wirePreference: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
+            vendorPolicies: {
+              minimax: {
+                wirePreference: ['anthropic'],
+                legacyRequestedWireFallbacks: { 'openai-chat': 'anthropic' },
+              },
+            },
+            modelRegistration: { contextWindow: true, reasoning: true },
+          },
+        },
+      },
+    ],
     refresh: vi.fn(),
     saveWorkspaceMetadata: vi.fn(),
   })
@@ -71,11 +148,184 @@ beforeEach(async () => {
       pi: { ...savedPi, contextWindow: 512_000 },
     })
   mocks.saveAgentConfig.mockResolvedValue(undefined)
+  mocks.getWorkspaceLaunchPlan.mockResolvedValue({
+    workspace: { id: 'chat-1', tag: 'chat-1', dir: '/tmp/chat-1' },
+    agent: {
+      id: 'pi',
+      displayName: 'Pi',
+      kind: 'agent',
+      installed: true,
+      binPath: '/usr/local/bin/pi',
+      capabilities: {
+        parallelPerCwd: true,
+        resumeLast: true,
+        resumeById: true,
+        transcriptDiscovery: 'none',
+      },
+    },
+    launch: {
+      intent: 'fresh',
+      mode: 'direct',
+      composedCommand: ['pi'],
+      resolvedCommand: ['pi'],
+      cwd: '/tmp/chat-1',
+      envPWD: '/tmp/chat-1',
+      environment: [],
+      transcriptDir: null,
+    },
+  })
 })
 
 afterEach(cleanup)
 
 describe('WorkspaceAIConfigModal local model metadata', () => {
+  it('exposes a named modal dialog and moves focus into the selected section', () => {
+    render(
+      <WorkspaceAIConfigModal
+        wsId="chat-1"
+        initialSection="general"
+        onClose={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '工作区设置' })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(screen.getByRole('button', { name: '通用' }).getAttribute('aria-current')).toBe('page')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '通用' }))
+  })
+
+  it('separates Agent runtime diagnostics from AI preferences', async () => {
+    render(
+      <WorkspaceAIConfigModal
+        wsId="chat-1"
+        initialSection="launch"
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Agent Runtime' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByText('实际启动预览')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 偏好' }))
+    expect(await screen.findByText(/默认会自动沿用最近一次成功启动/)).toBeTruthy()
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.getByRole('heading', { name: '交互式 Session' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '无头运行' })).toBeTruthy()
+  })
+
+  it('keeps compact settings chrome fixed around one scroll owner', async () => {
+    render(
+      <WorkspaceAIConfigModal
+        wsId="chat-1"
+        initialSection="ai"
+        initialAgent="pi"
+        onClose={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByTestId('workspace-settings-dialog')
+    const sectionNav = screen.getByTestId('workspace-settings-section-nav')
+    const scrollArea = screen.getByTestId('workspace-settings-ai-scroll')
+    const footer = screen.getByTestId('workspace-settings-ai-footer')
+
+    expect(dialog.className).toContain('h-full')
+    expect(dialog.className).toContain('overflow-hidden')
+    expect(dialog.className).toContain('sm:max-h-[85dvh]')
+    expect(sectionNav.className).toContain('overflow-x-auto')
+    expect(screen.getByRole('button', { name: '通用' }).className).toContain('min-h-11')
+    expect(screen.getByRole('button', { name: 'Claude Code' }).className).toContain('min-h-11')
+    expect(scrollArea.className).toContain('min-h-0')
+    expect(scrollArea.className).toContain('overflow-y-auto')
+    expect(footer.className).toContain('shrink-0')
+
+    expect(await screen.findByText('— 没有兼容 Pi 的凭证 —')).toBeTruthy()
+    expect(screen.queryByText('从已保存凭证载入')).toBeNull()
+  })
+
+  it('keeps forward and reverse Tab navigation inside the dialog', () => {
+    render(
+      <WorkspaceAIConfigModal
+        wsId="chat-1"
+        initialSection="general"
+        onClose={vi.fn()}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '工作区设置' })
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ))
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
+
+    last.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(first)
+
+    first.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+  })
+
+  it('closes on Escape, restores focus, and removes its keyboard listener', () => {
+    const trigger = document.createElement('button')
+    trigger.textContent = 'Open workspace settings'
+    document.body.append(trigger)
+    trigger.focus()
+    const onClose = vi.fn()
+
+    const { unmount } = render(
+      <WorkspaceAIConfigModal
+        wsId="chat-1"
+        initialSection="general"
+        onClose={onClose}
+      />,
+    )
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '通用' }))
+    expect(trigger.hasAttribute('inert')).toBe(true)
+    expect(trigger.getAttribute('aria-hidden')).toBe('true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    unmount()
+    expect(document.activeElement).toBe(trigger)
+    expect(trigger.hasAttribute('inert')).toBe(false)
+    expect(trigger.getAttribute('aria-hidden')).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    trigger.remove()
+  })
+
+  it('saves a Codex native-login model without requiring an API probe', async () => {
+    mocks.getAgentConfig.mockReset().mockResolvedValue({
+      claude: null,
+      codex: null,
+      opencode: null,
+      pi: null,
+    })
+
+    render(
+      <WorkspaceAIConfigModal wsId="chat-1" initialSection="ai" initialAgent="codex" onClose={vi.fn()} />,
+    )
+
+    fireEvent.change(await screen.findByPlaceholderText('gpt-5.5'), {
+      target: { value: 'gpt-5.6-sol' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(mocks.saveAgentConfig).toHaveBeenCalledWith(
+      'chat-1',
+      'codex',
+      expect.objectContaining({
+        baseUrl: null,
+        apiKey: null,
+        model: 'gpt-5.6-sol',
+      }),
+    ))
+    expect(mocks.testAgentConfig).not.toHaveBeenCalled()
+  })
+
   it('repairs a saved MiniMax OpenAI wire and removes the lossy protocol choice', async () => {
     const minimaxPi = {
       ...savedPi,
@@ -144,11 +394,11 @@ describe('WorkspaceAIConfigModal local model metadata', () => {
     expect(screen.getByText(/不会虚构一个强度值/)).toBeTruthy()
   })
 
-  it('prefills a registered effort and saves an explicit Workspace override without probing', async () => {
+  it('leaves a registered effort unspecified and saves an explicit Workspace override without probing', async () => {
     const openAiPi = {
       ...savedPi,
       baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-5.6',
+      model: 'gpt-5.6-sol',
     }
     mocks.getAgentConfig.mockReset()
       .mockResolvedValueOnce({ claude: null, codex: null, opencode: null, pi: openAiPi })
@@ -166,7 +416,7 @@ describe('WorkspaceAIConfigModal local model metadata', () => {
         defaultName: 'OpenAI',
         description: '',
         models: [{
-          id: 'gpt-5.6',
+          id: 'gpt-5.6-sol',
           label: 'GPT 5.6',
           semantics: {
             reasoning: {
@@ -192,7 +442,8 @@ describe('WorkspaceAIConfigModal local model metadata', () => {
     )
 
     const effort = await screen.findByRole('combobox', { name: 'Pi 思考强度' })
-    expect((effort as HTMLSelectElement).value).toBe('medium')
+    expect((effort as HTMLSelectElement).value).toBe('')
+    expect((effort as HTMLSelectElement).selectedOptions[0]?.textContent).toBe('未指定')
     fireEvent.change(effort, { target: { value: 'high' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
@@ -204,7 +455,7 @@ describe('WorkspaceAIConfigModal local model metadata', () => {
     expect(mocks.testAgentConfig).not.toHaveBeenCalled()
   })
 
-  it('keeps runtime default selected when the provider publishes tiers but no default', async () => {
+  it('keeps effort unspecified when the provider publishes tiers but no default', async () => {
     const glmPi = {
       ...savedPi,
       baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
@@ -245,7 +496,7 @@ describe('WorkspaceAIConfigModal local model metadata', () => {
 
     const effort = await screen.findByRole('combobox', { name: 'Pi 思考强度' })
     expect((effort as HTMLSelectElement).value).toBe('')
-    expect((effort as HTMLSelectElement).selectedOptions[0]?.textContent).toBe('运行时默认（提供方未公布）')
+    expect((effort as HTMLSelectElement).selectedOptions[0]?.textContent).toBe('未指定')
   })
 
   it('saves a context-only change directly without probing the provider again', async () => {

@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import * as deskProjection from '../workspaces/issues/telegram-desk-project.js'
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -19,6 +20,8 @@ import {
   issueListFactory,
   issueShowFactory,
   issueUpdateFactory,
+  issueRunNowFactory,
+  issueRetryFactory,
 } from './issue-tools.js'
 
 let dir: string
@@ -59,9 +62,39 @@ describe('issue_create', () => {
   it('creates an issue, stamps the workspace assignee, and is reachable via the reader', async () => {
     const res = await run(issueCreateFactory.build(ctx()), { title: 'Fix the thing' })
     expect(res.ok).toBe(true)
-    expect(res.issue).toMatchObject({ id: 'fix-the-thing', title: 'Fix the thing', assignee: '@workspace' })
+    expect(res.issue).toMatchObject({ id: 'fix-the-thing', title: 'Fix the thing', assignee: '@unassigned' })
     const issue = await readBack('fix-the-thing')
     expect(issue?.title).toBe('Fix the thing')
+  })
+
+  it('creates and returns one-run model and effort overrides', async () => {
+    const res = await run(issueCreateFactory.build(ctx()), {
+      id: 'tuned',
+      title: 'Tuned run',
+      when: { kind: 'every', every: '30m' },
+      assignee: '@new-each-run',
+      agent: 'codex',
+      model: 'gpt-5.6',
+      effort: 'high',
+    })
+    expect(res.issue).toMatchObject({ agent: 'codex', model: 'gpt-5.6', effort: 'high' })
+    expect(await readBack('tuned')).toMatchObject({
+      agent: 'codex',
+      model: 'gpt-5.6',
+      effort: 'high',
+    })
+  })
+
+  it('creates and returns an optional run timeout', async () => {
+    const res = await run(issueCreateFactory.build(ctx()), {
+      id: 'budgeted',
+      title: 'Budgeted run',
+      when: { kind: 'every', every: '30m' },
+      assignee: '@new-each-run',
+      timeout: '45m',
+    })
+    expect(res.issue).toMatchObject({ timeout: '45m' })
+    expect(await readBack('budgeted')).toMatchObject({ timeout: '45m' })
   })
 
   it('records the creating product Session without accepting identity args', async () => {
@@ -96,26 +129,37 @@ describe('issue_create', () => {
     expect(res.error).toMatch(/already exists/)
   })
 
-  it('defaults scheduled work to Workspace ownership', async () => {
+  it('defaults scheduled work to one durable new owner', async () => {
     const created = await run(issueCreateFactory.build(ctx()), {
       id: 'fresh-owner',
       title: 'Fresh owner',
       when: { kind: 'every', every: '30m' },
     })
     expect(created.ok).toBe(true)
-    expect((await readBack('fresh-owner'))?.assignee).toBe('@workspace')
+    expect((await readBack('fresh-owner'))?.assignee).toBe('@new-then-resume')
   })
 
-  it('accepts @new as an explicit recruit-once ownership policy', async () => {
+  it('accepts @new-then-resume as an explicit recruit-once ownership policy', async () => {
     const created = await run(issueCreateFactory.build(ctx()), {
       id: 'sticky-owner',
       title: 'Sticky owner',
       when: { kind: 'every', every: '30m' },
-      assignee: '@new',
+      assignee: '@new-then-resume',
       agent: 'pi',
     })
     expect(created.ok).toBe(true)
-    expect(await readBack('sticky-owner')).toMatchObject({ assignee: '@new', agent: 'pi' })
+    expect(await readBack('sticky-owner')).toMatchObject({ assignee: '@new-then-resume', agent: 'pi' })
+  })
+
+  it('rejects deprecated assignee aliases with a replacement hint', async () => {
+    const created = await run(issueCreateFactory.build(ctx()), {
+      id: 'deprecated-owner',
+      title: 'Deprecated owner',
+      when: { kind: 'every', every: '30m' },
+      assignee: '@workspace',
+    })
+    expect(created.ok).toBe(false)
+    expect(created.error).toBe('@workspace is deprecated; use @new-each-run')
   })
 
   it('defaults creation to the server-attributed current Session', async () => {
@@ -159,7 +203,15 @@ describe('issue_create', () => {
       id: 'shell-created', title: 'Shell-created issue',
     })
     expect(implicit.ok).toBe(true)
-    expect((await readBack('shell-created'))?.assignee).toBe('@workspace')
+    expect((await readBack('shell-created'))?.assignee).toBe('@unassigned')
+
+    const scheduled = await run(issueCreateFactory.build(context), {
+      id: 'shell-scheduled',
+      title: 'Shell-created schedule',
+      when: { kind: 'every', every: '30m' },
+    })
+    expect(scheduled.ok).toBe(true)
+    expect((await readBack('shell-scheduled'))?.assignee).toBe('@new-then-resume')
 
     const explicit = await run(issueCreateFactory.build(context), {
       id: 'shell-owned', title: 'Invalid shell owner', assignee: '@me',
@@ -202,7 +254,7 @@ describe('issue_update', () => {
       id: 'sched',
       title: 'scheduled work',
       when: { kind: 'every', every: '30m' },
-      assignee: '@workspace',
+      assignee: '@new-each-run',
       what: 'keep me',
     })
     const res = await run(issueUpdateFactory.build(ctx()), {
@@ -213,6 +265,47 @@ describe('issue_update', () => {
     expect(issue).toMatchObject({ status: 'in_progress', priority: 'high', what: 'new exact work' })
     // scheduling frontmatter survives a board-field patch
     expect(issue?.when).toEqual({ kind: 'every', every: '30m' })
+  })
+
+  it('updates and clears runtime selection fields', async () => {
+    await run(issueCreateFactory.build(ctx()), {
+      id: 'runtime-fields',
+      title: 'Runtime fields',
+      when: { kind: 'every', every: '30m' },
+      assignee: '@new-each-run',
+    })
+    await run(issueUpdateFactory.build(ctx()), {
+      id: 'runtime-fields',
+      agent: 'codex',
+      model: 'gpt-5.6',
+      effort: 'high',
+    })
+    expect(await readBack('runtime-fields')).toMatchObject({
+      agent: 'codex',
+      model: 'gpt-5.6',
+      effort: 'high',
+    })
+    await run(issueUpdateFactory.build(ctx()), {
+      id: 'runtime-fields',
+      model: null,
+      effort: null,
+    })
+    const cleared = await readBack('runtime-fields')
+    expect(cleared?.model).toBeUndefined()
+    expect(cleared?.effort).toBeUndefined()
+  })
+
+  it('updates and clears an optional run timeout', async () => {
+    await run(issueCreateFactory.build(ctx()), {
+      id: 'budget-fields',
+      title: 'Budget fields',
+      when: { kind: 'every', every: '30m' },
+      assignee: '@new-each-run',
+    })
+    await run(issueUpdateFactory.build(ctx()), { id: 'budget-fields', timeout: '15m' })
+    expect(await readBack('budget-fields')).toMatchObject({ timeout: '15m' })
+    await run(issueUpdateFactory.build(ctx()), { id: 'budget-fields', timeout: null })
+    expect((await readBack('budget-fields'))?.timeout).toBeUndefined()
   })
 
   it('records successful mutations but not rejected ones', async () => {
@@ -339,7 +432,7 @@ describe('global board (ctx.board present)', () => {
             title: 'Shared',
             status: 'in_progress',
             priority: 'none',
-            assignee: '@workspace',
+            assignee: '@new-each-run',
             when: { kind: 'every', every: '30m' },
             nameCollision: true,
           },
@@ -552,4 +645,59 @@ describe('workspace resolution failures', () => {
     expect(res.ok).toBe(false)
     expect(res.error).toMatch(/cannot locate/)
   })
+})
+
+
+describe('Issue execution tools', () => {
+  function executionContext() {
+    const start = vi.fn(async () => ({ taskId: 'run-new' }))
+    const resolveByName = vi.fn(async () => [{ wsId: 'peer', wsTag: 'desk', id: 'daily', title: 'Daily' }])
+    const read = vi.fn(async () => ({ taskId: 'run-new', status: 'done', resumeId: 'owner', assistantText: 'finished' }))
+    return { start, resolveByName, read, context: ctx({
+      board: { snapshot: vi.fn(), detail: vi.fn(), resolveByName },
+      issueRuns: { start },
+      conversation: { read } as unknown as NonNullable<WorkspaceToolContext['conversation']>,
+    }) }
+  }
+  it('dispatches asynchronously without asking a Session or polling', async () => {
+    const { context, start, read } = executionContext()
+    expect(await run(issueRunNowFactory.build(context), { id: 'daily' })).toMatchObject({ ok: true, taskId: 'run-new', issueId: 'daily' })
+    expect(start).toHaveBeenCalledWith('peer', 'daily', undefined)
+    expect(read).not.toHaveBeenCalled()
+  })
+  it('passes the exact retry occurrence and waits for the dispatched run', async () => {
+    const { context, start, read } = executionContext()
+    expect(await run(issueRetryFactory.build(context), { id: 'daily', runId: 'run-failed', await: true })).toMatchObject({ ok: true, taskId: 'run-new', status: 'done', awaited: true })
+    expect(start).toHaveBeenCalledWith('peer', 'daily', 'run-failed')
+    expect(read).toHaveBeenCalledWith('run-new')
+  })
+  it('rejects ambiguous names before dispatch', async () => {
+    const { context, resolveByName, start } = executionContext()
+    resolveByName.mockResolvedValue([{ wsId: 'a', wsTag: 'a', id: 'daily', title: 'Daily' }, { wsId: 'b', wsTag: 'b', id: 'daily', title: 'Daily' }])
+    expect(await run(issueRunNowFactory.build(context), { id: 'daily' })).toMatchObject({ ok: false })
+    expect(start).not.toHaveBeenCalled()
+    expect(await run(issueRunNowFactory.build(context), { id: 'daily', wsId: 'b' })).toMatchObject({ ok: true })
+    expect(start).toHaveBeenCalledWith('b', 'daily', undefined)
+  })
+  it('preserves scheduler conflict errors without falling back to ask', async () => {
+    const { context, start } = executionContext()
+    start.mockRejectedValue(Object.assign(new Error('Already running'), { code: 'already_running' }))
+    expect(await run(issueRunNowFactory.build(context), { id: 'daily' })).toMatchObject({ ok: false, code: 'already_running' })
+  })
+})
+
+
+it('carries trusted run scope into in-turn desk comments', async () => {
+  await run(issueCreateFactory.build(ctx()), { id: 'desk', title: 'Desk', what: 'Talk' })
+  const path = join(dir, '.alice/issues/desk.md')
+  await writeFile(path, (await readFile(path, 'utf8')).replace('---\n', '---\nconnectorDesk: telegram\n'))
+  const project = vi.spyOn(deskProjection, 'projectDeskComment').mockResolvedValue()
+  try {
+    await run(issueCommentFactory.build(ctx({ callerRun: {
+      taskId: 'run-live', status: 'running', trigger: { kind: 'issue', workspaceId: 'ws-self', issueId: 'desk' },
+    } })), { id: 'desk', text: '[[no-reply]] quiet' })
+    expect(project).toHaveBeenCalledWith(expect.anything(), expect.anything(), undefined, {
+      workspaceId: 'ws-self', progressScopeId: 'run-live', phase: 'progress', automated: true,
+    })
+  } finally { project.mockRestore() }
 })

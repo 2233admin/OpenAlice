@@ -80,7 +80,24 @@ export function buildSshArgs(options, localPort) {
   return args
 }
 
+/**
+ * Carry client-owned tunnel identity into the browser without sending SSH
+ * details to the remote HTTP server. The Web UI consumes this fragment into
+ * tab-scoped storage and immediately removes it from the address bar.
+ */
+export function buildRemoteClientUrl(localUrl, options) {
+  const url = new URL(localUrl)
+  const fragment = new URLSearchParams()
+  fragment.set('openalice-remote', '1')
+  fragment.set('target', options.destination)
+  fragment.set('ssh-port', String(options.sshPort ?? 22))
+  fragment.set('runtime-port', String(options.remotePort))
+  url.hash = fragment.toString()
+  return url.href
+}
+
 export async function connectSsh(options, dependencies = {}) {
+  if (options.signal?.aborted) throw new Error('SSH tunnel was cancelled')
   const allocatePort = dependencies.allocatePort ?? allocateLoopbackPort
   const portAvailable = dependencies.portAvailable ?? isLoopbackPortAvailable
   const spawnProcess = dependencies.spawnProcess ?? spawn
@@ -98,11 +115,12 @@ export async function connectSsh(options, dependencies = {}) {
   }
   if (!localPort) localPort = await allocatePort()
   const localUrl = `http://${LOOPBACK}:${localPort}`
+  const clientUrl = buildRemoteClientUrl(localUrl, options)
   const ssh = spawnProcess('ssh', buildSshArgs(options, localPort), {
     stdio: ['inherit', 'ignore', 'inherit'],
     windowsHide: true,
   })
-  const tunnelLifetime = holdTunnel(ssh)
+  const tunnelLifetime = holdTunnel(ssh, options.signal)
 
   let ready = false
   const earlyFailure = new Promise((_, reject) => {
@@ -119,10 +137,10 @@ export async function connectSsh(options, dependencies = {}) {
     ])
     ready = true
     stdout.write(`OpenAlice remote runtime: ${options.destination}\n`)
-    stdout.write(`Local OpenAlice UI: ${localUrl}\n`)
+    stdout.write(`Local OpenAlice UI: ${clientUrl}\n`)
     stdout.write('The SSH tunnel stays active until this command exits. Press Ctrl+C to close it.\n')
-    if (options.onReady) await options.onReady({ localPort, localUrl })
-    if (options.openBrowser) await launchBrowser(localUrl)
+    if (options.onReady) await options.onReady({ localPort, localUrl, clientUrl })
+    if (options.openBrowser) await launchBrowser(clientUrl)
     return await tunnelLifetime
   } catch (error) {
     ssh.kill('SIGTERM')
@@ -152,7 +170,7 @@ export function formatSshHelp() {
   return `Usage:
   openalice ssh <user@host> [options]
 
-Connects the local browser to an OpenAlice instance that is already running on
+Connects the local browser to an AliceProject that is already running on
 the SSH host. The local listener and remote target are both fixed to 127.0.0.1.
 
 Options:
@@ -166,7 +184,7 @@ Options:
 `
 }
 
-function holdTunnel(ssh) {
+function holdTunnel(ssh, signal) {
   if (ssh.exitCode !== undefined && (ssh.exitCode !== null || ssh.signalCode !== null)) {
     return Promise.resolve(ssh.exitCode ?? 0)
   }
@@ -174,9 +192,11 @@ function holdTunnel(ssh) {
     const stop = () => ssh.kill('SIGTERM')
     process.once('SIGINT', stop)
     process.once('SIGTERM', stop)
+    signal?.addEventListener('abort', stop, { once: true })
     ssh.once('exit', (code) => {
       process.off('SIGINT', stop)
       process.off('SIGTERM', stop)
+      signal?.removeEventListener('abort', stop)
       resolve(code ?? 0)
     })
   })

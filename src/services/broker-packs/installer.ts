@@ -9,10 +9,12 @@ import { basename, resolve, sep } from 'node:path'
 import * as tar from 'tar'
 import {
   BROKER_PACK_API_VERSION,
+  INSTALLABLE_BROKER_ENGINES,
   BROKER_PACK_SCHEMA_VERSION,
   brokerPackActivePath,
   brokerPackEngineRoot,
   brokerPackReleasesRoot,
+  BrokerPackApiVersionMismatchError,
   resolveActiveBrokerPack,
   resolveBrokerPackRelease,
   type BrokerPackActivePointer,
@@ -36,6 +38,7 @@ export interface BrokerPackLocalStatus {
   installed: boolean
   source: 'builtin' | 'workspace' | 'downloaded' | 'missing' | 'broken'
   version?: string
+  updateAvailable?: boolean
   reason?: string
 }
 
@@ -43,8 +46,35 @@ export async function getBrokerPackLocalStatus(engine: InstallableBrokerEngine |
   if (engine === 'mock') return { engine, installed: true, source: 'builtin', version: getCurrentVersion() }
   try {
     const active = await resolveActiveBrokerPack(engine)
-    if (active) return { engine, installed: true, source: 'downloaded', version: active.manifest.version }
+    if (active) {
+      let bound: Awaited<ReturnType<typeof readBoundCatalog>>
+      try { bound = await readBoundCatalog() }
+      catch (error) {
+        return { engine, installed: true, source: 'downloaded', version: active.manifest.version,
+          reason: `Cannot check broker-pack update: ${error instanceof Error ? error.message : String(error)}` }
+      }
+      const expected = bound?.catalog.packs.find(asset => asset.engine === engine)
+      return {
+        engine,
+        installed: true,
+        source: 'downloaded',
+        version: active.manifest.version,
+        updateAvailable: expected
+          ? active.manifest.version !== expected.version || active.manifest.contentId !== expected.sha256.slice(0, 16)
+          : active.manifest.version !== getCurrentVersion(),
+      }
+    }
   } catch (err) {
+    if (err instanceof BrokerPackApiVersionMismatchError) {
+      return {
+        engine,
+        installed: false,
+        source: 'broken',
+        version: err.installedVersion,
+        updateAvailable: true,
+        reason: err.message,
+      }
+    }
     return { engine, installed: false, source: 'broken', reason: err instanceof Error ? err.message : String(err) }
   }
   if (workspacePacksAvailable()) {
@@ -61,8 +91,9 @@ export async function installBrokerPack(engine: InstallableBrokerEngine): Promis
 
   const workRoot = resolve(engineRoot, `.staging-${process.pid}-${Date.now()}`)
   try {
-    const catalogUrl = resolveCatalogUrl()
-    const catalog = await fetchCatalog(catalogUrl)
+    const bound = await readBoundCatalog()
+    const catalogUrl = bound?.url ?? resolveCatalogUrl()
+    const catalog = bound?.catalog ?? await fetchCatalog(catalogUrl)
     const asset = catalog.packs.find((row) => row.engine === engine)
     if (!asset) throw new Error(`No ${engine} broker pack is published for ${process.platform}-${process.arch}`)
     validateAsset(asset, getCurrentVersion())
@@ -113,7 +144,13 @@ export async function installBrokerPack(engine: InstallableBrokerEngine): Promis
     const activeTmp = `${activePath}.${process.pid}.tmp`
     await writeFile(activeTmp, JSON.stringify(pointer, null, 2) + '\n')
     await rename(activeTmp, activePath)
-    return { engine, installed: true, source: 'downloaded', version: asset.version }
+    return {
+      engine,
+      installed: true,
+      source: 'downloaded',
+      version: asset.version,
+      updateAvailable: false,
+    }
   } finally {
     await rm(workRoot, { recursive: true, force: true }).catch(() => undefined)
     await rm(lock, { recursive: true, force: true }).catch(() => undefined)
@@ -124,6 +161,10 @@ async function fetchCatalog(url: string): Promise<BrokerPackReleaseCatalog> {
   const res = await fetch(url, { signal: AbortSignal.timeout(20_000) })
   if (!res.ok) throw new Error(`Broker-pack catalog request failed: HTTP ${res.status}`)
   const raw = await res.json() as Partial<BrokerPackReleaseCatalog>
+  return validateCatalog(raw)
+}
+
+function validateCatalog(raw: Partial<BrokerPackReleaseCatalog>): BrokerPackReleaseCatalog {
   const version = getCurrentVersion()
   if (
     raw.schemaVersion !== 1
@@ -134,10 +175,13 @@ async function fetchCatalog(url: string): Promise<BrokerPackReleaseCatalog> {
   ) {
     throw new Error(`Broker-pack catalog is incompatible with OpenAlice ${version} on ${process.platform}-${process.arch}`)
   }
+  for (const asset of raw.packs) validateAsset(asset, version)
+  if (new Set(raw.packs.map(asset => asset.engine)).size !== raw.packs.length) throw new Error('Duplicate broker-pack engine')
   return raw as BrokerPackReleaseCatalog
 }
 
 function validateAsset(asset: BrokerPackReleaseAsset, currentVersion: string): void {
+  if (!asset || !INSTALLABLE_BROKER_ENGINES.includes(asset.engine)) throw new Error('Invalid broker-pack engine')
   if (asset.version !== currentVersion) throw new Error(`Broker-pack asset targets OpenAlice ${asset.version}; expected ${currentVersion}`)
   if (asset.apiVersion !== BROKER_PACK_API_VERSION) throw new Error(`Broker-pack API ${asset.apiVersion} is unsupported`)
   if (!/^[A-Za-z0-9._-]+$/.test(asset.file) || basename(asset.file) !== asset.file) throw new Error('Invalid broker-pack asset name')
@@ -352,4 +396,21 @@ function isProcessAlive(pid: number): boolean {
   } catch (err) {
     return !isCode(err, 'ESRCH')
   }
+}
+
+
+/** Bound to the running archive, never to the mutable latest-dev pointer. */
+async function readBoundCatalog(): Promise<{ url: string; catalog: BrokerPackReleaseCatalog } | null> {
+  if (process.env['OPENALICE_BROKER_PACK_CATALOG_URL']?.trim() || process.env['OPENALICE_BROKER_PACK_BASE_URL']?.trim()) return null
+  const home = process.env['OPENALICE_APP_HOME']
+  if (!home) return null
+  let bytes: string
+  try { bytes = await readFile(resolve(home, 'broker-pack-source.json'), 'utf8') }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error }
+  const source = JSON.parse(bytes) as { schemaVersion?: number; commit?: string; catalog?: BrokerPackReleaseCatalog }
+  if (source.schemaVersion !== 1 || !/^[a-f0-9]{40}$/.test(source.commit ?? '') || source.catalog?.sourceCommit !== source.commit) {
+    throw new Error('Invalid bundled broker-pack source')
+  }
+  const catalog = validateCatalog(source.catalog!)
+  return { catalog, url: `https://download.openalice.ai/cli/dev/releases/${source.commit}/${brokerPackCatalogFileName(getCurrentVersion())}` }
 }

@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { AlertTriangle, CheckCircle2, Clock3, GitCommitHorizontal, GitPullRequest, History, XCircle } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef, type Ref } from 'react'
+import type { TFunction } from 'i18next'
+import { AlertTriangle, CheckCircle2, ChevronLeft, Clock3, GitCommitHorizontal, GitPullRequest, History, RefreshCw, XCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { EmptyState, Skeleton } from './StateViews'
+import { Button } from './ui/button'
 import { formatRelativeTime, getIntlLocale } from '../lib/intl'
 import { api } from '../api'
 import { isUnsetDecimal } from '../lib/format'
@@ -25,6 +28,13 @@ interface AccountHistory {
   accountId: string
   label: string
   commits: WalletCommitLog[]
+}
+
+interface ReviewVerification {
+  total: number
+  verified: number
+  failed: AccountRef[]
+  listUnavailable: boolean
 }
 
 interface FlatCommit {
@@ -54,7 +64,7 @@ function accountLabel(account: AccountRef): string {
 }
 
 function shortHash(hash: string | null | undefined): string {
-  return hash ? hash.slice(0, 8) : 'none'
+  return hash ? hash.slice(0, 8) : '—'
 }
 
 function opSymbol(op: WalletOperation): string {
@@ -74,34 +84,42 @@ function fmtNum(n: number | string | undefined | null): string {
   return decPart ? `${withCommas}.${decPart}` : withCommas
 }
 
-function orderTypeLabel(type: string | undefined): string {
+function orderTypeLabel(type: string | undefined, t: TFunction): string {
   const raw = (type || '').toUpperCase()
   if (raw === 'MKT' || raw === 'MARKET') return 'MKT'
   if (raw === 'LMT' || raw === 'LIMIT') return 'LMT'
-  return raw || 'ORDER'
+  return raw || t('tradingReview.operation.order')
 }
 
-function operationDisplay(op: WalletOperation): OperationDisplay {
+function operationDisplay(op: WalletOperation, t: TFunction): OperationDisplay {
   const symbol = opSymbol(op)
   switch (op.action) {
     case 'placeOrder': {
       const sideRaw = (op.order?.action || '').toUpperCase()
       const isBuy = sideRaw === 'BUY'
-      const type = orderTypeLabel(op.order?.orderType)
+      const side = isBuy
+        ? t('tradingReview.operation.buy')
+        : sideRaw === 'SELL'
+          ? t('tradingReview.operation.sell')
+          : sideRaw || t('tradingReview.operation.order')
+      const type = orderTypeLabel(op.order?.orderType, t)
       const qty = fmtNum(op.order?.totalQuantity ?? op.order?.cashQty)
       const price = fmtNum(op.order?.lmtPrice)
       const aux = fmtNum(op.order?.auxPrice)
       const detailParts = [
         type,
-        qty ? `qty ${qty}` : null,
-        price ? `limit ${price}` : null,
-        aux ? `aux ${aux}` : null,
+        qty ? t('tradingReview.operation.quantityShort', { value: qty }) : null,
+        price ? t('tradingReview.operation.limitPrice', { value: price }) : null,
+        aux ? t('tradingReview.operation.auxPrice', { value: aux }) : null,
       ].filter(Boolean)
       return {
         marker: isBuy ? '+' : '-',
         tone: isBuy ? 'buy' : 'sell',
-        title: `${sideRaw || 'ORDER'} ${symbol || 'unknown'}`.trim(),
-        detail: detailParts.join(' -> '),
+        title: t('tradingReview.operation.placeTitle', {
+          side,
+          symbol: symbol || t('tradingReview.operation.unknown'),
+        }),
+        detail: detailParts.join(' → '),
         symbol,
       }
     }
@@ -110,8 +128,10 @@ function operationDisplay(op: WalletOperation): OperationDisplay {
       return {
         marker: '-',
         tone: 'sell',
-        title: `CLOSE ${symbol || 'position'}`,
-        detail: qty ? `quantity ${qty}` : undefined,
+        title: t('tradingReview.operation.closeTitle', {
+          symbol: symbol || t('tradingReview.operation.position'),
+        }),
+        detail: qty ? t('tradingReview.operation.quantity', { value: qty }) : undefined,
         symbol,
       }
     }
@@ -119,7 +139,9 @@ function operationDisplay(op: WalletOperation): OperationDisplay {
       return {
         marker: '~',
         tone: 'modify',
-        title: `MODIFY ${op.orderId || 'order'}`,
+        title: t('tradingReview.operation.modifyTitle', {
+          order: op.orderId || t('tradingReview.operation.order'),
+        }),
         detail: symbol || undefined,
         symbol,
       }
@@ -127,7 +149,9 @@ function operationDisplay(op: WalletOperation): OperationDisplay {
       return {
         marker: '-',
         tone: 'danger',
-        title: `CANCEL ${op.orderId || 'order'}`,
+        title: t('tradingReview.operation.cancelTitle', {
+          order: op.orderId || t('tradingReview.operation.order'),
+        }),
         detail: symbol || undefined,
         symbol,
       }
@@ -135,7 +159,7 @@ function operationDisplay(op: WalletOperation): OperationDisplay {
       return {
         marker: '~',
         tone: 'neutral',
-        title: 'SYNC ORDERS',
+        title: t('tradingReview.operation.syncOrders'),
       }
     default:
       return {
@@ -147,7 +171,7 @@ function operationDisplay(op: WalletOperation): OperationDisplay {
   }
 }
 
-function historyOperationDisplay(op: WalletCommitLog['operations'][number]): OperationDisplay {
+function historyOperationDisplay(op: WalletCommitLog['operations'][number], t: TFunction): OperationDisplay {
   const action = op.action.toUpperCase()
   const marker: OperationDisplay['marker'] =
     action.includes('BUY') || action.includes('PLACE') ? '+'
@@ -158,6 +182,33 @@ function historyOperationDisplay(op: WalletCommitLog['operations'][number]): Ope
       : marker === '+' ? 'buy'
         : marker === '-' ? 'sell'
           : 'modify'
+  if (op.order) {
+    const sideRaw = (op.order.side || '').toUpperCase()
+    const side = sideRaw === 'BUY'
+      ? t('tradingReview.operation.buy')
+      : sideRaw === 'SELL'
+        ? t('tradingReview.operation.sell')
+        : sideRaw || t('tradingReview.operation.order')
+    const quantity = op.order.totalQuantity || op.order.cashQuantity
+    const detailParts = [
+      orderTypeLabel(op.order.orderType, t),
+      quantity ? t('tradingReview.operation.quantityShort', { value: quantity }) : null,
+      op.order.limitPrice ? t('tradingReview.operation.limitPrice', { value: op.order.limitPrice }) : null,
+      op.order.auxPrice ? t('tradingReview.operation.auxPrice', { value: op.order.auxPrice }) : null,
+      op.order.timeInForce,
+    ].filter(Boolean)
+    return {
+      marker,
+      tone,
+      title: t('tradingReview.operation.placeTitle', {
+        side,
+        symbol: op.symbol !== 'unknown' ? op.symbol : t('tradingReview.operation.unknown'),
+      }),
+      detail: detailParts.join(', '),
+      symbol: op.symbol,
+      status: op.status,
+    }
+  }
   return {
     marker,
     tone,
@@ -189,13 +240,32 @@ function statusClass(status: string | undefined): string {
   }
 }
 
+function statusLabel(status: string, t: TFunction): string {
+  switch (status) {
+    case 'submitted': return t('tradingReview.operationStatus.submitted')
+    case 'filled': return t('tradingReview.operationStatus.filled')
+    case 'rejected': return t('tradingReview.operationStatus.rejected')
+    case 'user-rejected': return t('tradingReview.operationStatus.userRejected')
+    case 'cancelled': return t('tradingReview.operationStatus.cancelled')
+    default: return status
+  }
+}
+
 function itemTimestamp(item: ReviewItem): string | null {
   return item.kind === 'history' ? item.commit.timestamp : null
 }
 
-function itemTitle(item: ReviewItem): string {
-  if (item.kind === 'pending') return item.status.pendingMessage || 'Pending broker push'
-  if (item.kind === 'staged') return 'Staged operations'
+function itemTitle(item: ReviewItem, t: TFunction): string {
+  if (item.kind === 'pending') return item.status.pendingMessage || t('tradingReview.pendingPush')
+  if (item.kind === 'staged') return t('tradingReview.stagedOperations')
+  const primaryOrder = item.commit.operations.find((operation) => operation.order)
+  if (primaryOrder?.order) {
+    const operation = historyOperationDisplay(primaryOrder, t)
+    const quantity = primaryOrder.order.totalQuantity
+      || (primaryOrder.order.cashQuantity ? `$${primaryOrder.order.cashQuantity}` : '')
+    const price = primaryOrder.order.limitPrice ? `@ ${primaryOrder.order.limitPrice}` : ''
+    return [operation.title, quantity, price].filter(Boolean).join(', ')
+  }
   return item.commit.message
 }
 
@@ -204,14 +274,32 @@ function itemAccountLabel(item: ReviewItem): string {
   return accountLabel(item.account)
 }
 
-function itemOperations(item: ReviewItem): OperationDisplay[] {
-  if (item.kind === 'history') return item.commit.operations.map(historyOperationDisplay)
-  return item.status.staged.map(operationDisplay)
+function itemOperations(item: ReviewItem, t: TFunction): OperationDisplay[] {
+  if (item.kind === 'history') return item.commit.operations.map((operation) => historyOperationDisplay(operation, t))
+  return item.status.staged.map((operation) => operationDisplay(operation, t))
+}
+
+function mergeAccountResults<T>(
+  accounts: AccountRef[],
+  verifiedAccountIds: Set<string>,
+  fresh: T[],
+  previous: T[],
+  accountId: (item: T) => string,
+): T[] {
+  const freshByAccount = new Map(fresh.map((item) => [accountId(item), item]))
+  const previousByAccount = new Map(previous.map((item) => [accountId(item), item]))
+  return accounts.flatMap((account) => {
+    const item = verifiedAccountIds.has(account.id)
+      ? freshByAccount.get(account.id)
+      : previousByAccount.get(account.id)
+    return item ? [item] : []
+  })
 }
 
 // ==================== Component ====================
 
 export function PushApprovalPanel() {
+  const { t } = useTranslation()
   const [accounts, setAccounts] = useState<AccountRef[]>([])
   const [staged, setStaged] = useState<StagedAccount[]>([])
   const [pending, setPending] = useState<PendingAccount[]>([])
@@ -224,6 +312,16 @@ export function PushApprovalPanel() {
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<string | null>(null)
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const [retryingVerification, setRetryingVerification] = useState(false)
+  const mobileBackRef = useRef<HTMLButtonElement | null>(null)
+  const activeQueueRowRef = useRef<HTMLButtonElement | null>(null)
+  const [verification, setVerification] = useState<ReviewVerification>({
+    total: 0,
+    verified: 0,
+    failed: [],
+    listUnavailable: false,
+  })
 
   const poll = useCallback(async () => {
     try {
@@ -234,6 +332,8 @@ export function PushApprovalPanel() {
       const stagedResults: StagedAccount[] = []
       const pendingResults: PendingAccount[] = []
       const historyResults: AccountHistory[] = []
+      const verifiedAccountIds = new Set<string>()
+      const failedAccounts: AccountRef[] = []
 
       for (const account of accts) {
         try {
@@ -249,16 +349,46 @@ export function PushApprovalPanel() {
           if (commits.length > 0) {
             historyResults.push({ accountId: account.id, label: accountLabel(account), commits })
           }
+          verifiedAccountIds.add(account.id)
         } catch {
-          /* skip unreachable account */
+          failedAccounts.push(account)
         }
       }
 
-      setStaged(stagedResults)
-      setPending(pendingResults)
-      setHistory(historyResults)
+      setStaged((previous) => mergeAccountResults(
+        accts,
+        verifiedAccountIds,
+        stagedResults,
+        previous,
+        (item) => item.account.id,
+      ))
+      setPending((previous) => mergeAccountResults(
+        accts,
+        verifiedAccountIds,
+        pendingResults,
+        previous,
+        (item) => item.account.id,
+      ))
+      setHistory((previous) => mergeAccountResults(
+        accts,
+        verifiedAccountIds,
+        historyResults,
+        previous,
+        (item) => item.accountId,
+      ))
+      setVerification({
+        total: accts.length,
+        verified: verifiedAccountIds.size,
+        failed: failedAccounts,
+        listUnavailable: false,
+      })
     } catch {
-      /* ignore list failures here; global API surfaces already show errors */
+      setVerification((current) => ({
+        ...current,
+        verified: 0,
+        failed: [],
+        listUnavailable: true,
+      }))
     } finally {
       setLoaded(true)
     }
@@ -270,34 +400,54 @@ export function PushApprovalPanel() {
     return () => clearInterval(id)
   }, [poll])
 
+  const retryVerification = useCallback(async () => {
+    setRetryingVerification(true)
+    try {
+      await poll()
+    } finally {
+      setRetryingVerification(false)
+    }
+  }, [poll])
+
   const handlePush = useCallback(async (accountId: string) => {
+    const expectedPendingHash = pending.find((item) => item.account.id === accountId)?.status.pendingHash
+    if (!expectedPendingHash) {
+      setError(t('tradingReview.pushFailed'))
+      return
+    }
     setPushing(accountId)
     setConfirmingPush(null)
     setError(null)
     setLastResult(null)
     try {
-      const data = await api.trading.walletPush(accountId)
+      const data = await api.trading.walletPush(accountId, expectedPendingHash)
       setLastResult({ accountId, data })
       await poll()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Push failed')
+      setError(err instanceof Error ? err.message : t('tradingReview.pushFailed'))
     } finally {
       setPushing(null)
     }
-  }, [poll])
+  }, [pending, poll, t])
 
   const handleReject = useCallback(async (accountId: string) => {
+    const expectedPendingHash = pending.find((item) => item.account.id === accountId)?.status.pendingHash
+      ?? staged.find((item) => item.account.id === accountId)?.status.pendingHash
+    if (!expectedPendingHash) {
+      setError(t('tradingReview.rejectFailed'))
+      return
+    }
     setRejecting(accountId)
     setError(null)
     try {
-      await api.trading.walletReject(accountId)
+      await api.trading.walletReject(accountId, undefined, expectedPendingHash)
       await poll()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reject failed')
+      setError(err instanceof Error ? err.message : t('tradingReview.rejectFailed'))
     } finally {
       setRejecting(null)
     }
-  }, [poll])
+  }, [pending, poll, staged, t])
 
   const historyAccounts = useMemo(
     () => history.map((h) => ({ id: h.accountId, label: h.label })),
@@ -349,123 +499,226 @@ export function PushApprovalPanel() {
   useEffect(() => {
     if (reviewItems.length === 0) {
       setSelectedId(null)
+      setMobileDetailOpen(false)
       return
     }
     if (!selectedId || !reviewItems.some((item) => item.id === selectedId)) {
       setSelectedId(reviewItems[0].id)
+      setMobileDetailOpen(false)
     }
   }, [reviewItems, selectedId])
+
+  useEffect(() => {
+    if (!mobileDetailOpen) return
+    if (typeof window.matchMedia === 'function' && !window.matchMedia('(max-width: 767px)').matches) return
+    mobileBackRef.current?.focus()
+  }, [mobileDetailOpen])
 
   const selected = reviewItems.find((item) => item.id === selectedId) ?? null
   const waitingCount = pending.length
   const stagedCount = staged.length
   const historyCount = mergedHistory.length
+  const verificationIncomplete = verification.listUnavailable || verification.failed.length > 0
   const statusLabel =
-    waitingCount > 0
-      ? `${waitingCount} commit${waitingCount === 1 ? '' : 's'} waiting for approval`
+    verificationIncomplete
+      ? verification.listUnavailable
+        ? t('tradingReview.queue.verificationUnknown')
+        : t('tradingReview.queue.verificationCount', {
+          verified: verification.verified,
+          total: verification.total,
+        })
+      : waitingCount > 0
+      ? t('tradingReview.queue.waitingApproval', { count: waitingCount })
       : stagedCount > 0
-        ? `${stagedCount} staged set${stagedCount === 1 ? '' : 's'} waiting for commit`
-        : 'Working tree clean'
+        ? t('tradingReview.queue.stagedWaiting', { count: stagedCount })
+        : t('tradingReview.queue.clean')
 
   if (!loaded) return <TradingReviewSkeleton />
 
-  if (accounts.length === 0) {
+  if (accounts.length === 0 && !verification.listUnavailable) {
     return (
       <div className="h-full rounded-lg border border-border bg-secondary/30">
         <EmptyState
-          title="No trading accounts"
-          description="Connect a broker account in Settings -> Trading before approving staged broker writes."
+          title={t('tradingReview.noAccounts')}
+          description={t('tradingReview.noAccountsDescription')}
         />
       </div>
     )
   }
 
   return (
-    <div className="grid h-full min-h-0 min-w-0 overflow-hidden rounded-lg border border-border bg-secondary/30 md:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]">
-      <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-secondary md:border-b-0 md:border-r">
-        <div className="shrink-0 border-b border-border/70 px-4 py-3">
-          <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
-            {waitingCount > 0 ? (
-              <AlertTriangle size={15} className="text-warning" aria-hidden />
-            ) : (
-              <CheckCircle2 size={15} className="text-success" aria-hidden />
-            )}
-            <span className="truncate">{statusLabel}</span>
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
+      {verificationIncomplete && (
+        <VerificationNotice
+          verification={verification}
+          retrying={retryingVerification}
+          onRetry={() => void retryVerification()}
+        />
+      )}
+      <div className="grid min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-secondary/30 md:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div
+          data-testid="trading-review-queue"
+          className={`${mobileDetailOpen ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col bg-secondary md:flex md:border-r`}
+        >
+          <div className="shrink-0 border-b border-border/70 px-4 py-3">
+            <div className="flex items-center gap-2 text-[12px] leading-[18px] font-medium text-foreground">
+              {verificationIncomplete || waitingCount > 0 ? (
+                <AlertTriangle size={15} className="text-warning" aria-hidden />
+              ) : (
+                <CheckCircle2 size={15} className="text-success" aria-hidden />
+              )}
+              <span className="truncate">{statusLabel}</span>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
+              <QueueStat label={t('tradingReview.queue.needs')} value={waitingCount} tone={waitingCount > 0 ? 'warn' : 'muted'} />
+              <QueueStat label={t('tradingReview.queue.staged')} value={stagedCount} tone={stagedCount > 0 ? 'warn' : 'muted'} />
+              <QueueStat label={t('tradingReview.queue.pushed')} value={historyCount} tone="muted" />
+            </div>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
-            <QueueStat label="Needs" value={waitingCount} tone={waitingCount > 0 ? 'warn' : 'muted'} />
-            <QueueStat label="Staged" value={stagedCount} tone={stagedCount > 0 ? 'warn' : 'muted'} />
-            <QueueStat label="Pushed" value={historyCount} tone="muted" />
-          </div>
-        </div>
 
-        {historyAccounts.length > 1 && (
-          <div className="shrink-0 border-b border-border/60 px-4 py-2">
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Account filter</div>
-            <div className="flex flex-wrap gap-1">
-              <button
-                type="button"
-                onClick={() => setHistoryFilter(null)}
-                className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                  effectiveFilter === null
-                    ? 'border-border bg-muted text-foreground'
-                    : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
-                }`}
-              >
-                All
-              </button>
-              {historyAccounts.map((account) => (
+          {historyAccounts.length > 1 && (
+            <div className="shrink-0 border-b border-border/60 px-4 py-2">
+              <div className="mb-1.5 text-[11px] font-medium text-muted-foreground/70">
+                {t('tradingReview.queue.accountFilter')}
+              </div>
+              <div className="flex flex-wrap gap-1">
                 <button
-                  key={account.id}
                   type="button"
-                  onClick={() => setHistoryFilter(account.id)}
-                  title={account.label}
-                  className={`max-w-[120px] truncate rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                    effectiveFilter === account.id
+                  onClick={() => setHistoryFilter(null)}
+                  className={`rounded-full border px-2 py-0.5 text-[10px] leading-[14px] transition-colors ${
+                    effectiveFilter === null
                       ? 'border-border bg-muted text-foreground'
                       : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
                   }`}
                 >
-                  {account.label}
+                  {t('tradingReview.queue.all')}
                 </button>
-              ))}
+                {historyAccounts.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => setHistoryFilter(account.id)}
+                    title={account.label}
+                    className={`max-w-[120px] truncate rounded-full border px-2 py-0.5 text-[10px] leading-[14px] transition-colors ${
+                      effectiveFilter === account.id
+                        ? 'border-border bg-muted text-foreground'
+                        : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                    }`}
+                  >
+                    {account.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {reviewItems.length > 0 ? (
-            <div className="space-y-1">
-              {reviewItems.map((item) => (
-                <QueueRow
-                  key={item.id}
-                  item={item}
-                  active={item.id === selectedId}
-                  onClick={() => setSelectedId(item.id)}
-                />
-              ))}
-            </div>
-          ) : (
-            <CleanQueue />
           )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {reviewItems.length > 0 ? (
+              <div className="space-y-1">
+                {reviewItems.map((item) => (
+                  <QueueRow
+                    key={item.id}
+                    item={item}
+                    active={item.id === selectedId}
+                    buttonRef={item.id === selectedId ? activeQueueRowRef : undefined}
+                    onClick={() => {
+                      setSelectedId(item.id)
+                      setMobileDetailOpen(true)
+                    }}
+                  />
+                ))}
+              </div>
+            ) : verificationIncomplete ? (
+              <UnverifiedQueue />
+            ) : (
+              <CleanQueue />
+            )}
+          </div>
+        </div>
+
+        <div
+          data-testid="trading-review-detail"
+          className={`${mobileDetailOpen ? 'block' : 'hidden'} min-h-0 min-w-0 overflow-x-hidden overflow-y-auto md:block`}
+        >
+          <div className="sticky top-0 z-10 border-b border-border bg-secondary/95 px-3 py-2 md:hidden">
+            <Button
+              ref={mobileBackRef}
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setMobileDetailOpen(false)
+                requestAnimationFrame(() => activeQueueRowRef.current?.focus())
+              }}
+              className="min-h-10 text-foreground"
+            >
+              <ChevronLeft size={15} aria-hidden />
+              {t('tradingReview.queue.backToQueue')}
+            </Button>
+          </div>
+          <ReviewDetail
+            item={selected}
+            verificationIncomplete={verificationIncomplete}
+            lastResult={lastResult}
+            error={error}
+            confirmingPush={confirmingPush}
+            pushing={pushing}
+            rejecting={rejecting}
+            onConfirmPush={setConfirmingPush}
+            onPush={handlePush}
+            onReject={handleReject}
+            onDismissError={() => setError(null)}
+            onDismissResult={() => setLastResult(null)}
+          />
         </div>
       </div>
+    </div>
+  )
+}
 
-      <div className="min-h-0 min-w-0 overflow-y-auto">
-        <ReviewDetail
-          item={selected}
-          lastResult={lastResult}
-          error={error}
-          confirmingPush={confirmingPush}
-          pushing={pushing}
-          rejecting={rejecting}
-          onConfirmPush={setConfirmingPush}
-          onPush={handlePush}
-          onReject={handleReject}
-          onDismissError={() => setError(null)}
-          onDismissResult={() => setLastResult(null)}
-        />
+function VerificationNotice({
+  verification,
+  retrying,
+  onRetry,
+}: {
+  verification: ReviewVerification
+  retrying: boolean
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  const failedAccounts = verification.failed.map(accountLabel).join(', ')
+  return (
+    <div className="flex shrink-0 flex-wrap items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-warning" role="status">
+      <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-semibold text-foreground">
+          {verification.listUnavailable
+            ? t('tradingReview.queue.verificationUnknown')
+            : t('tradingReview.queue.verificationCount', {
+              verified: verification.verified,
+              total: verification.total,
+            })}
+        </div>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+          {verification.listUnavailable
+            ? t('tradingReview.queue.listUnavailableDescription')
+            : t('tradingReview.queue.verificationDescription')}
+        </p>
+        {failedAccounts && (
+          <p className="mt-1 text-[11px] text-warning">
+            {t('tradingReview.queue.failedAccounts', { accounts: failedAccounts })}
+          </p>
+        )}
       </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={retrying}
+        onClick={onRetry}
+        className="min-h-8 shrink-0 disabled:cursor-wait"
+      >
+        <RefreshCw size={13} className={retrying ? 'animate-spin' : undefined} aria-hidden />
+        {retrying ? t('tradingReview.queue.retrying') : t('tradingReview.queue.retry')}
+      </Button>
     </div>
   )
 }
@@ -494,42 +747,54 @@ function QueueStat({ label, value, tone }: { label: string; value: number; tone:
   return (
     <div className={`rounded-md border px-2 py-1.5 ${tone === 'warn' ? 'border-warning/30 bg-warning/5' : 'border-border/60 bg-background/35'}`}>
       <div className={`text-sm font-semibold tabular-nums ${tone === 'warn' ? 'text-warning' : 'text-foreground'}`}>{value}</div>
-      <div className="text-[9px] uppercase tracking-wider text-muted-foreground/55">{label}</div>
+      <div className="text-[10px] text-muted-foreground/60">{label}</div>
     </div>
   )
 }
 
-function QueueRow({ item, active, onClick }: { item: ReviewItem; active: boolean; onClick: () => void }) {
-  const ops = itemOperations(item)
+function QueueRow({
+  item,
+  active,
+  buttonRef,
+  onClick,
+}: {
+  item: ReviewItem
+  active: boolean
+  buttonRef?: Ref<HTMLButtonElement>
+  onClick: () => void
+}) {
+  const { t } = useTranslation()
+  const ops = itemOperations(item, t)
   const timestamp = itemTimestamp(item)
   const icon =
     item.kind === 'pending' ? <GitPullRequest size={14} aria-hidden />
       : item.kind === 'staged' ? <Clock3 size={14} aria-hidden />
         : <History size={14} aria-hidden />
   const badge =
-    item.kind === 'pending' ? 'review'
-      : item.kind === 'staged' ? 'staged'
+    item.kind === 'pending' ? t('tradingReview.queue.review')
+      : item.kind === 'staged' ? t('tradingReview.queue.stagedBadge')
         : shortHash(item.commit.hash)
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
         active
-          ? 'border-primary/50 bg-primary-muted text-foreground'
+          ? 'border-border bg-muted text-foreground'
           : 'border-transparent text-muted-foreground hover:border-border/70 hover:bg-accent hover:text-foreground'
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className={active ? 'text-primary' : 'text-muted-foreground/70'}>{icon}</span>
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{itemTitle(item)}</span>
+        <span className="text-muted-foreground/70">{icon}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{itemTitle(item, t)}</span>
       </div>
-      <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground/65">
+      <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] leading-[14px] text-muted-foreground/65">
         <span className="truncate">{itemAccountLabel(item)}</span>
         <span className="text-muted-foreground/35">/</span>
-        <span>{ops.length} op{ops.length === 1 ? '' : 's'}</span>
-        <span className="ml-auto rounded border border-border/60 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground/60">{badge}</span>
+        <span>{t('tradingReview.queue.operationCount', { count: ops.length })}</span>
+        <span className="ml-auto rounded border border-border/60 px-1.5 py-0.5 font-mono text-[10px] leading-[14px] text-muted-foreground/60">{badge}</span>
       </div>
       {timestamp && (
         <div className="mt-1 text-[10px] text-muted-foreground/45">{formatRelativeTime(timestamp)}</div>
@@ -539,12 +804,26 @@ function QueueRow({ item, active, onClick }: { item: ReviewItem; active: boolean
 }
 
 function CleanQueue() {
+  const { t } = useTranslation()
   return (
     <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-4 text-center">
       <CheckCircle2 size={26} className="text-success/80" aria-hidden />
-      <div className="mt-3 text-[13px] font-medium text-foreground">Working tree clean</div>
+      <div className="mt-3 text-[13px] font-medium text-foreground">{t('tradingReview.queue.clean')}</div>
       <div className="mt-1 max-w-[190px] text-[12px] leading-relaxed text-muted-foreground/60">
-        No broker writes are waiting for approval.
+        {t('tradingReview.queue.cleanDescription')}
+      </div>
+    </div>
+  )
+}
+
+function UnverifiedQueue() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-4 text-center">
+      <AlertTriangle size={26} className="text-warning/80" aria-hidden />
+      <div className="mt-3 text-[13px] font-medium text-foreground">{t('tradingReview.queue.verificationUnknown')}</div>
+      <div className="mt-1 max-w-[210px] text-[12px] leading-relaxed text-muted-foreground/70">
+        {t('tradingReview.queue.verificationDescription')}
       </div>
     </div>
   )
@@ -552,6 +831,7 @@ function CleanQueue() {
 
 function ReviewDetail({
   item,
+  verificationIncomplete,
   lastResult,
   error,
   confirmingPush,
@@ -564,6 +844,7 @@ function ReviewDetail({
   onDismissResult,
 }: {
   item: ReviewItem | null
+  verificationIncomplete: boolean
   lastResult: { accountId: string; data: WalletPushResult } | null
   error: string | null
   confirmingPush: string | null
@@ -575,23 +856,30 @@ function ReviewDetail({
   onDismissError: () => void
   onDismissResult: () => void
 }) {
+  const { t } = useTranslation()
   if (!item) {
     return (
       <div className="flex min-h-full items-center justify-center p-6">
         <EmptyState
-          icon={<CheckCircle2 size={24} aria-hidden />}
-          title="Working tree clean"
-          description="No broker writes are waiting for approval. Recent pushed commits will appear here."
+          icon={verificationIncomplete
+            ? <AlertTriangle size={24} className="text-warning" aria-hidden />
+            : <CheckCircle2 size={24} aria-hidden />}
+          title={t(verificationIncomplete
+            ? 'tradingReview.queue.verificationUnknown'
+            : 'tradingReview.queue.clean')}
+          description={t(verificationIncomplete
+            ? 'tradingReview.queue.verificationDescription'
+            : 'tradingReview.queue.cleanDetailDescription')}
         />
       </div>
     )
   }
 
-  const ops = itemOperations(item)
+  const ops = itemOperations(item, t)
   const isPending = item.kind === 'pending'
   const isStaged = item.kind === 'staged'
   const accountId = item.kind === 'history' ? item.accountId : item.account.id
-  const title = itemTitle(item)
+  const title = itemTitle(item, t)
 
   return (
     <div className="min-h-full p-4 md:p-5">
@@ -600,10 +888,12 @@ function ReviewDetail({
           <ResultBanner result={lastResult.data} onDismiss={onDismissResult} />
         )}
         {error && (
-          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] leading-[18px] text-destructive">
             <XCircle size={15} className="mt-0.5 shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">{error}</span>
-            <button type="button" onClick={onDismissError} className="text-muted-foreground hover:text-foreground">Dismiss</button>
+            <Button variant="ghost" size="xs" onClick={onDismissError} className="text-muted-foreground">
+              {t('tradingReview.dismiss')}
+            </Button>
           </div>
         )}
 
@@ -615,54 +905,61 @@ function ReviewDetail({
                   <StatusPill item={item} />
                   <span className="text-[11px] text-muted-foreground">{itemAccountLabel(item)}</span>
                   {item.kind === 'history' && (
-                    <span className="font-mono text-[11px] text-muted-foreground/60">{shortHash(item.commit.hash)}</span>
+                    <span className="font-mono text-[11px] leading-[15px] text-muted-foreground/60">{shortHash(item.commit.hash)}</span>
                   )}
                 </div>
                 <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+                {item.kind === 'history' && title !== item.commit.message && (
+                  <p className="mt-1.5 max-w-3xl text-[12px] leading-relaxed text-muted-foreground">
+                    {item.commit.message}
+                  </p>
+                )}
                 <div className="mt-1 text-[12px] text-muted-foreground">
                   {item.kind === 'history'
-                    ? `Pushed ${formatRelativeTime(item.commit.timestamp)}`
-                    : `${ops.length} proposed broker operation${ops.length === 1 ? '' : 's'} on head ${shortHash(item.status.head)}`}
+                    ? t('tradingReview.pushedAgo', { time: formatRelativeTime(item.commit.timestamp) })
+                    : t('tradingReview.proposedOperations', {
+                      count: ops.length,
+                      head: shortHash(item.status.head),
+                    })}
                 </div>
               </div>
               {isPending && (
                 <div className="flex shrink-0 items-center gap-2">
                   {confirmingPush === accountId ? (
                     <>
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
                         onClick={() => onPush(accountId)}
                         disabled={pushing !== null}
-                        className="btn-primary-sm"
                       >
-                        {pushing === accountId ? 'Pushing...' : 'Confirm push'}
-                      </button>
-                      <button
-                        type="button"
+                        {pushing === accountId ? t('tradingReview.pushing') : t('tradingReview.confirmPush')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => onConfirmPush(null)}
-                        className="rounded-md px-2.5 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        className="text-muted-foreground"
                       >
-                        Cancel
-                      </button>
+                        {t('tradingReview.cancel')}
+                      </Button>
                     </>
                   ) : (
                     <>
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
                         onClick={() => onConfirmPush(accountId)}
                         disabled={pushing !== null || rejecting !== null}
-                        className="btn-primary-sm"
                       >
-                        Approve & Push
-                      </button>
-                      <button
-                        type="button"
+                        {t('tradingReview.approvePush')}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
                         onClick={() => onReject(accountId)}
                         disabled={pushing !== null || rejecting !== null}
-                        className="rounded-md border border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {rejecting === accountId ? 'Rejecting...' : 'Reject'}
-                      </button>
+                        {rejecting === accountId ? t('tradingReview.rejecting') : t('tradingReview.reject')}
+                      </Button>
                     </>
                   )}
                 </div>
@@ -672,9 +969,9 @@ function ReviewDetail({
 
           <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
             <section className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              <div className="flex items-center gap-2 text-[12px] leading-[18px] font-medium text-muted-foreground/70">
                 <GitCommitHorizontal size={14} aria-hidden />
-                Operation diff
+                {t('tradingReview.operationDiff')}
               </div>
               <div className="space-y-2">
                 {ops.map((op, index) => (
@@ -687,12 +984,12 @@ function ReviewDetail({
               <ReviewSummary item={item} operations={ops} />
               {isStaged && (
                 <div className="rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-warning/80">
-                  These operations are staged but do not have a commit message yet. The agent still needs to commit before this can be pushed.
+                  {t('tradingReview.stagedWarning')}
                 </div>
               )}
               {isPending && (
                 <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-[12px] leading-relaxed text-destructive/90">
-                  Approval pushes these operations to the broker account. Check account, side, quantity, and order type before confirming.
+                  {t('tradingReview.approvalWarning')}
                 </div>
               )}
             </section>
@@ -704,31 +1001,33 @@ function ReviewDetail({
 }
 
 function StatusPill({ item }: { item: ReviewItem }) {
+  const { t } = useTranslation()
   if (item.kind === 'pending') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] leading-[15px] font-medium text-warning">
         <AlertTriangle size={12} aria-hidden />
-        Needs approval
+        {t('tradingReview.status.needsApproval')}
       </span>
     )
   }
   if (item.kind === 'staged') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[11px] font-medium text-info">
+      <span className="inline-flex items-center gap-1 rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[11px] leading-[15px] font-medium text-info">
         <Clock3 size={12} aria-hidden />
-        Staged
+        {t('tradingReview.status.staged')}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+    <span className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[11px] leading-[15px] font-medium text-success">
       <CheckCircle2 size={12} aria-hidden />
-      Pushed
+      {t('tradingReview.status.pushed')}
     </span>
   )
 }
 
 function OperationRow({ op }: { op: OperationDisplay }) {
+  const { t } = useTranslation()
   return (
     <div className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)] overflow-hidden rounded-md border border-border bg-secondary/50">
       <div className={`flex items-center justify-center border-r font-mono text-sm font-semibold ${toneClass(op.tone)}`}>
@@ -736,9 +1035,9 @@ function OperationRow({ op }: { op: OperationDisplay }) {
       </div>
       <div className="min-w-0 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-0 break-all font-mono text-[13px] font-medium text-foreground">{op.title}</span>
+          <span className="min-w-0 break-all font-mono text-[13px] leading-[18px] font-medium text-foreground">{op.title}</span>
           {op.status && (
-            <span className={`text-[11px] ${statusClass(op.status)}`}>{op.status}</span>
+            <span className={`text-[11px] ${statusClass(op.status)}`}>{statusLabel(op.status, t)}</span>
           )}
         </div>
         {op.detail && (
@@ -750,6 +1049,7 @@ function OperationRow({ op }: { op: OperationDisplay }) {
 }
 
 function ReviewSummary({ item, operations }: { item: ReviewItem; operations: OperationDisplay[] }) {
+  const { t } = useTranslation()
   const symbols = Array.from(new Set(operations.map((op) => op.symbol).filter(Boolean)))
   const buyCount = operations.filter((op) => op.tone === 'buy').length
   const sellCount = operations.filter((op) => op.tone === 'sell' || op.tone === 'danger').length
@@ -757,15 +1057,20 @@ function ReviewSummary({ item, operations }: { item: ReviewItem; operations: Ope
 
   return (
     <div className="rounded-md border border-border bg-secondary/60 p-3">
-      <div className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">Review summary</div>
+      <div className="text-[12px] font-medium text-muted-foreground/70">
+        {t('tradingReview.summary.title')}
+      </div>
       <dl className="mt-3 space-y-2 text-[12px]">
-        <SummaryRow label="Account" value={itemAccountLabel(item)} />
-        <SummaryRow label="Operations" value={String(operations.length)} />
-        <SummaryRow label="Symbols" value={symbols.length > 0 ? symbols.slice(0, 4).join(', ') : 'none'} />
-        <SummaryRow label="Buys" value={String(buyCount)} />
-        <SummaryRow label="Sells / cancels" value={String(sellCount)} />
-        <SummaryRow label="Modify / sync" value={String(modifyCount)} />
-        {item.kind !== 'history' && <SummaryRow label="Head" value={shortHash(item.status.head)} />}
+        <SummaryRow label={t('tradingReview.summary.account')} value={itemAccountLabel(item)} />
+        <SummaryRow label={t('tradingReview.summary.operations')} value={String(operations.length)} />
+        <SummaryRow
+          label={t('tradingReview.summary.symbols')}
+          value={symbols.length > 0 ? symbols.slice(0, 4).join(', ') : t('tradingReview.summary.none')}
+        />
+        <SummaryRow label={t('tradingReview.summary.buys')} value={String(buyCount)} />
+        <SummaryRow label={t('tradingReview.summary.sellsCancels')} value={String(sellCount)} />
+        <SummaryRow label={t('tradingReview.summary.modifySync')} value={String(modifyCount)} />
+        {item.kind !== 'history' && <SummaryRow label={t('tradingReview.summary.head')} value={shortHash(item.status.head)} />}
       </dl>
     </div>
   )
@@ -781,21 +1086,27 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 function ResultBanner({ result, onDismiss }: { result: WalletPushResult; onDismiss: () => void }) {
+  const { t } = useTranslation()
   const hasRejected = result.rejected.length > 0
   return (
-    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] ${
+    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-[18px] ${
       hasRejected ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-success/25 bg-success/5 text-success'
     }`}>
       {hasRejected ? <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden /> : <CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />}
       <div className="min-w-0 flex-1">
         <div className="font-medium">
-          {result.submitted.length} submitted, {result.rejected.length} rejected
+          {t('tradingReview.result', {
+            submitted: result.submitted.length,
+            rejected: result.rejected.length,
+          })}
         </div>
         {result.rejected.map((entry, index) => (
           <div key={`${entry.action}:${index}`} className="mt-0.5 text-destructive/80">{entry.error || entry.action}</div>
         ))}
       </div>
-      <button type="button" onClick={onDismiss} className="text-muted-foreground hover:text-foreground">Dismiss</button>
+      <Button variant="ghost" size="xs" onClick={onDismiss} className="text-muted-foreground">
+        {t('tradingReview.dismiss')}
+      </Button>
     </div>
   )
 }

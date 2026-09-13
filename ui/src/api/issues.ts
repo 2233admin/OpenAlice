@@ -1,8 +1,22 @@
 import { fetchJson, headers } from './client'
 import type { Entity } from './entities'
-import type { HeadlessTaskRecord } from './headless'
+import type { HeadlessTaskRecord, HeadlessTurnProgress } from './headless'
 import type { InboxEntry } from './inbox'
 import type { ScheduleWhen } from './schedule'
+import type { ModelReasoningEffort } from './types'
+
+export const ISSUE_TIMEOUTS = ['15m', '30m', '45m', '60m'] as const
+export type IssueTimeout = (typeof ISSUE_TIMEOUTS)[number]
+
+/** Must stay in sync with `DEFAULT_ISSUE_COMMENT_PROMPT` in Alice. */
+export const DEFAULT_ISSUE_COMMENT_PROMPT = [
+  'A new comment was left on Issue {workspaceId}/{id} ({title}) by {author}.',
+  '',
+  '{comment}',
+  '',
+  'Reply directly to this comment. Your final assistant response will be recorded automatically in the Issue Activity timeline.',
+  'Do not call `alice issue comment` for this reply; that would create a second notification loop.',
+].join('\n')
 
 /**
  * Issue board — the canonical client shape for GET /api/issues.
@@ -35,6 +49,11 @@ export type IssueAutomationHealthState =
 export interface IssueAutomationHealth {
   state: IssueAutomationHealthState
   message: string
+  blocker?: {
+    kind: 'agent_runtime_missing'
+    agent: string
+    displayName: string
+  }
   latestTaskId?: string
 }
 export type IssueProvenanceAction = 'created' | 'updated' | 'commented' | 'sent' | 'decided' | 'reconstructed'
@@ -68,9 +87,9 @@ export type IssueActivityRecord =
   | { kind: 'comment'; id: string; at: number; comment: IssueComment }
 
 export type IssueCommentDelivery =
-  | { state: 'pending'; targetResumeId: string; taskId: string }
+  | { state: 'pending'; targetResumeId: string; taskId: string; progress?: HeadlessTurnProgress }
   | { state: 'replied'; targetResumeId: string; taskId: string; replyCommentId: string }
-  | { state: 'failed'; targetResumeId: string; taskId?: string; error: string }
+  | { state: 'failed'; targetResumeId?: string; taskId?: string; error: string }
 
 export interface IssueComment {
   id: string
@@ -80,6 +99,7 @@ export interface IssueComment {
   markdown: string
   replyTo?: string
   delivery?: IssueCommentDelivery
+  via?: 'telegram'
 }
 
 export type IssueRunFailureKind =
@@ -109,10 +129,20 @@ export interface IssueListItem {
   title: string
   status: IssueStatus
   priority: IssuePriority
-  /** @workspace | @new | @human | @unassigned | exact @resumeId Session signature. */
+  /** @new-each-run | @new-then-resume | @human | @unassigned | exact @resumeId. */
   assignee: string
   /** Adapter id for the scheduled fire override, if set. */
   agent?: string
+  /** Secret-free OpenAlice vault slug for a fresh scheduled Session. */
+  credential?: string
+  /** Explicitly use the Agent runtime's own login. Omission inherits Workspace. */
+  credentialSource?: 'native'
+  /** Native model id for the scheduled fire override, if set. */
+  model?: string
+  /** Native reasoning effort for the scheduled fire override, if set. */
+  effort?: ModelReasoningEffort
+  /** Optional scheduled-run watchdog; omit for no limit. */
+  timeout?: IssueTimeout
   /** Present iff the issue is scheduled (shares the core Schedule union). */
   when?: ScheduleWhen
   /** Scanner last-fired marker (epoch ms) — scheduled issues only. */
@@ -121,6 +151,9 @@ export interface IssueListItem {
   nextDueAtMs?: number | null
   /** Live scheduler/worker health; present iff the Issue has a schedule. */
   automationHealth?: IssueAutomationHealth
+  /** Adapter id when this row is that connector's phone-desk Issue. */
+  connectorDesk?: string
+  telegramConnector?: true
   /**
    * True iff this issue's NAME (title, case-insensitive) is also claimed by an
    * issue in a DIFFERENT workspace. A `[[name]]` is a global team object, so a
@@ -149,6 +182,29 @@ export interface IssueSnapshot {
    * keys off each row's `nameCollision` flag, not this list. Detection only.
    */
   duplicateNames?: string[]
+}
+
+export function isConnectorDeskIssue(
+  issue: Pick<IssueListItem, 'connectorDesk' | 'telegramConnector'>,
+): boolean {
+  return typeof issue.connectorDesk === 'string' && issue.connectorDesk.length > 0
+    || issue.telegramConnector === true
+}
+
+export function isTelegramConnectorIssue(
+  issue: Pick<IssueListItem, 'connectorDesk' | 'telegramConnector'>,
+): boolean {
+  return issue.connectorDesk === 'telegram' || issue.telegramConnector === true
+}
+
+export function omitTelegramConnectorIssues(snapshot: IssueSnapshot): IssueSnapshot {
+  return {
+    ...snapshot,
+    workspaces: snapshot.workspaces.map((workspace) => ({
+      ...workspace,
+      issues: workspace.issues.filter((issue) => !isConnectorDeskIssue(issue)),
+    })),
+  }
 }
 
 // ==================== Wikilink resolver ====================
@@ -197,23 +253,56 @@ export interface IssueDetailIssue {
   what: string
   status: IssueStatus
   priority: IssuePriority
-  /** @workspace | @new | @human | @unassigned | exact @resumeId Session signature. */
+  /** @new-each-run | @new-then-resume | @human | @unassigned | exact @resumeId. */
   assignee: string
   /** Present iff the issue self-schedules. */
   when?: ScheduleWhen
   /** Adapter id for the scheduled fire (frontmatter `agent`), if set. */
   agent?: string
+  /** Vault slug selected for Session creation (frontmatter `credential`). */
+  credential?: string
+  /** Explicit native Agent login (frontmatter `credentialSource`). */
+  credentialSource?: 'native'
+  /** Native model id for the scheduled fire (frontmatter `model`), if set. */
+  model?: string
+  /** Native reasoning effort for the scheduled fire (frontmatter `effort`), if set. */
+  effort?: ModelReasoningEffort
+  /** Optional scheduled-run watchdog (frontmatter `timeout`), if set. */
+  timeout?: IssueTimeout
+  /** Optional comment-reply Input Prompt template. Omission keeps the default wrapper. */
+  commentPrompt?: string
   /** Scanner last-fired marker (epoch ms) — scheduled issues only. */
   lastFiredAtMs?: number | null
   /** Computed next fire (epoch ms) — scheduled issues only. */
   nextDueAtMs?: number | null
   /** Live scheduler/worker health; present iff the Issue has a schedule. */
   automationHealth?: IssueAutomationHealth
+  connectorDesk?: string
+  telegramConnector?: true
+}
+
+export interface IssueAssigneeSession {
+  resumeId: string
+  state: 'ready' | 'missing' | 'retired' | 'deleted' | 'unbound' | 'workspace_missing'
+  workspace?: { id: string; tag: string }
+  agent?: string
+  displayName?: string
+  createdAt?: number
+  updatedAt?: number
+  active: boolean
+  runtime?: {
+    credentialSource: 'native' | 'vault' | 'workspace'
+    credentialSlug?: string
+    model?: string
+    reasoningEffort?: ModelReasoningEffort
+  }
 }
 
 /** GET /api/issues/:wsId/:id — one issue + Activity, Runs, and reports. */
 export interface IssueDetail {
   issue: IssueDetailIssue
+  /** Authoritative global lookup for an exact @resume assignee. */
+  assigneeSession?: IssueAssigneeSession
   /** Structured markdown comments from `<id>.comments.json`. */
   comments?: IssueComment[]
   /** This issue's headless runs (wsId + issueId match), newest first. */
@@ -230,6 +319,21 @@ export interface IssueDetail {
   provenance?: IssueProvenanceRecord[]
   /** Changes + comments, oldest first. Optional for older/demo servers. */
   activity?: IssueActivityRecord[]
+}
+
+export interface IssuePatch {
+  status?: IssueStatus
+  priority?: IssuePriority
+  assignee?: string
+  agent?: string | null
+  credential?: string | null
+  credentialSource?: 'native' | null
+  model?: string | null
+  effort?: ModelReasoningEffort | null
+  timeout?: IssueTimeout | null
+  what?: string
+  commentPrompt?: string | null
+  catchUp?: boolean
 }
 
 export const issuesApi = {
@@ -258,15 +362,17 @@ export const issuesApi = {
 
   /**
    * Human write path: patch one issue's editable fields (any subset of
-   * status / priority / assignee / agent / what). `agent: null` clears the scheduled
-   * runtime override so the workspace default applies. Returns the SAME detail
-   * shape as `getDetail` so the caller can apply it directly (refetch-free).
+   * status / priority / assignee / agent / credential / model / effort / timeout / what / catchUp).
+   * Null runtime fields clear their one-run overrides so Workspace/native
+   * defaults apply. `timeout: null` removes the optional run watchdog.
+   * Returns the SAME detail shape as `getDetail` so the caller
+   * can apply it directly (refetch-free).
    * Working-tree write on the server, no commit.
    */
   async update(
     wsId: string,
     id: string,
-    patch: { status?: IssueStatus; priority?: IssuePriority; assignee?: string; agent?: string | null; what?: string },
+    patch: IssuePatch,
   ): Promise<IssueDetail> {
     return fetchJson<IssueDetail>(
       `/api/issues/${encodeURIComponent(wsId)}/${encodeURIComponent(id)}`,
@@ -290,6 +396,15 @@ export const issuesApi = {
   async retry(wsId: string, id: string): Promise<IssueDetail> {
     return fetchJson<IssueDetail>(
       `/api/issues/${encodeURIComponent(wsId)}/${encodeURIComponent(id)}/retry`,
+      { method: 'POST', headers },
+    )
+  },
+
+  /** Dispatch a scheduled Issue now without requiring a failed last run.
+   * The backend preserves the cadence marker. */
+  async runNow(wsId: string, id: string): Promise<IssueDetail> {
+    return fetchJson<IssueDetail>(
+      `/api/issues/${encodeURIComponent(wsId)}/${encodeURIComponent(id)}/run`,
       { method: 'POST', headers },
     )
   },

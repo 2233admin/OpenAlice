@@ -1,5 +1,13 @@
-import type { IssueComment, IssueDetail, IssuePriority, IssueRunRecord, IssueSnapshot, IssueStatus } from '../../api/issues'
+import type {
+  IssueComment,
+  IssueDetail,
+  IssuePatch,
+  IssueRunRecord,
+  IssueSnapshot,
+} from '../../api/issues'
 import { demoInboxEntries } from './inbox'
+import { demoTurnProgress } from './turn-progress'
+import { demoLocalDayAnchor } from './time'
 
 // GET /api/issues aggregates every workspace's declared issues by SCANNING
 // each workspace's `.alice/issues/<id>.md` dir (one markdown file per issue) —
@@ -24,7 +32,7 @@ import { demoInboxEntries } from './inbox'
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
-const now = Date.now()
+const now = demoLocalDayAnchor()
 
 export const demoIssuesSnapshot: IssueSnapshot = {
   workspaces: [
@@ -39,7 +47,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Morning movers scan',
           status: 'in_progress',
           priority: 'high',
-          assignee: '@workspace',
+          assignee: '@new-each-run',
           agent: 'codex',
           when: { kind: 'cron', cron: '30 8 * * 1-5', timezone: 'America/New_York' },
           lastFiredAtMs: now - HOUR,
@@ -86,7 +94,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Liquidity risk review',
           status: 'todo',
           priority: 'high',
-          assignee: '@workspace',
+          assignee: '@new-each-run',
           nameCollision: true,
         },
       ],
@@ -102,7 +110,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Weekly macro digest',
           status: 'in_progress',
           priority: 'medium',
-          assignee: '@workspace',
+          assignee: '@new-each-run',
           agent: 'codex',
           when: { kind: 'cron', cron: '0 16 * * 5', timezone: 'local' },
           lastFiredAtMs: now - 2 * DAY,
@@ -119,7 +127,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           when: { kind: 'at', at: new Date(now + 3 * DAY).toISOString() },
           lastFiredAtMs: null,
           nextDueAtMs: now + 3 * DAY,
-          automationHealth: { state: 'blocked', message: 'Assigned Session does not exist. Choose an active Session or @workspace.' },
+          automationHealth: { state: 'blocked', message: 'Assigned Session does not exist. Choose an active Session or @new-each-run.' },
         },
         // Completed work item.
         {
@@ -176,6 +184,8 @@ interface IssueDetailExtras {
   what?: string
   /** Scheduling frontmatter `agent` (adapter id), if set. */
   agent?: string
+  /** Comment-reply Input Prompt template, if set. */
+  commentPrompt?: string
   /** This issue's headless runs, newest-first (Activity feed). */
   runs: IssueRunRecord[]
 }
@@ -439,6 +449,25 @@ function findBoardIssue(wsId: string, id: string) {
   return ws?.issues.find((i) => i.id === id) ?? null
 }
 
+const demoAssigneeSessions: Record<string, NonNullable<IssueDetail['assigneeSession']>> = {
+  'resume-demo-thesis-owner': {
+    resumeId: 'resume-demo-thesis-owner',
+    state: 'ready',
+    workspace: { id: 'demo-ws-auto-quant', tag: 'auto-quant' },
+    agent: 'codex',
+    displayName: 'Thesis monitor',
+    createdAt: now - 14 * DAY,
+    updatedAt: now - HOUR / 2,
+    active: false,
+    runtime: { credentialSource: 'native' },
+  },
+  'resume-demo-cpi-owner': {
+    resumeId: 'resume-demo-cpi-owner',
+    state: 'missing',
+    active: false,
+  },
+}
+
 /** Build the IssueDetail the GET /api/issues/:wsId/:id mock returns, or null if
  *  the (wsId, id) pair doesn't exist on the board (→ 404). Display fields come
  *  from the board snapshot; body / what / agent / runs come from the extras map
@@ -454,12 +483,23 @@ export function demoIssueDetail(wsId: string, id: string): IssueDetail | null {
     : explicitWhat || legacyBody || boardIssue.title
   const runs = extras?.runs ?? []
   const comments = demoIssueComments[`${wsId}/${id}`] ?? []
+  const assigneeResumeId = boardIssue.assignee.startsWith('@resume-')
+    ? boardIssue.assignee.slice(1)
+    : null
   return {
     issue: {
       ...boardIssue,
       what,
       ...(extras?.agent ? { agent: extras.agent } : {}),
+      ...(extras?.commentPrompt ? { commentPrompt: extras.commentPrompt } : {}),
     },
+    ...(assigneeResumeId
+      ? { assigneeSession: demoAssigneeSessions[assigneeResumeId] ?? {
+          resumeId: assigneeResumeId,
+          state: 'missing' as const,
+          active: false,
+        } }
+      : {}),
     comments,
     runs,
     activity: comments
@@ -491,13 +531,22 @@ const demoIssueComments: Record<string, IssueComment[]> = {}
 export function demoIssueUpdate(
   wsId: string,
   id: string,
-  patch: { status?: IssueStatus; priority?: IssuePriority; assignee?: string; agent?: string | null; what?: string },
+  patch: IssuePatch,
 ): IssueDetail | null {
   const boardIssue = findBoardIssue(wsId, id)
   if (!boardIssue) return null
   if (patch.status !== undefined) boardIssue.status = patch.status
   if (patch.priority !== undefined) boardIssue.priority = patch.priority
-  if (patch.assignee !== undefined) boardIssue.assignee = patch.assignee
+  if (patch.assignee !== undefined) {
+    boardIssue.assignee = patch.assignee
+    if (patch.assignee.startsWith('@resume-')) {
+      delete boardIssue.agent
+      delete boardIssue.credential
+      delete boardIssue.model
+      delete boardIssue.effort
+      // timeout is a run budget, not Session birth — keep it.
+    }
+  }
   if (patch.what !== undefined) {
     const key = `${wsId}/${id}`
     const existing = demoIssueExtras[key]
@@ -506,6 +555,16 @@ export function demoIssueUpdate(
       existing.body = ''
     } else {
       demoIssueExtras[key] = { body: '', what: patch.what, runs: [] }
+    }
+  }
+  if (patch.commentPrompt !== undefined) {
+    const key = `${wsId}/${id}`
+    const existing = demoIssueExtras[key]
+    if (existing) {
+      if (patch.commentPrompt === null) delete existing.commentPrompt
+      else existing.commentPrompt = patch.commentPrompt
+    } else if (patch.commentPrompt !== null) {
+      demoIssueExtras[key] = { body: '', commentPrompt: patch.commentPrompt, runs: [] }
     }
   }
   if (patch.agent !== undefined) {
@@ -519,6 +578,32 @@ export function demoIssueUpdate(
     } else if (patch.agent !== null) {
       demoIssueExtras[key] = { body: `${boardIssue.title}\n\n(No description.)`, agent: patch.agent, runs: [] }
     }
+  }
+  if (patch.model !== undefined) {
+    if (patch.model === null) delete boardIssue.model
+    else boardIssue.model = patch.model
+  }
+  if (patch.credential !== undefined) {
+    if (patch.credential === null) delete boardIssue.credential
+    else {
+      boardIssue.credential = patch.credential
+      delete boardIssue.credentialSource
+    }
+  }
+  if (patch.credentialSource !== undefined) {
+    if (patch.credentialSource === null) delete boardIssue.credentialSource
+    else {
+      boardIssue.credentialSource = patch.credentialSource
+      delete boardIssue.credential
+    }
+  }
+  if (patch.effort !== undefined) {
+    if (patch.effort === null) delete boardIssue.effort
+    else boardIssue.effort = patch.effort
+  }
+  if (patch.timeout !== undefined) {
+    if (patch.timeout === null) delete boardIssue.timeout
+    else boardIssue.timeout = patch.timeout
   }
   return demoIssueDetail(wsId, id)
 }
@@ -535,37 +620,70 @@ export function demoIssueAddComment(
   const key = `${wsId}/${id}`
   const comments = demoIssueComments[key] ?? []
   const commentId = `demo-comment-${comments.length + 1}`
-  const ownerResumeId = boardIssue.assignee.startsWith('@resume-') ? boardIssue.assignee.slice(1) : null
+  const ownerResumeId = boardIssue.assignee.startsWith('@resume-')
+    ? boardIssue.assignee.slice(1)
+    : `demo-reconstructed-${id}`
   const taskId = `demo-comment-run-${comments.length + 1}`
   comments.push({
     id: commentId,
     author,
     at: new Date().toISOString(),
     markdown: text,
-    ...(ownerResumeId ? {
-      delivery: { state: 'pending' as const, targetResumeId: ownerResumeId, taskId },
-    } : {}),
+    delivery: {
+      state: 'pending' as const,
+      targetResumeId: ownerResumeId,
+      taskId,
+      progress: demoTurnProgress(),
+    },
   })
   demoIssueComments[key] = comments
-  if (ownerResumeId) {
-    window.setTimeout(() => {
-      const source = comments.find((comment) => comment.id === commentId)
-      if (!source || source.delivery?.state !== 'pending') return
-      const replyCommentId = `demo-reply-${commentId}`
-      source.delivery = {
-        state: 'replied',
-        targetResumeId: ownerResumeId,
-        taskId,
-        replyCommentId,
-      }
-      comments.push({
-        id: replyCommentId,
-        author: `@${ownerResumeId}`,
-        at: new Date().toISOString(),
-        markdown: 'I saw the comment and will carry this context into the next pass.',
-        replyTo: commentId,
-      })
-    }, 900)
+  window.setTimeout(() => {
+    const source = comments.find((comment) => comment.id === commentId)
+    if (!source || source.delivery?.state !== 'pending') return
+    const replyCommentId = `demo-reply-${commentId}`
+    source.delivery = {
+      state: 'replied',
+      targetResumeId: ownerResumeId,
+      taskId,
+      replyCommentId,
+    }
+    comments.push({
+      id: replyCommentId,
+      author: `@${ownerResumeId}`,
+      at: new Date().toISOString(),
+      markdown: 'I saw the comment and will carry this context into the next pass.',
+      replyTo: commentId,
+    })
+  }, 900)
+  return demoIssueDetail(wsId, id)
+}
+
+/** POST-run backing: operator-started dispatch without requiring a failed last run. */
+export function demoIssueRunNow(wsId: string, id: string): IssueDetail | null {
+  const boardIssue = findBoardIssue(wsId, id)
+  const extras = demoIssueExtras[`${wsId}/${id}`]
+  if (!boardIssue?.when || boardIssue.status === 'done' || boardIssue.status === 'canceled') {
+    return null
+  }
+  const latest = extras?.runs[0]
+  if (latest?.status === 'running') return null
+  const run: IssueRunRecord = {
+    taskId: `demo-run-${Date.now()}`,
+    resumeId: `demo-resume-run-${Date.now()}`,
+    resumable: false,
+    wsId,
+    issueId: id,
+    agent: boardIssue.agent ?? extras?.agent ?? latest?.agent ?? 'codex',
+    prompt: extras?.runs[0]?.prompt ?? boardIssue.title,
+    status: 'running',
+    startedAt: Date.now(),
+  }
+  if (!extras) return null
+  extras.runs.unshift(run)
+  boardIssue.automationHealth = {
+    state: 'running',
+    message: 'A scheduled run is in progress.',
+    latestTaskId: run.taskId,
   }
   return demoIssueDetail(wsId, id)
 }

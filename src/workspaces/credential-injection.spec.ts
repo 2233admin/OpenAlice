@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
-  credentialToWorkspaceAiCred,
+  credentialToWorkspaceAiCred as projectCredentialToWorkspace,
   injectWorkspaceCredentials,
-  compatibleCredentials,
+  compatibleCredentials as listCompatibleCredentials,
   matchCredentialByApiKey,
   resolveInjectionModel,
 } from './credential-injection.js'
-import { AdapterRegistry, type CliAdapter, type WorkspaceAiCred } from './cli-adapter.js'
+import { AdapterRegistry, emptyAgentSessionRuntime, type CliAdapter, type WorkspaceAiCred } from './cli-adapter.js'
+import { createBuiltinAdapterRegistry } from './adapters/index.js'
 import type { Credential } from '@/core/config.js'
 import type { Logger } from './logger.js'
 
@@ -26,8 +27,77 @@ const longcatKey: Credential = {
   vendor: 'longcat', authType: 'api-key', apiKey: 'lc-key',
   wires: { 'openai-chat': 'https://api.longcat.chat/openai' },
 }
+const openrouterKey: Credential = {
+  vendor: 'openrouter', authType: 'api-key', apiKey: 'sk-or',
+  wires: {
+    'openai-chat': 'https://openrouter.ai/api/v1',
+    'openai-responses': 'https://openrouter.ai/api/v1',
+    anthropic: 'https://openrouter.ai/api',
+  },
+}
+
+const builtinAdapters = createBuiltinAdapterRegistry()
+
+function builtinAdapter(agentId: string): CliAdapter {
+  const adapter = builtinAdapters.get(agentId)
+  if (!adapter) throw new Error(`missing test adapter: ${agentId}`)
+  return adapter
+}
+
+function credentialToWorkspaceAiCred(
+  credential: Parameters<typeof projectCredentialToWorkspace>[0],
+  agentId: string,
+  overrides?: Parameters<typeof projectCredentialToWorkspace>[2],
+): ReturnType<typeof projectCredentialToWorkspace> {
+  return projectCredentialToWorkspace(credential, builtinAdapter(agentId), overrides)
+}
+
+function compatibleCredentials(
+  credentials: Parameters<typeof listCompatibleCredentials>[0],
+  agentId: string,
+): ReturnType<typeof listCompatibleCredentials> {
+  return listCompatibleCredentials(credentials, builtinAdapter(agentId))
+}
 
 describe('credentialToWorkspaceAiCred', () => {
+  it('supports a newly registered adapter entirely from its capability declaration', () => {
+    const futureAdapter: CliAdapter = {
+      id: 'future',
+      displayName: 'Future Runtime',
+      sessionRuntime: emptyAgentSessionRuntime,
+      capabilities: {
+        parallelPerCwd: true,
+        resumeLast: false,
+        resumeById: false,
+        transcriptDiscovery: 'none',
+        aiProvider: {
+          credentialSource: 'workspace-required',
+          wirePreference: ['google-generative-ai'],
+          modelRegistration: {
+            contextWindow: true,
+            reasoning: true,
+            effortVariants: true,
+          },
+        },
+      },
+      composeCommand: (base) => base,
+    }
+
+    expect(projectCredentialToWorkspace(googleKey, futureAdapter, {
+      model: 'gemini-3.1-flash-lite',
+    })).toMatchObject({
+      apiKey: 'AQ.google',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      wireShape: 'google-generative-ai',
+      contextWindow: 1_048_576,
+      reasoning: true,
+    })
+    expect(projectCredentialToWorkspace(googleKey, futureAdapter, {
+      model: 'gemini-3.1-flash-lite',
+    })).not.toHaveProperty('reasoningEffort')
+    expect(projectCredentialToWorkspace(openaiKey, futureAdapter)).toBeNull()
+  })
+
   it('picks the agent\'s wire (claude → anthropic) + apiKey; model from overrides', () => {
     const cred = credentialToWorkspaceAiCred(minimaxIntl, 'claude', { model: 'MiniMax-M3' })!
     expect(cred.apiKey).toBe('mm-key')
@@ -161,7 +231,6 @@ describe('credentialToWorkspaceAiCred', () => {
     })).toMatchObject({
       contextWindow: 1_000_000,
       reasoning: true,
-      reasoningEffort: 'minimal',
     })
 
     expect(credentialToWorkspaceAiCred(minimaxIntl, 'opencode', {
@@ -173,21 +242,54 @@ describe('credentialToWorkspaceAiCred', () => {
     })
   })
 
-  it('projects a known model default effort into every compatible runtime', () => {
+  it('keeps registered provider defaults descriptive until effort is explicit', () => {
     for (const agent of ['claude', 'opencode', 'pi']) {
       expect(credentialToWorkspaceAiCred(anthropicKey, agent, {
         model: 'claude-sonnet-4-6',
-      })).toMatchObject({ reasoningEffort: 'high' })
+      })).not.toHaveProperty('reasoningEffort')
     }
     expect(credentialToWorkspaceAiCred(openaiKey, 'codex', {
       model: 'gpt-5.6',
-    })).toMatchObject({ reasoningEffort: 'medium' })
+    })).not.toHaveProperty('reasoningEffort')
+    expect(credentialToWorkspaceAiCred(openaiKey, 'codex', {
+      model: 'gpt-5.6',
+      reasoningEffort: 'high',
+    })).toMatchObject({ reasoningEffort: 'high' })
   })
 
   it('does not fabricate an effort tier for a provider with only a thinking switch', () => {
     expect(credentialToWorkspaceAiCred(longcatKey, 'pi', {
       model: 'LongCat-2.0',
     })).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('routes an OpenRouter key by each runtime\'s preferred compatible wire', () => {
+    expect(credentialToWorkspaceAiCred(openrouterKey, 'claude', {
+      model: 'anthropic/claude-sonnet-5',
+    })).toMatchObject({
+      baseUrl: 'https://openrouter.ai/api',
+      wireShape: 'anthropic',
+      authMode: 'bearer',
+      model: 'anthropic/claude-sonnet-5',
+    })
+    expect(credentialToWorkspaceAiCred(openrouterKey, 'codex', {
+      model: 'openai/gpt-5.6-sol',
+    })).toMatchObject({
+      baseUrl: 'https://openrouter.ai/api/v1',
+      wireShape: 'openai-responses',
+    })
+    expect(credentialToWorkspaceAiCred(openrouterKey, 'pi', {
+      model: 'anthropic/claude-sonnet-5',
+    })).toMatchObject({
+      baseUrl: 'https://openrouter.ai/api/v1',
+      wireShape: 'openai-chat',
+    })
+    expect(credentialToWorkspaceAiCred(openrouterKey, 'grok', {
+      model: 'openai/gpt-5.6-sol',
+    })).toMatchObject({
+      baseUrl: 'https://openrouter.ai/api/v1',
+      wireShape: 'openai-chat',
+    })
   })
 
   it('injects Google through the native wire for opencode and Pi only', () => {
@@ -207,10 +309,18 @@ describe('credentialToWorkspaceAiCred', () => {
 interface WriteCall { id: string; dir: string; cred: WorkspaceAiCred }
 
 function stubAdapter(id: string, calls: WriteCall[], writeable = true): CliAdapter {
+  const aiProvider = builtinAdapters.get(id)?.capabilities.aiProvider
   const adapter: CliAdapter = {
     id,
     displayName: id,
-    capabilities: { parallelPerCwd: true, resumeLast: false, resumeById: false, transcriptDiscovery: 'none' },
+    sessionRuntime: emptyAgentSessionRuntime,
+    capabilities: {
+      parallelPerCwd: true,
+      resumeLast: false,
+      resumeById: false,
+      transcriptDiscovery: 'none',
+      ...(aiProvider ? { aiProvider } : {}),
+    },
     composeCommand: (base) => base,
   }
   if (writeable) {
@@ -239,7 +349,7 @@ describe('injectWorkspaceCredentials', () => {
     'anthropic-1': anthropicKey,
   }
 
-  it('writes AI config for each declared+enabled agent, mapping the credential', async () => {
+  it('writes AI config for each declared and registered agent, mapping the credential', async () => {
     const calls: WriteCall[] = []
     const reg = new AdapterRegistry()
     reg.register(stubAdapter('claude', calls))
@@ -248,7 +358,6 @@ describe('injectWorkspaceCredentials', () => {
 
     await injectWorkspaceCredentials({
       dir: '/ws',
-      agents: ['claude', 'codex'],
       agentCredentials: {
         claude: { credentialSlug: 'anthropic-1', model: 'claude-opus-4-8' },
         codex: { credentialSlug: 'openai-1', model: 'gpt-5.5' },
@@ -273,7 +382,6 @@ describe('injectWorkspaceCredentials', () => {
 
     await injectWorkspaceCredentials({
       dir: '/ws',
-      agents: ['opencode'],
       agentCredentials: { opencode: { credentialSlug: 'openai-1' } },
       adapterRegistry: reg,
       credentials: {
@@ -294,7 +402,6 @@ describe('injectWorkspaceCredentials', () => {
 
     await injectWorkspaceCredentials({
       dir: '/ws',
-      agents: ['pi'],
       agentCredentials: {
         pi: {
           credentialSlug: 'custom-1',
@@ -311,7 +418,7 @@ describe('injectWorkspaceCredentials', () => {
     expect(calls[0]?.cred.reasoning).toBeUndefined()
   })
 
-  it('skips (loud warn) an agent declared but not enabled on the workspace', async () => {
+  it('skips (loud warn) an agent with no registered adapter', async () => {
     const calls: WriteCall[] = []
     const reg = new AdapterRegistry()
     reg.register(stubAdapter('claude', calls))
@@ -319,7 +426,6 @@ describe('injectWorkspaceCredentials', () => {
 
     await injectWorkspaceCredentials({
       dir: '/ws',
-      agents: ['claude'], // codex NOT enabled
       agentCredentials: { codex: { credentialSlug: 'openai-1', model: 'gpt-5.5' } },
       adapterRegistry: reg,
       credentials,
@@ -327,7 +433,7 @@ describe('injectWorkspaceCredentials', () => {
     })
 
     expect(calls).toHaveLength(0)
-    expect(warns).toContain('workspace.cred_inject_skip_disabled')
+    expect(warns).toContain('workspace.cred_inject_skip_no_adapter')
   })
 
   it('skips (loud warn) when the credential has no wire the agent speaks', async () => {
@@ -338,7 +444,6 @@ describe('injectWorkspaceCredentials', () => {
 
     await injectWorkspaceCredentials({
       dir: '/ws',
-      agents: ['codex'],
       // chatOnlyGateway has only openai-chat; codex is Responses-only.
       agentCredentials: { codex: { credentialSlug: 'chat-only', model: 'gpt-5.5' } },
       adapterRegistry: reg,
@@ -358,7 +463,6 @@ describe('injectWorkspaceCredentials', () => {
 
     await injectWorkspaceCredentials({
       dir: '/ws',
-      agents: ['claude'],
       agentCredentials: { claude: { credentialSlug: 'does-not-exist' } },
       adapterRegistry: reg,
       credentials,
@@ -376,11 +480,21 @@ describe('compatibleCredentials', () => {
     'openai-1': openaiKey,
     'custom-1': chatOnlyGateway,
     'google-1': googleKey,
+    'cursor-1': { vendor: 'cursor', authType: 'api-key', apiKey: 'cursor-key', baseUrl: 'https://api2.cursor.sh' },
   }
 
-  it('opencode/pi accept every supported wire including native Google', () => {
+  it('cursor does not treat generic OpenAI Chat keys as Cursor Dashboard credentials', () => {
+    expect(compatibleCredentials(vault, 'cursor').map(([s]) => s)).toEqual(['cursor-1'])
+  })
+
+  it('agy accepts only the Google Generative AI wire', () => {
+    expect(compatibleCredentials(vault, 'agy').map(([s]) => s)).toEqual(['google-1'])
+  })
+
+  it('opencode/pi/omp accept every supported wire including native Google', () => {
     expect(compatibleCredentials(vault, 'opencode').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1', 'google-1'])
     expect(compatibleCredentials(vault, 'pi').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1', 'google-1'])
+    expect(compatibleCredentials(vault, 'omp').map(([s]) => s)).toEqual(['anthropic-1', 'openai-1', 'custom-1', 'google-1'])
   })
 
   it('claude needs an anthropic wire — only the anthropic key qualifies', () => {
@@ -422,10 +536,13 @@ describe('resolveInjectionModel', () => {
   })
 
   it('falls back to the vendor recommendation when no lastModel', () => {
-    expect(resolveInjectionModel({ vendor: 'anthropic' })).toBe('claude-opus-4-8')
-    expect(resolveInjectionModel({ vendor: 'openai' })).toBe('gpt-5.6')
+    expect(resolveInjectionModel({ vendor: 'anthropic' })).toBe('claude-opus-5')
+    expect(resolveInjectionModel({ vendor: 'openai' })).toBe('gpt-5.6-sol')
+    expect(resolveInjectionModel({ vendor: 'xai' })).toBe('grok-4.6')
+    expect(resolveInjectionModel({ vendor: 'google' })).toBe('gemini-3.6-flash')
     expect(resolveInjectionModel({ vendor: 'glm' })).toBe('glm-5.2')
     expect(resolveInjectionModel({ vendor: 'longcat' })).toBe('LongCat-2.0')
+    expect(resolveInjectionModel({ vendor: 'openrouter' })).toBe('openai/gpt-5.6-luna')
   })
 
   it('returns null for a vendor with no catalog default (custom)', () => {

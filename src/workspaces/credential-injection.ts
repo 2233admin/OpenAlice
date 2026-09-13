@@ -1,6 +1,6 @@
 /**
- * Bridge from Alice's central credential store to a workspace's per-CLI AI
- * config.
+ * Deprecated compatibility bridge from Alice's central credential store to a
+ * Workspace's per-CLI native project config.
  *
  * The central store (`aiProviderSchema.credentials` in `core/config.ts`) holds
  * the vendor-neutral secret: `{ vendor, authType, apiKey?, baseUrl? }`. Each CLI
@@ -10,9 +10,9 @@
  * `authMode` / `wireApi` knobs) via `overrides`. The vault's `lastModel` is a
  * remembered default, not a lock; callers may still supply a per-use model.
  *
- * This is the one place that maps Credential → WorkspaceAiCred, used by
- * template-driven injection at workspace-create time and reusable by any future
- * "apply credential to workspace" path.
+ * `credentialToWorkspaceAiCred` remains the shared, side-effect-free projection
+ * helper. `injectWorkspaceCredentials` is retained only for explicit export to
+ * a native CLI; managed Sessions must use Session runtime bindings instead.
  */
 
 import { resolveAnthropicAuthMode } from '@/core/credential-inference.js'
@@ -23,41 +23,31 @@ import {
 } from '@/core/config.js'
 import { DEFAULT_MODEL_BY_VENDOR } from '@/ai-providers/preset-catalog.js'
 import { modelSupportsReasoning, resolveModelSemantics } from '@/ai-providers/model-semantics.js'
-import type { AdapterRegistry, WorkspaceAiCred } from './cli-adapter.js'
+import type {
+  AdapterRegistry,
+  AgentProviderCapabilities,
+  CliAdapter,
+  WorkspaceAiCred,
+} from './cli-adapter.js'
 import type { Logger } from './logger.js'
 import type { AgentCredentialDecl } from './template-registry.js'
 
 /**
- * The wire shapes each agent can speak, in preference order. The injector picks
- * the first one a credential actually has — so a credential serves an agent only
- * if it declares a compatible wire (codex's Responses-only lock means most
- * credentials can't drive it, which is the intended funnel toward pi/opencode).
- */
-export const AGENT_WIRE_PREFERENCE: Record<string, CredentialWireShape[]> = {
-  claude: ['anthropic'],
-  codex: ['openai-responses'],
-  opencode: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
-  pi: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
-}
-
-/**
- * Provider-specific support inside an agent's wire set.
+ * Provider-specific support inside an adapter's declared wire set.
  *
- * MiniMax is the deliberate exception to the generic OpenAI-compatible set:
+ * MiniMax is currently the deliberate exception to the generic OpenAI-compatible set:
  * its Anthropic endpoint is the documented coding-agent path and returns
  * native thinking blocks. The OpenAI endpoint requires `reasoning_split` and
  * returns an array-shaped `reasoning_details` extension that Pi and opencode's
- * generic OpenAI transports do not parse losslessly. Do not expose a protocol
- * choice that silently turns reasoning into visible `<think>` text or drops it.
+ * generic OpenAI transports do not parse losslessly. The affected adapters
+ * declare that vendor policy; this shared layer only applies the declaration.
  */
 export function agentWirePreference(
-  agentId: string,
+  capabilities: AgentProviderCapabilities,
   vendor?: string | null,
-): CredentialWireShape[] {
-  const preference = AGENT_WIRE_PREFERENCE[agentId]
-    ?? ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses']
-  if (vendor !== 'minimax' || (agentId !== 'opencode' && agentId !== 'pi')) return preference
-  return ['anthropic']
+): readonly CredentialWireShape[] {
+  return (vendor ? capabilities.vendorPolicies?.[vendor]?.wirePreference : undefined)
+    ?? capabilities.wirePreference
 }
 
 function inferredMinimaxAnthropicEndpoint(
@@ -95,10 +85,13 @@ function wireEndpoint(
  */
 export function compatibleCredentials(
   credentials: Record<string, Credential>,
-  agentId: string,
+  adapter: CliAdapter,
 ): Array<[string, Credential]> {
+  const capabilities = adapter.capabilities.aiProvider
+  if (!capabilities) return []
   return Object.entries(credentials).filter(
-    ([, cred]) => pickAgentWire(credentialWires(cred), agentId, undefined, cred.vendor) !== null,
+    ([, cred]) => capabilities.directVendors?.includes(cred.vendor)
+      || pickAgentWire(credentialWires(cred), capabilities, undefined, cred.vendor) !== null,
   )
 }
 
@@ -133,26 +126,26 @@ export function resolveInjectionModel(cred: Pick<Credential, 'vendor' | 'lastMod
 /** Pick the wire an agent should use from a credential's capabilities (null = none compatible). */
 export function pickAgentWire(
   wires: Partial<Record<CredentialWireShape, string>>,
-  agentId: string,
+  capabilities: AgentProviderCapabilities,
   requestedShape?: CredentialWireShape,
   vendor?: string | null,
 ): { shape: CredentialWireShape; baseUrl: string } | null {
-  const pref = agentWirePreference(agentId, vendor)
+  const pref = agentWirePreference(capabilities, vendor)
   if (requestedShape !== undefined) {
     const requestedEndpoint = wireEndpoint(wires, requestedShape, vendor)
     if (pref.includes(requestedShape) && requestedEndpoint !== undefined) {
       return { shape: requestedShape, baseUrl: requestedEndpoint }
     }
-    // Heal Workspace defaults saved before MiniMax's native-thinking boundary
-    // was registered. This is intentionally narrower than a generic fallback:
-    // other explicit protocol mismatches remain loud incompatibilities.
-    if (
-      vendor === 'minimax' &&
-      (agentId === 'opencode' || agentId === 'pi') &&
-      requestedShape === 'openai-chat' &&
-      wireEndpoint(wires, 'anthropic', vendor) !== undefined
-    ) {
-      return { shape: 'anthropic', baseUrl: wireEndpoint(wires, 'anthropic', vendor)! }
+    // Heal Workspace defaults through the adapter's narrowly declared legacy
+    // fallback. Other explicit protocol mismatches remain loud incompatibilities.
+    const fallbackShape = vendor
+      ? capabilities.vendorPolicies?.[vendor]?.legacyRequestedWireFallbacks?.[requestedShape]
+      : undefined
+    if (fallbackShape) {
+      const fallbackEndpoint = wireEndpoint(wires, fallbackShape, vendor)
+      if (fallbackEndpoint !== undefined) {
+        return { shape: fallbackShape, baseUrl: fallbackEndpoint }
+      }
     }
     return null
   }
@@ -172,7 +165,7 @@ export interface CredentialInjectionOverrides {
   contextWindow?: number | null
   /** Unknown-model override for Pi/opencode. Registered model facts win. */
   reasoning?: boolean | null
-  /** Explicit effort override. Known model defaults are filled by the registry. */
+  /** Explicit effort override. Omission stays omitted; provider defaults are metadata, not launch input. */
   reasoningEffort?: WorkspaceAiCred['reasoningEffort']
   /** Anthropic wire only — which header carries the key. Defaults via baseUrl heuristic. */
   authMode?: 'x-api-key' | 'bearer'
@@ -188,11 +181,21 @@ export interface CredentialInjectionOverrides {
  */
 export function credentialToWorkspaceAiCred(
   credential: Pick<Credential, 'vendor' | 'apiKey' | 'baseUrl' | 'wireShape' | 'wires'>,
-  agentId: string,
+  adapter: CliAdapter,
   overrides: CredentialInjectionOverrides = {},
 ): WorkspaceAiCred | null {
+  const capabilities = adapter.capabilities.aiProvider
+  if (!capabilities) return null
+  if (capabilities.directVendors?.includes(credential.vendor)) {
+    return {
+      baseUrl: credential.baseUrl ?? null,
+      apiKey: credential.apiKey ?? null,
+      model: overrides.model ?? null,
+      ...(overrides.reasoningEffort ? { reasoningEffort: overrides.reasoningEffort } : {}),
+    }
+  }
   const wires = credentialWires(credential as Credential)
-  const picked = pickAgentWire(wires, agentId, overrides.wireShape, credential.vendor)
+  const picked = pickAgentWire(wires, capabilities, overrides.wireShape, credential.vendor)
   if (!picked) return null
 
   const cred: WorkspaceAiCred = {
@@ -204,9 +207,12 @@ export function credentialToWorkspaceAiCred(
     wireShape: picked.shape,
   }
 
-  if (agentId === 'opencode' || agentId === 'pi') {
+  const registration = capabilities.modelRegistration
+  if (registration?.contextWindow) {
     const explicitContextWindow = positiveNumber(overrides.contextWindow)
     if (explicitContextWindow !== null) cred.contextWindow = explicitContextWindow
+  }
+  if (registration?.reasoning) {
     if (typeof overrides.reasoning === 'boolean') cred.reasoning = overrides.reasoning
   }
   if (overrides.reasoningEffort) cred.reasoningEffort = overrides.reasoningEffort
@@ -217,11 +223,9 @@ export function credentialToWorkspaceAiCred(
       baseUrl: picked.baseUrl,
     })
   }
-  if (agentId === 'codex') {
-    if (overrides.wireApi) cred.wireApi = overrides.wireApi
-  }
+  if (overrides.wireApi) cred.wireApi = overrides.wireApi
 
-  return applyRegisteredModelSemantics(cred, agentId, credential.vendor)
+  return applyRegisteredModelSemantics(cred, capabilities, credential.vendor)
 }
 
 /**
@@ -235,14 +239,15 @@ export function credentialToWorkspaceAiCred(
  */
 export function applyRegisteredModelSemantics(
   cred: WorkspaceAiCred,
-  agentId: string,
+  capabilities: AgentProviderCapabilities,
   vendor: string | null | undefined,
 ): WorkspaceAiCred {
   const semantics = resolveModelSemantics(vendor, cred.model)
   if (!semantics) return cred
 
   const next: WorkspaceAiCred = { ...cred }
-  if (agentId === 'opencode' || agentId === 'pi') {
+  const registration = capabilities.modelRegistration
+  if (registration?.contextWindow) {
     const registeredContext = positiveNumber(semantics.contextWindow)
     const configuredContext = positiveNumber(cred.contextWindow)
     if (registeredContext !== null) {
@@ -250,11 +255,10 @@ export function applyRegisteredModelSemantics(
         ? registeredContext
         : Math.min(configuredContext, registeredContext)
     }
+  }
+  if (registration?.reasoning) {
     const reasoning = modelSupportsReasoning(semantics)
     if (reasoning !== null) next.reasoning = reasoning
-  }
-  if (!next.reasoningEffort && semantics.reasoning?.defaultEffort) {
-    next.reasoningEffort = semantics.reasoning.defaultEffort
   }
   return next
 }
@@ -264,33 +268,30 @@ function positiveNumber(value: number | null | undefined): number | null {
 }
 
 /**
- * Seed a freshly-created workspace's per-agent AI config from a template's
- * `agentCredentials` declaration + Alice's central credential store.
+ * Export per-agent AI config into a Workspace's native CLI project files.
  *
  * MUST run AFTER the launcher's initial commit: `writeAiConfig` writes the
  * secret into `.claude/settings.local.json` / `.codex/env.json` / `opencode.json`
- * / Pi's global models plus `.pi/settings.json`, which `_common.sh`'s
+ * / Pi's local provider extension plus `.pi/settings.json`, which `_common.mjs`'s
  * `setup_git_excludes` keeps out of git —
  * but only post-commit are we certain the key never lands in the initial commit.
  *
- * Every miss (agent not enabled, no adapter, credential slug absent) is a loud
+ * Every miss (no adapter, credential slug absent) is a loud
  * `warn` + skip, never a hard failure — a workspace that boots without a seeded
  * provider is still usable (the user configures it manually). Best-effort.
+ *
+ * @deprecated Compatibility export only. Workspace creation and managed
+ * Session launch must persist/use `.alice/settings.json` and runtime bindings.
  */
 export async function injectWorkspaceCredentials(opts: {
   readonly dir: string
-  readonly agents: readonly string[]
   readonly agentCredentials: Readonly<Record<string, AgentCredentialDecl>>
   readonly adapterRegistry: AdapterRegistry
   readonly credentials: Record<string, Credential>
   readonly logger: Logger
 }): Promise<void> {
-  const { dir, agents, agentCredentials, adapterRegistry, credentials, logger } = opts
+  const { dir, agentCredentials, adapterRegistry, credentials, logger } = opts
   for (const [agentId, decl] of Object.entries(agentCredentials)) {
-    if (!agents.includes(agentId)) {
-      logger.warn('workspace.cred_inject_skip_disabled', { agentId })
-      continue
-    }
     const adapter = adapterRegistry.get(agentId)
     if (!adapter?.writeAiConfig) {
       logger.warn('workspace.cred_inject_skip_no_adapter', { agentId })
@@ -310,7 +311,7 @@ export async function injectWorkspaceCredentials(opts: {
       // stable pair even in config written before reasoningModel existed.
       (decl.reasoningModel === undefined && decl.model === selectedModel)
     )
-    const wsCred = credentialToWorkspaceAiCred(credential, agentId, {
+    const wsCred = credentialToWorkspaceAiCred(credential, adapter, {
       ...(selectedModel !== null ? { model: selectedModel } : {}),
       ...(decl.wireShape !== undefined ? { wireShape: decl.wireShape } : {}),
       ...(decl.contextWindow !== undefined

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { BarsResponse } from '../../api/market'
@@ -203,4 +203,71 @@ describe('KlinePanel source routing', () => {
     )
     expect(mocks.bars).toHaveBeenCalledTimes(1)
   })
+})
+
+describe('KlinePanel chart controls', () => {
+  it('names each control independently and exposes the selected interval and range', async () => {
+    mocks.bars.mockResolvedValue(response('AAPL', 'yfinance|AAPL'))
+
+    render(
+      <MemoryRouter initialEntries={['/market/equity/AAPL?interval=5m&range=3M']}>
+        <KlinePanel selection={{ symbol: 'AAPL', assetClass: 'equity' }} />
+      </MemoryRouter>,
+    )
+
+    const intervals = screen.getByRole('group', { name: 'Interval' })
+    expect(within(intervals).getByRole('button', { name: '5m' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(intervals).getByRole('button', { name: '1m' }).getAttribute('aria-pressed')).toBe('false')
+
+    const ranges = screen.getByRole('group', { name: 'Range' })
+    expect(within(ranges).getByRole('button', { name: '3M' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(ranges).getByRole('button', { name: '1Y' }).getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(within(intervals).getByRole('button', { name: '1h' }))
+
+    await waitFor(() => {
+      expect(within(intervals).getByRole('button', { name: '1h' }).getAttribute('aria-pressed')).toBe('true')
+      expect(mocks.bars).toHaveBeenCalledWith(expect.objectContaining({ interval: '1h' }))
+    })
+  })
+})
+
+it('renders timezone-bearing intraday bars as finite chart timestamps', async () => {
+  const data = response('AAPL', 'yfinance|AAPL')
+  data.results![0].date = '2026-07-17T13:30:00.000Z'
+  mocks.bars.mockResolvedValue(data)
+  render(<MemoryRouter><KlinePanel selection={{ symbol: 'AAPL', assetClass: 'equity' }} /></MemoryRouter>)
+  await waitFor(() => expect(mocks.candleSetData).toHaveBeenCalledWith([expect.objectContaining({ time: Date.parse('2026-07-17T13:30:00Z') / 1000 })]))
+})
+
+function CurrentRoute() { const location = useLocation(); return <output data-testid="route">{location.pathname}</output> }
+
+it('switches to a usable minute window from a stale workspace route', async () => {
+  mocks.bars.mockResolvedValue(response('AAPL', 'yfinance|AAPL'))
+  render(<MemoryRouter initialEntries={['/chat/workspaces/old/details']}><CurrentRoute /><KlinePanel selection={{ symbol: 'AAPL', assetClass: 'equity' }} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: '5m' }))
+  await waitFor(() => expect(mocks.bars).toHaveBeenLastCalledWith(expect.objectContaining({ interval: '5m', start: expect.any(String) })))
+  expect(screen.getByRole('button', { name: '1M' }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByTestId('route').textContent).toBe('/market/equity/AAPL')
+})
+
+it('explains a newer rejected candle without substituting it into the chart', async () => {
+  const data = response('AAPL', 'yfinance|AAPL')
+  data.meta!.quality = { scope: 'fetched_window_before_count', inspectedRows: 2, excludedRows: 1, latestExcludedRecordAt: '2026-07-18', latestExcludedFields: ['close'], reason: 'missing_or_non_finite_ohlc' }
+  mocks.bars.mockResolvedValue(data)
+  render(<MemoryRouter><KlinePanel selection={{ symbol: 'AAPL', assetClass: 'equity' }} source="yfinance|AAPL" /></MemoryRouter>)
+  expect((await screen.findByRole('status')).textContent).toContain('2026-07-18 (close missing or invalid)')
+  expect(screen.getByText('Latest record: 2026-07-17')).toBeTruthy()
+})
+
+it('embedded market references stay in chat and request 300 exact-source bars', async () => {
+  mocks.bars.mockResolvedValue(response('AAPL', 'yfinance|AAPL'))
+  function Location() { return <output data-testid="location">{useLocation().pathname}</output> }
+  render(<MemoryRouter initialEntries={['/chat/workspaces/test/s/session']}><Location /><KlinePanel selection={null} source="yfinance|AAPL" embeddedInterval="1d" /></MemoryRouter>)
+  await waitFor(() => expect(mocks.bars).toHaveBeenCalledWith({ barId: 'yfinance|AAPL', interval: '1d', count: 300 }))
+  expect(mocks.searchSources).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '4h' }))
+  await waitFor(() => expect(mocks.bars).toHaveBeenLastCalledWith({ barId: 'yfinance|AAPL', interval: '4h', count: 300 }))
+  expect(screen.getByTestId('location').textContent).toBe('/chat/workspaces/test/s/session')
+  expect(screen.queryByRole('radiogroup', { name: 'Range' })).toBeNull()
 })

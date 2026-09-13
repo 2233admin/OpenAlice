@@ -1,6 +1,31 @@
 import { fetchJson } from './client'
+import type { ModelReasoningEffort } from './types'
 
 export type HeadlessTaskStatus = 'running' | 'done' | 'failed' | 'interrupted'
+export type HeadlessLaunchErrorCode =
+  | 'unsupported_windows_batch_shim'
+  | 'executable_not_found'
+  | 'spawn_failed'
+
+export type HeadlessInquirySubject =
+  | { kind: 'inbox'; entryId: string }
+  | {
+      kind: 'issue'
+      workspaceId: string
+      issueId: string
+      relation: 'creator' | 'owner' | 'run'
+      runId?: string
+      commentId?: string
+    }
+
+export interface HeadlessTaskInquiry {
+  subject: HeadlessInquirySubject
+  question: string
+  resolution: {
+    mode: 'exact' | 'reconstructed'
+    reason?: string
+  }
+}
 
 export interface HeadlessTaskRecord {
   taskId: string
@@ -12,16 +37,26 @@ export interface HeadlessTaskRecord {
   /** Business source; independent from wsId when a cross-Workspace signed
    * Session executes an Issue owned by another Workspace. */
   trigger?: { kind: 'issue'; workspaceId: string; issueId: string }
+  /** Product object that requested a follow-up run. */
+  inquiry?: HeadlessTaskInquiry
   agent: string
+  model?: string
+  effort?: ModelReasoningEffort
   prompt: string
   status: HeadlessTaskStatus
   startedAt: number
   finishedAt?: number
   durationMs?: number
+  /** False means the Agent process never reached Node's spawn event. */
+  processStarted?: boolean
+  launchErrorCode?: HeadlessLaunchErrorCode
   exitCode?: number | null
   signal?: string | null
   killed?: boolean
   error?: string
+  /** Positive watchdog budget, `null` for an explicitly unlimited new run,
+   * absent only on historical records. */
+  timeoutMs?: number | null
   /** Backend has resolved this product identity to a native runtime session. */
   resumable: boolean
   output?: {
@@ -31,6 +66,22 @@ export interface HeadlessTaskRecord {
     toolCalls: number
     toolFailures: number
   }
+  /** Compact live timeline for comment/inquiry consumers. */
+  progress?: HeadlessTurnProgress
+}
+
+export type HeadlessProgressToolStatus = 'running' | 'completed' | 'failed'
+
+export type HeadlessProgressBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; status: HeadlessProgressToolStatus }
+  | { type: 'error'; message: string }
+
+export interface HeadlessTurnProgress {
+  updatedAt: number
+  assistantText: string | null
+  blocks: HeadlessProgressBlock[]
+  metrics: { textBlocks: number; toolCalls: number; toolFailures: number }
 }
 
 export type HeadlessToolStatus = 'running' | 'completed' | 'failed'

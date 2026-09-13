@@ -185,6 +185,9 @@ export class UnifiedTradingAccount {
         case 'modifyOrder':
           return broker.modifyOrder(op.orderId, op.changes)
         case 'closePosition':
+          if (op.quantity != null) {
+            await this._assertCloseQuantityWithinPosition(op.contract, op.quantity)
+          }
           return broker.closePosition(op.contract, op.quantity)
         case 'cancelOrder':
           return broker.cancelOrder(op.orderId, op.orderCancel)
@@ -560,6 +563,38 @@ export class UnifiedTradingAccount {
   }
 
   /**
+   * Re-check an explicit partial-close quantity against the latest broker
+   * position immediately before dispatch. This is deliberately later than
+   * staging: a position can change after the UI or CLI created its proposal.
+   * Broker adapters do not all enforce reduce-only semantics, so allowing an
+   * oversized reverse order here could cross through flat into a new exposure.
+   */
+  private async _assertCloseQuantityWithinPosition(contract: Contract, quantity: Decimal): Promise<void> {
+    if (!quantity.isFinite() || quantity.lte(0)) {
+      throw new Error('closePosition: qty must be a positive finite number.')
+    }
+
+    const nativeKey = this.broker.getNativeKey(contract)
+    const positions = await this._callBroker(() => this.broker.getPositions())
+    const position = positions.find(candidate =>
+      this.broker.getNativeKey(candidate.contract) === nativeKey,
+    )
+    const label = contract.symbol || contract.localSymbol || nativeKey
+
+    if (!position) {
+      throw new Error(`closePosition: no open position found for ${label}. Refresh positions before retrying.`)
+    }
+
+    const available = position.quantity.abs()
+    if (quantity.gt(available)) {
+      throw new Error(
+        `closePosition: quantity ${quantity.toString()} exceeds the open ${label} position size ${available.toString()}. ` +
+        `Use a quantity no greater than ${available.toString()}, or omit qty to close the full position.`,
+      )
+    }
+  }
+
+  /**
    * Per-orderType required-field gate, enforced at stage time so a broken
    * order can never reach staging/commit. Without this, a caller that loses
    * fields on the way in (e.g. a CLI typo like --quantity for --totalQuantity)
@@ -614,7 +649,7 @@ export class UnifiedTradingAccount {
   }
 
   /** The sub-accounts (wallets) this connection spans. One element for ordinary
-   *  brokers; >1 only for separate-wallet venues (CCXT Binance: spot / futures). */
+   *  brokers; >1 only for separate-wallet venues (CCXT Binance / Bitget Classic). */
   async listSubAccounts(): Promise<SubAccountRef[]> {
     return this._ensureSubAccounts()
   }
@@ -709,13 +744,25 @@ export class UnifiedTradingAccount {
     const contract = this.contractFromAliceId(params.aliceId)
     if (params.symbol) contract.symbol = params.symbol
 
+    let quantity: Decimal | undefined
+    if (params.qty != null) {
+      try {
+        quantity = new Decimal(String(params.qty))
+      } catch {
+        throw new Error('closePosition: qty must be a positive finite number.')
+      }
+      if (!quantity.isFinite() || quantity.lte(0)) {
+        throw new Error('closePosition: qty must be a positive finite number.')
+      }
+    }
+
     const subAccountId = this._resolveWriteSubAccount(contract, params.subAccountId)
     if (subAccountId) this._stagedSubAccountIds.push(subAccountId)
 
     return this.git.add({
       action: 'closePosition',
       contract,
-      quantity: params.qty != null ? new Decimal(String(params.qty)) : undefined,
+      quantity,
     })
   }
 
@@ -743,7 +790,7 @@ export class UnifiedTradingAccount {
     return ids.length ? `${message} [sub:${ids.join(',')}]` : message
   }
 
-  async push(): Promise<PushResult> {
+  async push(expectedPendingHash: string): Promise<PushResult> {
     this._assertCanMutateAccount('push')
     if (this._disabled) {
       throw new BrokerError('CONFIG', `Account "${this.label}" is disabled due to configuration error.`)
@@ -751,13 +798,13 @@ export class UnifiedTradingAccount {
     if (this.health === 'offline') {
       throw new Error(`Account "${this.label}" is offline. Cannot execute trades.`)
     }
-    const result = await this.git.push()
+    const result = await this.git.push(expectedPendingHash)
     Promise.resolve(this._onPostPush?.(this.id)).catch(() => {})
     return result
   }
 
-  async reject(reason?: string): Promise<RejectResult> {
-    const result = await this.git.reject(reason)
+  async reject(reason: string | undefined, expectedPendingHash: string): Promise<RejectResult> {
+    const result = await this.git.reject(reason, expectedPendingHash)
     this._stagedSubAccountIds = []
     Promise.resolve(this._onPostReject?.(this.id)).catch(() => {})
     return result

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { tradingApi, type ContractSearchHit } from '../../api/trading'
 import type { AssetClass } from '../../api/market'
 import { Card } from './Card'
+import { Button } from '../ui/button'
 
 interface Props {
   /** The data-vendor symbol the user is currently viewing. */
@@ -22,6 +24,7 @@ interface Props {
 const COLLAPSED_LIMIT = 3
 
 export function TradeableContractsPanel({ symbol, assetClass }: Props) {
+  const { t } = useTranslation()
   const [hits, setHits] = useState<ContractSearchHit[] | null>(null)
   const [utasConfigured, setAccountsConfigured] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -44,30 +47,25 @@ export function TradeableContractsPanel({ symbol, assetClass }: Props) {
     return () => { cancelled = true }
   }, [symbol, assetClass])
 
-  const info = [
-    'Endpoint: /api/trading/contracts/search',
-    'Heuristic broker-side fuzzy match — symbol on the analysis side is just a query string here, not the canonical id.',
-    'Tradeable identity is the broker\u2019s aliceId (alias:broker:exchange-id). Use it to actually place orders.',
-  ].join('\n')
-
   return (
-    <Card title="Tradeable on configured brokers" info={info}>
-      {loading && <div className="text-[12px] text-muted-foreground">Searching brokers…</div>}
+    <Card title={t('market.tradeableTitle')} info={t('market.tradeableInfo')}>
+      {loading && <div className="text-[12px] text-muted-foreground">{t('market.tradeableSearching')}</div>}
       {error && !loading && <div className="text-[12px] text-destructive">{error}</div>}
 
       {!loading && !error && utasConfigured === 0 && (
         <div className="text-[12px] text-muted-foreground">
-          No trading accounts configured.{' '}
-          <Link to="/trading" className="text-primary hover:underline">
-            Add one in Trading
-          </Link>
-          {' '}to see matching contracts here.
+          <Trans
+            i18nKey="market.tradeableNoAccounts"
+            components={{
+              tradingLink: <Link to="/trading" className="text-primary hover:underline" />,
+            }}
+          />
         </div>
       )}
 
       {!loading && !error && utasConfigured !== 0 && hits && hits.length === 0 && (
         <div className="text-[12px] text-muted-foreground">
-          No tradeable contracts matching <span className="font-mono">{symbol}</span> on your configured brokers.
+          {t('market.tradeableNoMatches', { symbol })}
         </div>
       )}
 
@@ -84,12 +82,16 @@ export function TradeableContractsPanel({ symbol, assetClass }: Props) {
               ))}
             </ul>
             {overflow && (
-              <button
+              <Button
                 onClick={() => setExpanded((v) => !v)}
-                className="mt-2 text-[11px] text-muted-foreground/70 hover:text-primary transition-colors cursor-pointer"
+                className="mt-2 text-[11px] text-muted-foreground"
+                variant="ghost"
+                size="xs"
               >
-                {expanded ? `Show fewer` : `Show ${hidden} more (${sorted.length} total)`}
-              </button>
+                {expanded
+                  ? t('market.tradeableShowFewer')
+                  : t('market.tradeableShowMore', { hidden, total: sorted.length })}
+              </Button>
             )}
           </>
         )
@@ -125,6 +127,7 @@ function byInstrumentFamiliarity(a: ContractSearchHit, b: ContractSearchHit): nu
 }
 
 function ContractRow({ hit }: { hit: ContractSearchHit }) {
+  const { t } = useTranslation()
   const c = hit.contract
   const aliceId = c.aliceId as string | undefined
   // Bridge to the UTA detail page's order entry — clicking jumps the
@@ -133,35 +136,45 @@ function ContractRow({ hit }: { hit: ContractSearchHit }) {
   const orderHref = aliceId
     ? `/uta/${encodeURIComponent(hit.source)}?aliceId=${encodeURIComponent(aliceId)}`
     : null
+  const description = [c.description || c.localSymbol, c.primaryExchange ?? c.exchange, c.currency]
+    .filter(Boolean)
+    .join(', ')
   return (
-    <li className="px-3 py-2 flex items-baseline gap-3 text-[12px] hover:bg-muted/40 transition-colors">
-      <span className="font-mono font-semibold text-foreground">{c.symbol ?? '—'}</span>
-      {c.secType && (
-        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
-          {c.secType}
-        </span>
-      )}
-      <span className="text-muted-foreground/70 truncate flex-1">
-        {[c.description || c.localSymbol, c.primaryExchange ?? c.exchange, c.currency]
-          .filter(Boolean)
-          .join(' · ')}
+    <li className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-3 py-2 text-[12px] hover:bg-muted/40 sm:flex sm:items-baseline sm:gap-3">
+      <span className="flex min-w-0 items-center gap-2 sm:contents">
+        <span className="truncate font-mono font-semibold text-foreground">{c.symbol ?? '—'}</span>
+        {c.secType && (
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] leading-[14px] font-medium text-muted-foreground">
+            {c.secType}
+          </span>
+        )}
       </span>
-      <span className="text-[10px] text-muted-foreground/60 shrink-0">{hit.source}</span>
-      {aliceId && (
-        <code
-          className="text-[10px] font-mono text-muted-foreground truncate max-w-[260px]"
-          title={aliceId}
-        >
-          {aliceId}
-        </code>
-      )}
+
+      <span className="col-span-2 min-w-0 truncate text-muted-foreground/70 sm:flex-1">
+        {description}
+      </span>
+
+      <span className="col-span-2 flex min-w-0 items-center gap-2">
+        <span className={`${aliceId ? 'hidden sm:inline' : ''} shrink-0 text-[10px] text-muted-foreground/60`}>
+          {hit.source}
+        </span>
+        {aliceId && (
+          <code
+            className="min-w-0 max-w-full truncate font-mono text-[10px] leading-[14px] text-muted-foreground sm:max-w-[260px]"
+            title={aliceId}
+          >
+            {aliceId}
+          </code>
+        )}
+      </span>
+
       {orderHref && (
         <Link
           to={orderHref}
-          className="text-[11px] text-primary hover:underline shrink-0"
-          title="Open order entry on the UTA"
+          className="row-start-1 col-start-2 inline-flex min-h-8 shrink-0 items-center rounded-md px-2 text-[11px] leading-[15px] text-primary hover:bg-primary/10 sm:min-h-0 sm:rounded-none sm:px-0 sm:hover:bg-transparent sm:hover:underline"
+          title={t('market.tradeableOrderTitle')}
         >
-          Order →
+          {t('market.tradeableOrder')} →
         </Link>
       )}
     </li>

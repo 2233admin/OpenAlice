@@ -21,7 +21,7 @@
  * Out of scope (future iterations): tray icon, multi-window, native menus.
  */
 
-import { app, BrowserWindow, dialog, Menu, protocol, session } from 'electron'
+import { app, BrowserWindow, dialog, Menu, Notification, protocol, session } from 'electron'
 import { runRendererTradingModeSmoke } from './trading-mode-smoke.js'
 import { runRendererDataHomeSmoke } from './data-home-smoke.js'
 import { runRendererWorkspaceAcceptanceSmoke } from './workspace-acceptance-smoke.js'
@@ -29,7 +29,6 @@ import { planUTATransition } from './uta-lifecycle.js'
 import {
   acquireGuardianRuntime,
   currentProcessStartedAt,
-  inspectOpenAliceInstance,
   resolveGuardianTradingMode,
   takeoverRequested,
   type GuardianTradingModePlan,
@@ -44,6 +43,7 @@ import { dirname, join, resolve } from 'node:path'
 import { probeFreePort } from './probe-port.js'
 import { relocateLegacyData } from './relocate-data.js'
 import { configureAutoUpdate } from './auto-update.js'
+import { BoundedTextTail, conciseDiagnosticTail, DesktopDiagnostics } from './desktop-diagnostics.js'
 import { fetchAliceWebRequest, handleOpenAliceIpcMessage, registerOpenAliceIpc } from './ipc.js'
 import { resolveManagedRuntimeEnv } from './managed-runtime.js'
 import { proxyEnvFromRules } from './proxy-env.js'
@@ -55,6 +55,11 @@ import {
   resolveDesktopDataHome,
   type ResolvedDesktopDataHome,
 } from './data-home-desktop.js'
+import { existingOwnerSmokeMode, resolveExistingOwnerStartup } from './existing-owner-startup.js'
+import { inspectPreviousUpdateAttempt, recordUpdateAttempt } from './update-attempt.js'
+import { childIsRunning, stopChild } from './child-shutdown.js'
+import { exitDesktopProcess } from './app-exit.js'
+import { configureWindowChrome, windowChromeOptions } from './window-chrome.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -71,6 +76,10 @@ let rendererDataHomeSmokeStarted = false
 let rendererTradingModeSmokeStarted = false
 let rendererWorkspaceAcceptanceSmokeStarted = false
 let guardianRuntimeLock: RuntimeProcessLock | null = null
+let desktopDiagnostics: DesktopDiagnostics | null = null
+let aliceStderrTail = new BoundedTextTail()
+let aliceBecameReady = false
+let fatalDesktopErrorShown = false
 
 const DEFAULT_WEB_PORT_START = 47331
 const READY_TIMEOUT_MS = 30_000
@@ -78,6 +87,30 @@ const UTA_READY_TIMEOUT_MS = 15_000
 const SIGTERM_GRACE_MS = 5_000
 const UTA_RESTART_GRACE_MS = 8_000
 const DATA_HOME_PREFERENCES_FILE = 'openalice-data-home.json'
+const UPDATE_ATTEMPT_FILE = 'openalice-update-attempt.json'
+
+function showFatalDesktopError(title: string, message: string): void {
+  if (fatalDesktopErrorShown) return
+  fatalDesktopErrorShown = true
+  const childDetail = conciseDiagnosticTail(aliceStderrTail.text())
+  const logDetail = desktopDiagnostics ? `\n\nDiagnostic log:\n${desktopDiagnostics.path}` : ''
+  dialog.showErrorBox(
+    title,
+    `${message}${childDetail ? `\n\nLast Alice output:\n${childDetail}` : ''}${logDetail}`,
+  )
+}
+
+async function releaseGuardianRuntimeLock(): Promise<void> {
+  const current = guardianRuntimeLock
+  guardianRuntimeLock = null
+  await current?.release().catch((error) => {
+    console.error('[guardian] runtime lock release failed:', error)
+    desktopDiagnostics?.write(
+      'guardian',
+      `runtime lock release failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`,
+    )
+  })
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -91,6 +124,14 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ])
+
+if (existingOwnerSmokeMode()) {
+  const smokeUserData = process.env['OPENALICE_ELECTRON_SMOKE_USER_DATA']?.trim()
+  if (smokeUserData) app.setPath('userData', smokeUserData)
+  app.commandLine.appendSwitch('no-sandbox')
+  app.commandLine.appendSwitch('disable-gpu')
+  app.disableHardwareAcceleration()
+}
 
 // ── Cross-platform process-tree kill ─────────────────────────
 // Inline mirror of scripts/guardian/shared.ts:killTree. UTA and Alice each
@@ -213,19 +254,18 @@ async function resolveChildProxyEnv(): Promise<Record<string, string>> {
   // Existing env is authoritative on every platform. Electron 39 embeds Node
   // 22.22, whose fetch stack consumes it only when NODE_USE_ENV_PROXY is set.
   const explicit = proxyEnvFromRules('', process.env)
-  if (Object.keys(explicit).length > 0 || process.env['HTTPS_PROXY'] || process.env['HTTP_PROXY'] || process.env['ALL_PROXY']) {
+  if (Object.keys(explicit).length > 0) {
     return explicit
   }
-  if (process.platform !== 'win32') return {}
 
   try {
-    // Chromium already understands Windows Internet Options, including PAC.
+    // Chromium already understands the host system proxy, including PAC.
     // Resolve one representative HTTPS API URL and pass a concrete proxy to
     // the pure-Node Alice/UTA children, whose fetch does not consult Chromium.
     const rules = await session.defaultSession.resolveProxy('https://api.openai.com/')
     return proxyEnvFromRules(rules, process.env)
   } catch (err) {
-    console.warn(`[guardian] could not resolve Windows system proxy: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[guardian] could not resolve system proxy: ${err instanceof Error ? err.message : String(err)}`)
     return {}
   }
 }
@@ -284,6 +324,8 @@ async function waitForUTA(utaUrl: string, timeoutMs = UTA_READY_TIMEOUT_MS): Pro
 async function runRendererPtySmoke(win: BrowserWindow): Promise<void> {
   const keepWorkspace = process.env['OPENALICE_ELECTRON_SMOKE_KEEP_WORKSPACE'] === '1'
   const result = await win.webContents.executeJavaScript(`(async () => {
+    const stage = (value) => console.warn('[desktop-pty-smoke] renderer stage=' + value)
+    stage('bridge')
     const bridge = window.openAlice?.pty
     if (!bridge) throw new Error('window.openAlice.pty missing')
     const keyboard = window.openAlice?.keyboard
@@ -294,7 +336,9 @@ async function runRendererPtySmoke(win: BrowserWindow): Promise<void> {
     }
     const tag = 'electron-smoke-' + Date.now().toString(36)
     const json = async (res) => {
+      stage('response-headers status=' + res.status)
       const text = await res.text()
+      stage('response-body')
       let body = null
       try { body = text ? JSON.parse(text) : null } catch { body = text }
       if (!res.ok) throw new Error(res.status + ' ' + text)
@@ -304,18 +348,21 @@ async function runRendererPtySmoke(win: BrowserWindow): Promise<void> {
     let sessionId = ''
     let connectionId = ''
     try {
+      stage('create-workspace')
       const created = await json(await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tag, template: 'chat', agents: ['shell'] }),
+        body: JSON.stringify({ tag, template: 'chat' }),
       }))
       workspaceId = created.workspace.id
+      stage('spawn-shell')
       const spawned = await json(await fetch('/api/workspaces/' + encodeURIComponent(workspaceId) + '/sessions/spawn', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ agent: 'shell' }),
       }))
       sessionId = spawned.sessionId
+      stage('connect-pty')
       const attached = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('PTY attached timeout')), 10000)
         connectionId = bridge.connect({ sessionId, cols: 80, rows: 24 })
@@ -344,6 +391,7 @@ async function runRendererPtySmoke(win: BrowserWindow): Promise<void> {
       if (typeof attached.kittyKeyboardFlags !== 'number') {
         throw new Error('PTY attach omitted Kitty keyboard flags')
       }
+      stage('attached')
       return { ok: true, workspaceId, sessionId, attached, keyboardInputSourceId }
     } finally {
       if (connectionId) bridge.close(connectionId)
@@ -414,6 +462,12 @@ async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<void> {
       throw new Error('isolated packaged smoke should be locked by OPENALICE_HOME')
     }
 
+    const setup = await json(await fetch('/api/workspaces/project-setup'))
+    const workspaceList = await json(await fetch('/api/workspaces'))
+    if (setup.pending?.length || !workspaceList.workspaces?.some(ws => ws.template === 'chat')) {
+      throw new Error('new project did not prepare Chat before opening the renderer')
+    }
+
     const agents = await json(await fetch('/api/workspaces/agents'))
     const pi = agents.agents?.find((agent) => agent.id === 'pi')
     if (!pi?.installed) throw new Error('managed Pi was not detected by packaged /agents')
@@ -437,15 +491,15 @@ async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<void> {
     }, 60000)
 
     if (!initialReadiness.agents.pi?.ready) {
-      await waitFor('AI credential action', () => {
+      const addCredential = await waitFor('AI credential action', () => {
         const button = document.querySelector('[data-testid="first-run-guide-primary"]')
         return button &&
           !button.disabled &&
           button.getAttribute('data-onboarding-action') === 'add-credential'
-          ? true
-          : false
+          ? button
+          : document.querySelector('[data-testid="first-run-guide-add-provider"]')
       })
-      clickPrimary()
+      addCredential.click()
       await waitFor('credential modal', () => credentialPrimary())
       credentialPrimary().click()
       await waitFor('verified credential', () => {
@@ -471,13 +525,10 @@ async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<void> {
       const snapshot = await json(await fetch('/api/agent-runtimes/readiness'))
       const row = snapshot.agents?.pi
       const button = document.querySelector('[data-testid="first-run-guide-primary"]')
-      return activeStep() === 'ai' &&
-        row?.ready === true &&
-        button &&
-        !button.disabled &&
-        button.getAttribute('data-onboarding-action') === 'continue'
+      return row?.ready === true && (activeStep() === 'broker' || (activeStep() === 'ai' &&
+        button && !button.disabled && button.getAttribute('data-onboarding-action') === 'continue'))
     }, 60000)
-    clickPrimary()
+    if (activeStep() === 'ai') clickPrimary()
     await waitFor('broker step', () => activeStep() === 'broker' ? true : false)
 
     return {
@@ -504,6 +555,35 @@ async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  desktopDiagnostics = new DesktopDiagnostics(join(app.getPath('logs'), 'desktop.log'))
+  desktopDiagnostics.write('desktop', `starting OpenAlice ${app.getVersion()} pid=${process.pid}`)
+  const updateAttemptPath = join(app.getPath('userData'), UPDATE_ATTEMPT_FILE)
+  try {
+    const previousUpdate = await inspectPreviousUpdateAttempt(updateAttemptPath, app.getVersion())
+    if (previousUpdate.kind === 'succeeded') {
+      desktopDiagnostics.write(
+        'updater',
+        `completed ${previousUpdate.attempt.fromVersion} -> ${previousUpdate.attempt.toVersion}`,
+      )
+    } else if (previousUpdate.kind === 'failed') {
+      desktopDiagnostics.write(
+        'updater',
+        `handoff did not complete ${previousUpdate.attempt.fromVersion} -> ${previousUpdate.attempt.toVersion}; evidence=${previousUpdate.archivedPath}`,
+      )
+      dialog.showErrorBox(
+        'OpenAlice update did not finish',
+        `The previous update to OpenAlice ${previousUpdate.attempt.toVersion} did not complete. ` +
+          `OpenAlice is still running ${app.getVersion()}.\n\n` +
+          `You can retry from Settings, or install the release manually.\n\nDiagnostic log:\n${desktopDiagnostics.path}`,
+      )
+    }
+  } catch (error) {
+    desktopDiagnostics.write(
+      'updater',
+      `could not inspect previous update attempt: ${error instanceof Error ? error.stack ?? error.message : String(error)}`,
+    )
+  }
+
   // Build output lives at <repo>/dist/electron/main.js, <repo>/dist/main.js
   // (Alice), <repo>/services/uta/dist/uta.js (UTA), and the optional
   // <repo>/services/connector/dist/connector.js. The desktop package
@@ -556,33 +636,40 @@ app.whenReady().then(async () => {
   let takeover = takeoverRequested()
   const guardianStartedAt = currentProcessStartedAt()
   while (!takeover) {
-    const runtimeInspections = await inspectOpenAliceInstance({ userDataHome, launcherRoot })
-    const activeRuntime = runtimeInspections.find((row) => row.state === 'active' && row.owner)
-    if (!activeRuntime) break
-    const owner = activeRuntime.owner!
-    const staleDetail = activeRuntime.heartbeatStale
-      ? '\n\nThe process is still present, but its health heartbeat is stale.'
-      : ''
-    const canChooseAnother = selectionLock === null
-    const buttons = canChooseAnother
-      ? ['Keep existing instance', 'Choose another data location', 'Stop it and start this OpenAlice']
-      : ['Keep existing instance', 'Stop it and start this OpenAlice']
-    const { response } = await dialog.showMessageBox({
-      type: activeRuntime.heartbeatStale ? 'warning' : 'question',
-      title: 'OpenAlice is already running',
-      message: `Another OpenAlice ${owner.launcher} instance is using this data.`,
-      detail: `PID ${owner.pid}\nData: ${userDataHome}\nLast heartbeat: ${owner.heartbeatAt}${staleDetail}`,
-      buttons,
-      defaultId: activeRuntime.heartbeatStale ? buttons.length - 1 : 0,
-      cancelId: 0,
-      noLink: true,
-    })
-    if (response === 0) {
+    let existingOwner
+    desktopDiagnostics.write(
+      'existing-owner',
+      `inspect home=${userDataHome} launcherRoot=${launcherRoot}`,
+    )
+    try {
+      existingOwner = await resolveExistingOwnerStartup({
+        userDataHome,
+        launcherRoot,
+        canChooseAnother: selectionLock === null,
+        takeoverRequested: false,
+      })
+    } catch (error) {
+      desktopDiagnostics.write(
+        'existing-owner',
+        `inspection failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`,
+      )
+      dialog.showErrorBox(
+        'OpenAlice — existing AliceProject',
+        `${error instanceof Error ? error.message : String(error)}\n\nOpenAlice did not take over the running AliceProject.`,
+      )
       app.quit()
       return
     }
-    if (!canChooseAnother || response === 2) {
-      takeover = true
+    desktopDiagnostics.write(
+      'existing-owner',
+      `resolved action=${existingOwner.action}${existingOwner.action === 'continue' ? ` takeover=${existingOwner.takeover}` : ''}`,
+    )
+    if (existingOwner.action === 'quit') {
+      app.quit()
+      return
+    }
+    if (existingOwner.action === 'continue') {
+      takeover = existingOwner.takeover
       break
     }
 
@@ -591,7 +678,7 @@ app.whenReady().then(async () => {
     if (chosen.path === userDataHome) {
       dialog.showErrorBox(
         'OpenAlice — choose another location',
-        'That folder is the data location already owned by the running instance.',
+        'That folder is the complete home already owned by the running AliceProject.',
       )
       continue
     }
@@ -611,11 +698,9 @@ app.whenReady().then(async () => {
   const homeEnv = app.isPackaged
     ? {
         OPENALICE_HOME: userDataHome,
-        // The app dir itself (Contents/Resources/app with asar:false) — it's
-        // what *contains* default/, ui/dist, src/workspaces, services/uta/dist,
-        // matching how src/core/paths.ts resolves resources (APP_HOME/<dir>).
-        // NOT dirname() — that points one level above the shipped files.
-        OPENALICE_APP_HOME: app.getAppPath(),
+        // External tools need real paths. Code and dependencies stay in
+        // app.asar; shipped Workspace assets/toolchains live beside it.
+        OPENALICE_APP_HOME: join(process.resourcesPath, 'runtime'),
       }
     : {
         OPENALICE_HOME: userDataHome,
@@ -733,6 +818,7 @@ app.whenReady().then(async () => {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         OPENALICE_CONNECTOR_PORT: String(connectorPort),
+        OPENALICE_TOOL_SOCKET: toolSocketPath,
         OPENALICE_LAUNCHER: 'electron',
         OPENALICE_GUARDIAN_PID: String(process.pid),
         OPENALICE_GUARDIAN_STARTED_AT: String(guardianStartedAt),
@@ -752,6 +838,7 @@ app.whenReady().then(async () => {
   }
 
   const spawnAlice = (): ChildProcess => {
+    aliceStderrTail = new BoundedTextTail()
     const child = spawn(process.execPath, [aliceEntry], {
       env: {
         ...process.env,
@@ -776,8 +863,13 @@ app.whenReady().then(async () => {
       // The fourth fd opens Node child_process IPC. Electron app mode uses it
       // as the local PTY transport between BrowserWindow/preload and Alice's
       // WorkspaceService, while HTTP/WS remains the browser/dev/Docker plane.
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      stdio: ['inherit', 'inherit', 'pipe', 'ipc'],
       serialization: 'advanced',
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      process.stderr.write(chunk)
+      aliceStderrTail.append(chunk)
+      desktopDiagnostics?.write('alice:stderr', chunk)
     })
     child.on('message', (msg) => {
       if (!handleOpenAliceIpcMessage(msg)) {
@@ -787,7 +879,16 @@ app.whenReady().then(async () => {
     })
     child.once('exit', (code, signal) => {
       if (appQuitting) return
-      console.error(`[guardian] Alice exited unexpectedly code=${code} signal=${signal}`)
+      const message = `Alice exited unexpectedly code=${code} signal=${signal}`
+      console.error(`[guardian] ${message}`)
+      desktopDiagnostics?.write('guardian', message)
+      showFatalDesktopError(
+        aliceBecameReady ? 'OpenAlice stopped unexpectedly' : 'OpenAlice could not start',
+        aliceBecameReady
+          ? 'The local Alice service stopped, so OpenAlice must close.'
+          : 'The local Alice service exited before the desktop window was ready.',
+      )
+      process.exitCode = 1
       shutdown()
     })
     return child
@@ -837,8 +938,14 @@ app.whenReady().then(async () => {
     }),
   })
   protocol.handle('app', async (request) => {
+    const smokeTrace = process.env['OPENALICE_ELECTRON_SMOKE_PTY'] === '1'
+      && request.method === 'POST'
+      && new URL(request.url).pathname.startsWith('/api/workspaces')
+    if (smokeTrace) console.log('[desktop-pty-smoke] main stage=web-request')
     try {
-      return await fetchAliceWebRequest(request, alice)
+      const response = await fetchAliceWebRequest(request, alice)
+      if (smokeTrace) console.log('[desktop-pty-smoke] main stage=web-response status=' + response.status)
+      return response
     } catch (err) {
       return new Response(err instanceof Error ? err.message : String(err), { status: 503 })
     }
@@ -861,6 +968,7 @@ app.whenReady().then(async () => {
   alice = spawnAlice()
   console.log(`[guardian] Alice pid=${alice.pid} web=ipc mcpPort=${mcpPort ?? 'disabled'}`)
   await waitForAliceReady()
+  aliceBecameReady = true
 
   // Alice migrations can create connector-service.json from the retired
   // Telegram config. Reconcile after readiness so this upgrade starts the
@@ -900,6 +1008,7 @@ app.whenReady().then(async () => {
     width: 1280,
     height: 800,
     title: 'OpenAlice',
+    ...windowChromeOptions(),
     webPreferences: {
       preload: resolve(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -910,6 +1019,7 @@ app.whenReady().then(async () => {
       sandbox: false,
     },
   })
+  configureWindowChrome(win)
   win.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error(`[guardian] renderer preload failed path=${preloadPath}: ${error.message}`)
   })
@@ -1028,7 +1138,49 @@ app.whenReady().then(async () => {
   })
   win.loadURL('app://openalice/')
 
-  configureAutoUpdate(win, { beforeInstall: stopChildren })
+  configureAutoUpdate(win, {
+    beforeInstall: async (version, report) => {
+      await recordUpdateAttempt(updateAttemptPath, {
+        fromVersion: app.getVersion(),
+        toVersion: version,
+      })
+      desktopDiagnostics?.write('updater', `starting ${app.getVersion()} -> ${version}`)
+      report('stopping-services')
+      await stopChildren()
+      report('releasing-runtime')
+      await releaseGuardianRuntimeLock()
+    },
+    onInstallHandoff: (version) => {
+      desktopDiagnostics?.write('updater', `handing ${version} to the native installer`)
+      if (Notification.isSupported()) {
+        new Notification({
+          title: 'OpenAlice is updating',
+          body: `Installing ${version}. OpenAlice will reopen automatically; this can take up to a minute.`,
+        }).show()
+      }
+    },
+    onInstallFailure: (error) => {
+      desktopDiagnostics?.write('updater', `installer handoff failed: ${error.stack ?? error.message}`)
+      const recoveryMessage = appQuitting
+        ? 'OpenAlice will restart on the current version.'
+        : 'OpenAlice is still running on the current version.'
+      dialog.showErrorBox(
+        'OpenAlice update failed',
+        `${error.message}\n\n${recoveryMessage}\n\nDiagnostic log:\n${desktopDiagnostics?.path ?? app.getPath('logs')}`,
+      )
+      if (appQuitting) {
+        app.relaunch()
+        app.exit(1)
+      }
+    },
+  })
+}).catch((error) => {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error)
+  console.error('[guardian] desktop startup failed:', error)
+  desktopDiagnostics?.write('guardian', `desktop startup failed: ${message}`)
+  showFatalDesktopError('OpenAlice could not start', error instanceof Error ? error.message : String(error))
+  process.exitCode = 1
+  shutdown()
 })
 
 async function stopManagedProcess(child: ChildProcess): Promise<void> {
@@ -1164,20 +1316,17 @@ async function startFlagWatcher(
 /** Cascade tree-kill every managed child. */
 async function stopChildren(): Promise<void> {
   appQuitting = true
-  const children = [uta, connector, alice].filter((c): c is ChildProcess => c != null && c.exitCode === null && !c.killed)
+  const children = [uta, connector, alice].filter((c): c is ChildProcess => c != null && childIsRunning(c))
   if (children.length === 0) return
   console.log(`[guardian] shutting down — SIGTERM → ${children.length} child(ren)`)
   await Promise.all(
-    children.map(async (c) => {
-      const exited = new Promise<void>((r) => c.once('exit', () => r()))
-      killTree(c, 'SIGTERM')
-      await Promise.race([exited, new Promise((r) => setTimeout(r, SIGTERM_GRACE_MS))])
-      if (c.exitCode === null && !c.killed) {
+    children.map((c) => stopChild(c, {
+      graceMs: SIGTERM_GRACE_MS,
+      sendSignal: (signal) => killTree(c, signal),
+      onForce: () => {
         console.warn(`[guardian] child pid=${c.pid} did not exit after ${SIGTERM_GRACE_MS}ms → SIGKILL`)
-        killTree(c, 'SIGKILL')
-        await exited
-      }
-    }),
+      },
+    })),
   )
 }
 
@@ -1185,11 +1334,13 @@ async function stopChildren(): Promise<void> {
 function shutdown(): void {
   if (appQuitting) return
   void stopChildren().finally(async () => {
-    const current = guardianRuntimeLock
-    guardianRuntimeLock = null
-    await current?.release().catch((err) => console.error('[guardian] runtime lock release failed:', err))
+    await releaseGuardianRuntimeLock()
     const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0
-    app.exit(exitCode)
+    console.log(`[guardian] shutdown complete → exit ${exitCode}`)
+    exitDesktopProcess(exitCode, {
+      appExit: (code) => app.exit(code),
+      processExit: (code) => process.exit(code),
+    })
   })
 }
 

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, rename, rm, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { exec as gitExec } from 'dugite';
+import { exec as gitExec } from './git-execution.js';
 
 import {
   readCredentials,
@@ -12,13 +12,24 @@ import {
 } from '@/core/config.js';
 
 import { prepareAgentRuntimeWorkspace, type AdapterRegistry } from './cli-adapter.js';
+import { resolveMjsBootstrapInvocation } from './bootstrap-runtime.js';
 import { injectWorkspaceContext } from './context-injector.js';
-import { injectWorkspaceCredentials } from './credential-injection.js';
+import { credentialToWorkspaceAiCred } from './credential-injection.js';
 import type { Logger } from './logger.js';
 import { generatePetnameId } from './petname-id.js';
-import type { AgentCredentialDecl, TemplateRegistry } from './template-registry.js';
+import type {
+  AgentCredentialDecl,
+  TemplateMeta,
+  TemplateRegistry,
+  TemplateSourceVersion,
+} from './template-registry.js';
 import { initializeWorkspaceTemplateState } from './template-upgrade.js';
 import type { WorkspaceMeta, WorkspaceRegistry } from './workspace-registry.js';
+import {
+  emptyWorkspaceRuntimeSettings,
+  writeWorkspaceRuntimeSettings,
+  type WorkspaceRuntimePreference,
+} from './workspace-runtime-settings.js';
 
 export interface BootstrapEnv {
   /**
@@ -56,7 +67,7 @@ export type CreateResult =
         | 'bootstrap_failed'
         | 'injection_failed'
         | 'unknown_template'
-        | 'unknown_agent';
+        | 'unknown_source_version';
       readonly message: string;
       readonly stderr?: string;
       readonly exitCode?: number;
@@ -66,32 +77,35 @@ const TAG_RE = /^[a-z0-9][a-z0-9_-]{0,32}$/;
 export const MIN_WORKSPACE_FREE_BYTES = 64 * 1024 * 1024;
 
 /**
- * Resolve the adapter set a new workspace is created with. This is the single
- * home of the agent policy, so every create path — the form, quick-chat,
- * headless — converges on it:
- *
- * - An explicit `agentsRequested` (a caller pinning a subset) wins verbatim.
- * - Otherwise a workspace gets EVERY registered adapter enabled; restricting
- *   it was a create-time decision with no first-action basis. The template's
- *   `defaultAgents` is honored as an ordering hint for agent runtimes, while
- *   utility adapters such as `shell` are kept at the tail so they never become
- *   an implicit workload.
- *
- * This used to live in the frontend create hook alone, which silently left
- * backend-only callers (quick-chat) on the bare-`defaultAgents` set.
+ * Order the live adapter registry for transient Workspace preparation.
+ * Templates may put preferred runtimes first, but this order is never
+ * persisted as a Workspace capability boundary.
  */
-export function resolveCreateAgents(
-  agentsRequested: readonly string[] | undefined,
+export function orderCreateAdapters(
   templateDefaultAgents: readonly string[],
   allAdapterIds: readonly string[],
 ): readonly string[] {
-  if (agentsRequested && agentsRequested.length > 0) return agentsRequested;
   const utility = new Set(['shell']);
-  const ordered = [...new Set([...templateDefaultAgents, ...allAdapterIds])];
+  const registered = new Set(allAdapterIds);
+  const ordered = [
+    ...new Set([
+      ...templateDefaultAgents.filter((id) => registered.has(id)),
+      ...allAdapterIds,
+    ]),
+  ];
   return [
     ...ordered.filter((id) => !utility.has(id)),
     ...ordered.filter((id) => utility.has(id)),
   ];
+}
+
+export function resolveTemplateSource(
+  template: TemplateMeta,
+  requestedVersion?: string,
+): TemplateSourceVersion | undefined {
+  if (!template.source) return undefined;
+  const version = requestedVersion ?? template.source.defaultVersion;
+  return template.source.versions.find((candidate) => candidate.version === version);
 }
 
 /**
@@ -109,7 +123,7 @@ export class WorkspaceCreator {
   async create(
     tag: string,
     templateName: string,
-    agentsRequested?: readonly string[],
+    sourceVersion?: string,
   ): Promise<CreateResult> {
     if (!TAG_RE.test(tag)) {
       return {
@@ -129,25 +143,24 @@ export class WorkspaceCreator {
         message: `unknown template: ${templateName}`,
       };
     }
+    const templateSource = resolveTemplateSource(template, sourceVersion);
+    if (
+      (template.source && !templateSource)
+      || (!template.source && sourceVersion !== undefined)
+    ) {
+      return {
+        ok: false,
+        code: 'unknown_source_version',
+        message: template.source
+          ? `unsupported ${templateName} source version: ${sourceVersion ?? ''}`
+          : `template ${templateName} does not accept a source version`,
+      };
+    }
 
-    // Agent policy lives in `resolveCreateAgents` (this file) so every create
-    // path — form, quick-chat, headless — converges on it.
-    const agents = resolveCreateAgents(
-      agentsRequested,
+    const adapters = orderCreateAdapters(
       template.defaultAgents,
       this.opts.adapterRegistry.list().map((a) => a.id),
     );
-
-    // Validate every requested adapter exists in the registry.
-    for (const a of agents) {
-      if (!this.opts.adapterRegistry.get(a)) {
-        return {
-          ok: false,
-          code: 'unknown_agent',
-          message: `unknown agent: ${a}`,
-        };
-      }
-    }
 
     const storage = await inspectWorkspaceStorage(this.opts.workspacesRoot);
     if (!storage.ok) return insufficientStorageResult(storage.availableBytes);
@@ -160,7 +173,14 @@ export class WorkspaceCreator {
         existsSync(join(this.opts.workspacesRoot, candidate)),
     });
     const dir = join(this.opts.workspacesRoot, id);
-    const log = this.opts.logger.child({ tag, id, dir, template: templateName, agents });
+    const log = this.opts.logger.child({
+      tag,
+      id,
+      dir,
+      template: templateName,
+      adapters,
+      ...(templateSource ? { sourceVersion: templateSource.version } : {}),
+    });
 
     log.info('bootstrap.start', { script: template.bootstrapScript });
 
@@ -172,6 +192,11 @@ export class WorkspaceCreator {
         AQ_TEMPLATE_FILES_DIR: template.filesDir,
         AQ_TEMPLATE_ROOT: template.templateDir,
         AQ_LAUNCHER_REPO_ROOT: this.opts.bootstrapEnv.launcherRepoRoot,
+        ...(template.source && templateSource ? {
+          OPENALICE_TEMPLATE_SOURCE_REPOSITORY: template.source.repository,
+          OPENALICE_TEMPLATE_SOURCE_VERSION: templateSource.version,
+          OPENALICE_TEMPLATE_SOURCE_COMMIT: templateSource.commit,
+        } : {}),
         // AQ_LAUNCHER_ROOT is intentionally NOT set here. bootstrap.sh's
         // ${AQ_LAUNCHER_ROOT:-$HOME/.openalice/workspaces} default matches
         // config.ts's default; a user-exported value flows in via
@@ -206,8 +231,10 @@ export class WorkspaceCreator {
     }
 
     // Launcher-owned context injection (MCP / persona / skills, gated by the
-    // template manifest), then the initial commit. The launcher — not the
-    // bootstrap script — owns what lands in the workspace's first commit.
+    // template manifest), then the launcher commit. The launcher — not the
+    // bootstrap script — owns what lands in that commit. Snapshot templates
+    // make it the root commit; source-backed templates may append it to their
+    // retained upstream history.
     try {
       await injectWorkspaceContext({ template, wsId: id, dir });
     } catch (err) {
@@ -220,6 +247,62 @@ export class WorkspaceCreator {
         message: `context injection failed: ${(err as Error).message}`,
       };
     }
+
+    // Seed the Workspace-owned, secret-free launch preferences before the
+    // launcher baseline commit. Unlike the deprecated native CLI export, this
+    // file is part of the Workspace's self-description and is safe to track.
+    // The template still wins over installation defaults per runtime.
+    try {
+      const userDefaults = await readWorkspaceCredentialDefaults();
+      const effective: Record<string, AgentCredentialDecl> = {
+        ...userDefaults,
+        ...(template.agentCredentials ?? {}),
+      };
+      if (Object.keys(effective).length > 0) {
+        const credentials = await readCredentials();
+        const settings = emptyWorkspaceRuntimeSettings();
+        const rememberedAgents: string[] = [];
+        for (const [agentId, decl] of Object.entries(effective)) {
+          const adapter = this.opts.adapterRegistry.get(agentId);
+          const credential = credentials[decl.credentialSlug];
+          if (!adapter || !credential) {
+            log.warn('workspace.runtime_settings_seed_skipped', {
+              agentId,
+              reason: adapter ? 'credential_not_found' : 'adapter_not_found',
+            });
+            continue;
+          }
+          const projected = credentialToWorkspaceAiCred(credential, adapter, decl);
+          if (!projected) {
+            log.warn('workspace.runtime_settings_seed_skipped', {
+              agentId,
+              reason: 'credential_incompatible',
+            });
+            continue;
+          }
+          const preference: WorkspaceRuntimePreference = {
+            accessMode: 'vault',
+            credentialSlug: decl.credentialSlug,
+            ...(projected.wireShape ? { wireShape: projected.wireShape } : {}),
+            ...(projected.model ? { model: projected.model } : {}),
+            ...(projected.reasoningEffort ? { reasoningEffort: projected.reasoningEffort } : {}),
+          };
+          settings.runtime.interactive.agents[agentId] = preference;
+          settings.runtime.headless.agents[agentId] = preference;
+          rememberedAgents.push(agentId);
+        }
+        if (rememberedAgents.length > 0) {
+          const defaultAgent = template.defaultAgents.find((agent) => rememberedAgents.includes(agent))
+            ?? rememberedAgents[0]!;
+          settings.runtime.interactive.defaultAgent = defaultAgent;
+          settings.runtime.headless.defaultAgent = defaultAgent;
+          await writeWorkspaceRuntimeSettings(dir, settings);
+        }
+      }
+    } catch (err) {
+      log.warn('workspace.runtime_settings_seed_failed', { err });
+    }
+
     try {
       await commitInitial(dir, `${templateName}: ${tag}`);
     } catch (err) {
@@ -235,8 +318,8 @@ export class WorkspaceCreator {
 
     // Run the same per-runtime preparation hook used before later process
     // launches. Hooks are idempotent. A single adapter failure does not fail
-    // Workspace creation; another enabled runtime can still be used.
-    for (const a of agents) {
+    // Workspace creation; another registered runtime can still be used.
+    for (const a of adapters) {
       const adapter = this.opts.adapterRegistry.get(a);
       if (!adapter) continue;
       try {
@@ -250,36 +333,6 @@ export class WorkspaceCreator {
       }
     }
 
-    // Credential seeding — runs POST-commit so the secret never lands in the
-    // initial commit (the adapter config files are kept out of git by
-    // `_common.sh`'s excludes; post-commit is the belt-and-braces). The source
-    // is the user's per-agent workspace defaults (Settings › AI Provider) merged
-    // with any template-declared `agentCredentials` — the template wins per agent
-    // (explicit per-template intent), though in practice no in-repo template
-    // declares them, so the user defaults are the effective source. Best-effort:
-    // a miss (disabled agent, dangling slug, incompatible wire) warns + skips,
-    // the workspace stays usable.
-    try {
-      const userDefaults = await readWorkspaceCredentialDefaults();
-      const effective: Record<string, AgentCredentialDecl> = {
-        ...userDefaults,
-        ...(template.agentCredentials ?? {}),
-      };
-      if (Object.keys(effective).length > 0) {
-        const credentials = await readCredentials();
-        await injectWorkspaceCredentials({
-          dir,
-          agents,
-          agentCredentials: effective,
-          adapterRegistry: this.opts.adapterRegistry,
-          credentials,
-          logger: log,
-        });
-      }
-    } catch (err) {
-      log.warn('cred_inject.failed', { err });
-    }
-
     const workspace: WorkspaceMeta = {
       id,
       tag,
@@ -287,7 +340,6 @@ export class WorkspaceCreator {
       createdAt: new Date().toISOString(),
       template: templateName,
       spawnedFromVersion: template.version,
-      agents,
     };
     try {
       // The first commit is the exact Base for every future Template Upgrade.
@@ -397,11 +449,12 @@ function insufficientStorageResult(availableBytes: number | null = null): Create
 }
 
 /**
- * The launcher's initial commit — uniform across templates (the "Harness rule":
- * every workspace is a fresh-git repo with a clean initial commit, no inherited
- * history, no pushable remote). Replaces the old per-template `commit_initial`
- * bash helper, byte-identical in message + author. The bootstrap script has
- * already run `git init` and set excludes; we just stage and commit.
+ * The launcher's workspace commit, uniform across templates. Snapshot templates
+ * initialize a fresh repository, while source-backed templates may retain an
+ * upstream repository and append this commit to it. Replaces the old
+ * per-template `commit_initial` bash helper, byte-identical in message + author.
+ * The bootstrap script has already prepared Git and its excludes; we just stage
+ * and commit.
  */
 export async function commitInitial(dir: string, message: string): Promise<void> {
   await runGit(dir, ['add', '.']);
@@ -459,19 +512,24 @@ export function runScript(
   const isMjs = script.endsWith('.mjs');
   const isWindows = process.platform === 'win32';
 
-  // `.mjs` (built-in templates): run on the Electron-bundled Node. In the
-  // packaged app `process.execPath` is the Electron binary; ELECTRON_RUN_AS_NODE
-  // flips it to pure-Node mode (a harmless no-op for a plain `node` execPath in
-  // dev). No bash, no shebang reliance → works on a bare Windows/Mac box.
+  // `.mjs` (built-in templates): Node/Electron uses its bundled Node runtime.
+  // A Bun standalone re-enters the same Alice executable through a private
+  // bootstrap role because its process.execPath is the product binary, not a
+  // general-purpose Bun interpreter. No system Node/Bun/bash is required.
+  // ELECTRON_RUN_AS_NODE flips Electron to pure-Node mode and is harmless for
+  // the other runtimes.
   // `.sh` (third-party fallback): unix reads the `#!/usr/bin/env bash` shebang;
   // Windows has no native bash, so invoke the Git-for-Windows executable we
   // resolved above (with a final bare-name fallback for WSL/custom PATHs).
-  const cmd = isMjs
-    ? process.execPath
+  const mjsInvocation = isMjs
+    ? resolveMjsBootstrapInvocation(script, args)
+    : null;
+  const cmd = mjsInvocation
+    ? mjsInvocation.command
     : isWindows
       ? resolveBashPath(process.env, 'win32') ?? 'bash'
       : script;
-  const cmdArgs = isMjs || isWindows ? [script, ...args] : args;
+  const cmdArgs = mjsInvocation?.args ?? (isWindows ? [script, ...args] : args);
   const env = isMjs
     ? { ...process.env, ...extraEnv, ELECTRON_RUN_AS_NODE: '1' }
     : { ...process.env, ...extraEnv };

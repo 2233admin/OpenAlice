@@ -1,6 +1,7 @@
 import type { ConnectorDefinition, ConnectorHealth, PublicConnectorConfig } from '../api'
 
 export type ConnectorRuntime = NonNullable<ConnectorHealth['service']>['adapters'][number]
+export type ConnectorServiceState = 'stopped' | 'healthy' | 'running' | 'unavailable'
 export type ConnectorSetupStage =
   | 'needs_credentials'
   | 'ready_to_link'
@@ -17,13 +18,20 @@ export interface ConnectorSetupState {
   linkCommand?: string
 }
 
+export function getConnectorServiceState(health: ConnectorHealth | null): ConnectorServiceState {
+  if (!health?.enabled || health.status === 'disabled') return 'stopped'
+  if (health.status === 'healthy') return 'healthy'
+  return health.service ? 'running' : 'unavailable'
+}
+
 export function getConnectorSetupState(input: {
   definition: ConnectorDefinition
   adapter: PublicConnectorConfig['adapters'][string]
   serviceEnabled: boolean
+  serviceStatus?: ConnectorHealth['status']
   runtime?: ConnectorRuntime
 }): ConnectorSetupState {
-  const { definition, adapter, serviceEnabled, runtime } = input
+  const { definition, adapter, serviceEnabled, serviceStatus, runtime } = input
   const ready = definition.fields
     .filter((field) => field.required && !field.learnedBy)
     .every((field) => field.kind === 'secret'
@@ -31,14 +39,20 @@ export function getConnectorSetupState(input: {
       : hasValue(adapter.settings[field.key]))
   const learnedFields = definition.fields.filter((field) => field.learnedBy)
   const linkCommand = learnedFields[0]?.learnedBy
-  const linked = learnedFields.length === 0
+  const durableLinked = learnedFields.length === 0
     || learnedFields.every((field) => hasValue(adapter.settings[field.key]))
-    || Boolean(runtime?.owner)
+  // Settings writes empty strings while unlinking. Ignore a stale runtime
+  // owner so the page can leave `linked` before Connector Service restarts.
+  const clearingOwner = learnedFields.some((field) => adapter.settings[field.key] === '')
+  const linked = durableLinked || (Boolean(runtime?.owner) && !clearingOwner)
   const running = serviceEnabled && adapter.enabled
 
   if (!ready) return { stage: 'needs_credentials', ready, linked: false, linkCommand }
   if (linked && !running) return { stage: 'linked_offline', ready, linked, linkCommand }
   if (!linked && !running) return { stage: 'ready_to_link', ready, linked, linkCommand }
+  if (serviceStatus === 'degraded' && !runtime) {
+    return { stage: 'error', ready, linked, linkCommand }
+  }
   if (runtime?.status === 'degraded' || runtime?.status === 'stopped') {
     return { stage: 'error', ready, linked, linkCommand }
   }

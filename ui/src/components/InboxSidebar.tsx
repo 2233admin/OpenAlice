@@ -1,13 +1,29 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { inboxFiles } from '@traderalice/connector-protocol'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Layers } from 'lucide-react'
+import { Clock, Layers, Search, X } from 'lucide-react'
+import { useWorkspaces } from '../contexts/workspaces-context'
 import { formatRelativeTime } from '../lib/intl'
 import { inboxLive } from '../live/inbox'
 import { useInboxRead } from '../live/inbox-read'
 import { useInboxSelection } from '../live/inbox-selection'
 import { useInboxViewMode } from '../live/inbox-view-mode'
-import { groupThreads, previewForEntry } from '../live/inbox-threads'
+import { presentInboxEntry } from '../lib/inbox-presentation'
+import { groupThreads } from '../live/inbox-threads'
+import {
+  isActiveOfficeInboxDutyReviewTarget,
+  readOfficeInboxDutyExcursion,
+} from '../office/inbox-duty-excursion'
+import { workspaceDisplayName } from './workspace/display'
 import { Skeleton } from './StateViews'
+import { Button } from './ui/button'
+import { inputClass } from './form'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from './ui/tooltip'
+import { SelectionIndicator } from './SelectionIndicator'
 import type { InboxEntry } from '../api/inbox'
 
 /**
@@ -20,8 +36,9 @@ import type { InboxEntry } from '../api/inbox'
  *
  * Selection + detail stay per-push in BOTH modes — a workspace's pushes
  * are usually unrelated topics (no Issue layer to make them one thread),
- * so clustering is a sidebar affordance, not a merge. Selecting a row
- * marks just that push read; j/k walks the currently-displayed order.
+ * so clustering is a sidebar affordance, not a merge. Ordinary selection
+ * marks just that push read; an active Office review target remains pending
+ * for its dossier disposition. j/k walks the currently-displayed order.
  */
 export function InboxSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const { t } = useTranslation()
@@ -31,8 +48,26 @@ export function InboxSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const select = useInboxSelection((s) => s.select)
   const markRead = useInboxRead((s) => s.markRead)
   const mode = useInboxViewMode((s) => s.mode)
+  const { workspaces } = useWorkspaces()
+  const [query, setQuery] = useState('')
+  const officeReviewTargetId = readOfficeInboxDutyExcursion()?.duty.destination.inboxEntryId ?? null
 
-  const threads = useMemo(() => groupThreads(entries), [entries])
+  const workspaceLabels = useMemo(
+    () => new Map(workspaces.map((workspace) => [workspace.id, workspaceDisplayName(workspace)])),
+    [workspaces],
+  )
+  const workspaceTags = useMemo(
+    () => new Map(workspaces.map((workspace) => [workspace.id, workspace.tag])),
+    [workspaces],
+  )
+  const normalizedQuery = normalizeSearch(query)
+  const filteredEntries = useMemo(
+    () => normalizedQuery
+      ? entries.filter((entry) => inboxSearchText(entry, workspaceLabels, workspaceTags).includes(normalizedQuery))
+      : entries,
+    [entries, normalizedQuery, workspaceLabels, workspaceTags],
+  )
+  const threads = useMemo(() => groupThreads(filteredEntries), [filteredEntries])
   const readIds = useMemo(() => {
     const ids: Record<string, true> = {}
     for (const entry of entries) {
@@ -44,14 +79,21 @@ export function InboxSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   // The visible order j/k and default-select walk: clustered order in
   // workspace mode, plain newest-first in time mode.
   const ordered = useMemo(
-    () => (mode === 'workspace' ? threads.flatMap((th) => th.entries) : entries),
-    [mode, threads, entries],
+    () => (mode === 'workspace' ? threads.flatMap((th) => th.entries) : filteredEntries),
+    [mode, threads, filteredEntries],
   )
 
-  /** select + mark read in one. Used by every selection mutation site. */
+  /** Select one row and apply ordinary Inbox read semantics. Office review
+   *  targets stay unread until their dossier records a disposition. */
   const selectAndRead = (id: string) => {
     select(id)
-    markRead(id)
+    const entry = entries.find((candidate) => candidate.id === id)
+    if (!entry || !isActiveOfficeInboxDutyReviewTarget({
+      workspaceId: entry.workspaceId,
+      inboxEntryId: entry.id,
+    })) {
+      markRead(id)
+    }
     onNavigate?.()
   }
 
@@ -59,11 +101,16 @@ export function InboxSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const everSelectedRef = useRef(false)
   useEffect(() => {
     if (everSelectedRef.current) return
+    if (!selectedId && officeReviewTargetId) {
+      select(officeReviewTargetId)
+      everSelectedRef.current = true
+      return
+    }
     if (ordered.length === 0) return
     if (!selectedId) selectAndRead(ordered[0]!.id)
     everSelectedRef.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordered, selectedId])
+  }, [officeReviewTargetId, ordered, selectedId])
 
   // Keyboard nav — j/k move within the currently-displayed order.
   useEffect(() => {
@@ -98,32 +145,101 @@ export function InboxSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
     return (
       <div className="px-3 py-4 text-[12px] text-muted-foreground/70 leading-relaxed">
         {t('inbox.noMessages')}
-        <div className="mt-1 text-muted-foreground/50">
-          {t('inbox.emptyHint')}
-        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto py-1">
-      {mode === 'workspace' ? (
-        <WorkspaceView
-          threads={threads}
-          selectedId={selectedId}
-          readIds={readIds}
-          onSelect={selectAndRead}
-        />
-      ) : (
-        <TimeView
-          entries={entries}
-          selectedId={selectedId}
-          readIds={readIds}
-          onSelect={selectAndRead}
-        />
-      )}
+    <div className="flex h-full min-h-0 flex-col py-1">
+      <div className="shrink-0 px-2 pb-1.5 pt-1">
+        <div className="relative">
+          <Search
+            size={13}
+            strokeWidth={1.8}
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/55"
+          />
+          <input
+            type="text"
+            role="searchbox"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t('inbox.searchPlaceholder')}
+            aria-label={t('inbox.searchPlaceholder')}
+            className={`${inputClass} bg-background/65 pl-7.5 pr-7 text-[11px]`}
+          />
+          {query && (
+            <Button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label={t('inbox.clearSearch')}
+              variant="ghost"
+              size="icon-xs"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground/55"
+            >
+              <X size={12} strokeWidth={1.8} aria-hidden />
+            </Button>
+          )}
+        </div>
+        {normalizedQuery && (
+          <div
+            aria-live="polite"
+            className="px-1 pt-1 text-[10px] leading-[14px] tabular-nums text-muted-foreground/55"
+          >
+            {t('inbox.searchResults', { count: filteredEntries.length, total: entries.length })}
+          </div>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {normalizedQuery && filteredEntries.length === 0 ? (
+          <div className="px-3 py-5 text-center text-[11px] leading-relaxed text-muted-foreground/65">
+            {t('inbox.noSearchResults', { query: query.trim() })}
+          </div>
+        ) : mode === 'workspace' ? (
+          <WorkspaceView
+            threads={threads}
+            selectedId={selectedId}
+            readIds={readIds}
+            workspaceLabels={workspaceLabels}
+            onSelect={selectAndRead}
+          />
+        ) : (
+          <TimeView
+            entries={filteredEntries}
+            selectedId={selectedId}
+            readIds={readIds}
+            workspaceLabels={workspaceLabels}
+            onSelect={selectAndRead}
+          />
+        )}
+      </div>
     </div>
   )
+}
+
+function normalizeSearch(value: string): string {
+  return value.normalize('NFKC').trim().toLocaleLowerCase()
+}
+
+function inboxSearchText(
+  entry: InboxEntry,
+  workspaceLabels: ReadonlyMap<string, string>,
+  workspaceTags: ReadonlyMap<string, string>,
+): string {
+  return normalizeSearch([
+    workspaceLabels.get(entry.workspaceId),
+    workspaceTags.get(entry.workspaceId),
+    entry.workspaceLabel,
+    entry.workspaceId,
+    entry.body,
+    entry.origin?.agent,
+    entry.origin?.resumeId,
+    entry.origin?.issueId,
+    entry.origin?.runId,
+    entry.origin?.sessionId,
+    ...inboxFiles(entry).map((doc) => doc.path),
+  ].filter(Boolean).join(' '))
 }
 
 /** Header toggle (mounted via the section's `Actions` slot). Segmented
@@ -134,7 +250,7 @@ export function InboxViewToggle() {
   const setMode = useInboxViewMode((s) => s.setMode)
 
   return (
-    <div className="flex items-center rounded-md border border-border/70 overflow-hidden">
+    <div className="flex items-center overflow-hidden rounded-md border border-border/70 bg-background p-px">
       <ToggleBtn
         active={mode === 'time'}
         onClick={() => setMode('time')}
@@ -162,44 +278,53 @@ function ToggleBtn({
   children: React.ReactNode
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-label={title}
-      aria-pressed={active}
-      className={`flex items-center justify-center w-8 h-8 transition-colors ${
-        active ? 'bg-muted text-foreground' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'
-      }`}
-    >
-      {children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={(
+          <Button
+            type="button"
+            onClick={onClick}
+            aria-label={title}
+            aria-pressed={active}
+            variant="ghost"
+            size="icon-sm"
+            className={active ? 'bg-muted text-foreground' : 'text-muted-foreground/60'}
+          />
+        )}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   )
 }
 
 // ==================== Workspace (clustered) view ====================
 
 function WorkspaceView({
-  threads, selectedId, readIds, onSelect,
+  threads, selectedId, readIds, workspaceLabels, onSelect,
 }: {
   threads: ReturnType<typeof groupThreads>
   selectedId: string | null
   readIds: Record<string, true>
+  workspaceLabels: ReadonlyMap<string, string>
   onSelect: (id: string) => void
 }) {
   return (
     <>
       {threads.map((thread) => {
         const unread = thread.entries.reduce((n, e) => (readIds[e.id] ? n : n + 1), 0)
+        const workspaceLabel =
+          workspaceLabels.get(thread.workspaceId) ?? thread.workspaceLabel ?? thread.workspaceId
         return (
           <div key={thread.workspaceId} className="mb-1.5">
             {/* Cluster header: label · unread badge · latest time */}
             <div className="flex items-center gap-1.5 px-3 mt-1.5 mb-0.5">
               <span className="flex-1 truncate text-[12px] font-medium text-foreground/90">
-                {thread.workspaceLabel ?? thread.workspaceId}
+                {workspaceLabel}
               </span>
               {unread > 0 && (
-                <span className="shrink-0 min-w-[15px] h-[15px] px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-semibold tabular-nums flex items-center justify-center">
+                <span className="shrink-0 min-w-[15px] text-center text-muted-foreground text-[11px] leading-[15px] font-medium tabular-nums">
                   {unread}
                 </span>
               )}
@@ -216,6 +341,7 @@ function WorkspaceView({
                   entry={entry}
                   active={entry.id === selectedId}
                   unread={!readIds[entry.id]}
+                  source={workspaceLabel}
                   onClick={() => onSelect(entry.id)}
                 />
               ))}
@@ -227,20 +353,33 @@ function WorkspaceView({
   )
 }
 
-/** Row inside a workspace cluster — label lives in the header, so the
- *  row shows just the push preview + time. */
+/** Row inside a workspace cluster — the workspace label lives in the
+ *  header, so the row leads with the scan subject. */
 function ClusterRow({
-  entry, active, unread, onClick,
+  entry, active, unread, source, onClick,
 }: {
   entry: InboxEntry
   active: boolean
   unread: boolean
+  source: string
   onClick: () => void
 }) {
+  const { t } = useTranslation()
+  const time = formatRelativeTime(entry.ts)
+  const { subject, excerpt, rowLabel } = presentInboxEntry(entry, {
+    source,
+    unread,
+    time,
+    untitled: t('inbox.untitledUpdate'),
+    unreadLabel: t('inbox.unread'),
+    moreAttachments: (count) => t('inbox.moreAttachments', { count }),
+  })
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-label={rowLabel}
+      aria-current={active || undefined}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -252,18 +391,27 @@ function ClusterRow({
         active ? 'bg-muted' : 'hover:bg-muted/50'
       }`}
     >
-      {active && (
-        <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary" />
-      )}
+      {active && <SelectionIndicator />}
       <span
         aria-hidden
-        className={`mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full ${unread ? 'bg-primary' : 'bg-transparent'}`}
+        className={`mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full ${unread ? 'oa-inbox-unread-dot' : 'bg-transparent'}`}
       />
-      <span className={`min-w-0 truncate text-[11px] leading-5 ${unread ? 'text-muted-foreground' : 'text-muted-foreground/70'}`}>
-        {previewForEntry(entry)}
+      <span className="min-w-0">
+        <span
+          className={`block truncate text-[12px] leading-5 ${
+            unread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'
+          }`}
+        >
+          {subject}
+        </span>
+        {excerpt && (
+          <span className="mt-0.5 hidden truncate text-[11px] leading-4 text-muted-foreground/65 sm:block">
+            {excerpt}
+          </span>
+        )}
       </span>
       <span className="col-start-2 text-[10px] text-muted-foreground/50 tabular-nums">
-        {formatRelativeTime(entry.ts)}
+        {time}
       </span>
     </div>
   )
@@ -272,11 +420,12 @@ function ClusterRow({
 // ==================== Time (flat chronological) view ====================
 
 function TimeView({
-  entries, selectedId, readIds, onSelect,
+  entries, selectedId, readIds, workspaceLabels, onSelect,
 }: {
   entries: readonly InboxEntry[]
   selectedId: string | null
   readIds: Record<string, true>
+  workspaceLabels: ReadonlyMap<string, string>
   onSelect: (id: string) => void
 }) {
   const { t } = useTranslation()
@@ -286,7 +435,7 @@ function TimeView({
     <>
       {groups.map(([bucket, items]) => (
         <div key={bucket} className="mb-1">
-          <div className="px-3 mt-2 mb-1 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+          <div className="mb-1 mt-2 px-3 text-[11px] font-medium text-muted-foreground/65">
             {t(BUCKET_KEYS[bucket])}
           </div>
           <div className="flex flex-col">
@@ -296,6 +445,7 @@ function TimeView({
                 entry={entry}
                 active={entry.id === selectedId}
                 unread={!readIds[entry.id]}
+                workspaceLabel={workspaceLabels.get(entry.workspaceId)}
                 onClick={() => onSelect(entry.id)}
               />
             ))}
@@ -309,17 +459,31 @@ function TimeView({
 /** Row in the flat time feed — carries the workspace label (no cluster
  *  header to provide it). */
 function TimeRow({
-  entry, active, unread, onClick,
+  entry, active, unread, workspaceLabel, onClick,
 }: {
   entry: InboxEntry
   active: boolean
   unread: boolean
+  workspaceLabel?: string
   onClick: () => void
 }) {
+  const { t } = useTranslation()
+  const source = workspaceLabel ?? entry.workspaceLabel ?? entry.workspaceId
+  const time = formatRelativeTime(entry.ts)
+  const { subject, excerpt, rowLabel } = presentInboxEntry(entry, {
+    source,
+    unread,
+    time,
+    untitled: t('inbox.untitledUpdate'),
+    unreadLabel: t('inbox.unread'),
+    moreAttachments: (count) => t('inbox.moreAttachments', { count }),
+  })
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-label={rowLabel}
+      aria-current={active || undefined}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -327,31 +491,40 @@ function TimeRow({
           onClick()
         }
       }}
-      className={`group relative flex min-h-14 flex-col gap-0.5 px-3 py-2 cursor-pointer transition-colors outline-none focus-visible:bg-muted/70 ${
+      className={`group relative flex min-h-14 flex-col justify-center gap-1 px-3 py-2 cursor-pointer transition-colors outline-none focus-visible:bg-muted/70 ${
         active ? 'bg-muted' : 'hover:bg-muted/50'
       }`}
     >
-      {active && (
-        <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary" />
-      )}
+      {active && <SelectionIndicator />}
 
-      {/* Line 1: unread dot · workspace · time */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex min-w-0 items-start gap-1.5">
         <span
           aria-hidden
-          className={`shrink-0 w-1.5 h-1.5 rounded-full ${unread ? 'bg-primary' : 'bg-transparent'}`}
+          className={`mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full ${unread ? 'oa-inbox-unread-dot' : 'bg-transparent'}`}
         />
-        <span className={`flex-1 truncate text-[12px] ${unread ? 'font-medium text-foreground' : 'text-foreground'}`}>
-          {entry.workspaceLabel ?? entry.workspaceId}
-        </span>
-        <span className="shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
-          {formatRelativeTime(entry.ts)}
+        <span className="min-w-0 flex-1">
+          <span
+            className={`block truncate text-[12px] leading-5 ${
+              unread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'
+            }`}
+          >
+            {subject}
+          </span>
+          {excerpt && (
+            <span className="mt-0.5 hidden truncate text-[11px] leading-4 text-muted-foreground/65 sm:block">
+              {excerpt}
+            </span>
+          )}
         </span>
       </div>
 
-      {/* Line 2: preview */}
-      <div className={`pl-3 text-[11px] truncate ${unread ? 'text-muted-foreground' : 'text-muted-foreground/70'}`}>
-        {previewForEntry(entry)}
+      <div className="flex min-w-0 items-center gap-2 pl-3">
+        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground/60">
+          {source}
+        </span>
+        <span className="shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
+          {time}
+        </span>
       </div>
     </div>
   )

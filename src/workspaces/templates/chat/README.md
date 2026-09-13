@@ -1,12 +1,13 @@
 ---
-version: 1.6.4
+version: 1.8.9
 ---
 
 # Chat
 
 A general-purpose Alice workspace. The agent boots with Alice's full tool
 surface — market/research data plus trading, through the `alice*` / `traderhub`
-CLIs on its PATH — and Alice's persona pre-loaded as CLAUDE.md / AGENTS.md.
+CLIs on its PATH — with the Workspace-owned Alice instruction contract loaded
+as CLAUDE.md / AGENTS.md.
 
 ## What this workspace does
 
@@ -17,7 +18,8 @@ archive, run indicators, write research files, track entities with `[[name]]`,
 and turn follow-up into `.alice/issues/<id>.md` work items. The bundled
 `opencli-reader` skill additionally teaches it to reach long-tail sources
 (social sentiment, options flow, global news frontpages) through the optional
-community `opencli` CLI — it will ask before assuming you have it.
+community `opencli` CLI when installed. Research can also use the Coding
+Agent’s other available tools.
 
 When an Inbox result or Issue is hard to interpret, the workspace can ask its
 attributable product Session directly. It can also dispatch several peer
@@ -40,8 +42,9 @@ headless workspace run.
 
 Inbox keeps durable report delivery separate from the live terminal. A user or
 peer agent can ask the attributable sender about a report; when only the
-Workspace is known, OpenAlice creates a fresh reconstruction Session and labels
-it honestly instead of pretending it found the original author.
+Workspace is known, OpenAlice creates a fresh Session and labels its provenance
+honestly instead of pretending it found the original author. Reconstruction
+instructions are added only when the caller explicitly requests them.
 
 Things Alice will route here:
 - Research notes, thesis updates, and market snapshots worth re-reading later.

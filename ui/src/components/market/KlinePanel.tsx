@@ -1,5 +1,10 @@
+import { useMarketBars } from '../../hooks/useMarketBars'
+import { Button } from '../ui/button'
+import { MARKET_INTERVALS, MARKET_REFERENCE_COUNT, type MarketInterval } from '@traderalice/connector-protocol'
+import { BarFreshness } from './BarFreshness'
+import { WatchlistButton } from './WatchlistButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createChart,
   CandlestickSeries,
@@ -14,24 +19,25 @@ import { barsApi, type AssetClass, type HistoricalBar, type BarSourceCandidate, 
 import { readSemanticColor } from '../../theme/semanticColors'
 import { useEffectivePalette, useEffectiveTheme } from '../../theme/useEffectiveTheme'
 import { Skeleton } from '../StateViews'
+import { SegmentedControl } from '../SegmentedControl'
 
-export type KlineInterval = '1m' | '5m' | '1h' | '1d'
+export type KlineInterval = MarketInterval
 export type KlineTimeframe = '1D' | '5D' | '1M' | '3M' | '1Y' | '5Y' | 'All'
 
-const INTERVALS: KlineInterval[] = ['1m', '5m', '1h', '1d']
+const INTERVALS = MARKET_INTERVALS
 const TIMEFRAMES: KlineTimeframe[] = ['1D', '5D', '1M', '3M', '1Y', '5Y', 'All']
 const DEFAULT_INTERVAL: KlineInterval = '1d'
 const DEFAULT_RANGE: KlineTimeframe = '1Y'
 
 function parseInterval(s: string | null): KlineInterval {
-  return (INTERVALS as string[]).includes(s ?? '') ? (s as KlineInterval) : DEFAULT_INTERVAL
+  return (INTERVALS as readonly string[]).includes(s ?? '') ? (s as KlineInterval) : DEFAULT_INTERVAL
 }
 
 function parseTimeframe(s: string | null): KlineTimeframe {
   return (TIMEFRAMES as string[]).includes(s ?? '') ? (s as KlineTimeframe) : DEFAULT_RANGE
 }
 
-const INTRADAY: ReadonlySet<KlineInterval> = new Set(['1m', '5m', '1h'])
+const INTRADAY: ReadonlySet<KlineInterval> = new Set(['1m', '5m', '15m', '30m', '1h', '4h'])
 
 function daysForTimeframe(tf: KlineTimeframe): number | null {
   switch (tf) {
@@ -52,8 +58,9 @@ function startDateFromToday(days: number): string {
 }
 
 function toUTCTimestamp(s: string): UTCTimestamp {
-  // Daily bars use `YYYY-MM-DD`; intraday uses `YYYY-MM-DD HH:MM:SS`.
-  const iso = s.includes(' ') ? s.replace(' ', 'T') + 'Z' : `${s}T00:00:00Z`
+  // Calendar dates and timezone-bearing intraday instants are both valid.
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z`
+    : s.includes(' ') ? s.replace(' ', 'T') + 'Z' : s
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
 }
 
@@ -72,16 +79,22 @@ interface Props {
    * only on React Router state: tab switches project their URL with
    * history.replaceState, which intentionally does not notify the router. */
   source?: string
+  displayTitle?: string
+  embeddedInterval?: MarketInterval
+  onEmbeddedIntervalChange?: (interval: MarketInterval) => void
   /** Read-only mirror of the displayed series for sibling analysis panels.
    *  This avoids a second bar request on bespoke detail pages. */
   onSnapshot?: (snapshot: KlineSnapshot) => void
 }
 
-export function KlinePanel({ selection, source, onSnapshot }: Props) {
+export function KlinePanel({ selection, source, onSnapshot, displayTitle, embeddedInterval, onEmbeddedIntervalChange }: Props) {
   const effectiveTheme = useEffectiveTheme()
   const effectivePalette = useEffectivePalette()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const interval = parseInterval(searchParams.get('interval'))
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [localInterval, setLocalInterval] = useState(embeddedInterval ?? DEFAULT_INTERVAL)
+  const embedded = embeddedInterval !== undefined
+  const interval = embedded ? localInterval : parseInterval(searchParams.get('interval'))
   const tf = parseTimeframe(searchParams.get('range'))
   // The provider picked at search time (a barId), if any — opens the chart on
   // it. Unlike interval/range, source comes from the focused tab spec. Router
@@ -92,31 +105,49 @@ export function KlinePanel({ selection, source, onSnapshot }: Props) {
 
   // Local setter named `selectInterval` rather than `setInterval` so it
   // doesn't shadow the global timer function we use for polling below.
+  const updateChartQuery = (update: (next: URLSearchParams) => void) => {
+    if (!selection) return
+    const next = new URLSearchParams(searchParams)
+    if (selectedBarId) next.set('source', selectedBarId)
+    else next.delete('source')
+    update(next)
+    // Focused market tabs may project their URL without updating Router state.
+    // Explicitly address this asset, never the router's previously visited page.
+    navigate({ pathname: `/market/${selection.assetClass}/${encodeURIComponent(selection.symbol)}`, search: next.toString() }, { replace: true })
+  }
   const selectInterval = (iv: KlineInterval) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
+    if (embedded) { if (onEmbeddedIntervalChange) onEmbeddedIntervalChange(iv); else setLocalInterval(iv); return }
+    updateChartQuery((next) => {
       if (iv === DEFAULT_INTERVAL) next.delete('interval')
       else next.set('interval', iv)
-      return next
-    }, { replace: true })
+      const days = daysForTimeframe(tf)
+      if (iv === '1m' && (days == null || days > 5)) next.set('range', '5D')
+      if (iv === '5m' && (days == null || days > 30)) next.set('range', '1M')
+    })
   }
   const setTf = (t: KlineTimeframe) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
+    updateChartQuery((next) => {
       if (t === DEFAULT_RANGE) next.delete('range')
       else next.set('range', t)
-      return next
-    }, { replace: true })
+    })
   }
 
-  const [bars, setBars] = useState<HistoricalBar[] | null>(null)
-  const [meta, setMeta] = useState<BarMeta | null>(null)
   const [candidates, setCandidates] = useState<BarSourceCandidate[]>([])
   // null = vendor default for this symbol; a barId = an explicitly-picked source.
   // Seed from the focused tab so the first fetch is right (no vendor flicker).
   const [selectedBarId, setSelectedBarId] = useState<string | null>(requestedBarId)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const query = useMemo(() => {
+    if (!selectedBarId && (!selectionSymbol || !selectionAssetClass)) return null
+    const params: Parameters<typeof barsApi.bars>[0] = { interval }
+    if (selectedBarId) params.barId = selectedBarId
+    else params.symbol = selectionSymbol!
+    if (selectionAssetClass) params.assetClass = selectionAssetClass
+    const days = daysForTimeframe(tf)
+    if (embedded) params.count = MARKET_REFERENCE_COUNT
+    else if (days != null) params.start = startDateFromToday(days)
+    return params
+  }, [selectedBarId, selectionSymbol, selectionAssetClass, interval, tf, embedded])
+  const { bars, meta, loading, error, retry } = useMarketBars(query)
 
   useEffect(() => {
     onSnapshot?.({ bars, meta, loading, error, interval, timeframe: tf })
@@ -126,15 +157,6 @@ export function KlinePanel({ selection, source, onSnapshot }: Props) {
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
-
-  // A focused market tab can change identity without remounting this panel.
-  // Never let the previous pair's last close leak into sibling analytics while
-  // the new source is loading.
-  useEffect(() => {
-    setBars(null)
-    setMeta(null)
-    setError(null)
-  }, [selectionSymbol, selectionAssetClass, requestedBarId])
 
   // Canvas renderers cannot resolve CSS variables themselves. Rebuild on a
   // concrete theme change and read the same semantic card used by DOM/SVG UI.
@@ -150,6 +172,10 @@ export function KlinePanel({ selection, source, onSnapshot }: Props) {
       grid: {
         vertLines: { color: colors.grid },
         horzLines: { color: colors.grid },
+      },
+      crosshair: {
+        vertLine: { color: colors.primaryMuted, labelBackgroundColor: colors.labelBackground },
+        horzLine: { color: colors.primaryMuted, labelBackgroundColor: colors.labelBackground },
       },
       rightPriceScale: { borderColor: colors.grid },
       timeScale: { borderColor: colors.grid, timeVisible: false, secondsVisible: false },
@@ -212,52 +238,6 @@ export function KlinePanel({ selection, source, onSnapshot }: Props) {
     return () => { cancelled = true }
   }, [selectionSymbol, selectionAssetClass, requestedBarId])
 
-  // Fetch bars: an explicitly-picked source (barId) or the vendor default
-  // (symbol+assetClass). Re-polls so a long-open tab doesn't show stale bars.
-  useEffect(() => {
-    if (!selectionSymbol || !selectionAssetClass) { setBars(null); setMeta(null); setError(null); return }
-    let cancelled = false
-    const run = (isInitial: boolean) => {
-      if (isInitial) setLoading(true)
-      setError(null)
-      const days = daysForTimeframe(tf)
-      const params: Parameters<typeof barsApi.bars>[0] = { interval }
-      // Vendor barIds share the same `{source}|{nativeSymbol}` shape as UTA
-      // aliceIds, so the server needs the selected asset class to distinguish
-      // which vendor client owns the native symbol. UTA sources safely ignore
-      // this extra routing hint.
-      if (selectedBarId) {
-        params.barId = selectedBarId
-        params.assetClass = selectionAssetClass
-      }
-      else { params.symbol = selectionSymbol; params.assetClass = selectionAssetClass }
-      if (days != null) params.start = startDateFromToday(days)
-
-      barsApi.bars(params)
-        .then((res) => {
-          if (cancelled) return
-          if (res.error || !res.results) {
-            setError(res.error ?? 'No data returned.'); setBars(null); setMeta(null)
-          } else if (res.results.length === 0) {
-            setError('No bars in this range.'); setBars([]); setMeta(res.meta)
-          } else {
-            setBars(res.results); setMeta(res.meta)
-          }
-        })
-        .catch((e) => {
-          if (cancelled) return
-          setError(e instanceof Error ? e.message : String(e)); setBars(null); setMeta(null)
-        })
-        .finally(() => { if (!cancelled && isInitial) setLoading(false) })
-    }
-    run(true)
-    // 60s for intraday intervals (1m/5m/1h) because each tick is a fresh bar;
-    // 5min for daily because a refresh within a single day is cosmetic.
-    const pollMs = INTRADAY.has(interval) ? 60_000 : 300_000
-    const timer = setInterval(() => run(false), pollMs)
-    return () => { cancelled = true; clearInterval(timer) }
-  }, [selectionSymbol, selectionAssetClass, selectedBarId, interval, tf])
-
   // Push bars into chart and fit.
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !chartRef.current) return
@@ -288,7 +268,7 @@ export function KlinePanel({ selection, source, onSnapshot }: Props) {
 
   const title = useMemo(() => {
     if (!selectionSymbol || !selectionAssetClass) return 'Select a symbol'
-    return `${selectionSymbol} · ${selectionAssetClass}`
+    return `${selectionSymbol} ${selectionAssetClass}`
   }, [selectionSymbol, selectionAssetClass])
 
   // Source options for the picker — always include the currently-shown provider
@@ -303,94 +283,99 @@ export function KlinePanel({ selection, source, onSnapshot }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between py-2 px-1 gap-3 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13px] font-medium text-foreground truncate">{title}</span>
+      <div className="flex flex-col py-2 px-1 gap-2">
+        <div className="flex items-center gap-x-3 gap-y-1 min-w-0 flex-wrap">
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="text-[13px] font-medium text-foreground truncate">{displayTitle ?? title}</span>
+            {selection && <WatchlistButton assetClass={selection.assetClass} symbol={selection.symbol} />}
+          </div>
           {meta && (
             <span
-              className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium"
+              className="inline-flex items-center gap-1.5 text-[11px] leading-[15px] font-medium text-muted-foreground"
               title={`Provider: ${meta.barId}${meta.barCapability ? ` (${meta.barCapability})` : ''}`}
             >
-              {meta.sourceId}{meta.barCapability ? ` · ${meta.barCapability}` : ''}
+              <span>{meta.sourceId === 'eastmoney' ? '东方财富 · 前复权' : meta.sourceId}</span>{meta.barCapability && <span>{meta.barCapability}</span>}
             </span>
           )}
           {bars && bars.length > 0 && (
-            <span className="text-[11px] text-muted-foreground/60 truncate">
-              {bars.length} bars · {bars[0].date} → {bars[bars.length - 1].date}
+            <span className="text-[11px] text-muted-foreground sm:ml-auto"
+              title={`${bars[0].date} → ${bars[bars.length - 1].date}`}>
+              {bars.length} bars · {bars[0].date.slice(0, 10)} — {bars[bars.length - 1].date.slice(0, 10)}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-5 flex-wrap">
-          {sourceOptions.length > 1 && (
+        {meta && <BarFreshness meta={meta} />}
+        {meta?.quality && meta.quality.excludedRows > 0 && <p className="text-[11px] leading-5 text-warning" role="status">
+          {meta.quality.excludedRows} incomplete {meta.quality.excludedRows === 1 ? 'record' : 'records'} excluded from fetched window.
+          {meta.quality.latestExcludedRecordAt && ` Latest: ${meta.quality.latestExcludedRecordAt} (${meta.quality.latestExcludedFields.join(', ')} missing or invalid).`}
+        </p>}
+        <div className="flex items-center gap-x-5 gap-y-2 flex-wrap">
+          {!embedded && sourceOptions.length > 1 && (
             <label className="flex items-center gap-2">
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/70">Source</span>
+              <span className="text-[11px] font-medium text-muted-foreground/70">Source</span>
               <select
                 value={selectedBarId ?? meta?.barId ?? ''}
                 onChange={(e) => setSelectedBarId(e.target.value || null)}
-                className="bg-muted border border-border rounded px-2 py-1 text-[12px] text-foreground cursor-pointer max-w-[240px]"
+                className="oa-field-control max-w-[240px] cursor-pointer rounded-md border border-input bg-background px-2 py-1 text-[12px] leading-[18px] text-foreground outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] [transition-timing-function:var(--motion-ease-out)] motion-reduce:transition-none"
                 title="Which provider's K-line to show — sources are never merged; you pick"
               >
                 {sourceOptions.map((c) => (
                   <option key={c.barId} value={c.barId}>
-                    {c.sourceId} · {c.symbol}{c.barCapability ? ` (${c.barCapability})` : ''}
+                    {c.sourceId}, {c.symbol}{c.barCapability ? ` (${c.barCapability})` : ''}
                   </option>
                 ))}
               </select>
             </label>
           )}
-          <label className="flex items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground/70">Interval</span>
-            <div className="flex border border-border rounded overflow-hidden" title="Candle width (how much time each bar covers)">
-              {INTERVALS.map((iv, i) => (
-                <button
-                  key={iv}
-                  onClick={() => selectInterval(iv)}
-                  className={`px-2 py-1 text-[12px] transition-colors cursor-pointer ${
-                    i > 0 ? 'border-l border-border' : ''
-                  } ${interval === iv ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  {iv}
-                </button>
-              ))}
-            </div>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground/70">Range</span>
-            <div className="flex border border-border rounded overflow-hidden" title="How far back to load history">
-              {TIMEFRAMES.map((t, i) => (
-                <button
-                  key={t}
-                  onClick={() => setTf(t)}
-                  className={`px-2 py-1 text-[12px] transition-colors cursor-pointer ${
-                    i > 0 ? 'border-l border-border' : ''
-                  } ${tf === t ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </label>
+          <div
+            className="flex items-center gap-2"
+            title="Candle width (how much time each bar covers)"
+          >
+            <span className="text-[11px] font-medium text-muted-foreground/70">Interval</span>
+            <SegmentedControl
+              value={interval}
+              options={INTERVALS.map((value) => ({ value, label: value }))}
+              onChange={selectInterval}
+              ariaLabel="Interval"
+              compact
+            />
+          </div>
+          {!embedded && <div
+            className="flex items-center gap-2"
+            title="How far back to load history"
+          >
+            <span className="text-[11px] font-medium text-muted-foreground/70">Range</span>
+            <SegmentedControl
+              value={tf}
+              options={TIMEFRAMES.map((value) => ({ value, label: value }))}
+              onChange={setTf}
+              ariaLabel="Range"
+              compact
+            />
+          </div>}
+          {embedded && <span className="text-xs text-muted-foreground">Latest {MARKET_REFERENCE_COUNT} bars</span>}
         </div>
       </div>
 
-      <div className="relative flex-1 min-h-0 border border-border rounded bg-secondary/30">
+      <div className="oa-data-surface relative min-h-0 flex-1 overflow-hidden rounded-lg border">
         <div ref={containerRef} className="absolute inset-0" />
-        {!selection && (
-          <div className="absolute inset-0 flex items-center justify-center text-[13px] text-muted-foreground">
+        {!selection && !requestedBarId && (
+          <div className="absolute inset-0 flex items-center justify-center text-[13px] leading-5 text-muted-foreground">
             Pick an asset to see the K-line.
           </div>
         )}
-        {selection && loading && !bars && (
+        {(selection || requestedBarId) && loading && !bars && (
           <div className="absolute inset-0 p-2" aria-hidden="true">
             <Skeleton className="w-full h-full rounded" />
           </div>
         )}
-        {selection && loading && (
+        {(selection || requestedBarId) && loading && (
           <div className="absolute top-2 right-2 text-[11px] text-muted-foreground">Loading…</div>
         )}
-        {selection && error && !loading && (
-          <div className="absolute inset-0 flex items-center justify-center text-[13px] text-muted-foreground px-8 text-center">
+        {(selection || requestedBarId) && error && !loading && (
+          <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 text-[13px] leading-5 text-muted-foreground px-8 text-center">
             {error}
+            <Button variant="outline" size="sm" onClick={retry}>Retry</Button>
           </div>
         )}
       </div>
@@ -403,6 +388,7 @@ function readKlineChartColors() {
     text: readSemanticColor('chart-axis'),
     grid: readSemanticColor('chart-grid'),
     primaryMuted: readSemanticColor('primary-muted'),
+    labelBackground: readSemanticColor('popover'),
     positive: readSemanticColor('chart-positive'),
     negative: readSemanticColor('chart-negative'),
     positiveMuted: readSemanticColor('chart-positive-muted'),

@@ -12,6 +12,7 @@
  */
 
 import type { InboxEntry } from '../../core/inbox-store.js'
+import type { ModelReasoningEffort } from '../../ai-providers/model-semantics.js'
 import {
   ACTIVITY_UPDATE_COALESCE_MS,
   artifactOriginsMatch,
@@ -26,10 +27,11 @@ import type {
   HeadlessTaskRecord,
   HeadlessTaskStatus,
 } from '../headless-task-registry.js'
-import type { IssuePriority, IssueRecord, IssueStatus } from './declaration.js'
+import type { IssuePriority, IssueRecord, IssueStatus, IssueTimeout } from './declaration.js'
 import type { IssueComment } from './comments.js'
 import type { IssueAutomationHealth } from './automation-health.js'
 import { issueRunFailure, type IssueRunFailure } from './run-failure.js'
+import type { PublicSessionRuntime } from '../public-session.js'
 
 /** One board row: the issue's display fields, plus — iff it self-schedules — its
  *  `when` and the scanner's firing markers. No markdown What (Phase 2 loads it). */
@@ -41,6 +43,14 @@ export interface IssuesSnapshotIssue {
   assignee: string
   /** Adapter id for the scheduled fire (frontmatter `agent`), if set. */
   agent?: string
+  /** Secret-free OpenAlice vault slug selected for a fresh Session. */
+  credential?: string
+  /** Explicit native Agent login selected for a fresh Session. */
+  credentialSource?: 'native'
+  model?: string
+  effort?: ModelReasoningEffort
+  /** Optional scheduled-run watchdog; omit for no limit. */
+  timeout?: IssueTimeout
   /** Present iff the issue self-schedules. */
   when?: Schedule
   /** When the scanner last fired this issue (epoch ms); only for scheduled issues. */
@@ -49,6 +59,10 @@ export interface IssuesSnapshotIssue {
   nextDueAtMs?: number | null
   /** Live scheduler/worker health; present iff the Issue has a schedule. */
   automationHealth?: IssueAutomationHealth
+  /** Adapter id when this row is that connector's phone-desk Issue. */
+  connectorDesk?: string
+  /** @deprecated Dual-read of the 0.89.4 Telegram-only flag. */
+  telegramConnector?: true
   /** True iff this issue's NAME (title, case-insensitive) is also used by an
    *  issue in a DIFFERENT workspace. A name is a global team object, so a clash
    *  across workspaces is ambiguous and the UI warns on it. DETECTION ONLY — we
@@ -119,7 +133,7 @@ export function annotateNameCollisions(workspaces: IssuesSnapshotWorkspace[]): s
 }
 
 // ==================== Flattened board rows (CLI / agent surface) ====================
-// The `alice-workspace issue list` (issue_list) agent surface wants the board as
+// The `alice issue list` (issue_list) agent surface wants the board as
 // ONE flat list of title rows tagged with their owning workspace — not the
 // per-workspace tree GET /api/issues returns. Each row keeps the snapshot's
 // display fields, replaces `when` with a plain `scheduled` boolean, and carries
@@ -138,6 +152,11 @@ export interface BoardRow {
   assignee: string
   /** Adapter id for the scheduled fire override, if set. */
   agent?: string
+  credential?: string
+  credentialSource?: 'native'
+  model?: string
+  effort?: ModelReasoningEffort
+  timeout?: IssueTimeout
   /** True iff the issue self-schedules (snapshot `when` present). */
   scheduled: boolean
   /** Live scheduler/worker health for scheduled rows. */
@@ -178,6 +197,11 @@ export function flattenBoardRows(snapshot: IssuesSnapshot): {
         priority: issue.priority,
         assignee: issue.assignee,
         ...(issue.agent ? { agent: issue.agent } : {}),
+        ...(issue.credential ? { credential: issue.credential } : {}),
+        ...(issue.credentialSource ? { credentialSource: issue.credentialSource } : {}),
+        ...(issue.model ? { model: issue.model } : {}),
+        ...(issue.effort ? { effort: issue.effort } : {}),
+        ...(issue.timeout ? { timeout: issue.timeout } : {}),
         scheduled: issue.when !== undefined,
         ...(issue.automationHealth ? { automationHealth: issue.automationHealth } : {}),
         workspace: { wsId: ws.wsId, tag: ws.tag },
@@ -227,18 +251,44 @@ export interface IssueDetailIssue {
   when?: Schedule
   /** Adapter id for the scheduled fire (frontmatter `agent`), if set. */
   agent?: string
+  credential?: string
+  credentialSource?: 'native'
+  model?: string
+  effort?: ModelReasoningEffort
+  timeout?: IssueTimeout
+  /** Optional comment-reply Input Prompt template. Omission keeps the default wrapper. */
+  commentPrompt?: string
   /** When the scanner last fired this issue (epoch ms); only for scheduled issues. */
   lastFiredAtMs?: number | null
   /** When it is next due (epoch ms); only for scheduled issues. */
   nextDueAtMs?: number | null
   /** Live scheduler/worker health; present iff the Issue has a schedule. */
   automationHealth?: IssueAutomationHealth
+  connectorDesk?: string
+  telegramConnector?: true
+}
+
+/** Authoritative resolution of an Issue's exact @resume owner. Unlike a
+ * Workspace directory page, this lookup is global, uncapped, and tied to the
+ * detail read, so it cannot become stale while the Issue assignee advances. */
+export interface IssueAssigneeSession {
+  resumeId: string
+  state: 'ready' | 'missing' | 'retired' | 'deleted' | 'unbound' | 'workspace_missing'
+  workspace?: { id: string; tag: string }
+  agent?: string
+  displayName?: string
+  createdAt?: number
+  updatedAt?: number
+  active: boolean
+  runtime?: PublicSessionRuntime
 }
 
 /** GET /api/issues/:wsId/:id — one issue + its human-facing Activity timeline,
  *  operational run history, and the inbox reports it produced. */
 export interface IssueDetail {
   issue: IssueDetailIssue
+  /** Present when assignee is an exact @resume identity. */
+  assigneeSession?: IssueAssigneeSession
   /** Structured markdown comments loaded from the adjacent JSON sidecar. */
   comments: IssueComment[]
   /** This issue's headless runs (wsId + issueId match), newest first.
@@ -301,18 +351,26 @@ export interface IssueRunRecord {
   taskId: string
   resumeId: string
   parentTaskId?: string
+  retryOfTaskId?: string
   wsId: string
   issueId?: string
   agent: string
+  model?: string
+  effort?: ModelReasoningEffort
   prompt: string
   status: HeadlessTaskStatus
   startedAt: number
   finishedAt?: number
   durationMs?: number
+  processStarted?: boolean
+  launchErrorCode?: HeadlessTaskRecord['launchErrorCode']
   exitCode?: number | null
   signal?: string | null
   killed?: boolean
   error?: string
+  /** Positive watchdog budget, `null` for an explicitly unlimited new run,
+   * absent only on historical records. */
+  timeoutMs?: number | null
   output?: HeadlessTaskOutputSummary
   /** Read-side explanation for non-successful scheduled execution. Derived
    * from durable fields so old registry entries need no migration. */
@@ -329,18 +387,24 @@ export function issueRunRecord(task: HeadlessTaskRecord, resumable: boolean): Is
     taskId: task.taskId,
     resumeId: task.resumeId,
     ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
+    ...(task.trigger?.retryOfTaskId ? { retryOfTaskId: task.trigger.retryOfTaskId } : {}),
     wsId: task.wsId,
     ...(task.trigger?.kind === 'issue' ? { issueId: task.trigger.issueId } : {}),
     agent: task.agent,
+    ...(task.model ? { model: task.model } : {}),
+    ...(task.effort ? { effort: task.effort } : {}),
     prompt: task.prompt,
     status: task.status,
     startedAt: task.startedAt,
     ...(task.finishedAt !== undefined ? { finishedAt: task.finishedAt } : {}),
     ...(task.durationMs !== undefined ? { durationMs: task.durationMs } : {}),
+    ...(task.processStarted !== undefined ? { processStarted: task.processStarted } : {}),
+    ...(task.launchErrorCode !== undefined ? { launchErrorCode: task.launchErrorCode } : {}),
     ...(task.exitCode !== undefined ? { exitCode: task.exitCode } : {}),
     ...(task.signal !== undefined ? { signal: task.signal } : {}),
     ...(task.killed !== undefined ? { killed: task.killed } : {}),
     ...(task.error !== undefined ? { error: task.error } : {}),
+    ...(task.timeoutMs !== undefined ? { timeoutMs: task.timeoutMs } : {}),
     ...(task.output !== undefined ? { output: task.output } : {}),
     ...(failure ? { failure } : {}),
     resumable,
@@ -401,6 +465,13 @@ export function detailIssue(
     assignee: issue.assignee,
     ...(issue.when ? { when: issue.when } : {}),
     ...(issue.agent ? { agent: issue.agent } : {}),
+    ...(issue.credential ? { credential: issue.credential } : {}),
+    ...(issue.credentialSource ? { credentialSource: issue.credentialSource } : {}),
+    ...(issue.model ? { model: issue.model } : {}),
+    ...(issue.effort ? { effort: issue.effort } : {}),
+    ...(issue.timeout ? { timeout: issue.timeout } : {}),
+    ...(issue.commentPrompt ? { commentPrompt: issue.commentPrompt } : {}),
+    ...(issue.connectorDesk ? { connectorDesk: issue.connectorDesk, telegramConnector: issue.connectorDesk === 'telegram' ? true as const : undefined } : {}),
     ...(markers ? {
       lastFiredAtMs: markers.lastFiredAtMs,
       nextDueAtMs: markers.nextDueAtMs,
@@ -423,6 +494,12 @@ export function snapshotBoardIssue(
     priority: issue.priority,
     assignee: issue.assignee,
     ...(issue.agent ? { agent: issue.agent } : {}),
+    ...(issue.credential ? { credential: issue.credential } : {}),
+    ...(issue.credentialSource ? { credentialSource: issue.credentialSource } : {}),
+    ...(issue.model ? { model: issue.model } : {}),
+    ...(issue.effort ? { effort: issue.effort } : {}),
+    ...(issue.timeout ? { timeout: issue.timeout } : {}),
+    ...(issue.connectorDesk ? { connectorDesk: issue.connectorDesk, telegramConnector: issue.connectorDesk === 'telegram' ? true as const : undefined } : {}),
     ...(issue.when ? { when: issue.when } : {}),
     ...(markers ? {
       lastFiredAtMs: markers.lastFiredAtMs,

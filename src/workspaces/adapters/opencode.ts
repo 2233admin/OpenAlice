@@ -1,10 +1,20 @@
 import { execFile } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { CliAdapter, OnDiskSession, SpawnContext, WorkspaceAiCred } from '../cli-adapter.js';
-import { isModelReasoningEffort } from '../../ai-providers/model-semantics.js';
+import type {
+  CliAdapter,
+  OnDiskSession,
+  ResolvedSessionRuntimeBinding,
+  SpawnContext,
+  WorkspaceAiCred,
+} from '../cli-adapter.js';
+import {
+  MODEL_REASONING_EFFORTS,
+  isModelReasoningEffort,
+  type ModelReasoningEffort,
+} from '../../ai-providers/model-semantics.js';
 import { readWorkspaceFile, writeWorkspaceFile } from '../file-service.js';
 import type { HeadlessOutputEvent } from '../headless-output.js';
 import { resetOwnedJsonConfig, writeOwnedJsonConfig } from './owned-json-config.js';
@@ -16,6 +26,7 @@ const OPENCODE_TUI_CONFIG_PATH = 'tui.json';
 const OPENCODE_TUI_CONFIGC_PATH = 'tui.jsonc';
 const OPENCODE_BINDING_STATE_PATH = '.opencode/openalice-provider.json';
 const OPENCODE_PROVIDER_NAME = 'workspace';
+const OPENCODE_SESSION_PROVIDER_NAME = 'openalice-session';
 const OPENCODE_SYSTEM_THEME = 'system';
 const OPENCODE_OWNED_PATHS = [
   ['$schema'],
@@ -24,8 +35,56 @@ const OPENCODE_OWNED_PATHS = [
 ] as const;
 const DEFAULT_OUTPUT_TOKENS = 16_384;
 
-function modelEffortOptions(cred: WorkspaceAiCred): Record<string, unknown> | null {
-  const effort = cred.reasoningEffort;
+const openCodeSessionRowsInFlight = new Map<string, Promise<readonly Record<string, unknown>[]>>();
+
+function readOpenCodeSessionRows(cwd: string): Promise<readonly Record<string, unknown>[]> {
+  const existing = openCodeSessionRowsInFlight.get(cwd);
+  if (existing) return existing;
+  const read = (async () => {
+    let stdout: string;
+    try {
+      const res = await execFileAsync('opencode', ['session', 'list', '--format', 'json'], {
+        cwd,
+        env: {
+          ...process.env,
+          OPENCODE_DISABLE_MODELS_FETCH: '1',
+          OPENCODE_DISABLE_AUTOUPDATE: '1',
+          OPENCODE_DISABLE_LSP_DOWNLOAD: '1',
+        },
+        timeout: 10_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      stdout = res.stdout;
+    } catch {
+      return [];
+    }
+    try {
+      const rows: unknown = JSON.parse(stdout);
+      return Array.isArray(rows)
+        ? rows.filter((row): row is Record<string, unknown> =>
+            typeof row === 'object' && row !== null && !Array.isArray(row))
+        : [];
+    } catch {
+      return [];
+    }
+  })().finally(() => openCodeSessionRowsInFlight.delete(cwd));
+  openCodeSessionRowsInFlight.set(cwd, read);
+  return read;
+}
+
+export function openCodeSessionTitle(
+  rows: readonly Record<string, unknown>[],
+  sessionId: string,
+): string | null {
+  const row = rows.find((candidate) => candidate['id'] === sessionId);
+  const title = typeof row?.['title'] === 'string' ? row['title'].trim() : '';
+  return title || null;
+}
+
+function modelEffortOptions(
+  cred: WorkspaceAiCred,
+  effort = cred.reasoningEffort,
+): Record<string, unknown> | null {
   if (!effort) return null;
   if (cred.wireShape === 'anthropic') {
     if (effort === 'none') return { thinking: { type: 'disabled' } };
@@ -38,9 +97,52 @@ function modelEffortOptions(cred: WorkspaceAiCred): Record<string, unknown> | nu
       : { effort };
   }
   if (cred.wireShape === 'google-generative-ai') {
-    return { thinkingConfig: { includeThoughts: effort !== 'none', thinkingLevel: effort } };
+    return effort === 'none'
+      ? { thinkingConfig: { includeThoughts: false } }
+      : { thinkingConfig: { includeThoughts: true, thinkingLevel: effort } };
   }
   return { reasoningEffort: effort };
+}
+
+function modelEffortVariants(cred: WorkspaceAiCred): Record<string, Record<string, unknown>> | null {
+  if (cred.reasoning === false) return null;
+  return Object.fromEntries(
+    MODEL_REASONING_EFFORTS.map((effort) => [
+      effort,
+      modelEffortOptions(cred, effort) ?? {},
+    ]),
+  );
+}
+
+function openCodeProvider(cred: WorkspaceAiCred, name: string): Record<string, unknown> {
+  const options: Record<string, unknown> = {};
+  if (cred.baseUrl) options['baseURL'] = cred.baseUrl;
+  if (cred.apiKey) {
+    if (cred.wireShape === 'anthropic' && cred.authMode === 'bearer') {
+      options['headers'] = { Authorization: `Bearer ${cred.apiKey}` };
+    } else {
+      options['apiKey'] = cred.apiKey;
+    }
+  }
+  const npm = cred.wireShape === 'anthropic' ? '@ai-sdk/anthropic'
+    : cred.wireShape === 'google-generative-ai' ? '@ai-sdk/google'
+    : cred.wireShape === 'openai-responses' ? '@ai-sdk/openai'
+    : OPENCODE_SDK_NPM;
+  const provider: Record<string, unknown> = { npm, name, options };
+  if (cred.model) {
+    const model: Record<string, unknown> = { name: cred.model };
+    if (typeof cred.reasoning === 'boolean') model['reasoning'] = cred.reasoning;
+    const effortOptions = modelEffortOptions(cred);
+    if (effortOptions) model['options'] = effortOptions;
+    const effortVariants = modelEffortVariants(cred);
+    if (effortVariants) model['variants'] = effortVariants;
+    const contextWindow = positiveNumber(cred.contextWindow);
+    if (contextWindow !== null) {
+      model['limit'] = { context: contextWindow, output: DEFAULT_OUTPUT_TOKENS };
+    }
+    provider['models'] = { [cred.model]: model };
+  }
+  return provider;
 }
 
 function readModelEffort(
@@ -194,6 +296,69 @@ export const opencodeAdapter: CliAdapter = {
     // `opencode --session <id>` (composeCommand) resumes by id.
     transcriptDiscovery: 'subprocess',
     headless: true,
+    // `opencode acp` serves the Agent Client Protocol from the same SQLite
+    // session store the TUI uses, so `session/load` reopens `ses_…` ids.
+    web: { wire: 'acp', permissionPrompts: true, freshSession: true },
+    aiProvider: {
+      credentialSource: 'runtime-or-workspace',
+      wirePreference: ['google-generative-ai', 'openai-chat', 'anthropic', 'openai-responses'],
+      defaultWire: 'openai-chat',
+      vendorPolicies: {
+        minimax: {
+          wirePreference: ['anthropic'],
+          legacyRequestedWireFallbacks: { 'openai-chat': 'anthropic' },
+        },
+      },
+      modelRegistration: {
+        contextWindow: true,
+        reasoning: true,
+        effortVariants: true,
+      },
+    },
+  },
+
+  sessionRuntime: {
+    project(_ctx, runtime: ResolvedSessionRuntimeBinding) {
+      const ai = runtime.ai;
+      const model = runtime.binding.model;
+      const selectedModel = ai && (ai.apiKey || ai.baseUrl) && model
+        ? `${OPENCODE_SESSION_PROVIDER_NAME}/${model}`
+        : model;
+      const interactiveArgs = [
+        ...(selectedModel ? ['--model', selectedModel] : []),
+      ];
+      const headlessArgs = [
+        ...interactiveArgs,
+        ...(runtime.binding.reasoningEffort
+          ? ['--variant', runtime.binding.reasoningEffort]
+          : []),
+      ];
+      const env: Record<string, string> = {};
+      if (ai && (ai.apiKey || ai.baseUrl)) {
+        env['OPENCODE_CONFIG_CONTENT'] = JSON.stringify({
+          provider: {
+            [OPENCODE_SESSION_PROVIDER_NAME]: openCodeProvider(ai, 'OpenAlice Session provider'),
+          },
+          ...(selectedModel ? { model: selectedModel } : {}),
+        });
+      }
+      // ACP has no --model flag. Its native config selects the default model
+      // for session/new; keep this process-local and preserve other settings.
+      if (selectedModel && !env['OPENCODE_CONFIG_CONTENT']) {
+        const raw = _ctx.env['OPENCODE_CONFIG_CONTENT'];
+        const inherited: unknown = raw ? JSON.parse(raw) : {};
+        if (!inherited || typeof inherited !== 'object' || Array.isArray(inherited)) {
+          throw new Error('OPENCODE_CONFIG_CONTENT must contain a JSON object');
+        }
+        env['OPENCODE_CONFIG_CONTENT'] = JSON.stringify({ ...inherited, model: selectedModel });
+      }
+      const config: unknown = JSON.parse(env['OPENCODE_CONFIG_CONTENT'] ?? _ctx.env['OPENCODE_CONFIG_CONTENT'] ?? '{}');
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw new Error('OPENCODE_CONFIG_CONTENT must contain a JSON object');
+      }
+      env['OPENCODE_CONFIG_CONTENT'] = JSON.stringify({ ...config, permission: 'allow' });
+      return { env, interactiveArgs, headlessArgs, webArgs: [] };
+    },
   },
 
   lifecycle: {
@@ -206,7 +371,7 @@ export const opencodeAdapter: CliAdapter = {
     // Tool access is via the injected CLI shims, so the command head is just
     // the binary + a resume flag (if any). Resume is a top-level flag on the
     // bare TUI — verified against opencode 1.16.0.
-    const head = ['opencode'];
+    const head = ['opencode', ...(ctx.sessionRuntime?.interactiveArgs ?? [])];
     if (ctx.resume === undefined) {
       // Quick-chat seed: `opencode --prompt <text>` opens the TUI seeded with
       // that first message (top-level flag on the default TUI command, verified
@@ -219,13 +384,29 @@ export const opencodeAdapter: CliAdapter = {
     return [...head, '--session', ctx.resume.sessionId];
   },
 
+  // Web surface: `opencode acp`. ACP rejects --model; sessionRuntime
+  // projects model selection into OPENCODE_CONFIG_CONTENT instead.
+  composeWebCommand(_base: readonly string[], ctx: SpawnContext): readonly string[] {
+    if (ctx.resume === 'last') throw new Error('the Web surface requires a concrete opencode session id or a fresh Session');
+    return [
+      'opencode',
+      ...(ctx.sessionRuntime?.webArgs ?? ctx.sessionRuntime?.interactiveArgs ?? []),
+      'acp',
+    ];
+  },
+
   // Headless: `opencode run <prompt>` is non-interactive and exits at the turn
   // boundary. Tool access is via the injected CLI shims and bundled skills;
   // prompt is the trailing positional after a `--` end-of-options terminator
   // (so a `-`-leading prompt isn't read as a flag).
-  composeHeadlessCommand(_base: readonly string[], ctx: SpawnContext, prompt: string): readonly string[] {
+  composeHeadlessCommand(
+    _base: readonly string[],
+    ctx: SpawnContext,
+    prompt: string,
+  ): readonly string[] {
     return [
       'opencode', 'run', '--format', 'json',
+      ...(ctx.sessionRuntime?.headlessArgs ?? []),
       ...(ctx.resume === 'last' ? ['--continue'] : ctx.resume ? ['--session', ctx.resume.sessionId] : []),
       '--', prompt,
     ];
@@ -332,6 +513,7 @@ export const opencodeAdapter: CliAdapter = {
     return env;
   },
 
+  /** @deprecated Native-project compatibility export; managed Sessions use sessionRuntime. */
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {
     const hasProvider = !!(cred.baseUrl || cred.apiKey || cred.model);
     if (!hasProvider) {
@@ -345,45 +527,7 @@ export const opencodeAdapter: CliAdapter = {
       return;
     }
 
-    const options: Record<string, unknown> = {};
-    if (cred.baseUrl) options['baseURL'] = cred.baseUrl;
-    if (cred.apiKey) {
-      if (cred.wireShape === 'anthropic' && cred.authMode === 'bearer') {
-        // Do not also set apiKey: @ai-sdk/anthropic would add x-api-key and
-        // bearer-only gateways can reject the resulting dual-auth request.
-        options['headers'] = { Authorization: `Bearer ${cred.apiKey}` };
-      } else {
-        options['apiKey'] = cred.apiKey;
-      }
-    }
-
-    // The @ai-sdk package opencode loads depends on the wire shape (all bundled):
-    // anthropic → @ai-sdk/anthropic, Google Generative AI → @ai-sdk/google,
-    // OpenAI Responses → @ai-sdk/openai, and OpenAI Chat Completions → the
-    // openai-compatible SDK.
-    const npm = cred.wireShape === 'anthropic' ? '@ai-sdk/anthropic'
-      : cred.wireShape === 'google-generative-ai' ? '@ai-sdk/google'
-      : cred.wireShape === 'openai-responses' ? '@ai-sdk/openai'
-      : OPENCODE_SDK_NPM;
-    const provider: Record<string, unknown> = {
-      npm,
-      name: 'OpenAlice workspace provider',
-      options,
-    };
-    if (cred.model) {
-      const model: Record<string, unknown> = { name: cred.model };
-      if (typeof cred.reasoning === 'boolean') model['reasoning'] = cred.reasoning;
-      const effortOptions = modelEffortOptions(cred);
-      if (effortOptions) model['options'] = effortOptions;
-      const contextWindow = positiveNumber(cred.contextWindow);
-      if (contextWindow !== null) {
-        // opencode treats missing custom-model limits as 0, which disables its
-        // proactive context tracking. Supplying both fields satisfies its config
-        // schema while keeping output conservative and invisible in OpenAlice UI.
-        model['limit'] = { context: contextWindow, output: DEFAULT_OUTPUT_TOKENS };
-      }
-      provider['models'] = { [cred.model]: model };
-    }
+    const provider = openCodeProvider(cred, 'OpenAlice workspace provider');
 
     // Top-level default model is "<provider>/<id>" so opencode resolves the
     // workspace provider without a UI model picker. The reversible state keeps
@@ -405,6 +549,7 @@ export const opencodeAdapter: CliAdapter = {
     });
   },
 
+  /** @deprecated Compatibility inspection for legacy Session bindings only. */
   async readAiConfig(cwd: string): Promise<WorkspaceAiCred | null> {
     const raw = await readWorkspaceFile(cwd, OPENCODE_CONFIG_PATH);
     if (raw === null) return null;
@@ -472,32 +617,8 @@ export const opencodeAdapter: CliAdapter = {
    * `--continue`.
    */
   async listOnDisk(cwd: string): Promise<readonly OnDiskSession[]> {
-    let stdout: string;
-    try {
-      const res = await execFileAsync('opencode', ['session', 'list', '--format', 'json'], {
-        cwd,
-        env: {
-          ...process.env,
-          OPENCODE_DISABLE_MODELS_FETCH: '1',
-          OPENCODE_DISABLE_AUTOUPDATE: '1',
-          OPENCODE_DISABLE_LSP_DOWNLOAD: '1',
-        },
-        timeout: 10_000,
-        maxBuffer: 8 * 1024 * 1024,
-      });
-      stdout = res.stdout;
-    } catch {
-      return [];
-    }
-    let rows: unknown;
-    try {
-      rows = JSON.parse(stdout);
-    } catch {
-      return [];
-    }
-    if (!Array.isArray(rows)) return [];
     const out: OnDiskSession[] = [];
-    for (const r of rows as Array<Record<string, unknown>>) {
+    for (const r of await readOpenCodeSessionRows(cwd)) {
       const id = r['id'];
       if (typeof id !== 'string') continue;
       const ts = r['updated'] ?? r['created'];
@@ -505,5 +626,9 @@ export const opencodeAdapter: CliAdapter = {
       out.push({ sessionId: id, file: '', mtime, sizeBytes: 0 });
     }
     return out;
+  },
+
+  async readSessionTitle(cwd: string, sessionId: string): Promise<string | null> {
+    return openCodeSessionTitle(await readOpenCodeSessionRows(cwd), sessionId);
   },
 };

@@ -29,8 +29,9 @@ business desk merely because the user opened management chat.
 ├── departed-workspaces/            retained offboarded checkouts
 └── state/
     ├── workspace-catalog.json      complete lifecycle history
-    ├── resume-identities.json      active and retired Session signatures
+    ├── resume-identities.json      identity, lifecycle, and native mappings
     ├── headless-tasks.json         immutable execution history
+    ├── agent-runtime.jsonl         desk occupancy lifecycle journal
     └── artifact-provenance.json    immutable attribution history
 ```
 
@@ -61,12 +62,28 @@ active -> retired
    +---------+  Workspace restore / explicit recall
 ```
 
-`SessionRecord` is only an interactive seat. Removing or pausing one does not
-retire the coworker. `resumeId` is the coworker identity; retirement is stored
-on `ResumeIdentityRecord` and retains the native runtime mapping, run history,
-Inbox links, and provenance. A retired Session is not schedulable or resumable.
-It may carry `successorResumeId` for explicit handoff. OpenAlice never silently
-pretends a successor authored the predecessor's work.
+In-desk floor presence (independent of `lifecycle`):
+
+```text
+active <-> archived <-> deleted
+```
+
+`presence` answers whether the coworker is on the Ask Alice roster, filed in
+the archive, or softly dismissed. Missing `presence` is `active`. `lifecycle:
+retired` still means the coworker left with the Workspace; restore recalls the
+desk without washing archived or deleted people back onto the floor.
+
+`SessionRecord` is the durable launcher roster row shared by headless and
+interactive execution. Pausing, archiving, soft-deleting, or retiring a Session
+does not destroy that row. `resumeId` remains the coworker identity; retirement
+is stored on `ResumeIdentityRecord` and retains the roster row, native runtime
+mapping, run history, Inbox links, and provenance. Its secret-free AI
+configuration lives with the desk at `.alice/sessions/<resumeId>.json`, so
+offboarding moves it into the departed checkout and restore recalls the same
+binding instead of re-resolving changed Workspace defaults. A retired Session
+is not schedulable or resumable. It may carry `successorResumeId` for explicit
+handoff. OpenAlice never silently pretends a successor authored the
+predecessor's work.
 
 ## Offboarding Transaction
 
@@ -100,7 +117,7 @@ Restore is “rehire with the old desk”:
 
 1. refuse a missing archive, occupied active path, or active tag collision;
 2. move the checkout back to its immutable original `activeDir`;
-3. re-add the exact `WorkspaceMeta` to the active registry;
+3. re-add the exact durable `WorkspaceMeta` to the active registry;
 4. recall its resume identities without changing their ids or native mappings;
 5. mark the Catalog row active.
 
@@ -114,24 +131,18 @@ copied into the target.
 
 Purge is deliberately separate and irreversible. It is allowed only after
 offboarding. Purge removes the departed checkout, interactive Session records,
-and Shell scrollback. It retains the Catalog tombstone, retired resumeIds,
-headless run history, Inbox entries, and artifact provenance so historical
-signatures still resolve to “retired/purged,” never “unknown author.”
+Shell scrollback, and the Workspace-local Session AI configuration. It retains
+the Catalog tombstone, retired resumeIds, headless run history, Inbox entries,
+and artifact provenance so historical signatures still resolve to
+“retired/purged,” never “unknown author.”
 
-## Legacy Migration
+## Baseline Boundary
 
-Migration `0021_workspace_departure_catalog` inventories the old layout.
-Registered directories remain active. Every directory under `workspaces/`
-that is absent from `workspaces.json` moves to `departed-workspaces/` and gets a
-best-effort departed Catalog row. Nothing is deleted. Session files are used to
-recover known runtime names; unknown metadata stays visibly marked as a legacy
-import.
-
-Before moving anything, the migration preflights the complete directory set. If
-both an active orphan path and its departed destination exist, or a registered
-id points at a different path while a same-id desk remains on the active floor,
-startup stops with an identity-conflict error and no orphan is moved. Alice does
-not guess which copy is the real coworker and never overwrites either directory.
+The 0.89.2-beta baseline starts with an explicit Workspace Catalog and no
+per-Workspace adapter allowlist. Pre-Catalog orphan directories and historical
+`agents` arrays are not supported upgrade inputs. Restored desks use the live
+installation adapter registry like every other Workspace; the adapter set
+present when a desk was created or departed is not part of its durable identity.
 
 ## Load-Bearing Code
 
@@ -146,8 +157,6 @@ not guess which copy is the real coworker and never overwrites either directory.
 - `ui/src/components/workspace/WorkspaceOffboardingDialog.tsx` — blockers,
   handoff inventory, reason, and notes before departure.
 - `ui/src/pages/WorkspaceListPage.tsx` — departed inventory, restore, purge.
-- `src/migrations/0021_workspace_departure_catalog/` — non-destructive legacy
-  directory migration.
 
 Do not reintroduce “delete the registry row and leave the folder in place.” It
 pollutes manager discovery, destroys restore metadata, and turns known retired
