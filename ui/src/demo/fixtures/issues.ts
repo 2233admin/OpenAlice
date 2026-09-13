@@ -1,3 +1,4 @@
+import { demoWorkspaces, demoResumeRuntimes } from './workspaces'
 import type {
   IssueComment,
   IssueDetail,
@@ -449,23 +450,16 @@ function findBoardIssue(wsId: string, id: string) {
   return ws?.issues.find((i) => i.id === id) ?? null
 }
 
-const demoAssigneeSessions: Record<string, NonNullable<IssueDetail['assigneeSession']>> = {
-  'resume-demo-thesis-owner': {
-    resumeId: 'resume-demo-thesis-owner',
-    state: 'ready',
-    workspace: { id: 'demo-ws-auto-quant', tag: 'auto-quant' },
-    agent: 'claude',
-    displayName: 'Thesis monitor',
-    createdAt: now - 14 * DAY,
-    updatedAt: now - HOUR / 2,
-    active: false,
-    runtime: { credentialSource: 'native', model: 'claude-opus-4-6', reasoningEffort: 'high' },
-  },
-  'resume-demo-cpi-owner': {
-    resumeId: 'resume-demo-cpi-owner',
-    state: 'missing',
-    active: false,
-  },
+function demoAssigneeSession(resumeId: string): NonNullable<IssueDetail['assigneeSession']> {
+  const workspace = demoWorkspaces.find((ws) => ws.sessions.some((session) => session.resumeId === resumeId))
+  const session = workspace?.sessions.find((entry) => entry.resumeId === resumeId)
+  if (!workspace || !session) return { resumeId, state: 'missing', active: false }
+  return {
+    resumeId, state: 'ready', workspace: { id: workspace.id, tag: workspace.tag },
+    agent: session.agent, displayName: session.displayName ?? session.title ?? session.name,
+    createdAt: Date.parse(session.createdAt), updatedAt: Date.parse(session.lastActiveAt),
+    active: session.state === 'running', runtime: demoResumeRuntimes.get(resumeId) ?? session.runtime,
+  }
 }
 
 /** Build the IssueDetail the GET /api/issues/:wsId/:id mock returns, or null if
@@ -494,11 +488,7 @@ export function demoIssueDetail(wsId: string, id: string): IssueDetail | null {
       ...(extras?.commentPrompt ? { commentPrompt: extras.commentPrompt } : {}),
     },
     ...(assigneeResumeId
-      ? { assigneeSession: demoAssigneeSessions[assigneeResumeId] ?? {
-          resumeId: assigneeResumeId,
-          state: 'missing' as const,
-          active: false,
-        } }
+      ? { assigneeSession: demoAssigneeSession(assigneeResumeId) }
       : {}),
     comments,
     runs,

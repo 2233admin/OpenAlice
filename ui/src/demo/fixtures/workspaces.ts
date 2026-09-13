@@ -179,6 +179,21 @@ export const demoChatWorkspace: Workspace = {
   agentOverride: { claude: false, codex: false, opencode: false, pi: false },
 }
 
+export const demoResumeRuntimes = new Map<string, NonNullable<SessionRecord['runtime']>>()
+
+const demoQuantSessions: SessionRecord[] = [
+  { resumeId: 'resume-demo-thesis-owner', agent: 'claude', displayName: 'Thesis monitor', model: 'claude-opus-4-6' },
+  { resumeId: 'resume-demo-power-research', agent: 'codex', displayName: 'Power infrastructure research', model: 'gpt-5.6-sol' },
+  { resumeId: 'resume-demo-risk-review', agent: 'pi', displayName: 'Portfolio risk review', model: 'claude-sonnet-4-5' },
+].map((seed, index) => ({
+  id: `session-${seed.resumeId}`, resumeId: seed.resumeId, wsId: DEMO_AUTO_QUANT_WORKSPACE_ID,
+  agent: seed.agent, displayName: seed.displayName, title: seed.displayName, name: `research-${index + 1}`,
+  createdAt: new Date(Date.now() - 86400000 * (index + 1)).toISOString(),
+  lastActiveAt: new Date(Date.now() - 60000 * (index + 1)).toISOString(),
+  state: 'paused', surface: 'headless', pid: null, startedAt: null,
+  runtime: { credentialSource: 'native', model: seed.model, reasoningEffort: 'high' },
+}))
+
 const demoIssueWorkspaces: Workspace[] = [
   {
     id: DEMO_AUTO_QUANT_WORKSPACE_ID,
@@ -194,7 +209,7 @@ const demoIssueWorkspaces: Workspace[] = [
       version: 'v0.8.31',
       commit: '426d815b18450172fbcf4c6b6af77c6ae05a4967',
     },
-    sessions: [],
+    sessions: demoQuantSessions,
     agentOverride: { claude: false, codex: false, opencode: false, pi: false },
   },
   {

@@ -773,6 +773,7 @@ describe('IssueDetail property controls', () => {
       sessions: [
         {
           resumeId: 'resume-recent-worker',
+          displayName: 'Named research session',
           agent: 'codex',
           createdAt: Date.now() - 120_000,
           updatedAt: Date.now() - 60_000,
@@ -810,10 +811,12 @@ describe('IssueDetail property controls', () => {
     expect(dialog.className).toContain('grid-rows-[auto_auto_minmax(0,1fr)_auto]')
     const choices = within(dialog).getAllByRole('button')
     const activeIndex = choices.findIndex((choice) => choice.textContent?.includes('Current thesis room'))
-    const recentIndex = choices.findIndex((choice) => choice.textContent?.includes('Updated a very long financial'))
+    const recentIndex = choices.findIndex((choice) => choice.textContent?.includes('Named research session'))
 
     expect(activeIndex).toBeGreaterThanOrEqual(0)
     expect(recentIndex).toBeGreaterThan(activeIndex)
+    expect(choices[recentIndex]?.querySelector('[data-agent-runtime-icon=codex]')).toBeTruthy()
+    expect(within(dialog).queryByText(longPreview)).toBeNull()
     expect(choices[activeIndex]?.textContent).toContain('resume-active-owner, pi, active')
     expect(choices[recentIndex]?.textContent).toContain('resume-recent-worker, codex')
 
@@ -833,9 +836,9 @@ describe('IssueDetail property controls', () => {
     const reopenedDialog = await screen.findByRole('dialog', { name: 'Choose responsibility' })
 
     const search = within(reopenedDialog).getByPlaceholderText(/Search Sessions/)
-    fireEvent.change(search, { target: { value: 'financial' } })
+    fireEvent.change(search, { target: { value: 'Named research' } })
     expect(within(reopenedDialog).queryByText('Current thesis room')).toBeNull()
-    expect(within(reopenedDialog).getByText(/^Updated a very long financial.*…$/)).toBeTruthy()
+    expect(within(reopenedDialog).getByText('Named research session')).toBeTruthy()
     expect(within(reopenedDialog).queryByText(/END-OF-PREVIEW/)).toBeNull()
   })
 

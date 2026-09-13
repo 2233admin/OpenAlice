@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { AgentRuntimeIcon } from '../lib/agentRuntimeIcon'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, Search, MessageSquare } from 'lucide-react'
 import type { IssueAutomationHealth, IssueAssigneeSession } from '../api/issues'
@@ -57,7 +58,8 @@ export function AssigneeEditor({
     || sessionChoices.some((session) => session.resumeId === selectedResumeId)
     || authoritativeSelected?.state === 'ready'
   const contextFor = (session: WorkspaceSessionDirectoryEntry) => {
-    const rawContext = session.interactive?.title
+    const rawContext = session.displayName
+      || session.interactive?.title
       || session.interactive?.name
       || session.latestExecution?.assistantPreview
     const normalizedContext = rawContext?.replace(/\s+/g, ' ').trim()
@@ -187,6 +189,7 @@ export function AssigneeEditor({
             {policyChoices.map((choice) => (
               <AssigneeChoice
                 key={choice.value}
+                icon={<IssueAssigneeAvatar value={choice.value} />}
                 label={choice.label}
                 description={choice.description}
                 selected={draftValue === choice.value}
@@ -209,6 +212,7 @@ export function AssigneeEditor({
             {authoritativeSelected?.state === 'ready'
               && !sessionChoices.some((session) => session.resumeId === authoritativeSelected.resumeId) && (
               <AssigneeChoice
+                icon={<AgentRuntimeIcon agentId={authoritativeSelected.agent} className="size-5 shrink-0" />}
                 label={authoritativeSelected.displayName ?? authoritativeSelected.resumeId}
                 description={[
                   authoritativeSelected.resumeId,
@@ -222,6 +226,7 @@ export function AssigneeEditor({
             {filteredSessions.map((session) => (
               <AssigneeChoice
                 key={session.resumeId}
+                icon={<AgentRuntimeIcon agentId={session.agent} className="size-5 shrink-0" />}
                 label={contextFor(session) ?? session.resumeId}
                 description={labelFor(session)}
                 selected={draftResumeId === session.resumeId}
@@ -257,11 +262,13 @@ export function AssigneeEditor({
 }
 
 function AssigneeChoice({
+  icon,
   label,
   description,
   selected,
   onClick,
 }: {
+  icon?: ReactNode
   label: string
   description?: string
   selected: boolean
@@ -274,6 +281,7 @@ function AssigneeChoice({
       variant="ghost"
       className="h-auto min-h-12 w-full min-w-0 max-w-full justify-start gap-3 overflow-hidden whitespace-normal px-3 py-2 text-left"
     >
+      {icon}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{label}</span>
         {description && <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>}
