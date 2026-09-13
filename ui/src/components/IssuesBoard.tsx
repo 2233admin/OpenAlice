@@ -164,11 +164,11 @@ export function CadencePill({ when }: { when: ScheduleWhen }) {
  * gives the wall-clock label and timezone their own lines so a narrow details
  * rail never turns schedule metadata into an oversized wrapping capsule.
  */
-export function CadenceSummary({ when }: { when: ScheduleWhen }) {
+export function CadenceSummary({ when, compact = false }: { when: ScheduleWhen; compact?: boolean }) {
   const { t } = useTranslation()
   return (
     <div className="flex min-w-0 items-start gap-2.5">
-      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <span className={`mt-0.5 flex shrink-0 items-center justify-center text-muted-foreground ${compact ? "size-4" : "size-7 rounded-md bg-muted"}`}>
         <Clock size={14} aria-hidden />
       </span>
       <span className="min-w-0">
@@ -180,7 +180,7 @@ export function CadenceSummary({ when }: { when: ScheduleWhen }) {
             {when.timezone ?? t('issues.cadence.localTime')}
           </span>
         )}
-        {when.kind === 'cron' && (
+        {when.kind === 'cron' && !compact && (
           <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
             {when.catchUp === false
               ? t('issues.cadence.calendarOnly')
