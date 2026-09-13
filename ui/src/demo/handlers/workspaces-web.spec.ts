@@ -2,6 +2,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { setupServer } from 'msw/node'
+import { en } from '../../i18n/locales/en'
 
 import {
   DEMO_CHAT_SESSION_ID,
@@ -43,6 +44,18 @@ async function quickChat(agent: string, prompt: string) {
 }
 
 describe('demo Web Session handlers', () => {
+  it('shows a suggested workflow in the standard GUI snapshot without a fake tool approval', async () => {
+    const body = await quickChat('codex', en.chatLanding.researchMemoPrompt)
+    const { snapshot } = await fetch(webUrl(body.workspace.id, body.session.sessionId)).then(response => response.json())
+    expect(body.session.surface).toBe('webpi')
+    expect(body.session.title).toBe(en.chatLanding.researchMemoTitle)
+    expect(snapshot.phase).toBe('idle')
+    expect(snapshot.requests).toEqual([])
+    expect(snapshot.messages[0]).toMatchObject({ role: 'user', content: en.chatLanding.researchMemoPrompt })
+    expect(JSON.stringify(snapshot.messages[1])).toContain('a thesis with an exit condition')
+    expect(JSON.stringify(snapshot.messages[1])).toContain('[Install OpenAlice]')
+  })
+
   it('serves each featured Session with its own recorded transcript in the neutral shape', async () => {
     const semisResponse = await fetch(webUrl(DEMO_CHAT_WORKSPACE_ID, DEMO_CHAT_SESSION_ID))
     const aaplResponse = await fetch(webUrl(DEMO_WORKSPACE_ID, DEMO_SESSION_ID))
