@@ -15,6 +15,7 @@ import type {
   IssueAutomationHealthState,
   IssueListItem,
   IssuePriority,
+  IssuePatch,
   IssueStatus,
   IssueWorkspace,
 } from '../api/issues'
@@ -24,6 +25,8 @@ import { useWorkspaces } from '../contexts/workspaces-context'
 import { formatRelativeTime } from '../lib/intl'
 import { useWorkspace } from '../tabs/store'
 import { CenteredLoading } from './StateViews'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './ui/dropdown-menu'
+import { SelectionCheckIcon } from './ui/selection-check-icon'
 import { IssueAssigneePopover } from './IssueAssigneePopover'
 import { STATUS_META } from './issue-status-meta'
 
@@ -231,6 +234,7 @@ export function PriorityIndicator({ priority }: { priority: IssuePriority }) {
       </span>
     )
   }
+  if (priority === 'none') return <span title={t('issues.priority.label', { priority: t('issues.priority.none') })} aria-label={t('issues.priority.label', { priority: t('issues.priority.none') })} className="inline-flex w-3.5 justify-center text-xs font-semibold text-muted-foreground">···</span>
   const filled = priority === 'high' ? 3 : priority === 'medium' ? 2 : priority === 'low' ? 1 : 0
   const heights = [4, 7, 10]
   return (
@@ -319,23 +323,70 @@ function BoardCadence({ issue }: { issue: IssueListItem }) {
   )
 }
 
-function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen: () => void }) {
+function PropertyMenu({ field, issue, onPatch, controlId }: {
+  field: 'priority' | 'status'
+  controlId: string
+  issue: IssueListItem
+  onPatch: (patch: IssuePatch) => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const values = field === 'priority' ? ['none', 'urgent', 'high', 'medium', 'low'] as const : ['backlog', 'todo', 'in_progress', 'done', 'canceled'] as const
+  const icon = (value: string) => {
+    if (field === 'priority') return <PriorityIndicator priority={value as IssuePriority} />
+    const meta = STATUS_META[value as IssueStatus]
+    return <meta.Icon size={14} className={meta.className} aria-hidden />
+  }
+  const choose = async (value: string) => {
+    if (saving) return
+    if (value === issue[field]) { setOpen(false); return }
+    setSaving(true)
+    setError(null)
+    try {
+      await onPatch({ [field]: value })
+      setOpen(false)
+      requestAnimationFrame(() => document.getElementById(controlId)?.focus())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally { setSaving(false) }
+  }
+  const optionLabel = (value: string) => field === 'priority' && value === 'none' ? t('issues.priority.label', { priority: t('issues.priority.none') }) : field === 'priority' ? t(`issues.priority.${value as IssuePriority}`) : t(`issues.status.${value as IssueStatus}`)
+  const label = `${t(`issues.detail.${field}`)}: ${field === 'priority' ? t(`issues.priority.${issue.priority}`) : t(`issues.status.${issue.status}`)}`
+  return <DropdownMenu open={open} onOpenChange={(next) => { if (!saving) { setOpen(next); setError(null) } }}>
+    <DropdownMenuTrigger id={controlId} onClick={() => { if (!open) setOpen(true) }} aria-label={label} title={label} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {icon(issue[field])}
+    </DropdownMenuTrigger>
+    <DropdownMenuContent className="w-56" onKeyDown={(event) => {
+      const index = Number(event.key) - (field === 'priority' ? 0 : 1)
+      if (/^[0-5]$/.test(event.key) && values[index]) { event.preventDefault(); void choose(values[index]) }
+    }}>
+      <div className="mb-1 border-b border-border px-2 py-2 text-xs text-muted-foreground">{t(`issues.detail.${field}`)}</div>
+      {values.map((value, index) => <DropdownMenuItem key={value} disabled={saving} closeOnClick={false} onClick={() => void choose(value)} className={`gap-2.5 text-[13px] ${issue[field] === value ? 'bg-muted' : ''}`} aria-label={optionLabel(value)}>
+        {icon(value)}<span className="flex-1">{optionLabel(value)}</span>
+        {issue[field] === value && <SelectionCheckIcon />}
+        <span className="w-3 text-right text-xs text-muted-foreground">{index + (field === 'priority' ? 0 : 1)}</span>
+      </DropdownMenuItem>)}
+      {error && <p role="alert" className="px-2 py-2 text-xs text-destructive">{error}</p>}
+    </DropdownMenuContent>
+  </DropdownMenu>
+}
+
+function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen, onPatch }: BoardRow & { onOpen: () => void; onPatch: (patch: IssuePatch) => Promise<void> }) {
   const { t } = useTranslation()
   const terminal = issue.status === 'done' || issue.status === 'canceled'
-  const meta = STATUS_META[issue.status]
   return (
-    <li className="relative">
+    <li className="group flex h-11 min-w-0 items-center gap-1 px-3 hover:bg-muted/45 sm:px-6">
+      <PropertyMenu controlId={`issue-priority-${wsId}-${issue.id}`} field="priority" issue={issue} onPatch={onPatch} />
+      <span className="hidden w-16 shrink-0 truncate text-xs text-muted-foreground sm:block" title={t('issues.issueIdTitle', { id: issue.id })}>#{issue.id}</span>
+      <PropertyMenu controlId={`issue-status-${wsId}-${issue.id}`} field="status" issue={issue} onPatch={onPatch} />
       <button
         type="button"
         onClick={onOpen}
         title={t('issues.openIssue', { id: issue.id })}
-        className="oa-pressable flex h-11 w-full min-w-0 items-center gap-3 py-0 pl-3 pr-12 text-left transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:pl-6 sm:pr-16"
+        className="oa-pressable flex h-11 min-w-0 flex-1 items-center gap-3 px-1 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        <PriorityIndicator priority={issue.priority} />
-        <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground sm:block" title={t('issues.issueIdTitle', { id: issue.id })}>
-          #{issue.id}
-        </span>
-        <meta.Icon size={14} className={`shrink-0 ${meta.className}`} aria-label={t(`issues.status.${issue.status}`)} />
         <span className={`min-w-0 flex-1 truncate text-[13px] ${terminal ? 'text-muted-foreground' : 'text-foreground'}`}>
           {issue.title}
         </span>
@@ -352,7 +403,7 @@ function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen
           <span className="hidden w-28 items-center justify-end sm:flex"><BoardCadence issue={issue} /></span>
         </span>
       </button>
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 sm:right-5"><IssueAssigneePopover wsId={wsId} id={issue.id} health={issue.automationHealth} /></div>
+      <div className="ml-2 shrink-0"><IssueAssigneePopover wsId={wsId} id={issue.id} health={issue.automationHealth} /></div>
     </li>
   )
 }
@@ -363,11 +414,13 @@ function StatusGroup({
   collapsed,
   onToggle,
   onOpenRow,
+  onPatch,
 }: {
   status: IssueStatus
   rows: BoardRow[]
   collapsed: boolean
   onToggle: () => void
+  onPatch: (wsId: string, id: string, patch: IssuePatch) => Promise<void>
   onOpenRow: (row: BoardRow) => void
 }) {
   const { t } = useTranslation()
@@ -403,6 +456,7 @@ function StatusGroup({
               key={`${row.wsId}:${row.issue.id}`}
               {...row}
               onOpen={() => onOpenRow(row)}
+              onPatch={(patch) => onPatch(row.wsId, row.issue.id, patch)}
             />
           ))}
         </ul>
@@ -444,7 +498,7 @@ function InvalidWorkspaces({ workspaces }: { workspaces: IssueWorkspace[] }) {
  */
 export function IssuesBoard() {
   const { t } = useTranslation()
-  const { data, error, loading } = useIssues()
+  const { data, error, loading, updateIssue } = useIssues()
   const { workspaces: workspaceMetas } = useWorkspaces()
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
   const setSidebar = useWorkspace((s) => s.setSidebar)
@@ -547,6 +601,7 @@ export function IssuesBoard() {
           collapsed={collapsed.has(g.status)}
           onToggle={() => toggle(g.status)}
           onOpenRow={openRow}
+          onPatch={updateIssue}
         />
       ))}
     </div>
