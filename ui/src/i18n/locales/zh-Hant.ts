@@ -295,6 +295,8 @@ export const zhHant: Resources = {
     },
     detail: {
       workItem: '工作項目',
+      updateFailed: '無法儲存變更，請重試。',
+      properties: '屬性',
       ownership: '歸屬',
       agent: '智慧體',
       workItemDescription: '負責人與排程都屬於這個議題。',

@@ -323,10 +323,12 @@ function BoardCadence({ issue }: { issue: IssueListItem }) {
   )
 }
 
-function PropertyMenu({ field, issue, onPatch, controlId }: {
+export function PropertyMenu({ field, issue, onPatch, controlId, showLabel = false, disabled = false }: {
   field: 'priority' | 'status'
   controlId: string
-  issue: IssueListItem
+  issue: Pick<IssueListItem, 'priority' | 'status'>
+  showLabel?: boolean
+  disabled?: boolean
   onPatch: (patch: IssuePatch) => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -340,7 +342,7 @@ function PropertyMenu({ field, issue, onPatch, controlId }: {
     return <meta.Icon size={14} className={meta.className} aria-hidden />
   }
   const choose = async (value: string) => {
-    if (saving) return
+    if (saving || disabled) return
     if (value === issue[field]) { setOpen(false); return }
     setSaving(true)
     setError(null)
@@ -355,8 +357,8 @@ function PropertyMenu({ field, issue, onPatch, controlId }: {
   const optionLabel = (value: string) => field === 'priority' && value === 'none' ? t('issues.priority.label', { priority: t('issues.priority.none') }) : field === 'priority' ? t(`issues.priority.${value as IssuePriority}`) : t(`issues.status.${value as IssueStatus}`)
   const label = `${t(`issues.detail.${field}`)}: ${field === 'priority' ? t(`issues.priority.${issue.priority}`) : t(`issues.status.${issue.status}`)}`
   return <DropdownMenu open={open} onOpenChange={(next) => { if (!saving) { setOpen(next); setError(null) } }}>
-    <DropdownMenuTrigger id={controlId} onClick={() => { if (!open) setOpen(true) }} aria-label={label} title={label} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      {icon(issue[field])}
+    <DropdownMenuTrigger id={controlId} onClick={() => { if (!open) setOpen(true) }} aria-label={label} title={label} disabled={disabled || saving} className={`flex shrink-0 items-center gap-2.5 rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${showLabel ? "min-h-9 w-full justify-start px-2 text-sm" : "size-6 justify-center"}`}>
+      {icon(issue[field])}{showLabel && <span>{optionLabel(issue[field])}</span>}
     </DropdownMenuTrigger>
     <DropdownMenuContent className="w-56" onKeyDown={(event) => {
       const index = Number(event.key) - (field === 'priority' ? 0 : 1)

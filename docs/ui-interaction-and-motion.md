@@ -187,6 +187,18 @@ Issue immediately so status changes move rows into the matching group; failures
 keep the menu open with an error. The title opens detail through a sibling
 button rather than nesting controls. Collapsed groups leave the tab order.
 
+### Issue detail
+
+Issue detail follows a reading-first layout: a compact Issues / ID breadcrumb,
+a 28–32px title, flush editable Markdown, then Activity and operational Runs.
+The desktop grid reserves 256px for a borderless property rail. Status and
+priority reuse the board's labeled menu triggers; assignment reuses the shared
+picker and avatar states. Schedule owns cadence, due time, health, and run
+controls together. Agent settings use the shared Collapsible and start closed.
+No nested rail scroll container competes with the page. Below 1024px the rail
+stacks before the body with the existing section navigation. Editing, scheduling,
+confirmation, and server-error semantics stay in their existing owners.
+
 ### Background execution surfaces
 
 The bottom Your Alice application menu uses the static Alice portrait and a

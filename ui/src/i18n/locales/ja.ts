@@ -288,6 +288,8 @@ export const ja: Resources = {
     },
     detail: {
       workItem: '作業項目',
+      updateFailed: '変更を保存できませんでした。もう一度お試しください。',
+      properties: 'プロパティ',
       ownership: '担当',
       agent: 'エージェント',
       workItemDescription: '担当者とスケジュールは、この課題の一部です。',

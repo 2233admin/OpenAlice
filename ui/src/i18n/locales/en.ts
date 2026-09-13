@@ -298,6 +298,8 @@ export const en = {
     },
     detail: {
       workItem: 'Work item',
+      updateFailed: 'Could not save changes. Please try again.',
+      properties: 'Properties',
       ownership: 'Ownership',
       agent: 'Agent',
       workItemDescription: 'Ownership and schedule are part of this Issue.',

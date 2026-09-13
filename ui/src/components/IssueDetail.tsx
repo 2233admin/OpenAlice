@@ -50,7 +50,7 @@ import { previewForEntry } from '../live/inbox-threads'
 import { useWikilinkHandler } from '../live/wikilink'
 import { useWorkspace } from '../tabs/store'
 import { ConfirmDialog } from './ConfirmDialog'
-import { AutomationHealthPill, CadencePill, CadenceSummary, PriorityIndicator } from './IssuesBoard'
+import { AutomationHealthPill, CadenceSummary, PropertyMenu } from './IssuesBoard'
 import { IssueSectionNavigation } from './IssueSectionNavigation'
 import { STATUS_META } from './issue-status-meta'
 import { MarkdownContent } from './MarkdownContent'
@@ -68,6 +68,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { AssigneeEditor } from './IssueAssigneeEditor'
 import { resolveIssueAiSelection } from './issue-runtime-options'
 
@@ -137,8 +138,8 @@ function InspectorSection({
   children: ReactNode
 }) {
   return (
-    <section className="border-t border-border/60 px-4 py-4 first:border-t-0">
-      <h3 className="text-[12px] leading-[18px] font-semibold text-muted-foreground">{title}</h3>
+    <section className="py-5 first:pt-0">
+      <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
       {description && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>}
       <div className="mt-3">{children}</div>
     </section>
@@ -764,7 +765,6 @@ function PropertiesRail({
     update: PausedSessionRuntimeUpdate
   } | null>(null)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
-  const meta = STATUS_META[issue.status]
   const issueDefaultInOptions = issueDefaultAgent && agents.some((a) => a.id === issueDefaultAgent) ? issueDefaultAgent : null
   const defaultInOptions = defaultAgent && agents.some((a) => a.id === defaultAgent) ? defaultAgent : null
   const ownerResumeId = issue.assignee.startsWith('@resume-')
@@ -860,13 +860,45 @@ function PropertiesRail({
   return (
     <aside
       id="issue-work-item"
-      className="mt-5 min-w-0 w-full shrink-0 scroll-mt-20 lg:sticky lg:top-4 lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:mt-0 lg:self-start"
+      className="mt-5 min-w-0 w-full shrink-0 scroll-mt-20 lg:sticky lg:top-8 lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:mt-0 lg:self-start"
     >
-      <div className="overflow-hidden rounded-lg border border-border bg-background lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
+      <div className="min-w-0 space-y-4">
         <h3 className="sr-only">{t('issues.detail.workItem')}</h3>
 
+        <InspectorSection title={t('issues.detail.properties')}>
+          <div className="-mx-2 space-y-1">
+            {(['status', 'priority'] as const).map((field) => <PropertyMenu
+              key={field} field={field} issue={issue} showLabel disabled={saving}
+              controlId={`issue-detail-${wsId}-${issue.id}-${field}`}
+              onPatch={async (patch) => { if (!await onPatch(patch)) throw new Error(t('issues.detail.updateFailed')) }}
+            />)}
+            <AssigneeEditor compact
+              value={issue.assignee}
+              scheduled={Boolean(issue.when)}
+              sessions={sessions}
+              authoritativeOwner={authoritativeOwner}
+              disabled={saving}
+              onChange={(assignee) => onPatch({ assignee })}
+            />
+          </div>
+        </InspectorSection>
+
         {issue.when && (
-          <section className="oa-status-surface px-4 py-4">
+          <InspectorSection title={t('issues.detail.schedule')}>
+            <CadenceSummary when={issue.when} />
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/50 pt-3 text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock size={13} aria-hidden />
+                {t('issues.detail.nextRun')}
+              </span>
+              <span className="tabular-nums text-foreground">
+                {issue.nextDueAtMs ? formatRelativeTime(issue.nextDueAtMs) : '—'}
+              </span>
+            </div>
+            <div className="mt-1 flex justify-end">
+              <SchedulePolicyEditor issue={issue} saving={saving} onPatch={onPatch} />
+            </div>
+          <section className="mt-4 border-t border-border/60 pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <AutomationHealthPill
                 health={issue.automationHealth ?? {
@@ -911,74 +943,15 @@ function PropertiesRail({
               ) : null}
             </div>
           </section>
-        )}
-
-        <InspectorSection title={t('issues.detail.ownership')}>
-          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-2">
-            <InspectorField
-              label={t('issues.detail.status')}
-              icon={<meta.Icon size={13} className={meta.className} aria-hidden />}
-            >
-              <select
-                className={`${railControl} w-full`}
-                value={issue.status}
-                disabled={saving}
-                aria-label={t('issues.detail.status')}
-                onChange={(e) => onPatch({ status: e.target.value as IssueStatus })}
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>{t(`issues.status.${s}`)}</option>
-                ))}
-              </select>
-            </InspectorField>
-            <InspectorField
-              label={t('issues.detail.priority')}
-              icon={<PriorityIndicator priority={issue.priority} />}
-            >
-              <select
-                className={`${railControl} w-full capitalize`}
-                value={issue.priority}
-                disabled={saving}
-                aria-label={t('issues.detail.priority')}
-                onChange={(e) => onPatch({ priority: e.target.value as IssuePriority })}
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p} value={p}>{t(`issues.priority.${p}`)}</option>
-                ))}
-              </select>
-            </InspectorField>
-          </div>
-          <InspectorField label={t('issues.detail.assignee')} className="mt-3">
-            <AssigneeEditor
-              value={issue.assignee}
-              scheduled={Boolean(issue.when)}
-              sessions={sessions}
-              authoritativeOwner={authoritativeOwner}
-              disabled={saving}
-              onChange={(assignee) => onPatch({ assignee })}
-            />
-          </InspectorField>
-        </InspectorSection>
-
-        {issue.when && (
-          <InspectorSection title={t('issues.detail.schedule')}>
-            <CadenceSummary when={issue.when} />
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/50 pt-3 text-xs">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Clock size={13} aria-hidden />
-                {t('issues.detail.nextRun')}
-              </span>
-              <span className="tabular-nums text-foreground">
-                {issue.nextDueAtMs ? formatRelativeTime(issue.nextDueAtMs) : '—'}
-              </span>
-            </div>
-            <div className="mt-1 flex justify-end">
-              <SchedulePolicyEditor issue={issue} saving={saving} onPatch={onPatch} />
-            </div>
           </InspectorSection>
         )}
 
-        <InspectorSection title={t('issues.detail.agent')}>
+        <Collapsible className="border-t border-border/60 pt-4">
+          <CollapsibleTrigger className="group flex min-h-9 w-full items-center justify-between rounded text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="flex items-center gap-2"><SlidersHorizontal size={14} aria-hidden />{t('issues.detail.agent')}</span>
+            <ChevronRight size={14} className="transition-transform group-data-[panel-open]:rotate-90" aria-hidden />
+          </CollapsibleTrigger>
+          <CollapsibleContent><div className="pb-4 pt-3">
           {issue.when && (
             <>
               <InspectorField label={t('issues.detail.runtime')}>
@@ -1069,7 +1042,8 @@ function PropertiesRail({
               onSave={(commentPrompt) => onPatch({ commentPrompt })}
             />
           </InspectorField>
-        </InspectorSection>
+          </div></CollapsibleContent>
+        </Collapsible>
       </div>
       {(error || runtimeError) && (
         <p role="alert" className="mt-2 text-xs leading-snug text-destructive">{error || runtimeError}</p>
@@ -1218,8 +1192,8 @@ function WhatEditor({
 }) {
   const { t } = useTranslation()
   return (
-    <section id="issue-what" className="mt-4 scroll-mt-20 border-t border-border/60 pt-4">
-      <div className="mb-2">
+    <section id="issue-what" className="issue-detail-document mt-6 scroll-mt-20">
+      <div className="sr-only">
         <h2 className="text-sm font-semibold text-foreground">
           {t('issues.detail.what')}
         </h2>
@@ -1500,11 +1474,11 @@ export function IssueActivity({
 
   return (
     <section id="issue-activity" className="mt-8 scroll-mt-20">
-      <div className="mb-3 border-t border-border/60 pt-5">
+      <div className="mb-5 border-t border-border/60 pt-6">
         <h2 className="text-sm font-semibold text-foreground">{t('issues.detail.activity')}</h2>
       </div>
       {activity.length === 0 ? (
-        <p className="mb-3 rounded-lg border border-dashed border-border px-4 py-4 text-center text-xs text-muted-foreground">
+        <p className="mb-4 py-2 text-sm text-muted-foreground">
           {t('issues.detail.noActivity')}
         </p>
       ) : (
@@ -1518,7 +1492,7 @@ export function IssueActivity({
                   <span className="absolute left-[3px] top-3 z-10 grid h-[18px] w-[18px] place-items-center bg-background text-primary">
                     <MessageSquare size={10} aria-hidden />
                   </span>
-                  <article className={`rounded-lg border bg-secondary px-4 py-3 ${comment.replyTo ? 'ml-3 border-primary/25' : 'border-border'}`}>
+                  <article className={`rounded-lg border bg-background px-4 py-3 ${comment.replyTo ? 'ml-3 border-primary/25' : 'border-border'}`}>
                     <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-[15px] text-muted-foreground">
                       <span className="font-medium text-foreground/85">{comment.author}</span>
                       {comment.replyTo && (
@@ -1651,7 +1625,7 @@ function RunsSection({
   if (runs.length === 0) return null
   const visible = expanded ? runs : runs.slice(0, 4)
   return (
-    <section id="issue-runs" className="mt-8 scroll-mt-20 rounded-lg border border-border bg-secondary/45 px-3 py-3 sm:px-4">
+    <section id="issue-runs" className="mt-10 scroll-mt-20 border-t border-border/60 pt-6">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-foreground">{t('issues.detail.runs')}</h2>
         <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] leading-[15px] text-muted-foreground">{runs.length}</span>
@@ -1919,8 +1893,7 @@ export function IssueDetail({
         mutate(next)
         return true
       } catch (e) {
-        // The selects are bound to the (unchanged) server data, so they revert
-        // on their own; we just surface why.
+        // Property controls keep the last accepted server value on failure.
         setActionError(e instanceof Error ? e.message : String(e))
         return false
       } finally {
@@ -1969,7 +1942,7 @@ export function IssueDetail({
       }}
       variant="ghost"
       size="sm"
-      className="mb-2 min-h-10 px-0 text-xs text-muted-foreground hover:bg-transparent sm:mb-4 sm:min-h-7"
+      className="min-h-9 px-0 text-xs text-muted-foreground hover:bg-transparent"
     >
       <ArrowLeft size={13} /> {backLabel ?? t('nav.item.issue')}
     </Button>
@@ -2028,15 +2001,13 @@ export function IssueDetail({
     })),
   ].filter((record) => Number.isFinite(record.at)).sort((a, b) => a.at - b.at)
   return (
-    <div className="mx-auto max-w-6xl px-4 py-5 md:px-6">
-      {backToBoard}
-      <main className="grid min-w-0 gap-x-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+    <div className="mx-auto max-w-[1180px] px-5 pb-16 pt-5 sm:px-8 lg:px-12">
+      <nav aria-label={t('nav.item.issue')} className="mb-8 flex min-w-0 items-center gap-2 text-xs text-muted-foreground lg:mb-12">
+        {backToBoard}<ChevronRight size={12} aria-hidden /><span className="truncate" title={id}>{id}</span>
+      </nav>
+      <main className="grid min-w-0 gap-x-12 lg:grid-cols-[minmax(0,1fr)_16rem] xl:gap-x-16 lg:items-start">
         <header className="min-w-0 lg:col-start-1 lg:row-start-1">
-          <div className="mb-1 flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
-            <span className="max-w-full break-all font-mono text-[11px] leading-snug text-muted-foreground/70">{id}</span>
-            {issue.when && <CadencePill when={issue.when} />}
-          </div>
-          <h1 className="text-xl font-semibold text-foreground">{issue.title}</h1>
+          <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground sm:text-[32px]">{issue.title}</h1>
         </header>
         <IssueSectionNavigation
           hasRuns={runs.length > 0}

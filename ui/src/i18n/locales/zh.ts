@@ -286,6 +286,8 @@ export const zh: Resources = {
     },
     detail: {
       workItem: '工作项',
+      updateFailed: '未能保存更改，请重试。',
+      properties: '属性',
       ownership: '归属',
       agent: '智能体',
       workItemDescription: '负责人和计划都属于这个议题。',
