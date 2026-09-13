@@ -110,7 +110,7 @@ function WorkPanel({ wsId, source, onCollapse }: { wsId: string; source: Workspa
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => openTab(wsId, { kind: 'browser', id: `browser:${Date.now()}-${Math.random().toString(36).slice(2)}` })}><Globe size={14} />{t('workbench.browser')}</DropdownMenuItem>
           <DropdownMenuItem onClick={() => openTab(wsId, { kind: 'files', id: 'files' })}><Folder size={14} />{t('workspace.files')}</DropdownMenuItem>
-          {source !== 'chat' && <DropdownMenuItem onClick={() => openTab(wsId, { kind: 'studio', id: 'studio' })}><PanelsTopLeft size={14} />{t('harnessSurface.studio')}</DropdownMenuItem>}
+          {(source !== 'chat' || import.meta.env.VITE_DEMO_MODE) && <DropdownMenuItem onClick={() => openTab(wsId, { kind: 'studio', id: 'studio' })}><PanelsTopLeft size={14} />{t('harnessSurface.studio')}</DropdownMenuItem>}
           {canSwitch && session && <DropdownMenuItem onClick={() => {
             if (session.surface === 'webpi') void ctx.resumeSession(wsId, session.id, source)
             else void ctx.openWebSession(wsId, session.id, source)
@@ -125,6 +125,7 @@ function WorkPanel({ wsId, source, onCollapse }: { wsId: string; source: Workspa
             const current = useHarnessWorkbench.getState().workspaces[wsId]
             if (current) patch(wsId, { tabs: current.tabs.map((item) => item.id === tab.id ? { ...item, title: new URL(url).host } : item) })
           }} />
+        : tab.kind === 'studio' && import.meta.env.VITE_DEMO_MODE && source !== 'prediction' ? <BrowserPane title="AutoQuant Studio · Demo" initialUrl={new URL('/demo-studio/index.html', window.location.href).href} />
         : tab.kind === 'studio' && source !== 'chat' ? <HarnessSurfacePage workspaceId={wsId} source={source} embedded />
           : tab.kind === 'file' ? <WorkFile key={`${tab.id}:${tab.revision ?? 0}`} wsId={wsId} path={tab.path} /> : null}
     </TabsContent>)}

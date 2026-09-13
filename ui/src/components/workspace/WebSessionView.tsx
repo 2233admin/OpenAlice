@@ -38,6 +38,10 @@ function WebSession({ wsId, sessionId, agent, agents, label, headerActions, onSe
   const session = useWebConversation(wsId, sessionId)
   const { snapshot, busy, requests } = session
   const openFile = useCallback((path: string) => {
+    if (import.meta.env.VITE_DEMO_MODE && path === 'demo/autoquant-studio.html') {
+      useHarnessWorkbench.getState().openTab(wsId, { id: 'studio', kind: 'studio' })
+      return
+    }
     const market = parseMarketReference(path)
     useHarnessWorkbench.getState().openTab(wsId, market
       ? { id: path, kind: 'market', ...market }

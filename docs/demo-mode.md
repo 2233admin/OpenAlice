@@ -37,8 +37,15 @@ state are isolated, with no provider credentials passed to the fixture child.
 Data-home switching and updates are disabled. Unmocked APIs return 501 rather
 than reaching a live backend. UI analytics are disabled in the native demo.
 
-Web replies remain simulated; TUI placeholders and unavailable Harness Studios
-are unchanged. This mode checks rendering and desktop integration, not live
+Suggested-prompt replies stream predefined text through the normal Web Session
+snapshot polling contract; Stop clears the pending stream. Market examples open
+the existing K-line panel with recorded Alpaca-paper bars. Replies render the
+bundled Alice wave sticker through the normal Workspace-content renderer.
+
+The AutoQuant example opens its real Studio frontend in the work panel, backed
+by an isolated synthetic test snapshot. See `ui/public/demo-studio/PROVENANCE.md`.
+This read-only specimen does not launch a managed Studio process; refresh returns
+the same snapshot. Auto Prediction Studio and TUI remain placeholders. This mode checks rendering and desktop integration, not live
 agent execution, broker behavior, packaging, or recorder cursor compatibility.
 For those, use the normal Electron acceptance lanes.
 

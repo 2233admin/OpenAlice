@@ -1,3 +1,4 @@
+import stickerWave from '../fixtures/sticker-wave.json'
 import { demoChatWorkflowReply, demoChatWorkflowTitle } from '../fixtures/chat-workflows'
 import { stickerHandlers } from './stickers'
 import { http, HttpResponse } from 'msw'
@@ -90,6 +91,7 @@ let demoWebSessions = createSeededWebSessions()
 let demoWebRequestSequence = 0
 
 export function resetDemoWorkspaceWebState(): void {
+  demoReplyStreams.clear()
   demoManagerMessages = []
   demoQuickChatSequence = 0
   demoWebRequestSequence = 0
@@ -195,6 +197,24 @@ function demoDirectoryListing(workspaceId: string, requestedPath: string) {
   }
 }
 
+
+const demoReplyStreams = new Map<string, { text: string; startedAt: number; emitted: number }>()
+
+function advanceDemoReply(wsId: string, sessionId: string): WebSessionSnapshot | null {
+  const key = webKey(wsId, sessionId)
+  const stream = demoReplyStreams.get(key)
+  if (!stream) return findDemoWebSession(wsId, sessionId)
+  const count = Math.min(stream.text.length, Math.floor(Math.max(0, Date.now() - stream.startedAt - 500) / 12))
+  if (count === stream.emitted) return findDemoWebSession(wsId, sessionId)
+  stream.emitted = count
+  const message = { role: 'assistant' as const, content: [{ type: 'text' as const, text: stream.text.slice(0, count) }] }
+  if (count === stream.text.length) {
+    demoReplyStreams.delete(key)
+    return appendDemoWebMessages(wsId, sessionId, [message])
+  }
+  return updateDemoWebSession(wsId, sessionId, () => ({ streamingMessage: message }))
+}
+
 function appendDemoWebMessages(
   wsId: string,
   sessionId: string,
@@ -215,10 +235,13 @@ function startDemoWebTurn(wsId: string, sessionId: string, message: string): Web
   if (!current) return null
   const workflowReply = demoChatWorkflowReply(message)
   if (workflowReply) {
-    return appendDemoWebMessages(wsId, sessionId, [
-      { role: 'user', content: message },
-      { role: 'assistant', content: [{ type: 'text', text: workflowReply }] },
-    ])
+    demoReplyStreams.set(webKey(wsId, sessionId), { text: workflowReply, startedAt: Date.now(), emitted: 0 })
+    return updateDemoWebSession(wsId, sessionId, current => ({
+      phase: 'working',
+      messages: [...current.messages, { role: 'user', content: message }],
+      streamingMessage: { role: 'assistant', content: [{ type: 'text', text: '' }] },
+      requests: [],
+    }))
   }
   if (!demoWebCapabilities[current.agent]?.permissionPrompts) {
     return appendDemoWebMessages(wsId, sessionId, demoWebFollowUp(current.agent, message))
@@ -1074,6 +1097,12 @@ export const workspacesHandlers = [
   http.get('/api/workspaces/:id/content', ({ request }) => {
     const url = new URL(request.url)
     const path = url.searchParams.get('path') ?? ''
+    if (path === 'demo/autoquant-studio.html') return HttpResponse.json({ path, size: 0 })
+    if (path === 'sticker/wave.png') {
+      const bytes = Uint8Array.from(atob(stickerWave.base64), char => char.charCodeAt(0))
+      if (url.searchParams.get('metadata') === '1') return HttpResponse.json({ path, size: bytes.length })
+      return new HttpResponse(bytes, { headers: { 'Content-Type': stickerWave.mime } })
+    }
     const content = demoWorkspaceFiles[path]
     if (content == null) return HttpResponse.json({ error: 'file_not_found' }, { status: 404 })
     if (url.searchParams.get('metadata') === '1') return HttpResponse.json({ path, size: content.length })
@@ -1505,7 +1534,7 @@ export const workspacesHandlers = [
     const sessionId = String(params.sid)
     const snapshot = wsId === demoManagerSession.wsId && sessionId === demoManagerSession.id
       ? demoManagerSnapshot()
-      : findDemoWebSession(wsId, sessionId)
+      : advanceDemoReply(wsId, sessionId)
     if (!snapshot) return HttpResponse.json({ error: 'web_not_running' }, { status: 409 })
     const revision = Number.parseInt(new URL(request.url).searchParams.get('revision') ?? '', 10)
     return Number.isFinite(revision) && revision === snapshot.revision
@@ -1527,10 +1556,10 @@ export const workspacesHandlers = [
       return HttpResponse.json({ snapshot: demoManagerSnapshot() })
     }
     const current = findDemoWebSession(wsId, sessionId)
-    if (current && current.phase === 'awaiting-input') {
+    if (current && (current.phase === 'awaiting-input' || current.phase === 'working')) {
       return HttpResponse.json({
         error: 'web_prompt_failed',
-        message: 'answer the pending request before sending another message',
+        message: current.phase === 'working' ? 'wait for the current reply or stop it first' : 'answer the pending request before sending another message',
       }, { status: 409 })
     }
     const snapshot = startDemoWebTurn(wsId, sessionId, message)
@@ -1544,6 +1573,7 @@ export const workspacesHandlers = [
     if (wsId === demoManagerSession.wsId && sessionId === demoManagerSession.id) {
       return HttpResponse.json({ snapshot: demoManagerSnapshot() })
     }
+    demoReplyStreams.delete(webKey(wsId, sessionId))
     // Aborting mid-request drops the pending question and records the stop.
     const snapshot = updateDemoWebSession(wsId, sessionId, (current) => ({
       phase: 'idle',

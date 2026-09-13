@@ -209,7 +209,9 @@ export function demoChatWorkflowReply(prompt: string): string | null {
   if (!starter) return null
   const reply = replies[starter.id]
   if (!reply) return null
-  return (starter.chinese ? reply.zh : reply.en) + (starter.chinese
+  const extras = starter.id === 'market' || starter.id === 'portfolio'
+    ? '\n\nAAPL · Demo chart\n\n[[market/alpaca-paper|AAPL/1d]]\n\n' : starter.id === 'quant' ? '\n\nAutoQuant Studio · Synthetic example\n\n[[demo/autoquant-studio.html]]\n\n' : '\n\n'
+  return (starter.chinese ? reply.zh : reply.en) + extras + '[[sticker/wave.png]]' + (starter.chinese
     ? '\n\n---\n\n**在你自己的工作台继续：** [安装 OpenAlice](https://github.com/TraderAlice/OpenAlice)，连接你的 Agent 与数据源，用同一个 Chat 界面处理真实研究。本回复为预写 demo 示例。'
     : '\n\n---\n\n**Continue in your own workspace:** [Install OpenAlice](https://github.com/TraderAlice/OpenAlice), connect your agent and data sources, and use this same Chat interface for your research. This response is a prewritten demo example.')
 }
