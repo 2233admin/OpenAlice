@@ -109,7 +109,7 @@ export function resolveLaunchCommand(
     // separate argv item, so neither Bash nor cmd.exe evaluates prompt text.
     const posixShim = resolved.slice(0, -ext.length);
     const bash = resolveBashPath(env, 'win32');
-    if (existsSync(posixShim) && bash && existsSync(bash)) {
+    if (isRegularFile(posixShim) && bash && isRegularFile(bash)) {
       return {
         argv: [bash, windowsPathForBash(posixShim), ...rest],
         viaShell: false,
@@ -169,10 +169,10 @@ export function resolveStockNpmShim(
     : root;
   const entry = resolve(root, rawRelative.replace(/\\/g, '/'));
   const rel = relative(allowedRoot, entry);
-  if (!rel || rel.startsWith('..') || rel.includes(':') || !existsSync(entry)) return null;
+  if (!rel || rel.startsWith('..') || rel.includes(':') || !isRegularFile(entry)) return null;
   return /\.(?:exe|com)$/i.test(entry) ? [entry, ...args] : [nodeExecPath, entry, ...args];
-}
 
+}
 function isRegularFile(path: string): boolean {
   try {
     return statSync(path).isFile();

@@ -95,6 +95,14 @@ describe('resolveLaunchCommand', () => {
     ]);
   });
 
+  it('win32: does not treat a directory as a POSIX Bash shim', async () => {
+    await touch('pi.cmd');
+    await mkdir(join(dir, 'pi'));
+    await touch('bash.exe');
+    const r = resolveLaunchCommand(['pi', '--version'], { platform: 'win32', env });
+    expect(r.mode).toBe('cmd-shim');
+    expect(r.viaShell).toBe(true);
+  });
   it('win32: runs a stock npm shim entrypoint directly with Node', async () => {
     await stockNpmShim('pi.cmd');
     const nodeExecPath = 'C:\\Program Files\\nodejs\\node.exe';
@@ -123,6 +131,18 @@ describe('resolveLaunchCommand', () => {
     });
   });
 
+  it('win32: does not execute a directory as a stock npm entry', async () => {
+    const entry = 'node_modules\\pkg\\cli.js';
+    await writeFile(join(dir, 'pi.cmd'), `@ECHO off\n"%_prog%"  "%dp0%\\${entry}" %*\n`);
+    await mkdir(join(dir, 'node_modules', 'pkg', 'cli.js'), { recursive: true });
+    const r = resolveLaunchCommand(['pi', '--version'], {
+      platform: 'win32',
+      env,
+      nodeExecPath: 'node.exe',
+    });
+    expect(r.mode).toBe('cmd-shim');
+    expect(r.viaShell).toBe(true);
+  });
   it('win32: runs an unknown batch shim through its extensionless sibling and Bash', async () => {
     await touch('pi.cmd');
     await touch('pi');
