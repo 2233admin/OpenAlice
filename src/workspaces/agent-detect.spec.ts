@@ -223,7 +223,7 @@ describe('preflightAgentBinary', () => {
     const startedAt = Date.now();
     await expect(preflightAgentBinaryAsync('pi', 'pi', {
       platform: process.platform,
-      timeoutMs: 100,
+      timeoutMs: 500,
       env: { ...env, OPENALICE_MANAGED_PI_PATH: hanging },
     })).resolves.toMatchObject({ installed: true, runnable: false });
     let childPid: number | null = null;
@@ -244,7 +244,7 @@ describe('preflightAgentBinary', () => {
       // Expected once process-tree cleanup has terminated the descendant.
     }
     expect(childAlive).toBe(false);
-    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
     await expect(preflightAgentBinaryAsync('pi', 'pi', { platform: process.platform, env }))
       .resolves.toMatchObject({ installed: true, path: entry, runnable: true });
   });

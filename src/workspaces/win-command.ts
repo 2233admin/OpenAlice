@@ -97,17 +97,14 @@ export function resolveLaunchCommand(
     // wrapper has the stock shape.  Besides avoiding an unnecessary shell,
     // this is what makes user-controlled headless prompts safe: cmd.exe never
     // gets a chance to re-parse &, |, %, ^, and friends.
-    const standalone = opts.bunStandalone
-      ?? (globalThis as typeof globalThis & { __OPENALICE_BUN_STANDALONE__?: boolean }).__OPENALICE_BUN_STANDALONE__ === true;
     // A compiled OpenAlice executable is not a general Node interpreter.
     // External npm agents retain their own host Node requirement.
-    const node = opts.nodeExecPath ?? (standalone
-      ? lookupExactOnWindowsPath('node.exe', env)
-      : process.execPath);
+    const node = opts.nodeExecPath ?? lookupExactOnWindowsPath('node.exe', env);
     const direct = node ? resolveStockNpmShim(resolved, rest, node) : null;
-    if (direct) return { argv: direct, viaShell: false, mode: 'node-shim' };
-
-    // npm-style installs also publish an extensionless POSIX shim next to the
+    if (direct) {
+      const mode = direct[0] === node ? 'node-shim' : 'direct';
+      return { argv: direct, viaShell: false, mode };
+    }
     // `.cmd`. Git Bash can execute that script while receiving the prompt as a
     // separate argv item, so neither Bash nor cmd.exe evaluates prompt text.
     const posixShim = resolved.slice(0, -ext.length);
@@ -134,11 +131,11 @@ export function resolveLaunchCommand(
 }
 
 /**
- * Resolve the stock npm.cmd wrapper to `node <entry> ...args` without a shell.
+ * Resolve the stock npm.cmd wrapper to a JS or native entrypoint without a shell.
  *
  * This intentionally recognizes only npm's generated final invocation:
  *
- *   "%_prog%" "%dp0%\\node_modules\\some-package\\cli.js" %*
+ *   "%_prog%" "%dp0%\node_modules\some-package\cli.(js|exe)" %*
  *
  * Anything hand-written, outside the shim directory, or with extra shell
  * syntax falls back to the existing cmd.exe path (and remains rejected by the
@@ -160,7 +157,7 @@ export function resolveStockNpmShim(
   // `%~dp0\\..\\package\\...` and repeat the same entry in their local-node
   // and PATH-node branches. Accept both generated shapes only when every
   // captured entry is identical.
-  const matches = [...source.matchAll(/"(?:%dp0%|%~dp0)\\([^"\r\n]+\.(?:c|m)?js)"\s+%\*/gim)];
+  const matches = [...source.matchAll(/"(?:%dp0%|%~dp0)\\([^"\r\n]+\.(?:(?:c|m)?js|exe|com))"\s+%\*/gim)];
   const entries = [...new Set(matches.map((match) => match[1]).filter((value): value is string => !!value))];
   if (entries.length !== 1) return null;
   const rawRelative = entries[0];
@@ -173,7 +170,7 @@ export function resolveStockNpmShim(
   const entry = resolve(root, rawRelative.replace(/\\/g, '/'));
   const rel = relative(allowedRoot, entry);
   if (!rel || rel.startsWith('..') || rel.includes(':') || !existsSync(entry)) return null;
-  return [nodeExecPath, entry, ...args];
+  return /\.(?:exe|com)$/i.test(entry) ? [entry, ...args] : [nodeExecPath, entry, ...args];
 }
 
 function isRegularFile(path: string): boolean {

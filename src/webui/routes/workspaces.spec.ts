@@ -48,6 +48,7 @@ function build(
     sourceUpgrades?: any;
     workspaceAbsorbs?: any;
     availability?: Record<string, { installed: boolean; runnable?: boolean; path: string | null }>;
+    probeAvailability?: Record<string, { installed: boolean; runnable?: boolean; path: string | null }>;
     spawnPlan?: any;
     sessionRecord?: any;
     runtimeBinding?: any;
@@ -148,8 +149,8 @@ function build(
     detectAgents: () => opts.availability ?? {
       claude: { installed: true, path: '/usr/bin/claude' },
     },
-    probeAgents: vi.fn(async () => opts.availability ?? {
-      claude: { installed: true, path: '/usr/bin/claude' },
+    probeAgents: vi.fn(async () => opts.probeAvailability ?? opts.availability ?? {
+      claude: { installed: true, runnable: true, path: '/usr/bin/claude' },
     }),
     computeSpawnPlan: vi.fn(() => opts.spawnPlan ?? ({
       resumeMode: 'fresh',
@@ -292,13 +293,18 @@ describe('GET /agents inventory', () => {
     expect(result.body.agents).toEqual([
       expect.objectContaining({ id: 'claude', installed: true, runnable: false }),
     ]);
-
+  });
+  it('uses the async preflight result in launch-plan', async () => {
+    const { app } = build({
+      availability: { claude: { installed: true, path: '/usr/bin/claude' } },
+      probeAvailability: { claude: { installed: true, runnable: true, path: '/usr/bin/claude' } },
+    });
     const launchPlan = await get(app, '/ws-1/launch-plan?agent=claude');
     expect(launchPlan.status).toBe(200);
     expect(launchPlan.body.agent).toEqual(
-      expect.objectContaining({ installed: true, runnable: false }),
+      expect.objectContaining({ installed: true, runnable: true }),
     );
-});
+  });
 });
 describe('GET /:id/resumes', () => {
   it('returns the safe product Session directory', async () => {
@@ -459,13 +465,12 @@ describe('GET /:id/launch-plan', () => {
 
     expect(result.status).toBe(200)
     expect(result.body).toEqual({
-      workspace: { id: 'ws-1', tag: undefined, dir: '/w' },
+      workspace: { id: 'ws-1', dir: '/w' },
       agent: {
         id: 'claude',
-        displayName: undefined,
         kind: 'agent',
         installed: true,
-        runnable: false,
+        runnable: true,
         binPath: '/usr/bin/claude',
         capabilities: { headless: true },
       },

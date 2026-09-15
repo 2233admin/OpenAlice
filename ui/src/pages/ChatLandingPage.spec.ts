@@ -103,6 +103,12 @@ describe('resolveChatAgent', () => {
   it('keeps an explicit valid choice ahead of saved and detected defaults', () => {
     expect(resolveAgentRuntime(agents, 'codex', 'claude', readiness('claude'))).toBe('codex')
   })
+  it('does not resolve an installed but unrunnable runtime for submission', () => {
+    const unrunnable = [{ id: 'claude', installed: true, runnable: false }]
+    expect(resolveAgentRuntime(unrunnable, 'claude', null, null)).toBeNull()
+    expect(resolveAgentRuntime(unrunnable, null, 'claude', null)).toBeNull()
+    expect(resolveAgentRuntime(unrunnable, null, null, null)).toBeNull()
+  })
 
   it('uses the saved default when there is no explicit choice', () => {
     expect(resolveAgentRuntime(agents, null, 'claude', readiness('codex'))).toBe('claude')

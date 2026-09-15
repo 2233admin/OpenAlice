@@ -21,20 +21,28 @@ export function isWorkspaceAiAgent(agentId: string | null): agentId is AgentId {
  * follow the same runtime-selection contract.
  */
 export function resolveAgentRuntime(
-  agents: readonly Pick<AgentInfo, 'id' | 'installed'>[],
+  agents: readonly Pick<AgentInfo, 'id' | 'installed' | 'runnable'>[],
   selectedAgent: string | null,
   defaultAgent: string | null,
   runtimeReadiness: AgentRuntimeReadinessSnapshot | null,
 ): string | null {
-  const hasAgent = (agentId: string | null): agentId is string => (
-    agentId !== null && agents.some((agent) => agent.id === agentId)
+  const hasRunnableAgent = (agentId: string | null): agentId is string => (
+    agentId !== null && agents.some((agent) => (
+      agent.id === agentId && agent.installed !== false && agent.runnable !== false
+    ))
   )
-  if (hasAgent(selectedAgent)) return selectedAgent
-  if (hasAgent(defaultAgent)) return defaultAgent
+  if (hasRunnableAgent(selectedAgent)) return selectedAgent
+  if (hasRunnableAgent(defaultAgent)) return defaultAgent
 
-  const readyAgent = agents.find((agent) => runtimeReadiness?.agents[agent.id]?.ready === true)
+  const readyAgent = agents.find((agent) => (
+    agent.installed !== false &&
+    agent.runnable !== false &&
+    runtimeReadiness?.agents[agent.id]?.ready === true
+  ))
   if (readyAgent) return readyAgent.id
 
-  const installedAgents = agents.filter((agent) => agent.installed !== false)
+  const installedAgents = agents.filter((agent) => (
+    agent.installed !== false && agent.runnable !== false
+  ))
   return installedAgents.length === 1 ? installedAgents[0].id : null
 }

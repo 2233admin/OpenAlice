@@ -109,6 +109,19 @@ describe('resolveLaunchCommand', () => {
       mode: 'node-shim',
     });
   });
+  it('win32: runs a stock npm shim with a native entry directly without Bash', async () => {
+    await stockNpmShim('claude.cmd', 'node_modules\\claude\\bin\\claude.exe');
+    const r = resolveLaunchCommand(['claude', '--version'], {
+      platform: 'win32',
+      env,
+      nodeExecPath: 'node.exe',
+    });
+    expect(r).toEqual({
+      argv: [join(dir, 'node_modules', 'claude', 'bin', 'claude.exe'), '--version'],
+      viaShell: false,
+      mode: 'direct',
+    });
+  });
 
   it('win32: runs an unknown batch shim through its extensionless sibling and Bash', async () => {
     await touch('pi.cmd');

@@ -937,7 +937,7 @@ export function createWorkspaceRoutes(
     });
   });
 
-  app.get('/:id/launch-plan', (c) => {
+  app.get('/:id/launch-plan', async (c) => {
     const id = c.req.param('id');
     if (!validId(id)) return c.json({ error: 'not_found' }, 404);
     const meta = svc.resolveRuntimeWorkspace(id);
@@ -950,7 +950,7 @@ export function createWorkspaceRoutes(
     const adapter = svc.adapters.get(agentId);
     if (!adapter) return c.json({ error: 'unknown_agent' }, 400);
 
-    const availability = svc.detectAgents()[agentId];
+    const availability = (await svc.probeAgents())[agentId];
     const plan = svc.computeSpawnPlan(meta, adapter, undefined);
     return c.json({
       workspace: {
