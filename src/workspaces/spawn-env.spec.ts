@@ -127,9 +127,11 @@ describe('buildSpawnEnv', () => {
       const localBin = join(home, '.local/bin')
       const pnpmHome = join(home, 'Library/pnpm')
       const bunBin = join(home, '.bun/bin')
+      const grokBin = join(home, '.grok/bin')
       mkdirSync(localBin, { recursive: true })
       mkdirSync(pnpmHome, { recursive: true })
       mkdirSync(bunBin, { recursive: true })
+      mkdirSync(grokBin, { recursive: true })
 
       const path = buildCliPath({ HOME: home, PATH: '/usr/bin:/bin' })
         .split(delimiter)
@@ -137,6 +139,7 @@ describe('buildSpawnEnv', () => {
       expect(path).toContain(localBin)
       expect(path).toContain(pnpmHome)
       expect(path).toContain(bunBin)
+      expect(path).toContain(grokBin)
       expect(path).toContain('/usr/bin')
       expect(path).toContain('/bin')
     } finally {

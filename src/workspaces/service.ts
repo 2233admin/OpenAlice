@@ -12,7 +12,6 @@ import { resolveAliceProjectIdentity } from '@traderalice/guardian-runtime';
  * Lifecycle: `createWorkspaceService()` at plugin start; `dispose()` at stop.
  */
 
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { basename, delimiter, join } from 'node:path';
@@ -32,6 +31,7 @@ import {
 
 import { createBuiltinAdapterRegistry } from './adapters/index.js';
 import { piAdapter } from './adapters/pi.js';
+import { mintAssignedSessionId, resolveWebLaunchResume } from './assigned-session-id.js';
 import {
   isAgentRuntime,
   prepareAgentRuntimeWorkspace,
@@ -668,6 +668,11 @@ export interface CreateWorkspaceServiceOptions {
   readonly mcpBaseUrl?: string;
   /** Internal test seam. Production omits this and keeps the 60-second scan. */
   readonly scheduleScannerIntervalMs?: number;
+  /**
+   * Internal test seam. Production omits this and keeps the real process
+   * runner. Issue/handoff specs inject a fake so they do not spawn Node.
+   */
+  readonly runHeadlessTask?: typeof runHeadlessTask;
   /** The global inbox store, so `issueDetail` can join the inbox reports an
    *  issue produced (entries stamped `origin.issueId`) in the domain layer —
    *  every surface (HTTP / CLI / MCP) gets the join, not just the route.
@@ -693,6 +698,7 @@ export function resumeFromRecord(
 
 export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions): Promise<WorkspaceService> {
   const config = loadConfig({ webPort: opts.webPort });
+  const executeHeadlessTask = opts.runHeadlessTask ?? runHeadlessTask;
   const inboxStore = opts.inboxStore;
   const officeDayStore = await OfficeDayStore.loadOrUnavailable();
   if (!officeDayStore.available) {
@@ -1417,7 +1423,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       RUNTIME_READINESS_PROMPT,
     );
     if (!command) return null;
-    const result = await runHeadlessTask({
+    const result = await executeHeadlessTask({
       command,
       cwd,
       env,
@@ -1767,7 +1773,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         ...(opts.taskId ? { taskId: opts.taskId } : {}),
       });
       try {
-        return await runHeadlessTask({
+        return await executeHeadlessTask({
           command,
           cwd,
           env,
@@ -2836,8 +2842,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       // pass it down — the quick-chat seed must key off the ORIGINAL intent.
       const isFresh = ctx.resume === undefined;
       let resume = ctx.resume;
-      if (isFresh && adapter.capabilities.assignsSessionId) {
-        const sessionId = randomUUID();
+      const assignedSessionId = isFresh ? mintAssignedSessionId(adapter) : null;
+      if (assignedSessionId) {
+        const sessionId = assignedSessionId;
         resume = { sessionId };
         void sessionRegistry
           .update(wsId, ctx.recordId, { resumeHint: { kind: 'agent-session-id', value: sessionId } })
@@ -2989,12 +2996,29 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     if (!webCapability || !adapter.composeWebCommand) {
       throw new Error(`${adapter.displayName} has no Web conversation surface; open it in the terminal instead`);
     }
-    const nativeSessionId = resumeRegistry.get(record.resumeId)?.agentSessionId
+    const recordedNativeId = resumeRegistry.get(record.resumeId)?.agentSessionId
       ?? record.resumeHint?.value;
+    const launchIdentity = resolveWebLaunchResume({
+      adapter,
+      nativeSessionId: recordedNativeId,
+    });
+    const nativeSessionId = launchIdentity.nativeSessionId;
     if (!nativeSessionId && !webCapability.freshSession) {
       throw new Error(`${adapter.displayName} Session has no resumable native session id`);
     }
-    const resume = nativeSessionId ? { sessionId: nativeSessionId } as const : undefined;
+    const resume = launchIdentity.resume;
+    if (launchIdentity.assigned && nativeSessionId) {
+      void sessionRegistry.update(record.wsId, record.id, {
+        resumeHint: { kind: 'agent-session-id', value: nativeSessionId },
+      }).catch((err) => launcherLogger.warn('assigned_session_id.persist_failed', {
+        wsId: record.wsId, recordId: record.id, err,
+      }));
+      void resumeRegistry.bindAgentSessionId(record.resumeId, nativeSessionId).catch((err) =>
+        launcherLogger.warn('assigned_session_id.resume_map_failed', {
+          wsId: record.wsId, recordId: record.id, resumeId: record.resumeId, err,
+        }),
+      );
+    }
     const identity = resumeRegistry.get(record.resumeId);
     const sessionRuntime = identity?.runtimeBinding
       ? await resolveSessionRuntimeBinding({
