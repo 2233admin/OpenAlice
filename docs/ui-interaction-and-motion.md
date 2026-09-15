@@ -116,7 +116,9 @@ paused resumable Sessions restore through the existing runtime action. A pending
 restore shows a spinner and rejects repeated clicks; failures stay on the row
 and allow retry. Headless occupancy still opens the single-writer explanation.
 The primary row has no separate play/stop target; settings, stop and archive live
-in its options menu. Direct links and history browsers use the same activation contract: an idle
+in its options menu. Archive stays available on a running interactive Session.
+Confirming the dialog stops that Session, then files it in the archive. Headless
+occupancy still blocks Archive because that turn is not pauseable from this menu. Direct links and history browsers use the same activation contract: an idle
 Session opens its saved TUI/Web surface without a paused-session interstitial.
 Activation checks the Session Directory for background occupancy before
 requesting a runtime; the server remains the final concurrency authority.
