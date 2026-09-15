@@ -174,6 +174,12 @@ managed Bash path. Workspace child processes receive the PortableGit command
 directories on `PATH`, so the default packaged flow does not require Node,
 npm, Git for Windows, WSL, or a system agent CLI.
 
+A minimal Windows GUI `PATH` is also augmented with existing per-user Bun, npm,
+pnpm, WinGet-link, and registered native-agent directories before `/agents`
+probes and child-process launches. `OPENALICE_EXTRA_AGENT_PATH` remains
+available for non-standard installs. Inventory stays a filesystem lookup;
+runnability is still the separate credential/model readiness probe.
+
 User-installed npm Agent runtimes are resolved without evaluating task prompts
 as command text. Native `.exe`/`.com` binaries run directly; recognizable
 npm/pnpm `.cmd` shims are reduced to their JavaScript entrypoint and run on the
