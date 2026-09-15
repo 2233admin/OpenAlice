@@ -593,6 +593,8 @@ export interface AgentInfo {
    * compat — treat a missing value as installed (don't gate on a stale shape).
    */
   readonly installed?: boolean;
+  /** Whether the installed CLI completed the fixed --version preflight. */
+  readonly runnable?: boolean;
   /** Absolute path the CLI resolved to, when installed. */
   readonly binPath?: string | null;
   /** Opaque identity for the currently resolved executable. */

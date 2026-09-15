@@ -47,7 +47,7 @@ function build(
     aliceHarnessUpgrades?: any;
     sourceUpgrades?: any;
     workspaceAbsorbs?: any;
-    availability?: Record<string, { installed: boolean; path: string | null }>;
+    availability?: Record<string, { installed: boolean; runnable?: boolean; path: string | null }>;
     spawnPlan?: any;
     sessionRecord?: any;
     runtimeBinding?: any;
@@ -148,6 +148,9 @@ function build(
     detectAgents: () => opts.availability ?? {
       claude: { installed: true, path: '/usr/bin/claude' },
     },
+    probeAgents: vi.fn(async () => opts.availability ?? {
+      claude: { installed: true, path: '/usr/bin/claude' },
+    }),
     computeSpawnPlan: vi.fn(() => opts.spawnPlan ?? ({
       resumeMode: 'fresh',
       nativeSessionId: null,
@@ -264,7 +267,39 @@ async function get(app: any, path: string) {
   const res = await app.request(path)
   return { status: res.status, body: await res.json().catch(() => null) as any }
 }
+describe('GET /agents inventory', () => {
+  it('reports installed and runnable separately for a present but failing runtime', async () => {
+    const { app } = build({
+      availability: { claude: { installed: true, runnable: false, path: '/usr/bin/claude' } },
+    });
+    const result = await get(app, '/agents');
+    expect(result.status).toBe(200);
+    expect(result.body.agents).toEqual([
+      expect.objectContaining({
+        id: 'claude',
+        installed: true,
+        runnable: false,
+        binPath: '/usr/bin/claude',
+      }),
+    ]);
+  });
+  it('fails closed when the service returns a partial inventory', async () => {
+    const { app } = build({
+      availability: { claude: { installed: true, path: '/usr/bin/claude' } },
+    });
+    const result = await get(app, '/agents');
+    expect(result.status).toBe(200);
+    expect(result.body.agents).toEqual([
+      expect.objectContaining({ id: 'claude', installed: true, runnable: false }),
+    ]);
 
+    const launchPlan = await get(app, '/ws-1/launch-plan?agent=claude');
+    expect(launchPlan.status).toBe(200);
+    expect(launchPlan.body.agent).toEqual(
+      expect.objectContaining({ installed: true, runnable: false }),
+    );
+});
+});
 describe('GET /:id/resumes', () => {
   it('returns the safe product Session directory', async () => {
     const { app } = build()
@@ -430,6 +465,7 @@ describe('GET /:id/launch-plan', () => {
         displayName: undefined,
         kind: 'agent',
         installed: true,
+        runnable: false,
         binPath: '/usr/bin/claude',
         capabilities: { headless: true },
       },

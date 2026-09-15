@@ -143,8 +143,8 @@ export async function readClaudeInteractiveSetupStatus(
 
 /** dashed-cwd convention used by Claude Code's project store. */
 function projectKey(workspaceDir: string): string {
-  const abs = resolve(workspaceDir);
-  return abs.replaceAll('/', '-').replaceAll('.', '-');
+  const abs = /^[a-zA-Z]:[\\/]/.test(workspaceDir) ? workspaceDir : resolve(workspaceDir);
+  return abs.replace(/[\\\/.:-]/g, '-');
 }
 
 /**

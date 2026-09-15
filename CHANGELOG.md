@@ -58,6 +58,9 @@ off the Alice host.
 
 ### 🐛 Bug Fixes
 
+- Discover all Agent runtimes, distinguish installed from runnable Windows
+  launches, and show install guidance for unavailable adapters.
+
 - Inject persona + brain state into Claude Code provider
 - Extract assistant text when Claude Code result is empty
 - Align SettingsPanel with actual backend config structure

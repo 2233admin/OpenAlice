@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resolveBashPath } from '../core/shell-resolver.js';
 import { runHeadlessTask } from './headless-task.js';
+import { buildSpawnEnv } from './spawn-env.js';
 import { resolveLaunchCommand, resolveStockNpmShim } from './win-command.js';
 import type { Logger } from './logger.js';
 
@@ -47,6 +48,11 @@ afterEach(async () => {
 });
 
 describe('resolveLaunchCommand', () => {
+  it('ignores a directory shadowing a Windows executable', async () => {
+    await mkdir(join(dir, 'codex.exe'));
+    const result = resolveLaunchCommand(['codex', '--version'], { platform: 'win32', env });
+    expect(result).toEqual({ argv: ['codex', '--version'], viaShell: false, mode: 'direct' });
+  });
   it('compiled Windows CLI uses external Node for npm agents, not its own executable', async () => {
     await stockNpmShim('pi.cmd');
     await touch('node.exe');
@@ -160,6 +166,25 @@ describe('resolveLaunchCommand', () => {
     expect(r.mode).toBe('direct');
     expect(r.argv).toEqual([join(dir, 'opencode.exe'), 'run']);
   });
+  it('win32: prefers a native executable in a later PATH entry over an earlier shim', async () => {
+    await touch('claude.cmd');
+    await touch('claude');
+    const nativeDir = await mkdtemp(join(tmpdir(), 'wincmd-native-'));
+    try {
+      await writeFile(join(nativeDir, 'claude.exe'), '');
+      const r = resolveLaunchCommand(['claude', '--version'], {
+        platform: 'win32',
+        env: { ...env, PATH: `${dir}${delimiter}${nativeDir}` },
+      });
+      expect(r).toEqual({
+        argv: [join(nativeDir, 'claude.exe'), '--version'],
+        viaShell: false,
+        mode: 'direct',
+      });
+    } finally {
+      await rm(nativeDir, { recursive: true, force: true });
+    }
+  });
 
   it('win32: an unresolved name passes through unchanged (fails loudly later)', () => {
     const r = resolveLaunchCommand(['nope', '--x'], { platform: 'win32', env });
@@ -249,13 +274,20 @@ describe('resolveLaunchCommand', () => {
       await writeFile(posixShim, '#!/usr/bin/env bash\nprintf %s "$1"\n');
       const prompt =
         `& touch "${sentinel}" | echo nope < input > output ^ %PATH% !wow! "quoted" 中文\nnext`;
-      const cleanEnv = Object.fromEntries(
-        Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      const shellDir = dirname(bash);
+      const shellParent = dirname(shellDir);
+      const gitRoot = basename(shellParent).toLowerCase() === 'usr'
+        ? dirname(shellParent)
+        : shellParent;
+      const launchEnv = buildSpawnEnv(
+        { PATH: join(gitRoot, 'cmd') },
+        { OPENALICE_MANAGED_SHELL_PATH: bash },
+        work,
       );
       const result = await runHeadlessTask({
         command: [cmdShim, prompt],
         cwd: work,
-        env: { ...cleanEnv, OPENALICE_MANAGED_SHELL_PATH: bash },
+        env: launchEnv,
         timeoutMs: 10_000,
         logger: noopLogger,
       });

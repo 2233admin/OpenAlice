@@ -91,7 +91,15 @@ function AgentRuntimeRow({
   )
 }
 
-function UninstalledRuntimeGuidance({ agent }: { agent: AgentInfo }) {
+function RuntimeGuidance({
+  agent,
+  status,
+  diagnostic,
+}: {
+  agent: AgentInfo
+  status: string
+  diagnostic: string
+}) {
   const { t } = useTranslation()
   const hint = installHintFor(agent.id)
 
@@ -110,10 +118,9 @@ function UninstalledRuntimeGuidance({ agent }: { agent: AgentInfo }) {
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 truncate font-medium">{agent.displayName}</span>
-          <span className="shrink-0 text-[10px] font-normal">
-            {t('chatLanding.agentNotInstalled')}
-          </span>
+          <span className="shrink-0 text-[10px] font-normal">{status}</span>
         </div>
+        <p className="mt-0.5 text-[11px] leading-[15px]">{diagnostic}</p>
         {hint?.cmd && (
           <p className="mt-0.5 truncate font-mono text-[11px] leading-[15px]" title={hint.cmd}>{hint.cmd}</p>
         )}
@@ -145,6 +152,28 @@ function UninstalledRuntimeGuidance({ agent }: { agent: AgentInfo }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function UninstalledRuntimeGuidance({ agent }: { agent: AgentInfo }) {
+  const { t } = useTranslation()
+  return (
+    <RuntimeGuidance
+      agent={agent}
+      status={t('chatLanding.agentNotInstalled')}
+      diagnostic={t('chatLanding.agentMissing', { name: agent.displayName })}
+    />
+  )
+}
+
+function UnrunnableRuntimeGuidance({ agent }: { agent: AgentInfo }) {
+  const { t } = useTranslation()
+  return (
+    <RuntimeGuidance
+      agent={agent}
+      status={t('chatLanding.agentUnrunnable')}
+      diagnostic={t('chatLanding.agentUnrunnableDiagnostic', { name: agent.displayName })}
+    />
   )
 }
 
@@ -185,11 +214,15 @@ export const AgentRuntimePicker = forwardRef<AgentRuntimePickerHandle, AgentRunt
       && !primary.some((agent) => agent.id === selected.id)
     const normalizedQuery = query.trim().toLowerCase()
     const installed = useMemo(
-      () => agents.filter((agent) => agent.installed !== false && matchesQuery(agent, normalizedQuery)),
+      () => agents.filter((agent) => agent.installed !== false && agent.runnable !== false && matchesQuery(agent, normalizedQuery)),
       [agents, normalizedQuery],
     )
     const notInstalled = useMemo(
       () => agents.filter((agent) => agent.installed === false && matchesQuery(agent, normalizedQuery)),
+      [agents, normalizedQuery],
+    )
+    const notRunnable = useMemo(
+      () => agents.filter((agent) => agent.installed !== false && agent.runnable === false && matchesQuery(agent, normalizedQuery)),
       [agents, normalizedQuery],
     )
 
@@ -233,21 +266,23 @@ export const AgentRuntimePicker = forwardRef<AgentRuntimePickerHandle, AgentRunt
             {primary.map((agent) => {
               const active = agent.id === selectedId
               const missing = agent.installed === false
+              const unrunnable = !missing && agent.runnable === false
+              const unavailable = missing || unrunnable
               return (
                 <DropdownMenuItem
                   key={agent.id}
-                  disabled={missing}
+                  disabled={unavailable}
                   onClick={() => {
-                    if (missing) return
+                    if (unavailable) return
                     choose(agent.id)
                   }}
-                  className={`min-h-9 gap-2 px-2.5 text-[12px] ${active ? 'bg-muted text-foreground' : missing ? 'text-muted-foreground' : 'text-foreground'}`}
+                  className={'min-h-9 gap-2 px-2.5 text-[12px] ' + (active ? 'bg-muted text-foreground' : unavailable ? 'text-muted-foreground' : 'text-foreground')}
                 >
                   <AgentRuntimeIcon agentId={agent.id} className="h-3.5 w-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{agent.displayName}</span>
-                  {missing && (
+                  {unavailable && (
                     <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {t('chatLanding.agentNotInstalled')}
+                      {t(missing ? 'chatLanding.agentNotInstalled' : 'chatLanding.agentUnrunnable')}
                     </span>
                   )}
                   {active && <SelectionCheckIcon />}
@@ -262,20 +297,22 @@ export const AgentRuntimePicker = forwardRef<AgentRuntimePickerHandle, AgentRunt
                     {t('chatLanding.currentRuntime')}
                   </DropdownMenuLabel>
                   <DropdownMenuItem
-                    disabled={selected.installed === false}
+                    disabled={selected.installed === false || selected.runnable === false}
                     onClick={() => {
-                      if (selected.installed === false) return
+                      if (selected.installed === false || selected.runnable === false) return
                       choose(selected.id)
                     }}
-                    className={`min-h-9 gap-2 px-2.5 text-[12px] ${
-                      selected.installed === false ? 'text-muted-foreground' : 'bg-muted text-foreground'
-                    }`}
+                    className={'min-h-9 gap-2 px-2.5 text-[12px] ' + (
+                      selected.installed === false || selected.runnable === false
+                        ? 'text-muted-foreground'
+                        : 'bg-muted text-foreground'
+                    )}
                   >
                     <AgentRuntimeIcon agentId={selectedOutsidePrimary ? selected?.id : null} className="h-3.5 w-3.5 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{selected.displayName}</span>
-                    {selected.installed === false && (
+                    {(selected.installed === false || selected.runnable === false) && (
                       <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {t('chatLanding.agentNotInstalled')}
+                        {t(selected.installed === false ? 'chatLanding.agentNotInstalled' : 'chatLanding.agentUnrunnable')}
                       </span>
                     )}
                     <SelectionCheckIcon />
@@ -316,7 +353,7 @@ export const AgentRuntimePicker = forwardRef<AgentRuntimePickerHandle, AgentRunt
               />
             </label>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5">
-              {installed.length === 0 && notInstalled.length === 0 ? (
+              {installed.length === 0 && notInstalled.length === 0 && notRunnable.length === 0 ? (
                 <p className="px-1 py-6 text-center text-[12px] text-muted-foreground">
                   {t('chatLanding.noRuntimeMatches', { query })}
                 </p>
@@ -336,6 +373,18 @@ export const AgentRuntimePicker = forwardRef<AgentRuntimePickerHandle, AgentRunt
                             readiness={readiness}
                             onSelect={() => choose(agent.id)}
                           />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {notRunnable.length > 0 && (
+                    <section>
+                      <h3 className="px-2.5 pb-1 text-[11px] leading-[15px] font-medium text-muted-foreground">
+                        {t('chatLanding.unrunnableRuntimes')}
+                      </h3>
+                      <div className="flex flex-col">
+                        {notRunnable.map((agent) => (
+                          <UnrunnableRuntimeGuidance key={agent.id} agent={agent} />
                         ))}
                       </div>
                     </section>

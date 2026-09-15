@@ -375,7 +375,7 @@ import { TemplateUpgradeManager } from './template-upgrade.js';
 import { WorkspaceOperationGuard } from './workspace-operation-guard.js';
 import { readWorkspaceMetadata } from './workspace-metadata.js';
 import { TranscriptWatcher } from './transcript-watcher.js';
-import { detectAgentBinary, runtimeInstallOverride, type AgentAvailability } from './agent-detect.js';
+import { detectAgentBinary, preflightAgentBinaryAsync, runtimeInstallOverride, type AgentAvailability } from './agent-detect.js';
 import { resolveLaunchCommand } from './win-command.js';
 import { WorkspaceCreator } from './workspace-creator.js';
 import { WorkspaceCatalog } from './workspace-catalog.js';
@@ -475,13 +475,13 @@ export interface WorkspaceService {
   refreshSessionTitles?(meta: WorkspaceMeta): Promise<void>;
   publicMeta(w: WorkspaceMeta): Promise<unknown>;
   /**
-   * Probe the host PATH for each registered adapter's CLI binary. Keyed by
-   * adapter id. Adapters without a `binary` (shell) report installed:true.
-   * A pure filesystem lookup — cheap enough for the `/agents` list call, and
-   * re-run each time so a CLI installed mid-session is picked up on the next
-   * poll.
+   * Resolve the host PATH for each registered adapter's CLI binary. This method
+   * is filesystem-only and synchronous so launch/readiness callers never block
+   * on a child process.
    */
   detectAgents(): Record<string, AgentAvailability>;
+  /** Async, non-blocking inventory preflight shared across concurrent callers. */
+  probeAgents(): Promise<Record<string, AgentAvailability>>;
   /**
    * Compute what a spawn would do, without actually spawning. The same code
    * path the pool's factory uses internally — dry-run and live can't drift.
@@ -3146,6 +3146,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
   // Recovery owns the active/departed boundary. Scheduled work must not see an
   // interrupted offboarding/upgrade row between registry load and repair.
   scheduleScanner.start();
+  const AGENT_INVENTORY_CACHE_MS = 1_000;
+  let agentInventoryCache: { readonly expiresAt: number; readonly value: Record<string, AgentAvailability> } | null = null;
+  let agentInventoryInFlight: Promise<Record<string, AgentAvailability>> | null = null;
 
   const detectAgents = (): Record<string, AgentAvailability> => {
     const out: Record<string, AgentAvailability> = {};
@@ -3156,12 +3159,50 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         out[a.id] = override;
         continue;
       }
-      // No declared binary (shell → `$SHELL`) is always available.
-      out[a.id] = a.binary ? detectAgentBinary(a.id, a.binary, { env }) : { installed: true, path: null };
+      if (!a.binary) {
+        out[a.id] = { installed: true, path: null };
+      } else {
+        out[a.id] = detectAgentBinary(a.id, a.binary, { env });
+      }
     }
     return out;
   };
 
+  const probeAgents = (): Promise<Record<string, AgentAvailability>> => {
+    const now = Date.now();
+    if (agentInventoryCache && agentInventoryCache.expiresAt > now) {
+      return Promise.resolve(agentInventoryCache.value);
+    }
+    if (agentInventoryInFlight) return agentInventoryInFlight;
+
+    let promise: Promise<Record<string, AgentAvailability>>;
+    try {
+    const env = { ...process.env, PATH: buildCliPath(process.env) };
+    const installed = detectAgents();
+      promise = Promise.all(adapters.list().map(async (a) => {
+      const base = installed[a.id] ?? { installed: false, path: null };
+      const override = isAgentRuntime(a) ? runtimeInstallOverride(a.id, env) : null;
+      if (override) return [a.id, { ...override, runnable: override.installed }] as const;
+      if (!a.binary || !base.installed) {
+        return [a.id, { ...base, runnable: base.installed }] as const;
+      }
+      return [a.id, await preflightAgentBinaryAsync(a.id, a.binary, { env })] as const;
+    })).then((entries) => {
+      const value = Object.fromEntries(entries) as Record<string, AgentAvailability>;
+      agentInventoryCache = { expiresAt: Date.now() + AGENT_INVENTORY_CACHE_MS, value };
+      agentInventoryInFlight = null;
+      return value;
+    }, (error) => {
+      agentInventoryInFlight = null;
+      throw error;
+    });
+    } catch (error) {
+      agentInventoryInFlight = null;
+      return Promise.reject(error);
+    }
+    agentInventoryInFlight = promise;
+    return promise;
+  };
   let shuttingDown = false;
 
   const publicMeta = async (w: WorkspaceMeta): Promise<unknown> => {
@@ -3381,6 +3422,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     refreshSessionTitles,
     publicMeta,
     detectAgents,
+    probeAgents,
     getAgentRuntimeReadiness: getAgentRuntimeReadinessMethod,
     beginAgentRuntimeReadinessProbe: beginAgentRuntimeReadinessProbeMethod,
     probeAgentRuntimeReadiness: probeAgentRuntimeReadinessMethod,

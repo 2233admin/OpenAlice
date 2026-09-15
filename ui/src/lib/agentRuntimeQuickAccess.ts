@@ -29,9 +29,9 @@ export function isAgentRuntimeCatalogEntry(
 }
 
 export function isInstalledAgentRuntime(
-  agent: Pick<AgentInfo, 'installed'>,
+  agent: Pick<AgentInfo, 'installed' | 'runnable'>,
 ): boolean {
-  return agent.installed !== false
+  return agent.installed !== false && agent.runnable !== false;
 }
 
 export function agentRuntimeCatalog(
@@ -46,12 +46,13 @@ export interface AgentRuntimeQuickAccessProjection {
   readonly others: readonly AgentInfo[]
   readonly installed: readonly AgentInfo[]
   readonly notInstalled: readonly AgentInfo[]
+  readonly notRunnable: readonly AgentInfo[]
 }
 
 /**
  * Successful launches form an MRU queue. Manually selected quick-access ids
  * then provide an installation-level baseline, followed by the product's cold
- * start order and finally registry order. Uninstalled runtimes never occupy a
+ * start order and finally registry order. Unavailable runtimes never occupy a
  * primary slot.
  */
 export function projectAgentRuntimeQuickAccess(
@@ -82,14 +83,15 @@ export function projectAgentRuntimeQuickAccess(
     primary,
     others: catalog.filter((agent) => !seen.has(agent.id)),
     installed: catalog.filter(isInstalledAgentRuntime),
-    notInstalled: catalog.filter((agent) => !isInstalledAgentRuntime(agent)),
+    notInstalled: catalog.filter((agent) => agent.installed === false),
+    notRunnable: catalog.filter((agent) => agent.installed !== false && agent.runnable === false),
   }
 }
 
-/** Existing stale pins stay removable. Only installed runtimes may occupy a new slot. */
+/** Existing stale pins stay removable. Only runnable runtimes may occupy a new slot. */
 export function canAddAgentRuntimeQuickAccess(
   pinnedIds: readonly string[],
-  agent: Pick<AgentInfo, 'id' | 'installed'>,
+  agent: Pick<AgentInfo, 'id' | 'installed' | 'runnable'>,
 ): boolean {
   if (pinnedIds.includes(agent.id)) return true
   return isInstalledAgentRuntime(agent) && pinnedIds.length < AGENT_RUNTIME_QUICK_ACCESS_LIMIT

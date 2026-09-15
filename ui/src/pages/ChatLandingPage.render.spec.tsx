@@ -741,6 +741,29 @@ describe('ChatLandingPage keyboard submission', () => {
     ))
   })
 })
+describe('ChatLandingPage unresolved launch recovery', () => {
+  it('opens provider settings instead of swallowing a prompt while credentials are unresolved', async () => {
+    workspaces = [withInteractivePreference(chatWorkspace(), {
+      accessMode: 'vault',
+      credentialSlug: 'missing',
+      model: 'gpt-test',
+      reasoningEffort: 'minimal',
+    }, 'pi')]
+    mocks.useWorkspaces.mockImplementation(() => context(workspaces))
+    mocks.listAgentCredentials.mockImplementation(() => new Promise(() => undefined))
+    mocks.detectWorkspaceCredential.mockImplementation(() => new Promise(() => undefined))
+
+    render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
+
+    fireEvent.change(screen.getByPlaceholderText('Describe the task, question, or decision…'), { target: { value: 'hello' } })
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect((send as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(send)
+
+    expect(mocks.quickChat).not.toHaveBeenCalled()
+    expect(mocks.openOrFocus).toHaveBeenCalledWith({ kind: 'settings', params: { category: 'ai-provider' } })
+  })
+})
 
 describe('ChatLandingPage AI source disclosure', () => {
   it('can explicitly use the runtime account without reading the Workspace AI source', async () => {

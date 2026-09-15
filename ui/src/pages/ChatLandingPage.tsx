@@ -371,9 +371,9 @@ export function HarnessLandingPage({
     openOrFocus({ kind: 'settings', params: { category: 'ai-provider' } })
   }
 
-  // A missing runtime choice should open the picker, not leave a mysteriously
-  // disabled send button. submit() already handles that branch.
-  const canSend = value.trim().length > 0 && !launching && launchConfig.credentialSelectionReady
+  // Keep the action available so submit() can route missing runtime/provider
+  // state to its safe recovery surface instead of silently swallowing it.
+  const canSend = value.trim().length > 0 && !launching
   const effectiveTargetWorkspaceId = targetWsId ?? workspaceTarget?.id
 
   useLayoutEffect(() => {
@@ -388,12 +388,15 @@ export function HarnessLandingPage({
   const submit = async () => {
     const prompt = value.trim()
     if (!prompt || launching) return
-    if (!launchConfig.credentialSelectionReady) return
     if (effectiveAgent === null) {
       launchSelectorsRef.current?.openAgentMenu()
       return
     }
     if (launchConfig.needsProviderSetup) {
+      goConfigureProvider()
+      return
+    }
+    if (!launchConfig.credentialSelectionReady) {
       goConfigureProvider()
       return
     }

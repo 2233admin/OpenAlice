@@ -1,4 +1,4 @@
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -65,9 +65,19 @@ function piSessionDir(cwd: string): string {
   return join(resolvePiAgentDir(process.env), 'sessions', `--${safeCwd}--`);
 }
 
+function isRegularFile(path: string | null | undefined): path is string {
+  if (!path) return false;
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function piCommandHead(env: Readonly<Record<string, string | undefined>>): readonly string[] {
   const profile = runtimeProfileFromEnv(env);
-  if (!profile.managedPiPath) return ['pi'];
+  if (!isRegularFile(profile.managedPiPath)) return ['pi'];
+  if (profile.managedPiNodePath && !isRegularFile(profile.managedPiNodePath)) return ['pi'];
   if (profile.managedPiNodePath) return [profile.managedPiNodePath, profile.managedPiPath];
   return [profile.managedPiPath];
 }

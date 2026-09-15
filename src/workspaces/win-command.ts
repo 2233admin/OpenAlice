@@ -27,7 +27,7 @@
  * On non-Windows this is the identity function: the kernel reads shebangs and a
  * bare-name PATH lookup finds shell-script shims fine.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, delimiter, dirname, join, relative, resolve } from 'node:path';
 
 import { resolveBashPath } from '../core/shell-resolver.js';
@@ -75,7 +75,7 @@ export function resolveLaunchCommand(
   let resolved: string | null;
   if (explicitPath) {
     const candidate = explicitCandidate(name, opts.cwd);
-    if (!isBatchExtension(explicitExt) || !existsSync(candidate)) {
+    if (!isBatchExtension(explicitExt) || !isRegularFile(candidate)) {
       return { argv, viaShell: false, mode: 'direct' };
     }
     resolved = candidate;
@@ -176,31 +176,48 @@ export function resolveStockNpmShim(
   return [nodeExecPath, entry, ...args];
 }
 
-function lookupOnWindowsPath(name: string, env: NodeJS.ProcessEnv): string | null {
+function isRegularFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+export function findWindowsLaunchCandidate(
+  name: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  // Bare agent names intentionally prefer native executables across PATH to avoid
+  // stale or shell shims; explicit paths and extensions retain exact semantics.
   const exts = (env['PATHEXT'] ?? DEFAULT_PATHEXT)
     .split(';')
-    .map((e) => e.trim())
-    .filter(Boolean)
-    .sort((a, b) => rank(a) - rank(b)); // prefer a real .exe over a .cmd shim
+    .map((ext, order) => ({ ext: ext.trim(), order }))
+    .filter(({ ext }) => Boolean(ext));
   // Windows env var casing is unstable across hosts; check both.
   const dirs = (env['PATH'] ?? env['Path'] ?? '').split(delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    for (const ext of exts) {
+  const candidates: Array<{ path: string; pathOrder: number; extOrder: number; extRank: number }> = [];
+  for (const [pathOrder, dir] of dirs.entries()) {
+    for (const { ext, order: extOrder } of exts) {
       // PATHEXT is conventionally uppercase but npm shims are lowercase on disk.
       // Windows' filesystem is case-insensitive, so we normalize the appended
       // extension to lowercase for a clean, deterministic command string.
       const candidate = join(dir, name + ext.toLowerCase());
-      if (existsSync(candidate)) return candidate;
+      if (isRegularFile(candidate)) candidates.push({ path: candidate, pathOrder, extOrder, extRank: rank(ext) });
     }
   }
-  return null;
+  candidates.sort((a, b) => a.extRank - b.extRank || a.pathOrder - b.pathOrder || a.extOrder - b.extOrder);
+  return candidates[0]?.path ?? null;
+}
+
+function lookupOnWindowsPath(name: string, env: NodeJS.ProcessEnv): string | null {
+  return findWindowsLaunchCandidate(name, env);
 }
 
 function lookupExactOnWindowsPath(name: string, env: NodeJS.ProcessEnv): string | null {
   const dirs = (env['PATH'] ?? env['Path'] ?? '').split(delimiter).filter(Boolean);
   for (const dir of dirs) {
     const candidate = join(dir, name);
-    if (existsSync(candidate)) return candidate;
+    if (isRegularFile(candidate)) return candidate;
   }
   return null;
 }

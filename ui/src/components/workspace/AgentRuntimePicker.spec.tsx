@@ -15,8 +15,15 @@ const capabilities: AgentInfo['capabilities'] = {
   transcriptDiscovery: 'none',
 }
 
-function agent(id: string, displayName = id, installed = true): AgentInfo {
-  return { id, displayName, kind: 'agent', installed, capabilities }
+function agent(id: string, displayName = id, installed = true, runnable?: boolean): AgentInfo {
+  return {
+    id,
+    displayName,
+    kind: 'agent',
+    installed,
+    ...(runnable === undefined ? {} : { runnable }),
+    capabilities,
+  }
 }
 
 const agents: AgentInfo[] = [
@@ -173,6 +180,38 @@ describe('AgentRuntimePicker', () => {
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('heading', { name: i18n.t('chatLanding.allRuntimesTitle') })).toBeNull()
+  })
+
+  it('shows installed but unrunnable runtimes separately with repair guidance', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const unrunnableAgents = agents.map((item) => item.id === 'omp' ? { ...item, runnable: false } : item)
+    render(
+      <AgentRuntimePicker
+        agents={unrunnableAgents}
+        primary={primary}
+        selectedId="pi"
+        readiness={readiness}
+        onSelect={onSelect}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: i18n.t('chatLanding.selectAgent') }))
+    await user.click(await screen.findByRole('menuitem', { name: i18n.t('chatLanding.otherRuntimes') }))
+
+    expect(screen.getByRole('heading', { name: i18n.t('chatLanding.unrunnableRuntimes') })).toBeTruthy()
+    expect(screen.getByText('Oh My Pi').closest('div')?.textContent).toContain(
+      i18n.t('chatLanding.agentUnrunnable'),
+    )
+    expect(screen.getByText(i18n.t('chatLanding.agentUnrunnableDiagnostic', { name: 'Oh My Pi' }))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Oh My Pi' })).toBeNull()
+    expect(screen.getByRole('button', {
+      name: i18n.t('chatLanding.copyInstallCommand', { name: 'Oh My Pi' }),
+    })).toBeTruthy()
+    expect(screen.getByRole('link', {
+      name: i18n.t('chatLanding.openInstallDocs', { name: 'Oh My Pi' }),
+    })).toHaveProperty('href', 'https://omp.sh/')
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('does not treat an unprobed installed runtime as a problem in Others', async () => {

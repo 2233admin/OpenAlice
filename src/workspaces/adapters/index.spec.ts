@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_ADAPTERS, createBuiltinAdapterRegistry } from './index.js';
+import { isAgentRuntime } from '../cli-adapter.js';
+import { AGENT_INSTALL } from '../../../ui/src/components/workspace/agentInstall.js';
 
 describe('built-in adapter provider capabilities', () => {
   it('keeps provider semantics on each native runtime adapter', () => {
@@ -65,5 +67,14 @@ describe('built-in adapter provider capabilities', () => {
       },
     });
     expect(registry.get('shell')?.capabilities.aiProvider).toBeUndefined();
+  });
+  it('keeps install guidance non-empty for every built-in agent runtime', () => {
+    const agents = BUILTIN_ADAPTERS.filter(isAgentRuntime);
+    expect(agents).toHaveLength(8);
+    for (const agent of agents) {
+      const hint = AGENT_INSTALL[agent.id];
+      expect(hint?.url, `${agent.id} must have install docs`).toMatch(/^https?:\/\//);
+      expect(hint?.cmd?.trim(), `${agent.id} must have install guidance`).toBeTruthy();
+    }
   });
 });

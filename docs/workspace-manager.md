@@ -90,6 +90,19 @@ The contract says:
 - choose a target Workspace for durable work, and commit any approved direct
   edit inside that target.
 
+### Runtime inventory and readiness
+
+The inventory covers every registered Agent adapter, not only runtimes that are
+currently installed. `installed` means that a regular executable file was found
+for the adapter; `runnable` means that the executable passed the fixed,
+non-interactive `--version` preflight. Missing or unrunnable runtimes remain
+visible in the picker with install and documentation guidance so the inventory
+does not hide an adapter merely because this machine is not ready to use it.
+
+Runtime readiness is a separate headless probe. It checks the credential and
+model path needed for a non-interactive launch and must not be inferred from
+filesystem inventory or the `--version` preflight.
+
 The Web surface explicitly approves this launcher-owned cwd. There is no TUI
 trust prompt to render, and entering the dedicated manager surface is the
 user's visible approval for the bundled skill and control-plane directory. Native runtimes keep

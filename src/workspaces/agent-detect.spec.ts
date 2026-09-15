@@ -1,10 +1,12 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { detectAgentBinary, detectBinary, findExecutableOnPath, runtimeInstallOverride } from './agent-detect.js';
+import { detectAgentBinary, detectBinary, findExecutableOnPath, preflightAgentBinary, preflightAgentBinaryAsync, runtimeInstallOverride } from './agent-detect.js';
+import { resolveLaunchCommand } from './win-command.js';
+import { buildCliPath } from './spawn-env.js';
 
 let dir: string;
 
@@ -62,8 +64,92 @@ describe('findExecutableOnPath (win32)', () => {
     const env = { PATH: dir, PATHEXT: '.COM;.EXE;.CMD' };
     expect(findExecutableOnPath('opencode', { platform: 'win32', env })).toBe(p);
   });
+
+  it('matches Windows detection with the launch candidate across PATH entries', async () => {
+    const nativeDir = await mkdtemp(join(tmpdir(), 'agent-detect-native-'));
+    try {
+      const native = join(nativeDir, 'omp.exe');
+      await writeFile(native, '');
+      const env = {
+        PATH: [dir, nativeDir].join(delimiter),
+        PATHEXT: '.CMD;.EXE;.BAT',
+      };
+      await touch('omp.cmd');
+
+      const detected = detectAgentBinary('omp', 'omp', { platform: 'win32', env });
+      const launched = resolveLaunchCommand(['omp'], { platform: 'win32', env });
+      expect(detected.path).toBe(native);
+      expect(launched.argv[0]).toBe(native);
+    } finally {
+      await rm(nativeDir, { recursive: true, force: true });
+    }
+  });
+  it('ignores a directory shadowing a Windows executable', async () => {
+    await mkdir(join(dir, 'codex.exe'));
+    const env = { PATH: dir, PATHEXT: '.EXE;.CMD' };
+    expect(findExecutableOnPath('codex', { platform: 'win32', env })).toBeNull();
+  });
 });
 
+describe('GUI Windows agent discovery', () => {
+  it.skipIf(process.platform !== 'win32')('detects OMP from Bun global bin when GUI PATH is minimal', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agent-detect-windows-home-'));
+    try {
+      const bunBin = join(home, '.bun', 'bin');
+      await mkdir(bunBin, { recursive: true });
+      const omp = join(bunBin, 'omp.exe');
+      await writeFile(omp, '');
+
+      const env = {
+        HOME: home,
+        USERPROFILE: home,
+        PATH: join(home, 'host-bin'),
+        PATHEXT: '.COM;.EXE;.CMD',
+      };
+      const resolved = buildCliPath(env);
+
+      expect(detectAgentBinary('omp', 'omp', {
+        platform: 'win32',
+        env: { ...env, PATH: resolved },
+      })).toEqual({
+        installed: true,
+        path: omp,
+        fingerprint: expect.any(String),
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform !== 'win32')('detects Cursor Agent from the standard user bin when GUI PATH is minimal', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agent-detect-cursor-home-'));
+    try {
+      const cursorBin = join(home, '.cursor', 'bin');
+      await mkdir(cursorBin, { recursive: true });
+      const cursorAgent = join(cursorBin, 'cursor-agent.exe');
+      await writeFile(cursorAgent, '');
+
+      const env = {
+        HOME: home,
+        USERPROFILE: home,
+        PATH: join(home, 'host-bin'),
+        PATHEXT: '.COM;.EXE;.CMD',
+      };
+      const resolved = buildCliPath(env);
+
+      expect(detectAgentBinary('cursor', 'cursor-agent', {
+        platform: 'win32',
+        env: { ...env, PATH: resolved },
+      })).toEqual({
+        installed: true,
+        path: cursorAgent,
+        fingerprint: expect.any(String),
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
 describe('detectBinary', () => {
   it('reports installed:true with the resolved path when present', async () => {
     const p = await touch('claude');
@@ -82,7 +168,97 @@ describe('detectBinary', () => {
     });
   });
 });
+describe('preflightAgentBinary', () => {
+  it('distinguishes an installed executable that starts from one that is missing', () => {
+    const runnable = preflightAgentBinary('claude', process.execPath, {
+      platform: process.platform,
+      env: { ...process.env, PATH: dir },
+    });
+    expect(runnable).toMatchObject({ installed: true, path: process.execPath, runnable: true });
 
+    const missing = preflightAgentBinary('claude', join(dir, 'missing-runtime'), {
+      platform: process.platform,
+      env: { ...process.env, PATH: dir },
+    });
+    expect(missing).toMatchObject({ installed: false, path: null, runnable: false });
+  });
+
+  it('passes --version to managed Pi and reports nonzero and timeout failures', async () => {
+    const marker = join(dir, 'managed-pi-args.txt');
+    const entry = join(dir, 'managed-pi-entry.js');
+    await writeFile(entry, 'require(\'node:fs\').writeFileSync(' + JSON.stringify(marker) + ', process.argv.slice(2).join(\'\\n\'))');
+    const env = {
+      ...process.env,
+      OPENALICE_MANAGED_PI_PATH: entry,
+      OPENALICE_MANAGED_PI_NODE_PATH: process.execPath,
+      PATH: dir,
+    };
+    const result = preflightAgentBinary('pi', 'pi', { platform: process.platform, env });
+    expect(result).toMatchObject({ installed: true, path: entry, runnable: true });
+    await expect(readFile(marker, 'utf8')).resolves.toBe('--version');
+    await expect(preflightAgentBinaryAsync('pi', 'pi', { platform: process.platform, env }))
+      .resolves.toMatchObject({ installed: true, path: entry, runnable: true });
+
+    const failing = join(dir, 'managed-pi-failing.js');
+    await writeFile(failing, 'process.exitCode = 7');
+    expect(preflightAgentBinary('pi', 'pi', {
+      platform: process.platform,
+      env: { ...env, OPENALICE_MANAGED_PI_PATH: failing },
+    })).toMatchObject({ installed: true, runnable: false });
+
+    const hanging = join(dir, 'managed-pi-hanging.js');
+    await writeFile(hanging, 'setTimeout(() => {}, 10_000)');
+    expect(preflightAgentBinary('pi', 'pi', {
+      platform: process.platform,
+      timeoutMs: 25,
+      env: { ...env, OPENALICE_MANAGED_PI_PATH: hanging },
+    })).toMatchObject({ installed: true, runnable: false });
+    const childPidFile = join(dir, 'managed-pi-child.pid');
+    await writeFile(hanging, [
+      "const { spawn } = require('node:child_process');",
+      "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10_000)'], { stdio: 'inherit' });",
+      "require('node:fs').writeFileSync(" + JSON.stringify(childPidFile) + ", String(child.pid));",
+      'setTimeout(() => {}, 10_000);',
+    ].join('\n'));
+    const startedAt = Date.now();
+    await expect(preflightAgentBinaryAsync('pi', 'pi', {
+      platform: process.platform,
+      timeoutMs: 100,
+      env: { ...env, OPENALICE_MANAGED_PI_PATH: hanging },
+    })).resolves.toMatchObject({ installed: true, runnable: false });
+    let childPid: number | null = null;
+    for (let attempt = 0; attempt < 20 && childPid === null; attempt += 1) {
+      try {
+        childPid = Number(await readFile(childPidFile, 'utf8'));
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    expect(Number.isInteger(childPid)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    let childAlive = false;
+    try {
+      process.kill(childPid!, 0);
+      childAlive = true;
+    } catch {
+      // Expected once process-tree cleanup has terminated the descendant.
+    }
+    expect(childAlive).toBe(false);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    await expect(preflightAgentBinaryAsync('pi', 'pi', { platform: process.platform, env }))
+      .resolves.toMatchObject({ installed: true, path: entry, runnable: true });
+  });
+
+  it('rejects a batch-only Windows PATH entry without executing it', async () => {
+    const batch = join(dir, 'batch-only-agent.cmd');
+    await writeFile(batch, '@echo off\r\nexit /b 0\r\n');
+    const result = preflightAgentBinary('claude', 'batch-only-agent', {
+      platform: 'win32',
+      env: { ...process.env, PATH: dir, PATHEXT: '.CMD', ComSpec: 'cmd.exe' },
+    });
+    expect(result).toMatchObject({ installed: true, path: batch, runnable: false });
+  });
+});
 describe('detectAgentBinary', () => {
   it('reports managed Pi as installed before searching PATH', async () => {
     const managedPi = await touch('managed-pi');
@@ -95,6 +271,34 @@ describe('detectAgentBinary', () => {
       },
     })).toEqual({ installed: true, path: managedPi, fingerprint: expect.any(String) });
     expect(findExecutableOnPath('pi', { platform: 'linux', env: { PATH: dir } })).toBe(pathPi);
+  });
+
+  it('does not claim managed Pi when its configured Node entry is missing', async () => {
+    const managedPi = await touch('managed-pi');
+    expect(detectAgentBinary('pi', 'pi', {
+      platform: 'linux',
+      env: {
+        OPENALICE_MANAGED_PI_PATH: managedPi,
+        OPENALICE_MANAGED_PI_NODE_PATH: join(dir, 'missing-node'),
+        PATH: '',
+      },
+    })).toEqual({ installed: false, path: null, fingerprint: null });
+  });
+
+  it('includes managed Pi Node metadata in the fingerprint', async () => {
+    const managedPi = await touch('managed-pi-with-node');
+    const managedNode = await touch('managed-node');
+    const env = {
+      OPENALICE_MANAGED_PI_PATH: managedPi,
+      OPENALICE_MANAGED_PI_NODE_PATH: managedNode,
+      PATH: '',
+    };
+    const first = detectAgentBinary('pi', 'pi', { platform: 'linux', env });
+    await writeFile(managedNode, 'changed');
+    const second = detectAgentBinary('pi', 'pi', { platform: 'linux', env });
+    expect(first).toMatchObject({ installed: true, path: managedPi });
+    expect(second).toMatchObject({ installed: true, path: managedPi });
+    expect(second.fingerprint).not.toBe(first.fingerprint);
   });
 
   it('falls back to PATH when managed Pi path is absent or invalid', async () => {

@@ -916,10 +916,10 @@ export function createWorkspaceRoutes(
     }
   });
 
-  app.get('/agents', (c) => {
-    // Probe the host PATH so the frontend can mark missing runtimes and guide
-    // the user to install them — registration ≠ installed (see agent-detect.ts).
-    const availability = svc.detectAgents();
+  app.get('/agents', async (c) => {
+    // Inventory preflight runs concurrently through non-blocking child processes;
+    // the service also shares in-flight work and a short cache across polls.
+    const availability = await svc.probeAgents();
     return c.json({
       agents: svc.adapters.list().map((a) => {
         const av = availability[a.id];
@@ -928,7 +928,8 @@ export function createWorkspaceRoutes(
           displayName: a.displayName,
           kind: isAgentRuntime(a) ? 'agent' : 'utility',
           capabilities: a.capabilities,
-          installed: av?.installed ?? true,
+          installed: av?.installed ?? false,
+          runnable: av?.runnable ?? false,
           binPath: av?.path ?? null,
           fingerprint: av?.fingerprint ?? null,
         };
@@ -961,7 +962,8 @@ export function createWorkspaceRoutes(
         id: adapter.id,
         displayName: adapter.displayName,
         kind: isAgentRuntime(adapter) ? 'agent' : 'utility',
-        installed: availability?.installed ?? true,
+        runnable: availability?.runnable ?? false,
+        installed: availability?.installed ?? false,
         binPath: availability?.path ?? null,
         capabilities: adapter.capabilities,
       },
