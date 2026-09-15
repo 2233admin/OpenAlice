@@ -47,6 +47,12 @@ afterEach(async () => {
 });
 
 describe('resolveLaunchCommand', () => {
+  it('ignores a directory shadowing a Windows executable', async () => {
+    await mkdir(join(dir, 'codex.exe'));
+    const result = resolveLaunchCommand(['codex', '--version'], { platform: 'win32', env });
+    expect(result).toEqual({ argv: ['codex', '--version'], viaShell: false, mode: 'direct' });
+  });
+
   it('compiled Windows CLI uses external Node for npm agents, not its own executable', async () => {
     await stockNpmShim('pi.cmd');
     await touch('node.exe');
@@ -89,6 +95,15 @@ describe('resolveLaunchCommand', () => {
     ]);
   });
 
+  it('win32: does not treat a directory as a POSIX Bash shim', async () => {
+    await touch('pi.cmd');
+    await mkdir(join(dir, 'pi'));
+    await touch('bash.exe');
+    const r = resolveLaunchCommand(['pi', '--version'], { platform: 'win32', env });
+    expect(r.mode).toBe('cmd-shim');
+    expect(r.viaShell).toBe(true);
+  });
+
   it('win32: runs a stock npm shim entrypoint directly with Node', async () => {
     await stockNpmShim('pi.cmd');
     const nodeExecPath = 'C:\\Program Files\\nodejs\\node.exe';
@@ -102,6 +117,33 @@ describe('resolveLaunchCommand', () => {
       viaShell: false,
       mode: 'node-shim',
     });
+  });
+
+  it('win32: runs a stock npm shim with a native entry directly without Bash', async () => {
+    await stockNpmShim('claude.cmd', 'node_modules\\claude\\bin\\claude.exe');
+    const r = resolveLaunchCommand(['claude', '--version'], {
+      platform: 'win32',
+      env,
+      nodeExecPath: 'node.exe',
+    });
+    expect(r).toEqual({
+      argv: [join(dir, 'node_modules', 'claude', 'bin', 'claude.exe'), '--version'],
+      viaShell: false,
+      mode: 'direct',
+    });
+  });
+
+  it('win32: does not execute a directory as a stock npm entry', async () => {
+    const entry = 'node_modules\\pkg\\cli.js';
+    await writeFile(join(dir, 'pi.cmd'), `@ECHO off\n"%_prog%"  "%dp0%\\${entry}" %*\n`);
+    await mkdir(join(dir, 'node_modules', 'pkg', 'cli.js'), { recursive: true });
+    const r = resolveLaunchCommand(['pi', '--version'], {
+      platform: 'win32',
+      env,
+      nodeExecPath: 'node.exe',
+    });
+    expect(r.mode).toBe('cmd-shim');
+    expect(r.viaShell).toBe(true);
   });
 
   it('win32: runs an unknown batch shim through its extensionless sibling and Bash', async () => {
@@ -159,6 +201,31 @@ describe('resolveLaunchCommand', () => {
     expect(r.viaShell).toBe(false);
     expect(r.mode).toBe('direct');
     expect(r.argv).toEqual([join(dir, 'opencode.exe'), 'run']);
+  });
+
+  it('win32: keeps PATH order so an earlier shim wins over a later native exe', async () => {
+    await touch('claude.cmd');
+    const nativeDir = await mkdtemp(join(tmpdir(), 'wincmd-native-'));
+    try {
+      await writeFile(join(nativeDir, 'claude.exe'), '');
+      const r = resolveLaunchCommand(['claude', '--version'], {
+        platform: 'win32',
+        env: { ...env, PATH: `${dir}${delimiter}${nativeDir}` },
+      });
+      expect(r).toEqual({
+        argv: [
+          'C:\\Windows\\System32\\cmd.exe',
+          '/d',
+          '/c',
+          join(dir, 'claude.cmd'),
+          '--version',
+        ],
+        viaShell: true,
+        mode: 'cmd-shim',
+      });
+    } finally {
+      await rm(nativeDir, { recursive: true, force: true });
+    }
   });
 
   it('win32: an unresolved name passes through unchanged (fails loudly later)', () => {
