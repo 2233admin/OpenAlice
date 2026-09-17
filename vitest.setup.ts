@@ -13,7 +13,7 @@
  * integration tests. Only the explicit external-readonly and live-paper
  * configs intentionally retain access to real local provider configuration.
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -22,6 +22,12 @@ import { join } from 'node:path'
 // lets a migration journal in the temporary home rewrite real Workspaces.
 const testHome = process.env['OPENALICE_TEST_HOME']
   ?? mkdtempSync(join(tmpdir(), 'oa-vitest-'))
+mkdirSync(testHome, { recursive: true })
+const gitConfigPath = join(testHome, 'gitconfig')
+writeFileSync(gitConfigPath, '')
+process.env['GIT_CONFIG_GLOBAL'] = gitConfigPath
+process.env['GIT_CONFIG_NOSYSTEM'] = '1'
+
 process.env['OPENALICE_HOME'] = testHome
 process.env['AQ_LAUNCHER_ROOT'] = join(testHome, 'workspaces')
 process.env['OPENALICE_GLOBAL_DIR'] = join(testHome, 'global')
