@@ -5,7 +5,13 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { settleCompanion, snapEase, type Rect } from './companion-geometry.js'
 
-/** One presentation window belonging to the existing desktop process. */
+/**
+ * One presentation window belonging to the existing desktop process.
+ * Thanks to MeteorNOX's DeepSeek Balance Whale Widget for the interaction model:
+ * https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget
+ * Press/release, mirroring, bubble timing and snapping follow that MIT project;
+ * OpenAlice owns the native lifecycle/IPC adaptation. See companion/NOTICE.md.
+ */
 export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined {
   if (process.env.OPENALICE_DISABLE_COMPANION === '1') return
   const here = dirname(fileURLToPath(import.meta.url))
