@@ -17,8 +17,8 @@ speech is not runtime status. Keep local-only IPC and packaged resource checks.
 - [x] Native window lifecycle, click-through, drag/snap, tray, size/persistence.
 - [x] Geometry tests and isolated real-Electron interaction smoke.
 - [x] macOS demo startup and main UI regression smoke.
-- [ ] Full hermetic suite and owner/root/UI typechecks.
-- [ ] Unsigned packaged Workspace acceptance with companion resources.
+- [x] Full hermetic suite: 808 files, 7103 passing tests, 4 skipped; desktop/root/UI typechecks.
+- [x] Unsigned packaged Workspace acceptance with companion resources.
 - [ ] Windows native interaction smoke in Desktop Package Smoke workflow.
 - [ ] Review final diff, integrate through dev PR, leave reviewable preview.
 
