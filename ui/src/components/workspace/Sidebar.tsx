@@ -659,7 +659,9 @@ export function SessionRow(props: SessionRowProps): ReactElement {
   const s = props.session;
   const isPaused = s.state === 'paused';
   const headlessOccupying = props.headlessOccupying === true;
-  const presenceLocked = headlessOccupying || !isPaused;
+  // Headless occupancy is a different lock than interactive running: this menu
+  // can pause a TUI/Web seat, but it cannot stop an Issue-owned turn.
+  const archiveLocked = headlessOccupying;
   const resumable = props.resumable !== false;
   const canDelete = props.canDelete !== false;
   // Coworker nametag → native/fallback title → sticky launcher name.
@@ -699,7 +701,7 @@ export function SessionRow(props: SessionRowProps): ReactElement {
       ariaLabel: archiveLabel,
       icon: <Archive size={13} strokeWidth={2} />,
       onSelect: props.onArchive,
-      disabled: presenceLocked,
+      disabled: archiveLocked,
     }] : []),
     ...(props.onRestore ? [{
       label: t('workspace.restoreSessionAction'),

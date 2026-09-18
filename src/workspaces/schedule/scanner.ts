@@ -1,3 +1,5 @@
+import type { AgentConversationDispatch } from '../agent-conversation-log.js'
+import type { IssueCommentRequest } from '../dispatch-communication.js'
 /**
  * ScheduleScanner - the dumb external scheduler for workspace self-declared
  * issues. Each tick it enumerates every workspace, reads that workspace's own
@@ -107,7 +109,7 @@ export interface ScheduleScannerDeps {
     inquiry?: HeadlessTaskInquiry,
     /** Fresh-Session credential/model/effort selection inherited from Issue frontmatter. */
     selection?: SessionRuntimeSelection,
-    conversation?: undefined,
+    conversation?: AgentConversationDispatch,
     /** Birth stamp when this fire allocates a new product Session. */
     createdBy?: SessionCreatedBy,
   ) => Promise<{ taskId: string; resumeId: string }>
@@ -221,11 +223,11 @@ export class ScheduleScanner {
   }
 
   /** Comments share the scheduler's dispatch/claim exclusion, without advancing its clock. */
-  async runIssueComment(input: { workspaceId: string; issueId: string; prompt: string; commentId: string }): Promise<{ taskId: string; resumeId: string }> {
+  async runIssueComment(input: IssueCommentRequest): Promise<{ taskId: string; resumeId: string }> {
     const ws = this.deps.registry.get(input.workspaceId)
     if (!ws) throw new Error('Workspace not found.')
     return this.dispatchIssue(ws, input.issueId, input.prompt, undefined, undefined, undefined,
-      false, undefined, undefined, true, input.commentId)
+      false, undefined, undefined, true, input.commentId, undefined, input.source)
   }
 
   private arm(): void {
@@ -422,6 +424,7 @@ export class ScheduleScanner {
     manual = false,
     commentId?: string,
     retryOfTaskId?: string,
+    commentSource?: IssueCommentRequest['source'],
   ): Promise<{ taskId: string; resumeId: string }> {
     const dispatchKey = `${issueWorkspace.id}:${issueId}`
     if (this.dispatchingIssues.has(dispatchKey)) {
@@ -498,9 +501,17 @@ export class ScheduleScanner {
         question: what,
         resolution: { mode: resumeId ? 'exact' : 'reconstructed' },
       } : undefined
+      const conversation: AgentConversationDispatch | undefined = inquiry ? {
+        source: commentSource ?? { kind: 'human' },
+        requestedTarget: resumeId ? { kind: 'resume', resumeId } : { kind: 'workspace', workspaceId: executionWorkspace.id },
+        originalPrompt: what, deliveredPrompt: what, promptMode: 'plain', subject: inquiry.subject,
+        resolution: resumeId
+          ? { mode: 'exact', origin: { kind: 'session', workspaceId: executionWorkspace.id, resumeId, agent: adapter.id } }
+          : { mode: 'reconstructed', workspaceId: executionWorkspace.id, reason: 'explicit-workspace' },
+      } : undefined
       const result = inquiry
         ? await this.deps.dispatch(executionWorkspace, adapter, what, timeoutMs, undefined,
-            resumeId, inquiry, selection, undefined, createdBy)
+            resumeId, inquiry, selection, conversation, createdBy)
         : resumeId
         ? selection
           ? await this.deps.dispatch(

@@ -1,4 +1,4 @@
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -65,11 +65,27 @@ function piSessionDir(cwd: string): string {
   return join(resolvePiAgentDir(process.env), 'sessions', `--${safeCwd}--`);
 }
 
+function isRegularFile(path: string | null | undefined): path is string {
+  if (!path) return false;
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function usesManagedPiBinary(env: Readonly<Record<string, string | undefined>>): boolean {
+  const profile = runtimeProfileFromEnv(env);
+  if (!isRegularFile(profile.managedPiPath)) return false;
+  if (profile.managedPiNodePath && !isRegularFile(profile.managedPiNodePath)) return false;
+  return true;
+}
+
 function piCommandHead(env: Readonly<Record<string, string | undefined>>): readonly string[] {
   const profile = runtimeProfileFromEnv(env);
-  if (!profile.managedPiPath) return ['pi'];
-  if (profile.managedPiNodePath) return [profile.managedPiNodePath, profile.managedPiPath];
-  return [profile.managedPiPath];
+  if (!usesManagedPiBinary(env)) return ['pi'];
+  if (profile.managedPiNodePath) return [profile.managedPiNodePath, profile.managedPiPath!];
+  return [profile.managedPiPath!];
 }
 
 export async function syncPiWindowsShellPath(
@@ -180,7 +196,7 @@ function piHeadlessApproveArgs(env: Readonly<Record<string, string | undefined>>
   // dev intentionally uses whatever `pi` is on PATH; its install/version/trust
   // policy belongs to that developer, so do not attach version-specific flags.
   const profile = runtimeProfileFromEnv(env);
-  return profile.managedPiPath || profile.launcher === 'docker' ? ['--approve'] : [];
+  return usesManagedPiBinary(env) || profile.launcher === 'docker' ? ['--approve'] : [];
 }
 
 /**

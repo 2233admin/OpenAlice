@@ -34,6 +34,8 @@
     "start": "node dist/main.js",
     "electron:tsc": "pnpm -F @traderalice/desktop build",
     "electron:build": "pnpm build && pnpm electron:tsc",
+    "electron:smoke:demo": "node scripts/electron-demo/run.mjs --smoke",
+    "electron:demo": "node scripts/electron-demo/run.mjs",
     "electron:dev": "pnpm electron:build && pnpm -F @traderalice/desktop dev",
     "electron:pack": "pnpm electron:build && pnpm vendor:runtime && pnpm -F @traderalice/desktop run pack",
     "electron:assert-package": "node scripts/assert-desktop-package.mjs",

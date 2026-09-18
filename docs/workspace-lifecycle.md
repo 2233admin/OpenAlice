@@ -69,7 +69,9 @@ active <-> archived <-> deleted
 ```
 
 `presence` answers whether the coworker is on the Ask Alice roster, filed in
-the archive, or softly dismissed. Missing `presence` is `active`. `lifecycle:
+the archive, or softly dismissed. Missing `presence` is `active`. Archiving a
+running interactive Session first pauses it; the presence write still refuses a
+live seat or headless turn. `lifecycle:
 retired` still means the coworker left with the Workspace; restore recalls the
 desk without washing archived or deleted people back onto the floor.
 

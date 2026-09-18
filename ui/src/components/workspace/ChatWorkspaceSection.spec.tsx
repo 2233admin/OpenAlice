@@ -781,6 +781,49 @@ describe('ChatWorkspaceSection actions', () => {
     expect(onNavigate).toHaveBeenCalledTimes(2)
   })
 
+  it('confirms before archiving a running interactive Session and stops it first', async () => {
+    const user = userEvent.setup()
+    const running = {
+      ...chatSession(1),
+      state: 'running' as const,
+      pid: 99,
+      startedAt: Date.parse('2026-07-01T12:00:00.000Z'),
+    }
+    renderSection([{ ...chatWorkspace, sessions: [running] }], null, undefined, 'focused')
+
+    const more = screen.getByRole('button', { name: 'More actions for Conversation 1' })
+    more.focus()
+    await user.keyboard('{ArrowDown}')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive Conversation 1' }))
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Archive Conversation 1?' })
+    expect(dialog.textContent).toContain('stops this running session')
+    expect(actions.pauseSession).not.toHaveBeenCalled()
+    expect(actions.setSessionPresence).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(actions.pauseSession).not.toHaveBeenCalled()
+    expect(actions.setSessionPresence).not.toHaveBeenCalled()
+
+    more.focus()
+    await user.keyboard('{ArrowDown}')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive Conversation 1' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }))
+
+    await waitFor(() => {
+      expect(actions.pauseSession).toHaveBeenCalledWith(chatWorkspace.id, running.id)
+      expect(actions.setSessionPresence).toHaveBeenCalledWith(
+        chatWorkspace.id,
+        running.resumeId,
+        'archived',
+      )
+    })
+    expect(actions.pauseSession.mock.invocationCallOrder[0]).toBeLessThan(
+      actions.setSessionPresence.mock.invocationCallOrder[0]!,
+    )
+  })
+
   it('groups running headless Sessions and explains why TUI is temporarily unavailable', async () => {
     const onNavigate = vi.fn()
     directoryState.directories = new Map([[chatWorkspace.id, {

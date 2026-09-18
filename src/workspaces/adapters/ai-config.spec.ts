@@ -1032,6 +1032,23 @@ describe('piAdapter AI-config', () => {
       .toEqual(['pi', '--session-id', 'sess-1']);
   });
 
+  it('falls back to bare Pi for an invalid managed entry or Node path', async () => {
+    const missingEntry = join(dir, 'missing-pi');
+    expect(piAdapter.composeCommand([], { cwd: dir, env: { ...mcpEnv, OPENALICE_MANAGED_PI_PATH: missingEntry } }))
+      .toEqual(['pi']);
+
+    const managedPi = join(dir, 'managed-pi-invalid-node');
+    await writeFile(managedPi, '');
+    expect(piAdapter.composeCommand([], {
+      cwd: dir,
+      env: {
+        ...mcpEnv,
+        OPENALICE_MANAGED_PI_PATH: managedPi,
+        OPENALICE_MANAGED_PI_NODE_PATH: join(dir, 'missing-node'),
+      },
+    })).toEqual(['pi']);
+  });
+
   it('composeWebCommand is opt-in RPC and does not alter the TUI command', () => {
     const spawn = { cwd: dir, env: mcpEnv, resume: { sessionId: 'sess-web' } } as const;
     expect(piAdapter.composeCommand([], spawn)).toEqual(['pi', '--session-id', 'sess-web']);
@@ -1059,38 +1076,46 @@ describe('piAdapter AI-config', () => {
     ]);
   });
 
-  it('composeWebCommand uses the packaged managed Pi trust flag only on the RPC surface', () => {
-    const env = { ...mcpEnv, OPENALICE_MANAGED_PI_PATH: '/app/vendor/pi/pi' };
+  it('composeWebCommand uses the packaged managed Pi trust flag only on the RPC surface', async () => {
+    const managedPi = join(dir, 'managed-pi-rpc');
+    await writeFile(managedPi, '');
+    const env = { ...mcpEnv, OPENALICE_MANAGED_PI_PATH: managedPi };
     const spawn = { cwd: dir, env, resume: { sessionId: 'sess-web' } } as const;
     expect(piAdapter.composeCommand([], spawn)).toEqual([
-      '/app/vendor/pi/pi', '--session-id', 'sess-web',
+      managedPi, '--session-id', 'sess-web',
     ]);
     expect(piAdapter.composeWebCommand?.([], spawn)).toEqual([
-      '/app/vendor/pi/pi', '--approve', '--session-id', 'sess-web', '--mode', 'rpc',
+      managedPi, '--approve', '--session-id', 'sess-web', '--mode', 'rpc',
     ]);
   });
 
-  it('composeCommand uses managed Pi binary path when the spawn env provides one', () => {
-    const env = { ...mcpEnv, OPENALICE_MANAGED_PI_PATH: '/app/vendor/pi/pi' };
-    expect(piAdapter.composeCommand(['ignored'], { cwd: dir, env })).toEqual(['/app/vendor/pi/pi']);
+  it('composeCommand uses managed Pi binary path when the spawn env provides one', async () => {
+    const managedPi = join(dir, 'managed-pi');
+    await writeFile(managedPi, '');
+    const env = { ...mcpEnv, OPENALICE_MANAGED_PI_PATH: managedPi };
+    expect(piAdapter.composeCommand(['ignored'], { cwd: dir, env })).toEqual([managedPi]);
     expect(piAdapter.composeHeadlessCommand!([], { cwd: dir, env }, 'hello')).toEqual([
-      '/app/vendor/pi/pi', '--approve', '-p', '--mode', 'json', 'hello',
+      managedPi, '--approve', '-p', '--mode', 'json', 'hello',
     ]);
   });
 
-  it('composeCommand runs managed Pi npm runtime through the injected Node path', () => {
+  it('composeCommand runs managed Pi npm runtime through the injected Node path', async () => {
+    const managedPi = join(dir, 'managed-pi-cli.js');
+    const managedNode = join(dir, 'managed-node');
+    await writeFile(managedPi, '');
+    await writeFile(managedNode, '');
     const env = {
       ...mcpEnv,
-      OPENALICE_MANAGED_PI_PATH: '/app/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
-      OPENALICE_MANAGED_PI_NODE_PATH: '/Applications/OpenAlice.app/Contents/MacOS/OpenAlice',
+      OPENALICE_MANAGED_PI_PATH: managedPi,
+      OPENALICE_MANAGED_PI_NODE_PATH: managedNode,
     };
     expect(piAdapter.composeCommand(['ignored'], { cwd: dir, env })).toEqual([
-      '/Applications/OpenAlice.app/Contents/MacOS/OpenAlice',
-      '/app/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
+      managedNode,
+      managedPi,
     ]);
     expect(piAdapter.composeHeadlessCommand!([], { cwd: dir, env }, 'hello')).toEqual([
-      '/Applications/OpenAlice.app/Contents/MacOS/OpenAlice',
-      '/app/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
+      managedNode,
+      managedPi,
       '--approve',
       '-p',
       '--mode',

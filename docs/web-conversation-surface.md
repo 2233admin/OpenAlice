@@ -32,7 +32,7 @@ approval or cannot reopen an exact recorded conversation.
 
 | Wire | Runtimes | Process | Permission prompts | Fresh session |
 |---|---|---|---|---|
-| `pi-rpc` | `pi`, `omp` | `--mode rpc` JSONL; Pi additionally `--approve`, omp `--auto-approve` | none in RPC mode; launch-time approval | yes (RPC allocates the id) |
+| `pi-rpc` | `pi`, `omp` | `--mode rpc` JSONL; Pi additionally `--approve`, omp `--auto-approve` | none in RPC mode; launch-time approval | yes. Pi uses a launcher-minted `--session-id` on TUI and Web; omp lets RPC allocate the id |
 | `acp` | `cursor`, `grok`, `opencode` | Agent Client Protocol JSON-RPC over stdio (`cursor-agent acp`, `grok agent --no-leader stdio`, `opencode acp`) | `session/request_permission` with the agent's own options | `session/new`; resume via `session/load` when advertised |
 | `claude-stream-json` | `claude` | `-p --input-format stream-json --output-format stream-json --include-partial-messages --permission-prompt-tool stdio` | `control_request` `can_use_tool`; answered with allow/deny | `--session-id <uuid>` chosen by the adapter |
 | `codex-app-server` | `codex` | `codex app-server --listen stdio://` with MCP registration, `approvalPolicy: never`, `sandbox: danger-full-access` | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` (answered with a `decision` enum), `item/permissions/requestApproval` (answered with the granted `permissions` profile + `scope`), `item/tool/requestUserInput` | `thread/start`; resume via `thread/resume` |
@@ -206,3 +206,13 @@ poll, stale-response cancellation and retry state for KlinePanel, shared with
 the Market pages. Embedded interval selection opens/focuses the corresponding
 market tab and never navigates away from chat. Missing sources keep the card
 and show an actionable chart error. User prose is not parsed.
+
+### Text reveal
+
+The shared ConversationView buffers newly arriving assistant prose for an
+animation-frame reveal; runtime polling and authoritative snapshots are unchanged.
+It reveals Unicode graphemes, accelerates large batches, and keeps rich references
+and inline links whole. History (including the first asynchronously loaded
+snapshot) appears immediately. Completion, Stop, and reduced-motion preference
+flush the visual buffer; unmount cancels animation. A ResizeObserver follows
+text growth only while the reader remains near the bottom.

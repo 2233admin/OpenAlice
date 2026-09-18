@@ -537,10 +537,11 @@ The surfaces deliberately have different jobs:
   is stamped as a comment. Connector interprets automated silence from the
   forwarded source; comments
   that arrived from that connector are not echoed.
-  Pending comment replies also carry compact turn progress. The connector chat
-  ships sealed mid-turn `text` blocks (the last consecutive text before a
-  tool or error) and skips tool/error blocks. A text already sent this way
-  is not sent again as the final comment.
+  Pending comment replies also carry compact turn progress. The execution-owned
+  delivery snapshot authorizes sealed mid-turn `text` blocks (the last
+  consecutive text before a tool or error); tool/error blocks remain local.
+  A terminal event always closes the same task turn, independently of comment
+  persistence or whether progress already contained the final text.
 - **Beta → Connectors** is the operations view: service health, the same
   seven-stage setup lifecycle used by Settings, durable private-chat linkage,
   last delivery evidence, and an explicit reconnect action only for an actual
@@ -760,3 +761,47 @@ produce a success acknowledgement. Connector restart invalidates old panels.
 The control contract is platform-neutral; Telegram currently implements its UI.
 See [Telegram inline keyboards](https://core.telegram.org/bots/api#inlinekeyboardbutton)
 and [callback acknowledgement](https://core.telegram.org/bots/api#answercallbackquery).
+
+## Execution-owned reply lifecycle
+
+Alice fixes an external delivery snapshot at dispatch. Connector does not infer
+a recipient from the target Session or an Issue association. `DispatchDelivery`
+projects accepted/progress/final/failed using the headless taskId throughout;
+Issue comment persistence no longer sends execution terminal events. Explicit
+standalone desk comments retain their own message identity. In-turn comments
+reuse the authorized task route and source.
+
+New live events carry an optional `activityLeaseMs` (currently 60 seconds).
+Alice renews active turns every 20 seconds, including tool-only periods. The
+shared delivery manager expires local activity through `stopOwnerActivity` when
+renewals stop. Expiry does not declare the Agent failed or send a final answer;
+a subsequent renewal may resume activity. Telegram implements this adapter
+hook. Its repeated accepted events retain the existing draft text. Terminal
+turns reject late progress/accepted and duplicate public finals in the bounded
+in-process dedup window. Lease cleanup is independent of reply-media resolution.
+
+Alice persists terminal handoff state on the Task before posting. `accepted`
+means the Connector's HTTP 202 receipt, **not** confirmed Telegram delivery;
+external delivery outcomes remain in the Connector I/O journal. A receipt lost
+in transit is `uncertain`. Recovery sends only a textless close, preserving the
+uncertain result as `closed` plus its error; it does not replay public text or
+files. Reconciled interrupted tasks with explicit routes also close activity.
+Recovery is bounded to 32 completed turns per sweep plus live turns.
+
+Queues and dedup remain process-local. This is not exactly-once or durable
+end-to-end delivery: a Connector crash after acceptance may lose unsent output.
+A crash clears its local draft timers; Alice resumes leases for still-running
+turns. Unknown historical tasks never replay. Upgrade-era legacy drafts without
+a lease require a Connector restart during the separately scheduled deployment.
+
+The lease field is additive: an older Connector can consume the existing four
+phases but will not enforce expiry. Mixed-version operation therefore lacks the
+lease fallback until Connector is upgraded; both components should be deployed
+together. No new model-facing flags or syntax are introduced.
+
+Acceptance covers an actual Node child emitting Codex events through
+WorkspaceService into a local HTTP receiver: a private ask followed by a desk
+comment in the same Session, including Issue rebinding/deletion before exit.
+The shared delivery-manager tests cover lease expiry, renewal, terminal cleanup,
+and late progress; the built Connector process smoke verifies its HTTP boundary.
+These checks do not send real Telegram messages or claim external delivery.

@@ -37,6 +37,7 @@ import {
   type SessionRecord,
   type Workspace,
 } from './api'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { WorkspaceOffboardingDialog } from './WorkspaceOffboardingDialog'
 import {
@@ -188,6 +189,7 @@ export function ChatWorkspaceSection({
   const [conversationBrowserOpen, setConversationBrowserOpen] = useState(false)
   const [conversationWorkspaceId, setConversationWorkspaceId] = useState<string | null>(null)
   const [busySession, setBusySession] = useState<HarnessSession | null>(null)
+  const [pendingArchive, setPendingArchive] = useState<HarnessSession | null>(null)
   const [settingsTarget, setSettingsTarget] = useState<{
     workspaceId: string
     sessionId: string
@@ -290,10 +292,21 @@ export function ChatWorkspaceSection({
     ctx.requestDeleteSession(row.workspaceId, row.session.id)
   }
 
+  const commitArchive = async (row: HarnessSession): Promise<void> => {
+    if (row.session.state === 'running') {
+      await ctx.pauseSession(row.workspaceId, row.session.id)
+    }
+    await ctx.setSessionPresence(row.workspaceId, row.resumeId, 'archived')
+    await sessionDirectories.refresh()
+  }
+
   const archiveRosterSession = (row: HarnessSession): void => {
     if (row.headlessOccupying) return
-    void ctx.setSessionPresence(row.workspaceId, row.resumeId, 'archived')
-      .then(() => sessionDirectories.refresh())
+    if (row.session.state === 'running') {
+      setPendingArchive(row)
+      return
+    }
+    void commitArchive(row)
       .catch((err) => console.error('workspaces.archive_failed', { resumeId: row.resumeId, err }))
   }
 
@@ -643,6 +656,22 @@ export function ChatWorkspaceSection({
           if (!open) setBusySession(null)
         }}
       />
+
+      {pendingArchive && (
+        <ConfirmDialog
+          title={t('workspace.archiveRunningSessionTitle', { title: pendingArchive.title })}
+          message={t('workspace.archiveRunningSessionMessage', { title: pendingArchive.title })}
+          confirmLabel={t('workspace.archiveSessionAction')}
+          cancelLabel={t('common.cancel')}
+          workingLabel={t('workspace.archiveSessionWorking')}
+          variant="primary"
+          onConfirm={async () => {
+            await commitArchive(pendingArchive)
+            setPendingArchive(null)
+          }}
+          onClose={() => setPendingArchive(null)}
+        />
+      )}
 
       {settingsRow && (
         <SessionSettingsDialog
