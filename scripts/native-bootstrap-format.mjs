@@ -29,25 +29,43 @@ function verifyPeExecutable(descriptor, size, arch) {
   const sectionCount = coff.readUInt16LE(6)
   const optionalSize = coff.readUInt16LE(20)
   const characteristics = coff.readUInt16LE(22)
-  if (sectionCount === 0 || sectionCount > 96 || optionalSize < 112 || optionalSize > 4096 || (characteristics & 0x0002) === 0) {
+  if (
+    sectionCount === 0
+    || sectionCount > 96
+    || optionalSize < 112
+    || optionalSize > 4096
+    || (characteristics & 0x0002) === 0
+    || (characteristics & 0x2000) !== 0
+  ) {
     throw new Error('native bootstrap PE image metadata is invalid')
   }
   const optional = readExactly(descriptor, size, peOffset + 24, optionalSize, 'PE optional header')
-  if (optional.readUInt16LE(0) !== 0x20b || optional.readUInt32LE(16) === 0 || optional.readUInt32LE(56) === 0) {
+  const entryPoint = optional.readUInt32LE(16)
+  if (optional.readUInt16LE(0) !== 0x20b || entryPoint === 0 || optional.readUInt32LE(56) === 0) {
     throw new Error('native bootstrap is not an executable PE32+ image')
   }
   const sectionTable = peOffset + 24 + optionalSize
   readExactly(descriptor, size, sectionTable, sectionCount * 40, 'PE section table')
-  let executableSection = false
+  let entryInExecutableSection = false
   for (let index = 0; index < sectionCount; index += 1) {
     const section = readExactly(descriptor, size, sectionTable + index * 40, 40, 'PE section')
+    const virtualSize = section.readUInt32LE(8)
+    const virtualAddress = section.readUInt32LE(12)
     const rawSize = section.readUInt32LE(16)
     const rawOffset = section.readUInt32LE(20)
     const flags = section.readUInt32LE(36)
     if (rawSize > 0 && rawOffset + rawSize > size) throw new Error('native bootstrap PE section exceeds the file')
-    if (rawSize > 0 && (flags & 0x20000000) !== 0) executableSection = true
+    const mappedBytes = Math.max(virtualSize, rawSize)
+    if (
+      mappedBytes > 0
+      && (flags & 0x20000000) !== 0
+      && entryPoint >= virtualAddress
+      && entryPoint < virtualAddress + mappedBytes
+    ) {
+      entryInExecutableSection = true
+    }
   }
-  if (!executableSection) throw new Error('native bootstrap PE image has no executable section')
+  if (!entryInExecutableSection) throw new Error('native bootstrap PE entry point is not in an executable section')
 }
 
 function verifyElfExecutable(descriptor, size, arch) {
@@ -59,7 +77,8 @@ function verifyElfExecutable(descriptor, size, arch) {
   if (fileType !== 2 && fileType !== 3) throw new Error('native bootstrap ELF file is not executable')
   const expectedMachine = arch === 'x64' ? 0x3e : 0xb7
   if (header.readUInt16LE(18) !== expectedMachine) throw architectureError('linux', arch)
-  if (header.readBigUInt64LE(24) === 0n || header.readUInt16LE(52) < 64) {
+  const entryPoint = safeUInt64(header, 24, 'ELF entry point')
+  if (entryPoint === 0 || header.readUInt16LE(52) < 64) {
     throw new Error('native bootstrap ELF entry point or header size is invalid')
   }
   const programOffset = safeUInt64(header, 32, 'ELF program table offset')
@@ -69,15 +88,26 @@ function verifyElfExecutable(descriptor, size, arch) {
     throw new Error('native bootstrap ELF program table is invalid')
   }
   readExactly(descriptor, size, programOffset, programEntrySize * programCount, 'ELF program table')
-  let executableSegment = false
+  let entryInExecutableSegment = false
   for (let index = 0; index < programCount; index += 1) {
     const entry = readExactly(descriptor, size, programOffset + index * programEntrySize, 56, 'ELF program header')
     const fileOffset = safeUInt64(entry, 8, 'ELF segment offset')
+    const virtualAddress = safeUInt64(entry, 16, 'ELF segment virtual address')
     const fileBytes = safeUInt64(entry, 32, 'ELF segment size')
-    if (fileOffset + fileBytes > size) throw new Error('native bootstrap ELF segment exceeds the file')
-    if (entry.readUInt32LE(0) === 1 && fileBytes > 0 && (entry.readUInt32LE(4) & 1) !== 0) executableSegment = true
+    const memoryBytes = safeUInt64(entry, 40, 'ELF segment memory size')
+    if (checkedEnd(fileOffset, fileBytes, 'ELF segment') > size) throw new Error('native bootstrap ELF segment exceeds the file')
+    const mappedEnd = checkedEnd(virtualAddress, Math.max(fileBytes, memoryBytes), 'ELF mapped segment')
+    if (
+      entry.readUInt32LE(0) === 1
+      && fileBytes > 0
+      && (entry.readUInt32LE(4) & 1) !== 0
+      && entryPoint >= virtualAddress
+      && entryPoint < mappedEnd
+    ) {
+      entryInExecutableSegment = true
+    }
   }
-  if (!executableSegment) throw new Error('native bootstrap ELF image has no executable load segment')
+  if (!entryInExecutableSegment) throw new Error('native bootstrap ELF entry point is not in an executable load segment')
 }
 
 function verifyMachExecutable(descriptor, size, arch) {
@@ -94,8 +124,8 @@ function verifyMachExecutable(descriptor, size, arch) {
   const commandsEnd = 32 + commandBytes
   readExactly(descriptor, size, 32, commandBytes, 'Mach-O load commands')
   let offset = 32
-  let executableSegment = false
-  let entryCommand = false
+  const executableSegments = []
+  let entryOffset = null
   for (let index = 0; index < commandCount; index += 1) {
     const commandHeader = readExactly(descriptor, size, offset, 8, 'Mach-O load command')
     const command = commandHeader.readUInt32LE(0)
@@ -106,13 +136,26 @@ function verifyMachExecutable(descriptor, size, arch) {
       const segment = readExactly(descriptor, size, offset, 72, 'Mach-O segment command')
       const fileOffset = safeUInt64(segment, 40, 'Mach-O segment offset')
       const fileBytes = safeUInt64(segment, 48, 'Mach-O segment size')
-      if (fileOffset + fileBytes > size) throw new Error('native bootstrap Mach-O segment exceeds the file')
-      if (fileBytes > 0 && (segment.readUInt32LE(60) & 4) !== 0) executableSegment = true
+      const segmentEnd = checkedEnd(fileOffset, fileBytes, 'Mach-O segment')
+      if (segmentEnd > size) throw new Error('native bootstrap Mach-O segment exceeds the file')
+      if (fileBytes > 0 && (segment.readUInt32LE(60) & 4) !== 0) {
+        executableSegments.push({ start: fileOffset, end: segmentEnd })
+      }
     }
-    if (command === 0x80000028 || command === 0x5) entryCommand = true
+    if (command === 0x80000028) {
+      if (commandSize < 24) throw new Error('native bootstrap Mach-O entry command is invalid')
+      const entry = readExactly(descriptor, size, offset, 24, 'Mach-O entry command')
+      entryOffset = safeUInt64(entry, 8, 'Mach-O entry offset')
+    }
     offset += commandSize
   }
-  if (!executableSegment || !entryCommand) throw new Error('native bootstrap Mach-O image has no executable entry segment')
+  if (offset !== commandsEnd) throw new Error('native bootstrap Mach-O load command sizes do not match the header')
+  if (
+    entryOffset === null
+    || !executableSegments.some(({ start, end }) => entryOffset >= start && entryOffset < end)
+  ) {
+    throw new Error('native bootstrap Mach-O image has no valid executable entry segment')
+  }
 }
 
 function readExactly(descriptor, size, offset, length, label) {
@@ -133,6 +176,12 @@ function safeUInt64(buffer, offset, label) {
   const value = buffer.readBigUInt64LE(offset)
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`native bootstrap ${label} is too large`)
   return Number(value)
+}
+
+function checkedEnd(start, length, label) {
+  const end = start + length
+  if (!Number.isSafeInteger(end)) throw new Error(`native bootstrap ${label} range is too large`)
+  return end
 }
 
 function architectureError(platform, arch) {

@@ -152,6 +152,8 @@ function nativeBootstrapFixture(platform, arch) {
     bytes.writeUInt32LE(0x1000, optional + 16)
     bytes.writeUInt32LE(0x2000, optional + 56)
     const section = optional + 112
+    bytes.writeUInt32LE(0x100, section + 8)
+    bytes.writeUInt32LE(0x1000, section + 12)
     bytes.writeUInt32LE(16, section + 16)
     bytes.writeUInt32LE(0x200, section + 20)
     bytes.writeUInt32LE(0x20000000, section + 36)
@@ -169,7 +171,9 @@ function nativeBootstrapFixture(platform, arch) {
     bytes.writeUInt32LE(1, 64)
     bytes.writeUInt32LE(1, 68)
     bytes.writeBigUInt64LE(0n, 72)
+    bytes.writeBigUInt64LE(0x1000n, 80)
     bytes.writeBigUInt64LE(BigInt(bytes.length), 96)
+    bytes.writeBigUInt64LE(BigInt(bytes.length), 104)
   } else {
     bytes.writeUInt32LE(0xfeedfacf, 0)
     bytes.writeUInt32LE(arch === 'x64' ? 0x01000007 : 0x0100000c, 4)
@@ -183,6 +187,7 @@ function nativeBootstrapFixture(platform, arch) {
     bytes.writeUInt32LE(4, 92)
     bytes.writeUInt32LE(0x80000028, 104)
     bytes.writeUInt32LE(24, 108)
+    bytes.writeBigUInt64LE(0x100n, 112)
   }
   return bytes
 }
