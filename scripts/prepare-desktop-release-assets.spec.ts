@@ -16,6 +16,23 @@ function withTempDir(run: (dir: string) => void) {
   }
 }
 
+function writeNativeBootstrapMatrix(dir: string, version = '1.2.3') {
+  for (const [platform, arch] of [
+    ['darwin', 'arm64'],
+    ['darwin', 'x64'],
+    ['linux', 'arm64'],
+    ['linux', 'x64'],
+    ['win32', 'arm64'],
+    ['win32', 'x64'],
+  ]) {
+    const asset = `openalice-bootstrap-${version}-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`
+    const bytes = Buffer.from(`bootstrap:${platform}:${arch}`)
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    writeFileSync(join(dir, asset), bytes)
+    writeFileSync(join(dir, `${asset}.sha256`), `${sha256}  ${asset}\n`)
+  }
+}
+
 describe('prepareBuildMetadata', () => {
   it('preserves the existing stable updater feed names', () => {
     withTempDir((dir) => {
@@ -199,21 +216,7 @@ describe('prepareMirrorAssets', () => {
   })
   it('publishes a complete checksum-bound native bootstrap matrix', () => {
     withTempDir((dir) => {
-      const targets = [
-        ['darwin', 'arm64'],
-        ['darwin', 'x64'],
-        ['linux', 'arm64'],
-        ['linux', 'x64'],
-        ['win32', 'arm64'],
-        ['win32', 'x64'],
-      ]
-      for (const [platform, arch] of targets) {
-        const asset = `openalice-bootstrap-1.2.3-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`
-        const bytes = Buffer.from(`bootstrap:${platform}:${arch}`)
-        const sha256 = createHash('sha256').update(bytes).digest('hex')
-        writeFileSync(join(dir, asset), bytes)
-        writeFileSync(join(dir, `${asset}.sha256`), `${sha256}  ${asset}\n`)
-      }
+      writeNativeBootstrapMatrix(dir)
 
       const manifest = prepareMirrorAssets({
         outDir: dir,
@@ -244,6 +247,33 @@ describe('prepareMirrorAssets', () => {
         repository: 'TraderAlice/OpenAlice',
         requireNativeBootstraps: true,
       })).toThrow('native bootstrap set is required')
+    })
+  })
+
+  it('rejects unexpected native bootstrap sidecars', () => {
+    withTempDir((dir) => {
+      writeFileSync(join(dir, 'openalice-bootstrap-stale.sha256'), 'stale')
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('unexpected native bootstrap assets')
+    })
+  })
+
+  it('rejects native bootstrap entries that are not regular files', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = join(dir, 'openalice-bootstrap-1.2.3-linux-x64')
+      rmSync(asset)
+      mkdirSync(asset)
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('must be regular files')
     })
   })
 
