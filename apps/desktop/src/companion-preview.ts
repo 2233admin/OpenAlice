@@ -68,7 +68,7 @@ void app.whenReady().then(async () => {
       assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1, 'Bubble clipped')
       assert.ok(Math.abs(layout.portrait - size * .9) < 1, 'Portrait size changed')
       assert.ok(Math.abs(layout.offset - size * .8 * (flipped ? 1 : -1)) < 1, 'Bubble offset changed')
-      assert.ok(Math.abs(layout.top - layout.height * .3) < 1, 'Bubble must sit beside the face')
+      assert.ok(Math.abs(layout.top - layout.height * .26) < 1, 'Bubble must sit beside the face')
     }
   }
   console.log('[companion-preview] smoke passed', JSON.stringify(info))

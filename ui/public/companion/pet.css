@@ -10,7 +10,7 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #pet:focus-visible { outline: 2px solid #648bc8; border-radius: 40%; }
 #pet img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
 #body.pressed #pet { cursor: grabbing; }
-#bubble { position: absolute; top: 30%; left: -80%; width: 100%; aspect-ratio: 1; pointer-events: none; }
+#bubble { position: absolute; top: 26%; left: -80%; width: 100%; aspect-ratio: 1; pointer-events: none; }
 #bubble img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transform: scale(.7); transition: opacity .2s ease, transform .2s ease; }
 .bubble-main { transform-origin: 88% 80%; }
 #bubble.open img { opacity: 1; transform: scale(1); }
