@@ -126,6 +126,15 @@ ipcRenderer.on('openalice:updater:status', (_event, raw: unknown) => {
 })
 
 const api = {
+  companion: {
+    getVisible: (): Promise<boolean> => ipcRenderer.invoke('openalice:companion:get-visible'),
+    toggle: (): Promise<boolean> => ipcRenderer.invoke('openalice:companion:toggle'),
+    onVisibility: (callback: (visible: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, visible: boolean) => callback(visible)
+      ipcRenderer.on('openalice:companion:visibility', listener)
+      return () => ipcRenderer.removeListener('openalice:companion:visibility', listener)
+    },
+  },
   windowChrome: {
     platform: process.platform,
     setTheme: (theme: { color: string; symbolColor: string }) =>

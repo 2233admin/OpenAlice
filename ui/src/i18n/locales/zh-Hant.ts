@@ -208,6 +208,9 @@ export const zhHant: Resources = {
   projectSetup: { connectPi: '為 Chat 設定 Pi 的 AI 提供方', title: '部分工作區尚未準備完成', description: '專案已建立。可以重試準備剩餘工作區，也可以先使用已就緒的工作區。', pending: '等待準備', preparing: '正在準備…' },
   quickStart: { chooseHarness: '選擇 Harness' },
   nav: {
+    showCompanion: '顯示 Alice',
+    hideCompanion: '隱藏 Alice',
+    companionError: '無法切換 Alice 的顯示狀態，請重試。',
     quickStart: 'Quick Start',
     generalChat: 'Chat',
     harnessLabel: '{{name}} Harness',

@@ -87,7 +87,25 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
     enabled = !enabled
     if (enabled && ready) { settle(false); pet.showInactive() } else pet.hide()
     save()
+    if (!owner.isDestroyed()) owner.webContents.send('openalice:companion:visibility', enabled)
   }
+  const ownerTrusted = (event: Electron.IpcMainInvokeEvent) =>
+    event.sender === owner.webContents && event.senderFrame === owner.webContents.mainFrame
+  const visibilityChannel = 'openalice:companion:get-visible'
+  const toggleChannel = 'openalice:companion:toggle'
+  ipcMain.handle(visibilityChannel, event => {
+    if (!ownerTrusted(event)) throw new Error('Unauthorized companion access')
+    return enabled
+  })
+  ipcMain.handle(toggleChannel, event => {
+    if (!ownerTrusted(event)) throw new Error('Unauthorized companion access')
+    toggle()
+    return enabled
+  })
+  pet.once('closed', () => {
+    ipcMain.removeHandler(visibilityChannel)
+    ipcMain.removeHandler(toggleChannel)
+  })
   const menu = () => Menu.buildFromTemplate([
     { label: '打开 OpenAlice', click: open },
     { label: enabled ? '隐藏 Alice' : '显示 Alice', click: toggle },

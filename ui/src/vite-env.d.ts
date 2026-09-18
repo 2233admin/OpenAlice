@@ -28,6 +28,11 @@ interface Window {
    * sync with apps/desktop/src/preload.ts; never expose raw ipcRenderer.
    */
   readonly openAlice?: {
+    readonly companion?: {
+      getVisible(): Promise<boolean>
+      toggle(): Promise<boolean>
+      onVisibility(callback: (visible: boolean) => void): () => void
+    }
     readonly windowChrome?: {
       readonly platform: string
       setTheme?(theme: { color: string; symbolColor: string }): Promise<void>

@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 
 /** Runs inside the real isolated renderer; verifies both native file IPC and app:// requests. */
 export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
@@ -33,4 +33,41 @@ export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
     assert(document.querySelector('button'), 'React UI failed to mount')
   })()`, true)
   console.log('[electron-demo-smoke] PASS app protocol, preload, isolated state, Inbox, report, native files, conversation, fail-closed API, React mount')
+  // Exercise the actual menu through the owner preload, not a renderer-only mock.
+  const pet = BrowserWindow.getAllWindows().find(window => window !== win && window.getTitle() === 'Alice')
+  if (!pet) throw new Error('Companion window missing')
+  await win.webContents.executeJavaScript(`(async () => {
+    const wait = async (predicate) => {
+      const start = Date.now(); while (!predicate()) {
+        if (Date.now() - start > 5000) throw new Error('Companion menu not ready');
+        await new Promise(r => setTimeout(r, 50));
+      }
+    };
+    await wait(() => document.querySelector('.oa-application-menu'));
+    document.querySelector('.oa-application-menu').click();
+    const row = () => [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent === 'Hide Alice');
+    await wait(row); row().click();
+    await wait(() => !document.querySelector('[role="menuitem"]'));
+    const hiddenStart = Date.now();
+    while (await window.openAlice.companion.getVisible()) {
+      if (Date.now() - hiddenStart > 5000) throw new Error('Companion did not hide');
+      await new Promise(r => setTimeout(r, 25));
+    }
+  })()`, true)
+  if (pet.isVisible()) throw new Error('Menu failed to hide native companion')
+  await win.webContents.executeJavaScript(`(async () => {
+    document.querySelector('.oa-application-menu').click();
+    const start = Date.now(); let row;
+    while (!(row = [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent === 'Show Alice'))) {
+      if (Date.now() - start > 5000) throw new Error('Show Alice recovery entry missing');
+      await new Promise(r => setTimeout(r, 50));
+    }
+    row.click();
+    while (!(await window.openAlice.companion.getVisible())) {
+      if (Date.now() - start > 5000) throw new Error('Companion did not show');
+      await new Promise(r => setTimeout(r, 25));
+    }
+  })()`, true)
+  if (!pet.isVisible()) throw new Error('Menu failed to restore native companion')
+  console.log('[electron-demo-smoke] PASS Alice Settings native companion hide/show recovery')
 }
