@@ -567,3 +567,13 @@ Retry persists `trigger.retryOfTaskId`, exposed by Issue run history as
 without that optional field have unknown retry lineage. Active Issue runs and
 dispatch-start races are rejected, including schedule ticks; there is no force
 override that launches concurrent turns against the same owner.
+
+## Reply routing ownership
+
+Issue execution and comment recruitment enter the shared dispatch communication
+contract described in [[docs/conversation-provenance.md]]. `trigger` remains the
+schedule/run index and `inquiry` remains the business follow-up index. Neither is
+an outbound transport address. Headless execution owns Connector terminal events,
+so failures writing a reply comment cannot leave transport activity running.
+New comment recruits preserve their source through the scheduler. The immutable
+reply reference determines which comment receives progress and completion.

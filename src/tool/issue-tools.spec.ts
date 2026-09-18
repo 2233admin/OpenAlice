@@ -694,10 +694,12 @@ it('carries trusted run scope into in-turn desk comments', async () => {
   const project = vi.spyOn(deskProjection, 'projectDeskComment').mockResolvedValue()
   try {
     await run(issueCommentFactory.build(ctx({ callerRun: {
+      communication: { version: 1, origin: { kind: 'human' }, target: { workspaceId: 'ws-self', resumeId: 'r', agent: 'codex' }, reply: { kind: 'issue-run', workspaceId: 'ws-self', issueId: 'desk' }, delivery: { connectorId: 'telegram', source: 'automation', contentWorkspaceId: 'ws-self' } },
       taskId: 'run-live', status: 'running', trigger: { kind: 'issue', workspaceId: 'ws-self', issueId: 'desk' },
     } })), { id: 'desk', text: '[[no-reply]] quiet' })
     expect(project).toHaveBeenCalledWith(expect.anything(), expect.anything(), undefined, {
       workspaceId: 'ws-self', progressScopeId: 'run-live', phase: 'progress', automated: true,
+      delivery: { connectorId: 'telegram', source: 'automation', contentWorkspaceId: 'ws-self' },
     })
   } finally { project.mockRestore() }
 })
