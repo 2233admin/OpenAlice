@@ -38,14 +38,15 @@ container loopback. Workspace agents reach Alice through the injected
 `alice`, `alice-workspace`, `alice-uta`, and `traderhub` CLI launchers; remote
 clients must not expose the internal tool gateway as a replacement API.
 
-The server image installs pinned Claude Code, Codex, opencode, and Pi runtimes.
-Docker has no portable way to borrow host CLIs (a macOS binary cannot run in a
-Linux container, and remote hosts may have none), so the image owns the full
-four-runtime contract. Version changes are deliberate Dockerfile changes and
-the build executes every runtime's `--version`, preventing a cached/rebuilt
-image from silently acquiring a different or broken runtime. Pi headless runs
-auto-approve project resources because the image owns its pinned Pi version;
-interactive Pi still leaves that trust decision visible to the user.
+The server image installs the current Claude Code, Codex, opencode, and Pi
+runtimes at image-build time. Docker has no portable way to borrow host CLIs (a
+macOS binary cannot run in a Linux container, and remote hosts may have none),
+so the image owns the full four-runtime contract. The Dockerfile intentionally
+leaves these npm package versions unpinned: rebuilding the image is the update
+mechanism when an upstream runtime changes. The build executes every runtime's
+`--version`, so the resolved versions are visible in build and deployment logs.
+Pi headless runs auto-approve project resources because the image owns the
+runtime; interactive Pi still leaves that trust decision visible to the user.
 
 ## Start and Authenticate
 

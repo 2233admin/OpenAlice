@@ -87,17 +87,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The four supported agent CLIs are installed globally so every Docker
 # Workspace gets the same runtime surface as OpenAlice. They all come from npm
 # (Codex/opencode packages resolve their platform binary during install).
-# Keep these explicit: an unchanged Dockerfile layer must resolve to the same
-# runtime instead of silently changing when an upstream `latest` tag moves.
-ARG CLAUDE_CODE_VERSION=2.1.202
-ARG CODEX_VERSION=0.144.1
-ARG OPENCODE_VERSION=1.17.18
-ARG PI_VERSION=0.83.0
+# Agent package versions intentionally follow the current npm release at image
+# build time. The image records the resolved versions below so an operator can
+# see exactly which runtime a deployed image contains.
 RUN npm install -g \
-        "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-        "@openai/codex@${CODEX_VERSION}" \
-        "opencode-ai@${OPENCODE_VERSION}" \
-        "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+        "@anthropic-ai/claude-code" \
+        "@openai/codex" \
+        "opencode-ai" \
+        "@earendil-works/pi-coding-agent" \
     && claude --version \
     && codex --version \
     && opencode --version \
