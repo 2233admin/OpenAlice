@@ -49,6 +49,17 @@ function verifyPeExecutable(descriptor, size, arch) {
   if (directoryCount > 16 || optionalSize < 112 + directoryCount * 8) {
     throw new Error('native bootstrap PE data directory table is invalid')
   }
+  for (let index = 0; index < directoryCount; index += 1) {
+    const directoryOffset = 112 + index * 8
+    const address = optional.readUInt32LE(directoryOffset)
+    const bytes = optional.readUInt32LE(directoryOffset + 4)
+    if (address === 0 && bytes === 0) continue
+    if (address === 0 || bytes === 0) throw new Error('native bootstrap PE data directory entry is invalid')
+    const end = checkedEnd(address, bytes, 'PE data directory')
+    if (index === 4 ? end > size : end > sizeOfImage) {
+      throw new Error('native bootstrap PE data directory exceeds the declared image')
+    }
+  }
   const sectionTable = peOffset + 24 + optionalSize
   readExactly(descriptor, size, sectionTable, sectionCount * 40, 'PE section table')
   let entryInExecutableSection = false
@@ -62,8 +73,9 @@ function verifyPeExecutable(descriptor, size, arch) {
     if (rawSize > 0 && checkedEnd(rawOffset, rawSize, 'PE section') > size) {
       throw new Error('native bootstrap PE section exceeds the file')
     }
-    const mappedBytes = Math.max(virtualSize, rawSize)
+    const mappedBytes = virtualSize > 0 ? virtualSize : rawSize
     const mappedEnd = checkedEnd(virtualAddress, mappedBytes, 'PE mapped section')
+    if (mappedEnd > sizeOfImage) throw new Error('native bootstrap PE section exceeds the declared image')
     if (
       mappedBytes > 0
       && (flags & 0x20000000) !== 0

@@ -433,6 +433,46 @@ describe('prepareMirrorAssets', () => {
       })).toThrow('segment section table is invalid')
     })
   })
+  it('rejects a PE section outside the declared image', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-win32-x64.exe'
+      const bytes = nativeBootstrapFixture('win32', 'x64')
+      bytes.writeUInt32LE(0x1001, 0x188 + 8)
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('section exceeds the declared image')
+    })
+  })
+
+  it('rejects a PE data directory outside the declared image', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-win32-x64.exe'
+      const bytes = nativeBootstrapFixture('win32', 'x64')
+      bytes.writeUInt32LE(0x3000, 0x108)
+      bytes.writeUInt32LE(0x100, 0x10c)
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('data directory exceeds the declared image')
+    })
+  })
   it('rejects an incomplete native bootstrap publication', () => {
     withTempDir((dir) => {
       const asset = 'openalice-bootstrap-1.2.3-linux-x64'
