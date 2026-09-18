@@ -4,8 +4,8 @@ Status: implementation complete; native and packaged acceptance in progress.
 Related issues: none. User requested a native macOS/Windows companion using
 their two PNGs and the Whale Widget interaction model.
 
-Current increment: Settings → Pet audio preferences, with no bundled sound until
-the maintainer supplies a licensed asset. Local copied imports, mute/volume,
+Current increment: Settings → Pet audio preferences, with an original bundled
+soft-double click sound. Local copied imports, mute/volume,
 preview/reset, persistence and confirmed-click playback are in scope. Validate
 the real settings route and native audio playback, plus invalid-file rejection.
 

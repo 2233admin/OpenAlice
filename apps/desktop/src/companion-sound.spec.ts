@@ -22,6 +22,16 @@ describe('local pet sound preferences', () => {
     await store.update(DEFAULT_SOUND)
     expect(createCompanionSoundStore(file).get()).toEqual(DEFAULT_SOUND)
   })
+  it('supports a bundled default and restores it after a custom sound', async () => {
+    const file = path()
+    const defaults = { ...DEFAULT_SOUND, source }
+    const store = createCompanionSoundStore(file, defaults)
+    expect(store.get()).toEqual(defaults)
+    await store.update({ source: null })
+    expect(store.get().source).toBeNull()
+    expect(await store.reset()).toEqual(defaults)
+    expect(createCompanionSoundStore(file, defaults).get()).toEqual(defaults)
+  })
   it('serializes patches without losing the source or volume', async () => {
     const store = createCompanionSoundStore(path())
     await Promise.all([store.update({ source }), store.update({ volume: .8 }), store.update({ enabled: false })])

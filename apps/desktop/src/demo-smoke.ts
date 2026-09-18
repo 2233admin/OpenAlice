@@ -111,7 +111,10 @@ export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
   await win.webContents.executeJavaScript(`(async () => {
     const reset=[...document.querySelectorAll('button')].find(el=>el.textContent==='Restore defaults');
     reset.click(); const start=Date.now();
-    while((await window.openAlice.companion.getSound()).source) { if(Date.now()-start>5000) throw new Error('Reset failed'); await new Promise(r=>setTimeout(r,25)); }
+    while((await window.openAlice.companion.getSound()).source?.name !== 'OpenAlice default (Soft double).wav') {
+      if(Date.now()-start>5000) throw new Error('Reset failed');
+      await new Promise(r=>setTimeout(r,25));
+    }
   })()`, true)
   console.log('[electron-demo-smoke] PASS Pet settings import, preview, native playback, mute and reset')
 }

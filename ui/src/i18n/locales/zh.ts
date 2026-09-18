@@ -205,7 +205,7 @@ export const zh: Resources = {
     noFile: '尚未选择音效，点击时不会播放声音。',
     fileHelp: 'WAV、MP3 或 OGG，最大 2 MB、最长 10 秒。文件会复制到本机，不会上传。',
     choose: '选择音频…', preview: '试听', reset: '恢复默认',
-    resetHelp: '目前未内置默认音效。恢复默认会移除自定义音效，并将音量重置为 50%。关闭点击音效后仍可试听。',
+    resetHelp: '恢复默认会回到 OpenAlice 内置的软糯双响，并将音量重置为 50%。关闭点击音效后仍可试听。',
     loading: '正在加载桌宠设置…', saving: '正在保存…',
     desktopOnly: '启用桌宠后，可在桌面应用中配置音效。',
     error: { unavailable: '桌宠设置暂不可用，请重新打开此页面。', invalidFile: '请选择可播放的 WAV、MP3 或 OGG 文件，最大 2 MB、最长 10 秒。', failed: '无法保存桌宠设置，请重试。', playback: '无法播放此音频，请选择其他文件。' },

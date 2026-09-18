@@ -22,25 +22,38 @@ export type CompanionSound = z.infer<typeof soundSchema>
 export const DEFAULT_SOUND: CompanionSound = { enabled: true, volume: .5, source: null }
 
 /** Local copied audio only: never reads arbitrary paths supplied by a renderer. */
-export function createCompanionSoundStore(path: string) {
-  let current = { ...DEFAULT_SOUND }
+export function createCompanionSoundStore(path: string, fallback: CompanionSound = DEFAULT_SOUND) {
+  const defaults = soundSchema.parse(fallback)
+  let current = structuredClone(defaults)
   try {
-    if (statSync(path).size <= 3 * 1024 * 1024) current = soundSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
-  } catch { /* Unconfigured or damaged local preferences remain silent. */ }
+    if (statSync(path).size <= 3 * 1024 * 1024) {
+      const stored = soundSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
+      // The first shipped default was silent during development. Upgrade that
+      // unreleased shape to the bundled sound; an explicit mute still wins.
+      current = stored.source === null && defaults.source ? { ...stored, source: defaults.source } : stored
+    }
+  } catch { /* Unconfigured or damaged local preferences use the bundled default. */ }
   let queue = Promise.resolve()
+  const persist = async (next: CompanionSound) => {
+    await writeFile(path + '.tmp', JSON.stringify(next), { mode: 0o600 })
+    await rename(path + '.tmp', path)
+    current = next
+    return structuredClone(current)
+  }
+  const enqueue = (operation: () => Promise<CompanionSound>) => {
+    const next = queue.then(operation)
+    queue = next.then(() => {}, () => {})
+    return next
+  }
   return {
     get: () => structuredClone(current),
     update(input: unknown): Promise<CompanionSound> {
       const patch = soundSchema.partial().parse(input)
-      const update = queue.then(async () => {
+      return enqueue(async () => {
         const next = soundSchema.parse({ ...current, ...patch })
-        await writeFile(path + '.tmp', JSON.stringify(next), { mode: 0o600 })
-        await rename(path + '.tmp', path)
-        current = next
-        return structuredClone(current)
+        return persist(next)
       })
-      queue = update.then(() => {}, () => {})
-      return update
     },
+    reset: () => enqueue(() => persist(structuredClone(defaults))),
   }
 }

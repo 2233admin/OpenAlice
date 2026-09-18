@@ -216,7 +216,7 @@ export const en = {
     noFile: 'No sound selected — clicks are silent.',
     fileHelp: 'WAV, MP3 or OGG · up to 2 MB and 10 seconds. A local copy is saved; nothing is uploaded.',
     choose: 'Choose audio…', preview: 'Preview', reset: 'Restore defaults',
-    resetHelp: 'No default audio is bundled yet. Restore defaults removes the custom sound and resets volume to 50%. Preview plays even when click sounds are off.',
+    resetHelp: 'Restore defaults returns to OpenAlice’s built-in soft double click sound and resets volume to 50%. Preview plays even when click sounds are off.',
     loading: 'Loading pet settings…', saving: 'Saving…',
     desktopOnly: 'Pet sound settings are available in the desktop app when the pet is enabled.',
     error: { unavailable: 'Pet settings are unavailable. Try reopening this page.', invalidFile: 'Choose a playable WAV, MP3 or OGG file, up to 2 MB and 10 seconds.', failed: 'Could not save pet settings. Please try again.', playback: 'Could not play this audio. Choose another file.' },

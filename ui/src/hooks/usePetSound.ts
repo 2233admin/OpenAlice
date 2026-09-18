@@ -61,6 +61,9 @@ export function usePetSound() {
     setError(null)
     try { await next.play() } catch { setError('playback') }
   }
-  return { settings, loading, pending, error, update, importFile, preview,
-    reset: () => update({ enabled: true, volume: .5, source: null }) }
+  const reset = () => run(async () => {
+    if (!bridge?.resetSound) throw new Error('unavailable')
+    setSettings(await bridge.resetSound())
+  })
+  return { settings, loading, pending, error, update, importFile, preview, reset }
 }

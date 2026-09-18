@@ -1,6 +1,8 @@
 # Alice companion
 
 Character and bubble PNGs supplied by the OpenAlice maintainer, September 2026.
+`click.wav` is an original procedural soft-double squeak synthesized for
+OpenAlice, without an external recording or upstream audio sample.
 The original bubble.png is retained as a source asset. The active
 bubble-speech.png was generated with the built-in image generation tool at the
 maintainer's request on September 18, 2026; see bubble-generation.md for its prompt.

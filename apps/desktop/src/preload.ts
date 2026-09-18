@@ -129,6 +129,7 @@ const api = {
   companion: {
     getSound: () => ipcRenderer.invoke('openalice:companion:sound:get'),
     updateSound: (settings: unknown) => ipcRenderer.invoke('openalice:companion:sound:update', settings),
+    resetSound: () => ipcRenderer.invoke('openalice:companion:sound:reset'),
     onSound: (callback: (settings: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, settings: unknown) => callback(settings)
       ipcRenderer.on('openalice:companion:sound:changed', listener)

@@ -31,6 +31,7 @@ interface Window {
     readonly companion?: {
       getSound(): Promise<PetSoundSettings>
       updateSound(settings: Partial<PetSoundSettings>): Promise<PetSoundSettings>
+      resetSound(): Promise<PetSoundSettings>
       onSound(callback: (settings: PetSoundSettings) => void): () => void
       getVisible(): Promise<boolean>
       toggle(): Promise<boolean>

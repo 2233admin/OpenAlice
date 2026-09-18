@@ -24,8 +24,8 @@ and chapter order are recorded with the list in `pet.js`. Dialogue editing is
 not implemented yet; these lines are not agent status.
 
 Settings → Pet (`/settings/pet`) configures click audio: enabled, volume, local
-WAV/MP3/OGG import, preview and restore defaults. No default audio ships yet;
-the silent state is explicit. Imports must decode to at most 10 seconds and
+WAV/MP3/OGG import, preview and restore defaults. The built-in default is the
+originally synthesized `click.wav` soft double squeak. Imports must decode to at most 10 seconds and
 be at most 2 MB. The main process separately checks MIME, base64, file signatures
 and bounds, then atomically saves a copied data URL in userData
 `companion-sound.json`. No external URL or arbitrary filesystem path is accepted.

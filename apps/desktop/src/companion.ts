@@ -4,7 +4,7 @@ import { writeFile, rename } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { settleCompanion, snapEase, type Rect } from './companion-geometry.js'
-import { createCompanionSoundStore } from './companion-sound.js'
+import { createCompanionSoundStore, DEFAULT_SOUND, type CompanionSound } from './companion-sound.js'
 
 /**
  * One presentation window belonging to the existing desktop process.
@@ -94,9 +94,22 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
     event.sender === owner.webContents && event.senderFrame === owner.webContents.mainFrame
   const visibilityChannel = 'openalice:companion:get-visible'
   const toggleChannel = 'openalice:companion:toggle'
-  const sound = createCompanionSoundStore(join(app.getPath('userData'), 'companion-sound.json'))
+  const defaultSound: CompanionSound = {
+    ...DEFAULT_SOUND,
+    source: {
+      name: 'OpenAlice default (Soft double).wav',
+      dataUrl: `data:audio/wav;base64,${readFileSync(join(assets, 'click.wav')).toString('base64')}`,
+    },
+  }
+  const sound = createCompanionSoundStore(join(app.getPath('userData'), 'companion-sound.json'), defaultSound)
   const soundGet = 'openalice:companion:sound:get'
   const soundUpdate = 'openalice:companion:sound:update'
+  const soundReset = 'openalice:companion:sound:reset'
+  const publishSound = (settings: CompanionSound) => {
+    for (const window of [owner, pet]) {
+      if (!window.isDestroyed()) window.webContents.send('openalice:companion:sound:changed', settings)
+    }
+  }
   ipcMain.handle(soundGet, event => {
     const petTrusted = event.sender === pet.webContents && event.senderFrame === pet.webContents.mainFrame
     if (!ownerTrusted(event) && !petTrusted) throw new Error('Unauthorized companion access')
@@ -105,9 +118,13 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
   ipcMain.handle(soundUpdate, async (event, input: unknown) => {
     if (!ownerTrusted(event)) throw new Error('Unauthorized companion access')
     const settings = await sound.update(input)
-    for (const window of [owner, pet]) {
-      if (!window.isDestroyed()) window.webContents.send('openalice:companion:sound:changed', settings)
-    }
+    publishSound(settings)
+    return settings
+  })
+  ipcMain.handle(soundReset, async event => {
+    if (!ownerTrusted(event)) throw new Error('Unauthorized companion access')
+    const settings = await sound.reset()
+    publishSound(settings)
     return settings
   })
   ipcMain.handle(visibilityChannel, event => {
@@ -124,6 +141,7 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
     ipcMain.removeHandler(toggleChannel)
     ipcMain.removeHandler(soundGet)
     ipcMain.removeHandler(soundUpdate)
+    ipcMain.removeHandler(soundReset)
   })
   const menu = () => Menu.buildFromTemplate([
     { label: '打开 OpenAlice', click: open },

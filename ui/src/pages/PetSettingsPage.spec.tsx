@@ -16,7 +16,7 @@ describe('Pet settings page', () => {
     let settings: PetSoundSettings = { enabled: true, volume: .5, source: null }
     const updateSound = vi.fn(async (patch: Partial<PetSoundSettings>) => (settings = { ...settings, ...patch }))
     Object.defineProperty(window, 'openAlice', { configurable: true, value: { companion: {
-      getSound: async () => settings, updateSound, onSound: () => () => {},
+      getSound: async () => settings, updateSound, resetSound: async () => settings, onSound: () => () => {},
     } } })
     render(<PetSettingsPage />)
     expect(await screen.findByText('No sound selected — clicks are silent.')).toBeTruthy()

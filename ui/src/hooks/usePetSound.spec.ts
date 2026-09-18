@@ -9,6 +9,7 @@ function bridge() {
   const api = {
     getSound: vi.fn(async () => state),
     updateSound: vi.fn(async (patch: Partial<PetSoundSettings>) => { state = { ...state, ...patch }; notify(state); return state }),
+    resetSound: vi.fn(async () => { state = { enabled: true, volume: .5, source: null }; notify(state); return state }),
     onSound: vi.fn((callback: typeof notify) => { notify = callback; return vi.fn() }),
   }
   Object.defineProperty(window, 'openAlice', { configurable: true, value: { companion: api } })
@@ -25,7 +26,7 @@ describe('pet sound settings hook', () => {
     await act(() => result.current.update({ enabled: false, volume: .1 }))
     expect(result.current.settings?.enabled).toBe(false)
     await act(() => result.current.reset())
-    expect(api.updateSound).toHaveBeenLastCalledWith({ enabled: true, volume: .5, source: null })
+    expect(api.resetSound).toHaveBeenCalledOnce()
   })
   it('rejects unsupported audio without changing saved settings', async () => {
     const api = bridge(), { result } = renderHook(usePetSound)
