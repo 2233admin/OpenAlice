@@ -1,3 +1,4 @@
+import aliceWave from '../../../default/stickers/alice-color/wave.png'
 import { layout, prepare } from '@chenglou/pretext'
 import {
   useLayoutEffect,
@@ -348,7 +349,10 @@ export function HarnessLandingPage({
     managedWorkspaceLaunch: mode === 'chat' && credentialWorkspace !== null && credentialWorkspace !== undefined,
   })
   const effectiveAgent = launchConfig.effectiveAgent
+  const [uiMode, setUiMode] = useState<'terminal' | 'webpi'>(import.meta.env.VITE_DEMO_MODE ? 'webpi' : 'terminal')
   const selectedInfo = launchConfig.selectedAgent
+  const supportsGui = Boolean(selectedInfo?.capabilities.web?.freshSession)
+  const surface = supportsGui ? uiMode : 'terminal'
   const installHint = selectedInfo ? installHintFor(selectedInfo.id) : undefined
   const exampleGroups = mode === 'chat'
     ? chatLandingExampleGroups((key) => t(key as never), project?.product)
@@ -411,6 +415,7 @@ export function HarnessLandingPage({
         launchConfig.launchModel,
         launchConfig.launchReasoningEffort,
         launchConfig.accessMode === 'native' ? 'native' : undefined,
+        surface,
       )
       void recordSuccessfulUse(effectiveAgent).catch(() => undefined)
       if (mode === 'chat') launchPreferences.adoptRecentChatWorkspace(workspaceId)
@@ -478,11 +483,11 @@ export function HarnessLandingPage({
           )}
           <header className="flex flex-col items-center text-center">
             <img
-              src="/alice.ico"
+              src={aliceWave}
               alt=""
               aria-hidden="true"
               draggable={false}
-              className="oa-harness-hero-mark h-11 w-11 select-none [image-rendering:pixelated]"
+              className="oa-harness-hero-mark h-20 w-20 object-contain select-none sm:h-24 sm:w-24"
             />
             <h1 className="oa-harness-title mt-3 max-w-[38rem] text-balance text-[24px] font-semibold leading-[30px] tracking-[-0.018em] text-foreground @min-[42rem]/harness:text-[28px] @min-[42rem]/harness:leading-[34px]">
               {t(`${copyKey}.heading`)}
@@ -569,6 +574,19 @@ export function HarnessLandingPage({
                 menuPlacement="up"
                 toolbar
               />
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="ghost" size="sm" aria-label={`${t('chatLanding.uiMode')}: ${surface === 'webpi' ? 'GUI' : 'TUI'}`} disabled={launching} />}>
+                  <LayoutGrid size={14} aria-hidden />
+                  <span>{surface === 'webpi' ? 'GUI' : 'TUI'}</span><ChevronDown size={14} aria-hidden />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="start">
+                  <DropdownMenuRadioGroup value={surface} onValueChange={value => setUiMode(value as 'terminal' | 'webpi')}>
+                    <DropdownMenuRadioItem value="terminal" closeOnClick>TUI</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="webpi" disabled={!supportsGui} closeOnClick>GUI</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
             </>}
             controls={<>
                   <AgentLaunchSelectors

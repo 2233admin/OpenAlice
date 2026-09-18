@@ -277,7 +277,7 @@ beforeEach(async () => {
   mocks.rememberQuickChatLaunch.mockResolvedValue(undefined)
 })
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllEnvs() })
 
 describe('ChatLandingPage polling stability', () => {
   it('does not inspect deprecated native config when a poll replaces the Workspace object with the same id', async () => {
@@ -508,6 +508,37 @@ describe('ChatLandingPage workflow starters', () => {
 })
 
 describe('ChatLandingPage keyboard submission', () => {
+  it('defaults the demo to GUI and sends a selected starter through quick chat', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', 'true')
+    mocks.useWorkspaces.mockImplementation(() => ({
+      ...context([chatWorkspace()]),
+      agents: [{ ...piAgent, capabilities: { ...piAgent.capabilities, web: { wire: 'pi-rpc', freshSession: true } } }],
+    }))
+    render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
+    await screen.findByRole('button', { name: 'UI mode: GUI' })
+    fireEvent.click(screen.getByRole('button', { name: "Read today's cross-asset signals" }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(mocks.quickChat).toHaveBeenCalled())
+    expect(mocks.quickChat.mock.calls[0]?.[8]).toBe('webpi')
+    expect(mocks.quickChat.mock.calls[0]?.join(' ')).toContain("Read today's macro backdrop")
+  })
+
+  it('offers GUI for a capable runtime and passes the selected surface', async () => {
+    mocks.useWorkspaces.mockImplementation(() => ({
+      ...context([chatWorkspace()]),
+      agents: [{ ...piAgent, capabilities: { ...piAgent.capabilities, web: { wire: 'pi-rpc', freshSession: true } } }],
+    }))
+    render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
+    await screen.findByRole('button', { name: 'Model and reasoning' })
+    fireEvent.click(screen.getByRole('button', { name: 'UI mode: TUI' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'GUI' }))
+    const composer = screen.getByPlaceholderText('Describe the task, question, or decision…')
+    fireEvent.change(composer, { target: { value: 'GUI hello' } })
+    fireEvent.keyDown(composer, { key: 'Enter', code: 'Enter' })
+    await waitFor(() => expect(mocks.quickChat).toHaveBeenCalled())
+    expect(mocks.quickChat.mock.calls[0]?.[8]).toBe('webpi')
+  })
+
   it('does not submit when Enter confirms an IME composition candidate', async () => {
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
@@ -528,6 +559,7 @@ describe('ChatLandingPage keyboard submission', () => {
       undefined,
       undefined,
       'native',
+      'terminal',
     ))
   })
 
@@ -607,6 +639,7 @@ describe('ChatLandingPage keyboard submission', () => {
       undefined,
       undefined,
       'native',
+      'terminal',
     ))
     expect(mocks.probeAgentRuntimeReadiness).not.toHaveBeenCalled()
     expect(screen.queryByText('The runtime reported an error: 429: balance exhausted')).toBeNull()
@@ -675,6 +708,7 @@ describe('ChatLandingPage keyboard submission', () => {
       undefined,
       undefined,
       undefined,
+      'terminal',
     ))
   })
 
@@ -703,6 +737,7 @@ describe('ChatLandingPage keyboard submission', () => {
       'gemini-3.1-pro-preview',
       'high',
       'native',
+      'terminal',
     ))
   })
 })
@@ -757,6 +792,7 @@ describe('ChatLandingPage AI source disclosure', () => {
       undefined,
       undefined,
       'native',
+      'terminal',
     ))
   })
 
@@ -817,6 +853,7 @@ describe('ChatLandingPage AI source disclosure', () => {
       'deepseek-v4-flash',
       'high',
       undefined,
+      'terminal',
     ))
   })
 
@@ -891,6 +928,7 @@ describe('ChatLandingPage AI source disclosure', () => {
       'gpt-5.6-sol',
       undefined,
       'native',
+      'terminal',
     ))
   })
 
@@ -1002,6 +1040,7 @@ describe('Workspace embedded composer', () => {
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
     await waitFor(() => expect(mocks.quickChat).toHaveBeenCalledWith(
       'Inspect existing research', 'pi', undefined, target.id, 'auto-quant-v2', undefined, undefined, undefined,
+      'terminal',
     ))
   })
 })

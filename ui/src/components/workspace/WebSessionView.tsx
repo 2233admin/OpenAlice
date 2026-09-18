@@ -1,4 +1,8 @@
-import { useMemo, type ReactNode } from 'react'
+import { parseMarketReference } from '@traderalice/connector-protocol'
+import { ConversationImagePreview } from '../conversation/ConversationImagePreview'
+import { useConversationFiles } from '../../hooks/useConversationFiles'
+import { useHarnessWorkbench } from '../../live/harness-workbench'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { PageTopBar } from '../PageTopBar'
 import { ConversationView } from '../conversation/ConversationView'
@@ -33,6 +37,17 @@ export function WebSessionView(props: Props) {
 function WebSession({ wsId, sessionId, agent, agents, label, headerActions, onSessionLost }: Props) {
   const session = useWebConversation(wsId, sessionId)
   const { snapshot, busy, requests } = session
+  const openFile = useCallback((path: string) => {
+    if (import.meta.env.VITE_DEMO_MODE && path === 'demo/autoquant-studio.html') {
+      useHarnessWorkbench.getState().openTab(wsId, { id: 'studio', kind: 'studio' })
+      return
+    }
+    const market = parseMarketReference(path)
+    useHarnessWorkbench.getState().openTab(wsId, market
+      ? { id: path, kind: 'market', ...market }
+      : { id: `file:${path}`, kind: 'file', path })
+  }, [wsId])
+  const files = useConversationFiles(wsId, session.items, !!snapshot && snapshot.phase !== 'starting', openFile)
   const agentId = snapshot?.agent ?? agent ?? 'agent'
   const agentLabel = agents?.find((entry) => entry.id === agentId)?.displayName ?? fallbackAgentLabel(agentId)
   const activeRequest = useMemo(() => requests[0] ? presentRequest(requests[0]) : null, [requests])
@@ -47,6 +62,8 @@ function WebSession({ wsId, sessionId, agent, agents, label, headerActions, onSe
       </span>}
     </PageTopBar>
     <ConversationView
+      fileHrefs={files.fileHrefs}
+      onFileReference={files.onFileReference}
       items={session.items}
       revision={snapshot?.revision ?? 0}
       busy={busy}
@@ -76,6 +93,7 @@ function WebSession({ wsId, sessionId, agent, agents, label, headerActions, onSe
       retry={() => void session.refresh()}
       recover={onSessionLost}
     />
+    <ConversationImagePreview image={files.imagePreview} onClose={files.closeImage} />
   </>
 }
 

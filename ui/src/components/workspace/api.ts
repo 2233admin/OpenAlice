@@ -1295,8 +1295,10 @@ export async function quickChat(
   model?: string | null,
   reasoningEffort?: ModelReasoningEffort,
   credentialSource?: 'native',
+      surface?: 'terminal' | 'webpi',
 ): Promise<QuickChatResult> {
   const body: Record<string, unknown> = { prompt };
+  if (surface) body['surface'] = surface;
   if (credentialSource !== undefined) body['credentialSource'] = credentialSource;
   if (agent !== undefined) body['agent'] = agent;
   if (credentialSlug !== undefined) body['credentialSlug'] = credentialSlug;
@@ -1976,4 +1978,9 @@ export async function testAgentConfig(
   } catch {
     return { ok: false, error: `HTTP ${res.status}` };
   }
+}
+
+/** Read-only content URL, also forwarded through the desktop app protocol. */
+export function workspaceContentHref(wsId: string, path: string) {
+  return `/api/workspaces/${encodeURIComponent(wsId)}/content?path=${encodeURIComponent(path)}`
 }

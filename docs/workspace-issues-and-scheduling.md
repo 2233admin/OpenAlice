@@ -424,9 +424,12 @@ Structured headless output is the live control-plane result, while Inbox is the
 durable user-delivery channel. A run with a meaningful report or artifact calls:
 
 ```bash
-alice inbox push --doc <path> --comments "<summary>"
+alice inbox push --body "<summary> [[reports/close.md]]"
+# Or publish the Markdown body itself:
+alice inbox push --body-file reports/close.md
 ```
 
+The body/file contract is defined in [[docs/inbox-content.md]].
 The launcher binds the run/issue origin; the agent does not pass its own
 identity. Attached reports also receive a publication-time SHA-256 revision;
 the Inbox still renders the live file, but provenance can distinguish the sent
@@ -564,3 +567,13 @@ Retry persists `trigger.retryOfTaskId`, exposed by Issue run history as
 without that optional field have unknown retry lineage. Active Issue runs and
 dispatch-start races are rejected, including schedule ticks; there is no force
 override that launches concurrent turns against the same owner.
+
+## Reply routing ownership
+
+Issue execution and comment recruitment enter the shared dispatch communication
+contract described in [[docs/conversation-provenance.md]]. `trigger` remains the
+schedule/run index and `inquiry` remains the business follow-up index. Neither is
+an outbound transport address. Headless execution owns Connector terminal events,
+so failures writing a reply comment cannot leave transport activity running.
+New comment recruits preserve their source through the scheduler. The immutable
+reply reference determines which comment receives progress and completion.

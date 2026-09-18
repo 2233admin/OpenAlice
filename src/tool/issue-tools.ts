@@ -439,8 +439,8 @@ export const issueCommentFactory: WorkspaceToolFactory = {
           await projectDeskComment(res.issue, res.comment, undefined, {
             workspaceId: ctx.workspaceId,
             ...(scope?.workspaceId === ctx.workspaceId && scope.issueId === id
-              ? { progressScopeId: scope.scopeId } : {}),
-            automated: run?.trigger?.kind === 'issue',
+              ? { progressScopeId: scope.scopeId, delivery: run?.communication?.delivery } : {}),
+            automated: scope ? run?.communication?.delivery?.source === 'automation' : false,
             ...(run?.status === 'running' && scope?.workspaceId === ctx.workspaceId && scope.issueId === id
               ? { phase: 'progress' as const } : {}),
           }).catch(() => undefined)
@@ -703,13 +703,8 @@ export const issueShowFactory: WorkspaceToolFactory = {
                   workspaceId: entry.workspaceId,
                   workspaceLabel: entry.workspaceLabel,
                   ts: entry.ts,
-                  ...(entry.docs ? {
-                    docs: entry.docs.map((doc) => ({
-                      path: doc.path,
-                      ...(doc.revision ? { revision: doc.revision } : {}),
-                    })),
-                  } : {}),
-                  ...(entry.comments ? { comments: entry.comments } : {}),
+                  body: entry.body,
+                  fileRevisions: entry.fileRevisions,
                   ...(entry.origin ? { origin: entry.origin } : {}),
                 })),
                 provenance: detail.provenance,

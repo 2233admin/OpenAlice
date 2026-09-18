@@ -439,6 +439,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
       model?: string | null,
       reasoningEffort?: import('../api').ModelReasoningEffort,
       credentialSource?: 'native',
+      surface?: 'terminal' | 'webpi',
     ): Promise<string> => {
       await ensureTerminalAppearancePublished()
       const { workspace, session } = await apiQuickChat(
@@ -450,6 +451,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
         model,
         reasoningEffort,
         credentialSource,
+        surface,
       )
       const nowIso = new Date().toISOString()
       const newRecord: SessionRecord = {
@@ -544,7 +546,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
   const resumeSession = useCallback(
     async (wsId: string, sessionId: string, source?: WorkspaceSource): Promise<void> => {
       const record = workspaces.find((ws) => ws.id === wsId)?.sessions.find((entry) => entry.id === sessionId)
-      if (record && !await confirmInteractiveSession(wsId, record.resumeId)) return
+      if (record && !await confirmInteractiveSession(wsId, record.resumeId)) throw new Error('Session opening was cancelled.')
       await ensureTerminalAppearancePublished()
       const resp = await apiResumeSession(wsId, sessionId)
       const patch = {
@@ -576,7 +578,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
   const openWebSession = useCallback(
     async (wsId: string, sessionId: string, source?: WorkspaceSource): Promise<void> => {
       const record = workspaces.find((ws) => ws.id === wsId)?.sessions.find((entry) => entry.id === sessionId)
-      if (record && !await confirmInteractiveSession(wsId, record.resumeId)) return
+      if (record && !await confirmInteractiveSession(wsId, record.resumeId)) throw new Error('Session opening was cancelled.')
       const snapshot = await apiOpenWebSession(wsId, sessionId)
       const patch = {
         state: 'running' as const,

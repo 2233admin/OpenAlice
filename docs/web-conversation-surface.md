@@ -32,7 +32,7 @@ approval or cannot reopen an exact recorded conversation.
 
 | Wire | Runtimes | Process | Permission prompts | Fresh session |
 |---|---|---|---|---|
-| `pi-rpc` | `pi`, `omp` | `--mode rpc` JSONL; Pi additionally `--approve`, omp `--auto-approve` | none in RPC mode; launch-time approval | yes (RPC allocates the id) |
+| `pi-rpc` | `pi`, `omp` | `--mode rpc` JSONL; Pi additionally `--approve`, omp `--auto-approve` | none in RPC mode; launch-time approval | yes. Pi uses a launcher-minted `--session-id` on TUI and Web; omp lets RPC allocate the id |
 | `acp` | `cursor`, `grok`, `opencode` | Agent Client Protocol JSON-RPC over stdio (`cursor-agent acp`, `grok agent --no-leader stdio`, `opencode acp`) | `session/request_permission` with the agent's own options | `session/new`; resume via `session/load` when advertised |
 | `claude-stream-json` | `claude` | `-p --input-format stream-json --output-format stream-json --include-partial-messages --permission-prompt-tool stdio` | `control_request` `can_use_tool`; answered with allow/deny | `--session-id <uuid>` chosen by the adapter |
 | `codex-app-server` | `codex` | `codex app-server --listen stdio://` with MCP registration, `approvalPolicy: never`, `sandbox: danger-full-access` | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` (answered with a `decision` enum), `item/permissions/requestApproval` (answered with the granted `permissions` profile + `scope`), `item/tool/requestUserInput` | `thread/start`; resume via `thread/resume` |
@@ -164,3 +164,55 @@ turn is running. A deliberate PTY disposal must not trigger browser reconnect.
 Web shutdown waits for child termination, including the SIGKILL fallback, before
 another writer may start. The UI renders background occupancy without attaching
 a terminal to a headless Session.
+
+Quick Start exposes a TUI / GUI selector beside the runtime. GUI is available
+only with `web.freshSession`; `quick-chat` accepts `surface: webpi` and starts
+the structured host directly with the same Session runtime binding. Omission
+keeps the terminal default. The initial prompt is sent once after Web startup.
+
+## File references in GUI prose
+
+`useConversationFiles` consumes unified assistant progress and answer text in
+`WebSessionView`, outside every runtime/transport. It uses Connector Protocol's
+bracket parser; code, escaped brackets and incomplete references remain text.
+The read-only Workspace content endpoint checks realpath containment before
+returning metadata or bounded bytes. Missing references stay literal and retry
+briefly so a reference can precede a file write.
+
+The shared conversation renderer receives resolved hrefs and a click callback.
+Images/stickers stay in prose order; file cards open the existing workbench.
+New references automatically open a file tab once per turn/path, except
+images and `sticker/` references, which stay inline. Clicking an image opens
+the shared Dialog for a viewport-bounded preview; image loading never opens
+either a dialog or a workbench tab. The initial snapshot never opens
+historical references. Unmounting cancels resolution and pending opens. The
+consumer does not require a runtime-specific final channel or interpret
+Connector automation silence markers.
+
+Opening an existing file tab refreshes its content without duplicating the tab.
+On narrow screens the workbench takes the content width and its collapse control
+returns to the conversation. Sticker images retain transparent backgrounds.
+
+User prose is displayed as plain text, preserving line breaks and literal syntax.
+It does not re-enter Markdown or Workspace reference parsing after submission;
+structured content retains its presentation independently of prose.
+
+### Market references
+
+The same assistant-stream consumer recognizes `[[market/{barId}/{interval}]]`.
+History renders a keyboard-accessible card without opening a tab; new references
+open one native workbench chart per identity. `useMarketBars` owns request,
+poll, stale-response cancellation and retry state for KlinePanel, shared with
+the Market pages. Embedded interval selection opens/focuses the corresponding
+market tab and never navigates away from chat. Missing sources keep the card
+and show an actionable chart error. User prose is not parsed.
+
+### Text reveal
+
+The shared ConversationView buffers newly arriving assistant prose for an
+animation-frame reveal; runtime polling and authoritative snapshots are unchanged.
+It reveals Unicode graphemes, accelerates large batches, and keeps rich references
+and inline links whole. History (including the first asynchronously loaded
+snapshot) appears immediately. Completion, Stop, and reduced-motion preference
+flush the visual buffer; unmount cancels animation. A ResizeObserver follows
+text growth only while the reader remains near the bottom.

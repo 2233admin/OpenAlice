@@ -5,6 +5,8 @@ configuration, delivery guarantees, adapter extension, health, and packaging.
 It complements [[docs/workspace-issues-and-scheduling.md]] and
 [[docs/managed-workspace-runtime.md]].
 
+Inbox body and shared reference semantics live in [[docs/inbox-content.md]].
+
 ## Product Contract
 
 Connector Service projects durable OpenAlice Inbox entries into optional
@@ -46,8 +48,8 @@ categories.
   through the existing attachment safety path, and posts a directed
   artifact delivery back to that Connector only. Cancel does not enqueue.
   First-version pull does not change Inbox read state. Discord and Slack
-  keep `/inbox` as a placeholder and reject artifact delivery as
-  unimplemented. `/uta` is the same shape: Telegram renders the review
+  keep `/inbox` as a placeholder; all four adapters support directed artifact
+  delivery, independently of whether they expose file-pull controls. `/uta` is the same shape: Telegram renders the review
   panel; Discord and Slack reply with a placeholder. Connector never
   talks to UTA. Push and reject stay Alice-owned wallet writes, gated
   by the current trading mode. Callback data carries only page-local
@@ -192,6 +194,10 @@ Load-bearing paths:
 
 ## Reply attachments
 
+The Project-owned `file-delivery` Skill teaches this reply path separately from
+Inbox notifications and reports. It follows Alice Harness injection preferences
+and upgrades; optional sticker-pack guidance remains owned by the sticker pack.
+
 A final reply may include `[[reports/chart.png]]`. Paths are relative to
 its source Workspace. Ordinary `[[name]]` references remain text; inline/fenced
 code and escaped brackets are literal, including examples of `[[no-reply]]`.
@@ -215,6 +221,28 @@ Telegram sends PNG/JPEG/WebP images as photos and `sticker/*.png` or
 Files must satisfy Telegram's media requirements; no implicit image conversion
 occurs. Inbox artifact pulls remain documents. The old unreleased `file:` syntax
 is replaced directly, not maintained as a second syntax.
+
+The same `sendOwnerFile(attachment, presentation)` adapter interface handles
+reply files on Telegram, Discord, Slack, and Feishu/Lark. Core never branches
+on platform IDs. Discord sends local stickers and images as uploaded image
+attachments, not native sticker IDs. Slack uses `filesUploadV2` in the owner's
+DM and lets Slack preview image uploads. Feishu uploads images with
+`im.image.create` (`image_type: message`) and sends an `image_key` message;
+local stickers use this same image path. Ordinary files use its file upload
+and `file_key` message path. Directed Inbox artifacts default to files on every
+adapter, without adding another Inbox summary.
+
+Slack requires `files:write` in addition to its existing owner-DM permissions.
+Feishu requires image/file resource upload permission (`im:resource`) and bot
+message sending permission. Existing installations may need updated app scopes.
+No adapter converts image bytes or creates server-wide emoji/sticker resources.
+Reply media support does not itself enable private chat ingress or advertise
+the `desk` capability.
+
+Official API references:
+- [Discord message files and sticker IDs](https://docs.discord.com/developers/resources/message)
+- [Slack SDK file uploads](https://docs.slack.dev/tools/node-slack-sdk/web-api/)
+- [Feishu image upload](https://open.feishu.cn/document/server-docs/im-v1/image/create)
 
 Progress never uploads files. Events for a conversation are serialized;
 concurrent/repeated message IDs share one delivery attempt, including uncertain
@@ -509,10 +537,11 @@ The surfaces deliberately have different jobs:
   is stamped as a comment. Connector interprets automated silence from the
   forwarded source; comments
   that arrived from that connector are not echoed.
-  Pending comment replies also carry compact turn progress. The connector chat
-  ships sealed mid-turn `text` blocks (the last consecutive text before a
-  tool or error) and skips tool/error blocks. A text already sent this way
-  is not sent again as the final comment.
+  Pending comment replies also carry compact turn progress. The execution-owned
+  delivery snapshot authorizes sealed mid-turn `text` blocks (the last
+  consecutive text before a tool or error); tool/error blocks remain local.
+  A terminal event always closes the same task turn, independently of comment
+  persistence or whether progress already contained the final text.
 - **Beta → Connectors** is the operations view: service health, the same
   seven-stage setup lifecycle used by Settings, durable private-chat linkage,
   last delivery evidence, and an explicit reconnect action only for an actual
@@ -688,3 +717,91 @@ Changes to this subsystem require:
 Real Telegram/Discord delivery needs user-owned platform credentials and is a
 manual acceptance lane; credential-free CI must not pretend that a live
 third-party message was delivered.
+
+### Market reply snapshots
+
+Final owner-chat references beginning with `market/` resolve through the local
+Alice market gateway rather than Workspace file access. DeliveryManager sends
+the generated PNG as a photo at the reference position, using the same ordered
+parts and five-media limit as files. Automation silence skips resolution;
+failed charts retain the reference with an unavailable notice. Inbox's derived
+file index excludes market references.
+
+The renderer uses bundled JavaScript and a bundled OFL Liberation Sans font;
+it needs neither a browser nor a platform-native graphics library. Font paths
+are filled as compound contours to preserve digit/letter counters. PNGs are
+2400 by 1600 for legible mobile zoom; the attachment byte ceiling still applies.
+
+## Session model controls
+
+Telegram `/model` opens an owner-only private-chat inline panel for the existing
+phone-desk Session. Runtime is fixed. Credential, model, and effort use the same
+picker policy as Chat and Issues. Options are suggestions, not a claim that an
+account can access every model; `/model <model-id>` previews a custom model ID.
+Changing credential clears model/effort; changing model clears effort. Each
+choice previews, and **Save** commits. **Close** discards unsaved choices.
+
+Connector's optional `sessionModel` adapter context calls Alice's fixed local
+HTTP/Unix-socket gateway at `/cli/connector-model/:connectorId`. Alice resolves
+the desk and validates compatibility; only credential IDs/labels cross the
+boundary, never credential contents. There is no caller-selected Workspace or
+runtime. The command is consumed by Connector, not posted as an agent comment.
+
+Saving changes only the assigned Session binding. A running headless turn keeps
+its captured settings; subsequent comments/scheduled turns resolve the new
+binding. An active interactive TUI/GUI must first disconnect. Workspace defaults
+and other Sessions are unchanged. Missing or unassigned desks instruct the owner
+to send a first message. The menu does not silently create a replacement Session.
+
+Telegram panels expire after ten minutes and use bounded pagination and opaque
+callback coordinates. Owner checks apply to both commands and callbacks. A
+Session handoff or intervening binding edit invalidates a save, and concurrent
+saves are rejected. Transport or validation errors remain visible; they never
+produce a success acknowledgement. Connector restart invalidates old panels.
+The control contract is platform-neutral; Telegram currently implements its UI.
+See [Telegram inline keyboards](https://core.telegram.org/bots/api#inlinekeyboardbutton)
+and [callback acknowledgement](https://core.telegram.org/bots/api#answercallbackquery).
+
+## Execution-owned reply lifecycle
+
+Alice fixes an external delivery snapshot at dispatch. Connector does not infer
+a recipient from the target Session or an Issue association. `DispatchDelivery`
+projects accepted/progress/final/failed using the headless taskId throughout;
+Issue comment persistence no longer sends execution terminal events. Explicit
+standalone desk comments retain their own message identity. In-turn comments
+reuse the authorized task route and source.
+
+New live events carry an optional `activityLeaseMs` (currently 60 seconds).
+Alice renews active turns every 20 seconds, including tool-only periods. The
+shared delivery manager expires local activity through `stopOwnerActivity` when
+renewals stop. Expiry does not declare the Agent failed or send a final answer;
+a subsequent renewal may resume activity. Telegram implements this adapter
+hook. Its repeated accepted events retain the existing draft text. Terminal
+turns reject late progress/accepted and duplicate public finals in the bounded
+in-process dedup window. Lease cleanup is independent of reply-media resolution.
+
+Alice persists terminal handoff state on the Task before posting. `accepted`
+means the Connector's HTTP 202 receipt, **not** confirmed Telegram delivery;
+external delivery outcomes remain in the Connector I/O journal. A receipt lost
+in transit is `uncertain`. Recovery sends only a textless close, preserving the
+uncertain result as `closed` plus its error; it does not replay public text or
+files. Reconciled interrupted tasks with explicit routes also close activity.
+Recovery is bounded to 32 completed turns per sweep plus live turns.
+
+Queues and dedup remain process-local. This is not exactly-once or durable
+end-to-end delivery: a Connector crash after acceptance may lose unsent output.
+A crash clears its local draft timers; Alice resumes leases for still-running
+turns. Unknown historical tasks never replay. Upgrade-era legacy drafts without
+a lease require a Connector restart during the separately scheduled deployment.
+
+The lease field is additive: an older Connector can consume the existing four
+phases but will not enforce expiry. Mixed-version operation therefore lacks the
+lease fallback until Connector is upgraded; both components should be deployed
+together. No new model-facing flags or syntax are introduced.
+
+Acceptance covers an actual Node child emitting Codex events through
+WorkspaceService into a local HTTP receiver: a private ask followed by a desk
+comment in the same Session, including Issue rebinding/deletion before exit.
+The shared delivery-manager tests cover lease expiry, renewal, terminal cleanup,
+and late progress; the built Connector process smoke verifies its HTTP boundary.
+These checks do not send real Telegram messages or claim external delivery.

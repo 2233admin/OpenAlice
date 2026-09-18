@@ -10,7 +10,7 @@
  * without ever asking the AI agent to traffic its own workspaceId.
  *
  * The MCP server's `/mcp/:wsId` route invokes every factory with the URL's
- * wsId at request time. From the agent's POV, `inbox_push({ docs, comments })`
+ * wsId at request time. From the agent's POV, `inbox_push({ body })`
  * has no identity parameter — workspaceId is invisible, baked into the
  * tool by the server. Forgery surface is zero because the URL is the
  * only identity carrier and `.mcp.json` is per-workspace.
@@ -147,7 +147,7 @@ export type WorkspaceConversationAskResult =
 
 export interface WorkspaceConversationControl {
   /** Follow the live Issue ownership policy, including first-owner recruitment. */
-  replyToIssue?(input: { workspaceId: string; issueId: string; prompt: string; commentId: string }): Promise<{ taskId: string; resumeId: string }>
+  replyToIssue?(input: import('../workspaces/dispatch-communication.js').IssueCommentRequest): Promise<{ taskId: string; resumeId: string }>
 
   ask(input: {
     readonly prompt: string
@@ -242,7 +242,7 @@ export interface WorkspaceToolContext {
    *  agent). Factories pass it through to call sites (e.g. inbox_push →
    *  inboxStore.append) so a pushed entry self-links to its originating run /
    *  issue. Absent (interactive session, or no header) → undefined. */
-  callerRun?: Pick<HeadlessTaskRecord, 'taskId' | 'status' | 'trigger' | 'inquiry'>
+  callerRun?: Pick<HeadlessTaskRecord, 'taskId' | 'status' | 'trigger' | 'inquiry' | 'communication'>
   origin?: InboxOrigin
   /** GLOBAL issue-board reader — the cross-workspace board the
    *  `alice` CLI surfaces (issue_list / issue_show read EVERY

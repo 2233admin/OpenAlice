@@ -1,3 +1,4 @@
+import { POWER_SESSION_ID, POWER_RESUME_ID, powerMessages } from './power-research'
 import type {
   WebConversationMessage,
   WebPermissionRequest,
@@ -204,6 +205,8 @@ const semiconductorMessages: readonly WebConversationMessage[] = [
 ]
 
 export const demoWebSeeds: readonly DemoWebSeed[] = [
+  { wsId: DEMO_CHAT_WORKSPACE_ID, sessionId: POWER_SESSION_ID, resumeId: POWER_RESUME_ID,
+    agent: 'pi', startedAt: Date.now() - 3 * 60_000, messages: powerMessages },
   {
     wsId: DEMO_WORKSPACE_ID,
     sessionId: DEMO_SESSION_ID,
@@ -339,7 +342,7 @@ export function demoWebFollowUp(agent: string, message: string): readonly WebCon
         },
         {
           type: 'text',
-          text: `This is the real **Web conversation surface** for ${label} backed by recorded demo data. The public preview does not call a live model, so this reply is simulated; install OpenAlice locally to continue the research with your own runtime and data sources.`,
+          text: `This is the real **Web conversation surface** for ${label} backed by recorded demo data. The public preview does not call a live model, so this reply is simulated; install OpenAlice locally to continue the research with your own runtime and data sources.\n\nWorkspace guidance: [[AGENTS.md]]`,
         },
       ],
     },

@@ -1,3 +1,6 @@
+import { buildDispatchCommunication, dispatchReply } from './dispatch-communication.js';
+import { DispatchDelivery } from './dispatch-delivery.js';
+import { inboxFiles } from '@traderalice/connector-protocol'
 import { headlessFailureSummary } from './headless-failure.js';
 import { userDataHome } from '../core/paths.js';
 import { resolveAliceProjectIdentity } from '@traderalice/guardian-runtime';
@@ -11,7 +14,6 @@ import { resolveAliceProjectIdentity } from '@traderalice/guardian-runtime';
  * Lifecycle: `createWorkspaceService()` at plugin start; `dispose()` at stop.
  */
 
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { basename, delimiter, join } from 'node:path';
@@ -31,6 +33,7 @@ import {
 
 import { createBuiltinAdapterRegistry } from './adapters/index.js';
 import { piAdapter } from './adapters/pi.js';
+import { mintAssignedSessionId, resolveWebLaunchResume } from './assigned-session-id.js';
 import {
   isAgentRuntime,
   prepareAgentRuntimeWorkspace,
@@ -120,10 +123,6 @@ import {
   projectTurnProgress,
 } from './headless-progress.js';
 import { stampTelegramDeskScheduledFire } from './issues/telegram-desk-chat.js';
-import {
-  deskProgressScope,
-  projectWorkspaceDeskTurnProgress,
-} from './issues/telegram-desk-project.js';
 import {
   IssueChangeTracker,
   issueMutation,
@@ -578,7 +577,7 @@ export interface WorkspaceService {
   /** Dispatch a scheduled Issue immediately without requiring a failed last
    * run and without advancing its next-fire marker. */
   runIssueNow(wsId: string, id: string): Promise<IssueDetail>;
-  replyToIssue(input: { workspaceId: string; issueId: string; prompt: string; commentId: string }): Promise<{ taskId: string; resumeId: string }>;
+  replyToIssue(input: import('./dispatch-communication.js').IssueCommentRequest): Promise<{ taskId: string; resumeId: string }>;
   connectorDesk(connectorId: string): Promise<ConnectorDesk | null>;
   createConnectorDesk(connectorId: string, wsId: string): Promise<ConnectorDesk>;
   updateConnectorDesk(connectorId: string, patch: {
@@ -667,6 +666,11 @@ export interface CreateWorkspaceServiceOptions {
   readonly mcpBaseUrl?: string;
   /** Internal test seam. Production omits this and keeps the 60-second scan. */
   readonly scheduleScannerIntervalMs?: number;
+  /**
+   * Internal test seam. Production omits this and keeps the real process
+   * runner. Issue/handoff specs inject a fake so they do not spawn Node.
+   */
+  readonly runHeadlessTask?: typeof runHeadlessTask;
   /** The global inbox store, so `issueDetail` can join the inbox reports an
    *  issue produced (entries stamped `origin.issueId`) in the domain layer —
    *  every surface (HTTP / CLI / MCP) gets the join, not just the route.
@@ -692,6 +696,7 @@ export function resumeFromRecord(
 
 export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions): Promise<WorkspaceService> {
   const config = loadConfig({ webPort: opts.webPort });
+  const executeHeadlessTask = opts.runHeadlessTask ?? runHeadlessTask;
   const inboxStore = opts.inboxStore;
   const officeDayStore = await OfficeDayStore.loadOrUnavailable();
   if (!officeDayStore.available) {
@@ -729,6 +734,18 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     join(config.launcherRoot, 'state', 'headless-tasks.json'),
     launcherLogger.child({ scope: 'headless-registry' }),
   );
+  const dispatchDelivery = new DispatchDelivery(headlessTasks, (message, detail) => launcherLogger.warn(message, detail));
+  let reconcilingDelivery = false;
+  const reconcileDelivery = async () => {
+    if (reconcilingDelivery) return;
+    reconcilingDelivery = true;
+    try { await dispatchDelivery.reconcile(); }
+    catch (err) { launcherLogger.warn('dispatch.delivery_reconcile_failed', { err }); }
+    finally { reconcilingDelivery = false; }
+  };
+  const deliveryTimer = setInterval(() => void reconcileDelivery(), 20_000);
+  deliveryTimer.unref();
+  void reconcileDelivery();
   const sessionRuntimeStore = new WorkspaceSessionRuntimeStore((wsId) => {
     if (wsId === MANAGER_WORKSPACE_ID) {
       return [join(config.launcherRoot, 'state', 'workspace-manager-sessions')];
@@ -763,7 +780,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     types: ['inbox.received'] as const,
   });
   const stopInboxActivity = inboxStore?.onAppended((entry) => {
-    const summary = entry.comments?.replace(/\s+/g, ' ').trim().slice(0, 240);
+    const summary = entry.body?.replace(/\s+/g, ' ').trim().slice(0, 240);
     void inboxActivity.record('inbox.received', {
       workspaceId: entry.workspaceId,
       inboxEntryId: entry.id,
@@ -774,7 +791,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       ...(entry.origin?.runId ? { taskId: entry.origin.runId } : {}),
       ...(entry.origin?.kind ? { originKind: entry.origin.kind } : {}),
       ...(summary ? { summary } : {}),
-      documentCount: entry.docs?.length ?? 0,
+      documentCount: inboxFiles(entry).length ?? 0,
     });
   });
   const recordAgentRuntime = async (
@@ -912,8 +929,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     assistantText?: string | null;
     error?: string;
   }): Promise<void> => {
-    const subject = input.task.inquiry?.subject;
-    if (subject?.kind !== 'issue' || !subject.commentId) return;
+    const subject = input.task.communication?.reply;
+    if (subject?.kind !== 'issue-comment') return;
     const issueWorkspace = registry.get(subject.workspaceId);
     if (!issueWorkspace) {
       launcherLogger.warn('issue.comment_reply_workspace_missing', {
@@ -1416,7 +1433,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       RUNTIME_READINESS_PROMPT,
     );
     if (!command) return null;
-    const result = await runHeadlessTask({
+    const result = await executeHeadlessTask({
       command,
       cwd,
       env,
@@ -1766,7 +1783,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         ...(opts.taskId ? { taskId: opts.taskId } : {}),
       });
       try {
-        return await runHeadlessTask({
+        return await executeHeadlessTask({
           command,
           cwd,
           env,
@@ -1971,7 +1988,30 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         });
         occupancyCauseSeq = born?.seq;
       }
+      const reply = dispatchReply({ inquiry, trigger, conversation });
+      let desk: { connectorId: string; inboundConnectorId?: string } | undefined;
+      if (reply.kind === 'issue-comment' || reply.kind === 'issue-run') {
+        const issueWorkspace = registry.get(reply.workspaceId);
+        if (issueWorkspace) {
+          const issues = await readWorkspaceIssues(issueWorkspace.dir);
+          const issue = issues.ok ? issues.issues.find(row => row.id === reply.issueId) : undefined;
+          if (issue?.connectorDesk && issue.status !== 'canceled') {
+            if (reply.kind === 'issue-comment') {
+              const comments = await readIssueComments(issueWorkspace.dir, reply.issueId);
+              const comment = comments.ok ? comments.comments.find(row => row.id === reply.commentId) : undefined;
+              if (comment) desk = { connectorId: issue.connectorDesk, ...(comment.via ? { inboundConnectorId: comment.via } : {}) };
+            } else if (trigger?.metadata?.connectorId === issue.connectorDesk) {
+              desk = { connectorId: issue.connectorDesk };
+            }
+          }
+        }
+      }
+      const communication = buildDispatchCommunication({
+        target: { workspaceId: ws.id, resumeId: identity.resumeId, agent: adapter.id },
+        inquiry, trigger, conversation, desk,
+      });
       rec = await headlessTasks.create({
+        communication,
         wsId: ws.id,
         agent: adapter.id,
         ...(sessionRuntime.binding.model ? { model: sessionRuntime.binding.model } : {}),
@@ -2006,6 +2046,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           agent: adapter.id,
           startedAt: rec.startedAt,
           conversation,
+          communication: rec.communication,
         });
       }
       await agentRuntimeLog.record('runtime.started', {
@@ -2049,8 +2090,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     const progressPublisher = createProgressPublisher({
       publish: async (progress) => {
         await headlessTasks.setProgress(rec.taskId, progress);
-        const subject = rec.inquiry?.subject;
-        if (subject?.kind === 'issue' && subject.commentId) {
+        const subject = rec.communication?.reply;
+        if (subject?.kind === 'issue-comment') {
           const issueWorkspace = registry.get(subject.workspaceId);
           if (issueWorkspace) {
             const updated = await updateIssueCommentProgress(
@@ -2070,25 +2111,11 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
             }
           }
         }
-        const desk = deskProgressScope(rec);
-        if (!desk) return;
-        const deskWorkspace = registry.get(desk.workspaceId);
-        if (!deskWorkspace) return;
-        await projectWorkspaceDeskTurnProgress({
-          wsDir: deskWorkspace.dir,
-          issueId: desk.issueId,
-          scopeId: desk.scopeId,
-          progress,
-          triggerMetadata: rec.trigger?.metadata,
-        }).catch((err) => launcherLogger.warn('telegram.desk_progress_failed', {
-          taskId: rec.taskId,
-          wsId: desk.workspaceId,
-          issueId: desk.issueId,
-          scopeId: desk.scopeId,
-          err,
-        }));
+        await dispatchDelivery.offer(rec, progress);
+
       },
     });
+    await dispatchDelivery.accepted(rec);
     // Fire-and-forget: run to natural exit, then fill the record. Process
     // failures and terminal in-band runtime errors fail the task; retryable
     // errors followed by a later assistant reply remain visible in Activity
@@ -2140,6 +2167,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
             toolFailures: r.structured.metrics.toolFailures,
           },
         });
+        await dispatchDelivery.finish(rec, r.structured.assistantText);
         if (conversation) {
           await agentConversationLog.recordCompletion({
             taskId: rec.taskId,
@@ -2220,6 +2248,10 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         );
       })
       .catch(async (err) => {
+        if (rec.status !== 'running') {
+          launcherLogger.warn('dispatch.post_execution_failed', { taskId: rec.taskId, err });
+          return;
+        }
         await Promise.all([turnJournal.flush(), progressPublisher.flush()]);
         const message = err instanceof Error ? err.message : String(err);
         await headlessTasks.complete(rec.taskId, {
@@ -2260,6 +2292,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         );
       })
       .finally(async () => {
+        await dispatchDelivery.finish(rec).catch(err => launcherLogger.warn('dispatch.delivery_finish_failed', { taskId: rec.taskId, err }));
         await sessionCoordinator.transition({
           wsId: ws.id,
           resumeId: rec.resumeId,
@@ -2835,8 +2868,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       // pass it down — the quick-chat seed must key off the ORIGINAL intent.
       const isFresh = ctx.resume === undefined;
       let resume = ctx.resume;
-      if (isFresh && adapter.capabilities.assignsSessionId) {
-        const sessionId = randomUUID();
+      const assignedSessionId = isFresh ? mintAssignedSessionId(adapter) : null;
+      if (assignedSessionId) {
+        const sessionId = assignedSessionId;
         resume = { sessionId };
         void sessionRegistry
           .update(wsId, ctx.recordId, { resumeHint: { kind: 'agent-session-id', value: sessionId } })
@@ -2988,12 +3022,29 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     if (!webCapability || !adapter.composeWebCommand) {
       throw new Error(`${adapter.displayName} has no Web conversation surface; open it in the terminal instead`);
     }
-    const nativeSessionId = resumeRegistry.get(record.resumeId)?.agentSessionId
+    const recordedNativeId = resumeRegistry.get(record.resumeId)?.agentSessionId
       ?? record.resumeHint?.value;
+    const launchIdentity = resolveWebLaunchResume({
+      adapter,
+      nativeSessionId: recordedNativeId,
+    });
+    const nativeSessionId = launchIdentity.nativeSessionId;
     if (!nativeSessionId && !webCapability.freshSession) {
       throw new Error(`${adapter.displayName} Session has no resumable native session id`);
     }
-    const resume = nativeSessionId ? { sessionId: nativeSessionId } as const : undefined;
+    const resume = launchIdentity.resume;
+    if (launchIdentity.assigned && nativeSessionId) {
+      void sessionRegistry.update(record.wsId, record.id, {
+        resumeHint: { kind: 'agent-session-id', value: nativeSessionId },
+      }).catch((err) => launcherLogger.warn('assigned_session_id.persist_failed', {
+        wsId: record.wsId, recordId: record.id, err,
+      }));
+      void resumeRegistry.bindAgentSessionId(record.resumeId, nativeSessionId).catch((err) =>
+        launcherLogger.warn('assigned_session_id.resume_map_failed', {
+          wsId: record.wsId, recordId: record.id, resumeId: record.resumeId, err,
+        }),
+      );
+    }
     const identity = resumeRegistry.get(record.resumeId);
     const sessionRuntime = identity?.runtimeBinding
       ? await resolveSessionRuntimeBinding({
@@ -3259,6 +3310,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
   };
 
   const dispose = async (reason: string): Promise<void> => {
+    clearInterval(deliveryTimer);
     if (shuttingDown) return;
     shuttingDown = true;
     launcherLogger.info('workspaces.dispose', { reason, activeSessions: pool.size() });

@@ -37,11 +37,13 @@ One concept has one primary owner:
 
 | Concept | Owner |
 |---|---|
-| Inbox, Issue collaboration, provenance, peer questions, Session nametags | `alice` (collaboration reference) |
+| Human notifications/reports through Inbox, Issue collaboration, provenance, peer questions, Session nametags | `alice` (collaboration reference) |
+| Connector reply file attachments (`[[relative/path.ext]]`) | `file-delivery` |
 | Delegating quantitative research from Chat to AutoQuant | `delegate-autoquant` |
 | Issue file shape, ownership, schedules, headless delivery | `self-scheduling` |
 | Low-frequency market/fundamental/macro data | `traderhub` |
-| Quantitative K-line panels and source choice | `alice-analysis` |
+| K-line discovery, raw OHLCV, freshness and reply chart references | `market-data` |
+| Optional quantitative formulas and snapshots | `alice-analysis` |
 | Broker accounts/contracts/quotes and trading writes | `alice-uta` |
 
 Other instructions may route to that owner but should not copy its manual.

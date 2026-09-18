@@ -1,3 +1,4 @@
+import { POWER_SESSION_ID, POWER_RESUME_ID, POWER_REPORT_PATH, POWER_RISK_PATH, powerReport, powerRiskChecklist } from './power-research'
 import type { InboxEntry, InboxOrigin } from '../../api/inbox'
 import {
   DEMO_CHAT_WORKSPACE_ID,
@@ -19,15 +20,14 @@ export const demoInboxEntry: InboxEntry = {
   ts: FIVE_MIN_AGO,
   workspaceId: DEMO_WORKSPACE_ID,
   workspaceLabel: 'demo',
-  docs: [{ path: DEMO_REPORT_PATH }],
-  comments: [
+  origin: { kind: 'interactive', sessionId: DEMO_SESSION_ID, resumeId: 'demo-resume-main', agent: 'claude' },
+  body: [[
     'I dug into Apple\'s Q1 earnings — see the report above.',
     '',
     '**Key finding:** services revenue growth has decelerated three quarters in a row, now at **+9.1%** YoY (was +14.2% last quarter). The headline EPS beat is masking the deceleration in what\'s historically been the margin defender.',
     '',
     'Want me to set up a watchlist alert on next quarter\'s services number?',
-  ].join('\n'),
-  origin: { kind: 'interactive', sessionId: DEMO_SESSION_ID, resumeId: 'demo-resume-main', agent: 'claude' },
+  ].join('\n'), ...([{ path: DEMO_REPORT_PATH }]).map(doc => '[[' + doc.path + ']]')].filter(Boolean).join('\n\n')
 }
 
 export const demoHeadlessSessionReport: InboxEntry = {
@@ -35,13 +35,13 @@ export const demoHeadlessSessionReport: InboxEntry = {
   ts: FIVE_MIN_AGO - 60_000,
   workspaceId: DEMO_WORKSPACE_ID,
   workspaceLabel: 'demo',
-  comments: 'The NVDA quant snapshot is ready. Open the originating run if you want to challenge the assumptions.',
   origin: {
     kind: 'headless',
     runId: 'demo-headless-1',
     resumeId: 'demo-resume-1',
     agent: 'codex',
   },
+  body: 'The NVDA quant snapshot is ready. Open the originating run if you want to challenge the assumptions.'
 }
 
 // ── Headless reports tied to scheduled issues ──
@@ -72,13 +72,8 @@ export const demoMoversReport: InboxEntry = {
   ts: nowMs - HOUR + 84_000,
   workspaceId: 'demo-ws-auto-quant',
   workspaceLabel: 'auto-quant',
-  docs: [{ path: 'reports/movers-2026-06-27.md' }],
-  comments: [
-    'Morning scan is in — ranked digest above.',
-    '',
-    'Top of the list is **VST** (+7.4%, 3.1x RVOL) on the datacenter-power read; it touches the book. Full table in the report.',
-  ].join('\n'),
   origin: headlessOrigin('demo-run-morning-1', 'demo-ws-auto-quant', 'morning-scan', 'codex'),
+  body: "Morning scan is in — ranked digest above.\n\nTop of the list is **VST** (+7.4%, 3.1x RVOL) on the datacenter-power read; it touches the book. Full table in the report.\n\n[[reports/movers-2026-06-27.md]]"
 }
 
 // macro-research › weekly-digest, latest run (demo-run-digest-1, codex). Has a doc.
@@ -87,10 +82,8 @@ export const demoDigestReport: InboxEntry = {
   ts: nowMs - 2 * DAY + 156_000,
   workspaceId: 'demo-ws-macro',
   workspaceLabel: 'macro-research',
-  docs: [{ path: 'digests/macro-2026-06-25.md' }],
-  comments:
-    'Weekly macro digest is up — rates steepened, dollar soft, core PCE inline. Next week\'s calendar at the bottom.',
   origin: headlessOrigin('demo-run-digest-1', 'demo-ws-macro', 'weekly-digest', 'codex'),
+  body: "Weekly macro digest is up — rates steepened, dollar soft, core PCE inline. Next week's calendar at the bottom.\n\n[[digests/macro-2026-06-25.md]]"
 }
 
 // auto-quant › morning-scan, an OLDER run (demo-run-morning-3, codex). Same issue
@@ -101,18 +94,26 @@ export const demoMoversReportOlder: InboxEntry = {
   ts: nowMs - 2 * DAY + 79_000,
   workspaceId: 'demo-ws-auto-quant',
   workspaceLabel: 'auto-quant',
-  comments: [
+  origin: headlessOrigin('demo-run-morning-3', 'demo-ws-auto-quant', 'morning-scan', 'codex'),
+  body: [
     'Earlier morning scan (two days ago) — quiet tape, nothing actionable touched the book.',
     '',
     'Logged for the record; no doc attached.',
-  ].join('\n'),
-  origin: headlessOrigin('demo-run-morning-3', 'demo-ws-auto-quant', 'morning-scan', 'codex'),
+  ].join('\n')
 }
 
 /** GET /api/inbox/history order — newest-first. `demoInboxEntry` (the AAPL
  *  research push) carries NO origin: the interactive/manual case, which renders
  *  without an originating-issue breadcrumb. */
+export const demoPowerReport: InboxEntry = {
+  id: 'demo-inbox-power-research', ts: nowMs - 2 * 60_000,
+  workspaceId: DEMO_CHAT_WORKSPACE_ID, workspaceLabel: 'research',
+  origin: { kind: 'interactive', sessionId: POWER_SESSION_ID, resumeId: POWER_RESUME_ID, agent: 'pi' },
+  body: '# AI power: demand is only the first step\n\nVST and VRT share a catalyst, but generation and equipment have different risks. The research compares contract delivery, order conversion and the assumptions that would invalidate the thesis.\n\n[[' + POWER_REPORT_PATH + ']]\n\nThe recurring morning scan follows material changes. No trade was placed.\n\n[[' + POWER_RISK_PATH + ']]',
+}
+
 export const demoInboxEntries: InboxEntry[] = [
+  demoPowerReport,
   demoInboxEntry,
   demoHeadlessSessionReport,
   demoMoversReport,
@@ -123,6 +124,8 @@ export const demoInboxEntries: InboxEntry[] = [
 // File contents served back to readWorkspaceFile() for demo workspace docs.
 // Keyed by relative path.
 export const demoWorkspaceFiles: Record<string, string> = {
+  [POWER_REPORT_PATH]: powerReport,
+  [POWER_RISK_PATH]: powerRiskChecklist,
   'AGENTS.md': '# Research workspace\n\nUse evidence, preserve dates, and return useful reports. This is demo guidance.',
   'CLAUDE.md': '# Research workspace\n\nUse evidence, preserve dates, and return useful reports. This is demo guidance.',
   '.agents/skills/alice/SKILL.md': '---\nname: alice\ndescription: Collaborate and deliver research reports.\n---\n\n# Workspace collaboration\n\nUse `alice inbox` to deliver committed research.\n\nRead [the example](examples/report.md) before preparing a report.',
@@ -266,6 +269,7 @@ export const demoWorkspaceFilePaths: Readonly<Record<string, readonly string[]>>
     DEMO_REPORT_PATH,
   ],
   [DEMO_CHAT_WORKSPACE_ID]: [
+    POWER_REPORT_PATH, POWER_RISK_PATH,
     'AGENTS.md', 'CLAUDE.md', '.agents/skills/alice/SKILL.md', '.claude/skills/alice/SKILL.md', '.agents/skills/alice/examples/report.md',
     'power_buy_points_2026-06-02.md',
     'rotation/2026-06-02.md',

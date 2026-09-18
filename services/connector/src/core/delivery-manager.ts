@@ -1,3 +1,5 @@
+import type { ConnectorModelRequest, ConnectorModelPanel } from '@traderalice/connector-protocol'
+import { parseMarketReference } from '@traderalice/connector-protocol'
 import { parseReplyDirectives, replyMedia } from './reply-directives.js'
 import type { ConnectorAttachment } from '@traderalice/connector-protocol'
 import { randomUUID } from 'node:crypto'
@@ -45,6 +47,8 @@ import {
 } from './work-queue.js'
 
 export interface DeliveryManagerOptions {
+  renderMarket?(reference: string): Promise<ConnectorAttachment>
+  sessionModel?(connectorId: string, request: ConnectorModelRequest): Promise<ConnectorModelPanel>
   readWorkspaceFile?(workspaceId: string, path: string): Promise<ConnectorAttachment>
   registry: ConnectorRegistry
   config: ConnectorConfig
@@ -67,6 +71,8 @@ const MAX_ADAPTER_START_RETRY_DELAY_MS = 60_000
 
 export class DeliveryManager {
   private readonly replyDeliveries = new Map<string, Promise<void>>()
+  private readonly endedTurns = new Set<string>()
+  private readonly activityLeases = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly replyQueues = new Map<string, Promise<void>>()
   private readonly adapters = new Map<string, ConnectorAdapter>()
   private readonly commands = new Map<string, CommandRegistry>()
@@ -397,7 +403,7 @@ export class DeliveryManager {
     queueMicrotask(() => {
       if (this.stopped) return
       void this.sendOwnerChat(message, deliveryId).catch((error) => {
-        // The Issue comment is already durable before Alice projects it here.
+        // Alice has persisted the execution terminal or explicit comment before handoff.
         // Keep owner-chat delivery best-effort like ordinary Inbox projection:
         // a stopped/unlinked adapter or external outage must not become an
         // unhandled rejection that can terminate Connector Service.
@@ -416,7 +422,28 @@ export class DeliveryManager {
     if (existing) return existing
     const queueKey = `${message.adapterId}:${message.conversationId}`
     const operation = (this.replyQueues.get(queueKey) ?? Promise.resolve()).catch(() => undefined)
-      .then(() => this.deliverOwnerChat(message, correlationId))
+      .then(async () => {
+        const terminal = message.phase === 'final' || message.phase === 'failed'
+        if (this.endedTurns.has(queueKey) && (!terminal || message.text)) return
+        const timer = this.activityLeases.get(queueKey)
+        if (timer) clearTimeout(timer)
+        this.activityLeases.delete(queueKey)
+        if (terminal) {
+          this.endedTurns.add(queueKey)
+          if (this.endedTurns.size > 2000) this.endedTurns.delete(this.endedTurns.values().next().value!)
+          await this.adapters.get(message.adapterId)?.stopOwnerActivity?.(message.conversationId)
+        } else if (message.activityLeaseMs) {
+          const lease = setTimeout(() => {
+            this.activityLeases.delete(queueKey)
+            void this.adapters.get(message.adapterId)?.stopOwnerActivity?.(message.conversationId).catch(() => undefined)
+            void this.record({ correlationId, direction: 'outbound', stage: 'delivery.failed', connectorId: message.adapterId,
+              payload: { kind: 'owner-chat-activity', conversationId: message.conversationId, reason: 'activity-lease-expired' } })
+          }, message.activityLeaseMs)
+          lease.unref?.()
+          this.activityLeases.set(queueKey, lease)
+        }
+        return this.deliverOwnerChat(message, correlationId)
+      })
     this.replyDeliveries.set(key, operation)
     this.replyQueues.set(queueKey, operation)
     try { await operation } finally {
@@ -445,12 +472,22 @@ export class DeliveryManager {
       const parsed = parseReplyDirectives(message.text ?? '')
       const silent = message.source === 'automation' && parsed.silent
       const resolved = new Map<string, ConnectorAttachment>()
-      if (!silent && message.phase === 'final' && message.workspaceId && this.options.readWorkspaceFile && adapter.sendOwnerFile) {
+      const failedMarkets = new Set<string>()
+      if (!silent && message.phase === 'final' && adapter.sendOwnerFile) {
         for (const path of [...new Set(parsed.references.map(reference => reference.path))].slice(0, 20)) {
           if (resolved.size >= 5) break
           try {
-            resolved.set(path, await this.options.readWorkspaceFile(message.workspaceId, path))
+            if (parseMarketReference(path)) {
+              if (this.options.renderMarket) resolved.set(path, await this.options.renderMarket(path))
+            } else if (message.workspaceId && this.options.readWorkspaceFile) {
+              resolved.set(path, await this.options.readWorkspaceFile(message.workspaceId, path))
+            }
           } catch {
+            if (parseMarketReference(path)) {
+              failedMarkets.add(path)
+              await this.record({ correlationId, direction: 'outbound', stage: 'delivery.failed', connectorId: adapter.id,
+                payload: { kind: 'market-chart', path, reason: 'render-unavailable' } })
+            }
             // A reference can be a discussion of a nonexistent path. Keep it literal.
           }
         }
@@ -461,10 +498,11 @@ export class DeliveryManager {
       const raw = silent ? '' : message.text ?? ''
       for (const reference of parsed.references) {
         const attachment = resolved.get(reference.path)
-        if (!attachment) continue
+        if (!attachment && !failedMarkets.has(reference.path)) continue
         const text = raw.slice(cursor, reference.start).trim()
         if (text) parts.push({ text })
-        if (!sent.has(reference.path)) {
+        if (!attachment) parts.push({ text: `${raw.slice(reference.start, reference.end)} (Chart unavailable; try again later.)` })
+        else if (!sent.has(reference.path)) {
           parts.push({ path: reference.path, attachment })
           sent.add(reference.path)
         }
@@ -543,6 +581,8 @@ export class DeliveryManager {
   }
 
   async stop(): Promise<void> {
+    for (const timer of this.activityLeases.values()) clearTimeout(timer)
+    this.activityLeases.clear()
     this.stopped = true
     for (const id of [...this.bootRetries.keys()]) this.clearAdapterStartRetry(id)
     await Promise.allSettled([...this.adapters.values()].map((adapter) => adapter.stop()))
@@ -562,6 +602,7 @@ export class DeliveryManager {
     if (!adapter || !commands) throw new Error(`Connector adapter is not installed: ${id}`)
     const context: ConnectorAdapterContext = {
       commands,
+      ...(this.options.sessionModel ? { sessionModel: (request: ConnectorModelRequest) => this.options.sessionModel!(id, request) } : {}),
       updateSettings: async (patch) => {
         await this.options.updateAdapterSettings(id, patch)
         const current = this.options.config.adapters[id] ?? { enabled: false, settings: {} }
