@@ -100,9 +100,15 @@ describe('Dockerfile runtime contract', () => {
     expect(dockerfile).not.toMatch(/ln -s[^\n]*\/usr\/local\/bin\/(alice|traderhub)/)
   })
 
-  it('pins and verifies all four agent runtimes and exposes a healthcheck', () => {
-    for (const name of ['CLAUDE_CODE', 'CODEX', 'OPENCODE', 'PI']) {
-      expect(dockerfile).toMatch(new RegExp(`ARG ${name}_VERSION=\\d+\\.\\d+\\.\\d+`))
+  it('resolves and verifies all four agent runtimes and exposes a healthcheck', () => {
+    for (const packageName of [
+      '@anthropic-ai/claude-code',
+      '@openai/codex',
+      'opencode-ai',
+      '@earendil-works/pi-coding-agent',
+    ]) {
+      expect(dockerfile).toContain(`"${packageName}"`)
+      expect(dockerfile).not.toContain(`"${packageName}@`)
     }
     for (const command of ['claude', 'codex', 'opencode', 'pi']) {
       expect(dockerfile).toContain(`&& ${command} --version`)
