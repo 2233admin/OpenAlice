@@ -16,6 +16,26 @@ function withTempDir(run: (dir: string) => void) {
   }
 }
 
+function nativeBootstrapFixture(platform: string, arch: string) {
+  const bytes = Buffer.alloc(512)
+  if (platform === 'win32') {
+    bytes.write('MZ', 0, 'ascii')
+    bytes.writeUInt32LE(0x80, 0x3c)
+    bytes.write('PE\0\0', 0x80, 'ascii')
+    bytes.writeUInt16LE(arch === 'x64' ? 0x8664 : 0xaa64, 0x84)
+  } else if (platform === 'linux') {
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46]).copy(bytes)
+    bytes[4] = 2
+    bytes[5] = 1
+    bytes.writeUInt16LE(arch === 'x64' ? 0x3e : 0xb7, 18)
+  } else {
+    bytes.writeUInt32LE(0xfeedfacf, 0)
+    bytes.writeUInt32LE(arch === 'x64' ? 0x01000007 : 0x0100000c, 4)
+  }
+  return bytes
+}
+
+
 function writeNativeBootstrapMatrix(dir: string, version = '1.2.3') {
   for (const [platform, arch] of [
     ['darwin', 'arm64'],
@@ -26,7 +46,7 @@ function writeNativeBootstrapMatrix(dir: string, version = '1.2.3') {
     ['win32', 'x64'],
   ]) {
     const asset = `openalice-bootstrap-${version}-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`
-    const bytes = Buffer.from(`bootstrap:${platform}:${arch}`)
+    const bytes = nativeBootstrapFixture(platform, arch)
     const sha256 = createHash('sha256').update(bytes).digest('hex')
     writeFileSync(join(dir, asset), bytes)
     writeFileSync(join(dir, `${asset}.sha256`), `${sha256}  ${asset}\n`)
@@ -231,7 +251,7 @@ describe('prepareMirrorAssets', () => {
         arch: 'x64',
         asset: 'openalice-bootstrap-1.2.3-win32-x64.exe',
         url: 'https://download.openalice.ai/openalice-bootstrap-1.2.3-win32-x64.exe',
-        sha256: createHash('sha256').update('bootstrap:win32:x64').digest('hex'),
+        sha256: createHash('sha256').update(nativeBootstrapFixture('win32', 'x64')).digest('hex'),
       })
       expect(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')).bootstraps)
         .toEqual(manifest.bootstraps)
@@ -274,6 +294,25 @@ describe('prepareMirrorAssets', () => {
         baseUrl: 'https://download.openalice.ai',
         repository: 'TraderAlice/OpenAlice',
       })).toThrow('must be regular files')
+    })
+  })
+
+  it('rejects a checksum-valid bootstrap built for the wrong architecture', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-linux-arm64'
+      const bytes = nativeBootstrapFixture('linux', 'x64')
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('architecture mismatch')
     })
   })
 

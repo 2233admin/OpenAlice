@@ -136,6 +136,25 @@ describe.skipIf(process.platform === 'win32')('CLI dev channel assets', () => {
   })
 })
 
+function nativeBootstrapFixture(platform, arch) {
+  const bytes = Buffer.alloc(512)
+  if (platform === 'win32') {
+    bytes.write('MZ', 0, 'ascii')
+    bytes.writeUInt32LE(0x80, 0x3c)
+    bytes.write('PE\0\0', 0x80, 'ascii')
+    bytes.writeUInt16LE(arch === 'x64' ? 0x8664 : 0xaa64, 0x84)
+  } else if (platform === 'linux') {
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46]).copy(bytes)
+    bytes[4] = 2
+    bytes[5] = 1
+    bytes.writeUInt16LE(arch === 'x64' ? 0x3e : 0xb7, 18)
+  } else {
+    bytes.writeUInt32LE(0xfeedfacf, 0)
+    bytes.writeUInt32LE(arch === 'x64' ? 0x01000007 : 0x0100000c, 4)
+  }
+  return bytes
+}
+
 async function fixture({ tamperedIdentityTarget, largeWindowsMetadata = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'openalice-cli-dev-assets-'))
   temporaryPaths.push(root)
@@ -200,7 +219,7 @@ async function fixture({ tamperedIdentityTarget, largeWindowsMetadata = false } 
     const checksum = createHash('sha256').update(await readFile(archive)).digest('hex')
     await writeFile(`${archive}.sha256`, `${checksum}  ${basename(archive)}\n`)
     const bootstrapName = `openalice-bootstrap-` + version + `-` + platform + `-` + arch + (platform === 'win32' ? '.exe' : '')
-    const bootstrapBytes = Buffer.from(`bootstrap-` + platform + `-` + arch)
+    const bootstrapBytes = nativeBootstrapFixture(platform, arch)
     const bootstrapChecksum = createHash('sha256').update(bootstrapBytes).digest('hex')
     await writeFile(join(input, bootstrapName), bootstrapBytes)
     await writeFile(join(input, bootstrapName + '.sha256'), bootstrapChecksum + '  ' + bootstrapName + '\n')

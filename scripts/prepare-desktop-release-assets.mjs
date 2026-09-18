@@ -5,6 +5,8 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSy
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { verifyNativeBootstrapFormat } from './native-bootstrap-format.mjs'
+
 function prereleaseChannel(version) {
   return version.match(/^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/)?.[1] ?? 'latest'
 }
@@ -115,6 +117,7 @@ function collectNativeBootstraps({ names, outDir, version, baseUrl, required }) 
     if (!lstatSync(assetPath).isFile() || !lstatSync(sidecarPath).isFile()) {
       throw new Error(`[release-assets] native bootstrap assets must be regular files: ${asset}`)
     }
+    verifyNativeBootstrapFormat(assetPath, platform, arch)
     const sidecar = readFileSync(sidecarPath, 'utf8').trim()
     const match = sidecar.match(/^([a-f0-9]{64})  ([^/]+)$/)
     if (!match || match[2] !== asset) {

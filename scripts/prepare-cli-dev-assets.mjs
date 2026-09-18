@@ -11,6 +11,7 @@ import { bunReleaseContentIdentity } from './bun-release-content-identity.mjs'
 import { CLI_RELEASE_TARGETS, cliExecutableName } from '../packages/cli/src/release-targets.mjs'
 
 import { readDevBrokerCatalog } from './dev-broker-binding.mjs'
+import { verifyNativeBootstrapFormat } from './native-bootstrap-format.mjs'
 
 export { CLI_RELEASE_TARGETS }
 const PINNED_BUN_VERSION = readFileSync(new URL('../.bun-version', import.meta.url), 'utf8').trim()
@@ -90,6 +91,7 @@ export function prepareCliDevAssets({ inputDir, outputDir, commit, version, inst
     const bootstrapChecksumPath = `${bootstrapPath}.sha256`
     requireRegularFile(bootstrapPath, bootstrapName)
     requireRegularFile(bootstrapChecksumPath, `${bootstrapName}.sha256`)
+    verifyNativeBootstrapFormat(bootstrapPath, platform, arch)
     const bootstrapChecksum = parseChecksum(readFileSync(bootstrapChecksumPath, 'utf8'), bootstrapName)
     const bootstrapBytes = readFileSync(bootstrapPath)
     const actualBootstrapChecksum = createHash('sha256').update(bootstrapBytes).digest('hex')
