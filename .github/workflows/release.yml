@@ -527,6 +527,7 @@ jobs:
           path: |
             dist/bun-release/*.tar.gz
             dist/bun-release/*.tar.gz.sha256
+            dist/bun-release/openalice-bootstrap-*
             dist/bun-release/openalice-cli-*.report.json
           if-no-files-found: error
           compression-level: 0
@@ -1011,6 +1012,7 @@ jobs:
             dist/release-broker-packs/*.tgz
             dist/release-cli/*.tar.gz
             dist/release-cli/*.tar.gz.sha256
+            dist/release-cli/openalice-bootstrap-*
             dist/release-cli-installer/OpenAlice-*-install
             dist/release-cli-installer/OpenAlice-*-install.sha256
             dist/release-cli-installer/OpenAlice-*-install.ps1
@@ -1037,6 +1039,7 @@ jobs:
             dist/release-broker-packs/*.tgz
             dist/release-cli/*.tar.gz
             dist/release-cli/*.tar.gz.sha256
+            dist/release-cli/openalice-bootstrap-*
             dist/release-cli-installer/OpenAlice-*-install
             dist/release-cli-installer/OpenAlice-*-install.sha256
             dist/release-cli-installer/OpenAlice-*-install.ps1

@@ -197,6 +197,61 @@ describe('prepareMirrorAssets', () => {
       })
     })
   })
+  it('publishes a complete checksum-bound native bootstrap matrix', () => {
+    withTempDir((dir) => {
+      const targets = [
+        ['darwin', 'arm64'],
+        ['darwin', 'x64'],
+        ['linux', 'arm64'],
+        ['linux', 'x64'],
+        ['win32', 'arm64'],
+        ['win32', 'x64'],
+      ]
+      for (const [platform, arch] of targets) {
+        const asset = `openalice-bootstrap-1.2.3-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`
+        const bytes = Buffer.from(`bootstrap:${platform}:${arch}`)
+        const sha256 = createHash('sha256').update(bytes).digest('hex')
+        writeFileSync(join(dir, asset), bytes)
+        writeFileSync(join(dir, `${asset}.sha256`), `${sha256}  ${asset}\n`)
+      }
+
+      const manifest = prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai/',
+        repository: 'TraderAlice/OpenAlice',
+      })
+
+      expect(manifest.bootstraps).toHaveLength(6)
+      expect(manifest.bootstraps).toContainEqual({
+        platform: 'win32',
+        arch: 'x64',
+        asset: 'openalice-bootstrap-1.2.3-win32-x64.exe',
+        url: 'https://download.openalice.ai/openalice-bootstrap-1.2.3-win32-x64.exe',
+        sha256: createHash('sha256').update('bootstrap:win32:x64').digest('hex'),
+      })
+      expect(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')).bootstraps)
+        .toEqual(manifest.bootstraps)
+    })
+  })
+
+  it('rejects an incomplete native bootstrap publication', () => {
+    withTempDir((dir) => {
+      const asset = 'openalice-bootstrap-1.2.3-linux-x64'
+      writeFileSync(join(dir, asset), 'bootstrap')
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update('bootstrap').digest('hex')}  ${asset}\n`,
+      )
+
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('incomplete native bootstrap set')
+    })
+  })
 
   it('rejects prerelease channels other than beta', () => {
     withTempDir((dir) => {

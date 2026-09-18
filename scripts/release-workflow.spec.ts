@@ -358,6 +358,7 @@ describe('Release workflow critical path', () => {
       'Create stable tag and GitHub Release from accepted candidates',
     ]) {
       expect(step(publication, name).with?.files).toContain('dist/release-cli/*.tar.gz.sha256')
+      expect(step(publication, name).with?.files).toContain('dist/release-cli/openalice-bootstrap-*')
     }
   })
 

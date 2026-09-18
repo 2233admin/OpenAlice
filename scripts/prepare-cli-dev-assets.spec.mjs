@@ -40,6 +40,7 @@ describe.skipIf(process.platform === 'win32')('CLI dev channel assets', () => {
 
     expect(manifest.targets).toHaveLength(4)
     expect(manifest.additionalTargets).toHaveLength(2)
+    expect(manifest.bootstraps).toHaveLength(6)
     expect(manifest.windowsInstaller.versionedUrl).toBe(`https://download.openalice.ai/cli/dev/releases/${commit}/install.ps1`)
     expect(manifest.targets.map(({ platform, arch }) => `${platform}-${arch}`).sort()).toEqual([
       'darwin-arm64',
@@ -58,6 +59,12 @@ describe.skipIf(process.platform === 'win32')('CLI dev channel assets', () => {
         `${target.sha256}  ${alias}\n`,
       )
       expect(target.archive).toBe(alias)
+    }
+    for (const bootstrap of manifest.bootstraps) {
+      const asset = `openalice-bootstrap-` + version + `-` + bootstrap.platform + `-` + bootstrap.arch + (bootstrap.platform === 'win32' ? '.exe' : '')
+      expect(bootstrap.asset).toBe(asset)
+      expect(bootstrap.url).toBe(`https://download.openalice.ai/cli/dev/releases/` + commit + `/` + asset)
+      expect(await readFile(join(output, 'releases', commit, asset))).toEqual(await readFile(join(root, 'input', asset)))
     }
     expect(await readFile(join(output, 'releases', commit, 'install'), 'utf8'))
       .toBe('#!/usr/bin/env bash\n')
@@ -164,6 +171,11 @@ async function fixture({ tamperedIdentityTarget, largeWindowsMetadata = false } 
     await execFileAsync('tar', ['-czf', archive, '-C', root, releaseName])
     const checksum = createHash('sha256').update(await readFile(archive)).digest('hex')
     await writeFile(`${archive}.sha256`, `${checksum}  ${basename(archive)}\n`)
+    const bootstrapName = `openalice-bootstrap-` + version + `-` + platform + `-` + arch + (platform === 'win32' ? '.exe' : '')
+    const bootstrapBytes = Buffer.from(`bootstrap-` + platform + `-` + arch)
+    const bootstrapChecksum = createHash('sha256').update(bootstrapBytes).digest('hex')
+    await writeFile(join(input, bootstrapName), bootstrapBytes)
+    await writeFile(join(input, bootstrapName + '.sha256'), bootstrapChecksum + '  ' + bootstrapName + '\n')
   }
   return root
 }
