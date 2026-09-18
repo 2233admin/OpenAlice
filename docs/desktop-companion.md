@@ -13,6 +13,11 @@ opens the main window, and right click opens the native menu. The tray remains
 available after hiding Alice. Position, size and visibility are machine-local
 launcher preferences in Electron userData `companion.json`.
 
+Click dialogue currently cycles through eight English placeholders, all spoken
+by Alice in Carroll's original *Alice's Adventures in Wonderland*. The source
+and chapter order are recorded with the list in `pet.js`. Dialogue editing and
+configurable playback are not implemented yet; these lines are not agent status.
+
 Interaction follows MeteorNOX's Whale Widget (MIT attribution ships in
 `ui/public/companion/NOTICE.md`): bottom-anchored 0.88Y/1.05X press transform,
 220ms `cubic-bezier(.34,1.56,.64,1)`, 3-DIP drag threshold, 300ms mirror,

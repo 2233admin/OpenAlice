@@ -14,7 +14,18 @@ let interactive = false;
 let hideTimer;
 let line = 0;
 let lastPoint = { x: -1, y: -1 };
-const lines = ['我在这里。', '有事叫我，没事也可以。', '正在陪你。', '戳一下，精神一下。'];
+// English placeholder dialogue: Alice's own words in Carroll's original novel.
+// https://www.gutenberg.org/files/11/11-h/11-h.htm (chapters II, I, I, XI, VII, VII, VIII, XII)
+const lines = [
+  'Curiouser and curiouser!',
+  'What a curious feeling!',
+  'Do cats eat bats?',
+  'I’m growing.',
+  'There’s plenty of room!',
+  'Yes, please do!',
+  'Nonsense!',
+  'I won’t!',
+];
 
 function hit(point) {
   const rect = portrait.getBoundingClientRect();

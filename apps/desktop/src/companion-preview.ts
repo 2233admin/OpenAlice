@@ -49,6 +49,17 @@ void app.whenReady().then(async () => {
   assert.equal(await pet.webContents.executeJavaScript(`bubble.classList.contains('open')`), true,
     await pet.webContents.executeJavaScript(`JSON.stringify({events:window.smokeEvents,held,pressed:body.className})`))
   assert.equal(await pet.webContents.executeJavaScript(`body.classList.contains('pressed')`), false)
+  const expectedLines = ['Curiouser and curiouser!', 'What a curious feeling!',
+    'Do cats eat bats?', 'I’m growing.', 'There’s plenty of room!',
+    'Yes, please do!', 'Nonsense!', 'I won’t!']
+  assert.equal(await pet.webContents.executeJavaScript(`message.textContent`), expectedLines[0])
+  for (let i = 1; i <= expectedLines.length; i++) {
+    const text = await pet.webContents.executeJavaScript(`(() => {
+      pet.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+      return message.textContent;
+    })()`)
+    assert.equal(text, expectedLines[i % expectedLines.length], 'Dialogue must cycle through all eight English lines')
+  }
   writeFileSync(join(home, 'bubble.png'), (await pet.webContents.capturePage()).toPNG())
   // A light renderer backdrop exposes outline/tail placement hidden by dark previews.
   await pet.webContents.executeJavaScript(`document.documentElement.style.backgroundColor = '#f5f5f5'`)
