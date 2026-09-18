@@ -20,8 +20,19 @@ launcher preferences in Electron userData `companion.json`.
 
 Click dialogue currently cycles through eight English placeholders, all spoken
 by Alice in Carroll's original *Alice's Adventures in Wonderland*. The source
-and chapter order are recorded with the list in `pet.js`. Dialogue editing and
-configurable playback are not implemented yet; these lines are not agent status.
+and chapter order are recorded with the list in `pet.js`. Dialogue editing is
+not implemented yet; these lines are not agent status.
+
+Settings → Pet (`/settings/pet`) configures click audio: enabled, volume, local
+WAV/MP3/OGG import, preview and restore defaults. No default audio ships yet;
+the silent state is explicit. Imports must decode to at most 10 seconds and
+be at most 2 MB. The main process separately checks MIME, base64, file signatures
+and bounds, then atomically saves a copied data URL in userData
+`companion-sound.json`. No external URL or arbitrary filesystem path is accepted.
+Changes reach the pet immediately over checked IPC. Only confirmed clicks and
+keyboard interaction play sound; dragging/cancellation does not. Preview ignores
+the click mute toggle. Reset clears the copied audio and restores 50% volume.
+The page explains desktop-only availability in browser mode.
 
 Interaction follows MeteorNOX's Whale Widget (MIT attribution ships in
 `ui/public/companion/NOTICE.md`): bottom-anchored 0.88Y/1.05X press transform,

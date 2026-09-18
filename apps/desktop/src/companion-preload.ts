@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('companion', {
+  getSound: () => ipcRenderer.invoke('openalice:companion:sound:get'),
+  onSound: (callback: (settings: unknown) => void) => {
+    ipcRenderer.on('openalice:companion:sound:changed', (_event, settings) => callback(settings))
+  },
   interactive: (enabled: boolean) => ipcRenderer.send('openalice:companion:interactive', enabled),
   beginDrag: () => ipcRenderer.send('openalice:companion:begin-drag'),
   moveDrag: () => ipcRenderer.send('openalice:companion:move-drag'),

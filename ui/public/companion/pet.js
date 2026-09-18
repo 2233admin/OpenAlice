@@ -13,6 +13,21 @@ let held = null;
 let interactive = false;
 let hideTimer;
 let line = 0;
+let sound = { enabled: true, volume: .5, source: null };
+let clickAudio;
+function configureSound(settings) {
+  clickAudio?.pause();
+  sound = settings;
+  clickAudio = sound.source ? new Audio(sound.source.dataUrl) : null;
+  if (clickAudio) clickAudio.volume = sound.volume;
+}
+bridge?.onSound(configureSound);
+function playClickSound() {
+  if (!sound.enabled || !clickAudio || sound.volume === 0) return;
+  clickAudio.pause();
+  clickAudio.currentTime = 0;
+  void clickAudio.play().catch(() => console.warn('Pet click sound could not play'));
+}
 let lastPoint = { x: -1, y: -1 };
 // English placeholder dialogue: Alice's own words in Carroll's original novel.
 // https://www.gutenberg.org/files/11/11-h/11-h.htm (chapters II, I, I, XI, VII, VII, VIII, XII)
@@ -44,6 +59,7 @@ function update(point) {
   if (next !== interactive) { interactive = next; bridge?.interactive(next); }
 }
 function speak() {
+  playClickSound();
   clearTimeout(hideTimer);
   message.textContent = lines[line++ % lines.length];
   bubble.classList.add('open');
@@ -106,6 +122,8 @@ async function prepare() {
   ctx.drawImage(portrait, 0, 0);
   alpha = ctx.getImageData(0, 0, canvas.width, canvas.height);
   await document.querySelector('#bubble img').decode();
+  try { if (bridge?.getSound) configureSound(await bridge.getSound()); }
+  catch { console.warn('Pet sound settings unavailable'); }
   bridge?.ready();
 }
 void prepare().catch(error => console.error('Companion asset failed:', error));

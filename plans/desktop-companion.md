@@ -4,6 +4,18 @@ Status: implementation complete; native and packaged acceptance in progress.
 Related issues: none. User requested a native macOS/Windows companion using
 their two PNGs and the Whale Widget interaction model.
 
+Current increment: Settings → Pet audio preferences, with no bundled sound until
+the maintainer supplies a licensed asset. Local copied imports, mute/volume,
+preview/reset, persistence and confirmed-click playback are in scope. Validate
+the real settings route and native audio playback, plus invalid-file rejection.
+
+Audio acceptance: real `app://openalice/settings/pet` import/preview/playback,
+mute and reset pass with a generated temporary silent WAV (not bundled).
+Browser route correctly explains the desktop-only boundary. Store reload tests
+prove copied-file persistence; targeted store/hook/page tests pass. Root, UI and
+desktop typechecks and unsigned macOS packaged Workspace acceptance pass.
+Windows native audio remains unverified locally. No third-party audio was added.
+
 Owners: docs/desktop-companion.md, docs/managed-workspace-runtime.md,
 docs/testing.md, docs/development-workflow.md.
 

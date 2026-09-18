@@ -51,6 +51,7 @@ export const ASAR_REQUIRED_FILES = [
   'dist/electron/preload.js',
   'dist/electron/companion.js',
   'dist/electron/companion-preload.js',
+  'dist/electron/companion-sound.js',
   'services/uta/dist/uta.js',
   'services/connector/dist/connector.cjs',
   'node_modules/dugite/package.json',

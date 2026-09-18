@@ -199,6 +199,18 @@ export const ja: Resources = {
   },
   projectSetup: { connectPi: 'Chat 用に Pi の AI プロバイダーを設定', title: '準備が必要なワークスペースがあります', description: 'プロジェクトは作成済みです。残りの準備を再試行するか、準備済みのワークスペースを利用できます。', pending: '準備待ち', preparing: '準備中…' },
   quickStart: { chooseHarness: 'Harness を選択' },
+  pet: {
+    title: 'ペット', sound: 'クリック音',
+    description: 'ペットのクリック音を設定します。ドラッグ時は鳴りません。設定はこの端末に保存されます。',
+    enabled: 'クリック時に音を鳴らす', volume: '音量', file: '音声ファイル',
+    noFile: '音声未選択 — クリック音は鳴りません。',
+    fileHelp: 'WAV、MP3、OGG · 最大 2 MB、10 秒。端末にコピーを保存し、アップロードしません。',
+    choose: '音声を選択…', preview: '試聴', reset: '初期設定に戻す',
+    resetHelp: '既定の音声はまだありません。初期化するとカスタム音声を削除し、音量を 50% に戻します。クリック音がオフでも試聴できます。',
+    loading: 'ペット設定を読み込み中…', saving: '保存中…',
+    desktopOnly: 'ペットを有効にすると、デスクトップアプリで音声を設定できます。',
+    error: { unavailable: 'ペット設定を利用できません。ページを開き直してください。', invalidFile: '再生可能な WAV、MP3、OGG を選択してください。最大 2 MB、10 秒です。', failed: '設定を保存できませんでした。再試行してください。', playback: '再生できません。別のファイルを選択してください。' },
+  },
   nav: {
     showCompanion: 'ペットを表示',
     hideCompanion: 'ペットを非表示',

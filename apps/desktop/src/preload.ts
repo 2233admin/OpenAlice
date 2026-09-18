@@ -127,6 +127,13 @@ ipcRenderer.on('openalice:updater:status', (_event, raw: unknown) => {
 
 const api = {
   companion: {
+    getSound: () => ipcRenderer.invoke('openalice:companion:sound:get'),
+    updateSound: (settings: unknown) => ipcRenderer.invoke('openalice:companion:sound:update', settings),
+    onSound: (callback: (settings: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, settings: unknown) => callback(settings)
+      ipcRenderer.on('openalice:companion:sound:changed', listener)
+      return () => ipcRenderer.removeListener('openalice:companion:sound:changed', listener)
+    },
     getVisible: (): Promise<boolean> => ipcRenderer.invoke('openalice:companion:get-visible'),
     toggle: (): Promise<boolean> => ipcRenderer.invoke('openalice:companion:toggle'),
     onVisibility: (callback: (visible: boolean) => void) => {

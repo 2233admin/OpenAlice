@@ -70,4 +70,48 @@ export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
   })()`, true)
   if (!pet.isVisible()) throw new Error('Menu failed to restore native companion')
   console.log('[electron-demo-smoke] PASS Alice Settings native companion hide/show recovery')
+  // Import a generated silent WAV through the real Settings file input. No bundled asset.
+  const wav = Buffer.alloc(1644)
+  wav.write('RIFF'); wav.writeUInt32LE(1636, 4); wav.write('WAVEfmt ', 8)
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22)
+  wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34)
+  wav.write('data', 36); wav.writeUInt32LE(1600, 40)
+  await win.loadURL('app://openalice/settings/pet')
+  await win.webContents.executeJavaScript(`(async () => {
+    const start = Date.now();
+    while (!document.querySelector('input[type="file"]')) {
+      if (Date.now()-start>10000) throw new Error('Pet settings route missing');
+      await new Promise(r=>setTimeout(r,50));
+    }
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([Uint8Array.from(atob(${JSON.stringify(wav.toString('base64'))}), c=>c.charCodeAt(0))], 'smoke-click.wav', {type:'audio/wav'}));
+    const input=document.querySelector('input[type="file"]'); input.files=transfer.files;
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    while ((await window.openAlice.companion.getSound()).source?.name !== 'smoke-click.wav') {
+      if (Date.now()-start>15000) throw new Error('Pet audio import failed: '+document.body.innerText);
+      await new Promise(r=>setTimeout(r,50));
+    }
+    const preview=[...document.querySelectorAll('button')].find(el=>el.textContent==='Preview');
+    if (!preview || preview.disabled) throw new Error('Audio preview unavailable');
+    preview.click();
+  })()`, true)
+  await pet.webContents.executeJavaScript(`(async () => {
+    const start=Date.now();
+    while (!clickAudio) { if(Date.now()-start>5000) throw new Error('Sound did not reach pet'); await new Promise(r=>setTimeout(r,25)); }
+    pet.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    while (!clickAudio.ended) { if(Date.now()-start>5000) throw new Error('Click sound did not play'); await new Promise(r=>setTimeout(r,25)); }
+  })()`)
+  await win.webContents.executeJavaScript(`window.openAlice.companion.updateSound({enabled:false, volume:.2})`)
+  await pet.webContents.executeJavaScript(`(async () => {
+    const start=Date.now(); while(sound.enabled) { if(Date.now()-start>5000) throw new Error('Mute did not synchronize'); await new Promise(r=>setTimeout(r,25)); }
+    let played=false; clickAudio.addEventListener('play',()=>played=true,{once:true});
+    pet.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    await new Promise(r=>setTimeout(r,150)); if(played) throw new Error('Muted pet played audio');
+  })()`)
+  await win.webContents.executeJavaScript(`(async () => {
+    const reset=[...document.querySelectorAll('button')].find(el=>el.textContent==='Restore defaults');
+    reset.click(); const start=Date.now();
+    while((await window.openAlice.companion.getSound()).source) { if(Date.now()-start>5000) throw new Error('Reset failed'); await new Promise(r=>setTimeout(r,25)); }
+  })()`, true)
+  console.log('[electron-demo-smoke] PASS Pet settings import, preview, native playback, mute and reset')
 }
