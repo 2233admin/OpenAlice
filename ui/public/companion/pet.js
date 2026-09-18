@@ -18,10 +18,12 @@ const lines = ['我在这里。', '有事叫我，没事也可以。', '正在�
 
 function hit(point) {
   const rect = portrait.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return false;
   let x = (point.x - rect.left) / rect.width;
   const y = (point.y - rect.top) / rect.height;
   if (x < 0 || y < 0 || x >= 1 || y >= 1 || !alpha) return false;
-  if (flipped) x = 1 - x;
+  // During the 300ms flip use the currently rendered direction, not its target.
+  if (new DOMMatrixReadOnly(getComputedStyle(mirror).transform).a < 0) x = 1 - x;
   const px = Math.min(alpha.width - 1, Math.floor(x * alpha.width));
   return alpha.data[(Math.floor(y * alpha.height) * alpha.width + px) * 4 + 3] > 10;
 }
@@ -34,8 +36,10 @@ function speak() {
   clearTimeout(hideTimer);
   message.textContent = lines[line++ % lines.length];
   bubble.classList.add('open');
-  hideTimer = setTimeout(() => { bubble.classList.remove('open'); }, 5000);
+  bubble.setAttribute('aria-hidden', 'false');
+  hideTimer = setTimeout(hideBubble, 5000);
 }
+function hideBubble() { bubble.classList.remove('open'); bubble.setAttribute('aria-hidden', 'true'); }
 pet.addEventListener('pointerdown', event => {
   if (event.button !== 0 || !hit({ x: event.clientX, y: event.clientY })) return;
   event.preventDefault();
@@ -63,7 +67,7 @@ document.addEventListener('contextmenu', event => { event.preventDefault(); brid
 pet.addEventListener('dblclick', () => bridge?.open());
 pet.addEventListener('keydown', event => {
   if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); speak(); }
-  if (event.key === 'Escape') bubble.classList.remove('open');
+  if (event.key === 'Escape') hideBubble();
   if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); bridge?.menu(); }
 });
 document.addEventListener('mousemove', event => update({ x: event.clientX, y: event.clientY }));
