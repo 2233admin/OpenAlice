@@ -712,8 +712,14 @@ export class TelegramConnectorAdapter implements ConnectorAdapter {
     return Boolean(this.ownerUserId && this.ownerUserId === userId)
   }
 
+  async stopOwnerActivity(conversationId: string): Promise<void> {
+    this.stopDraft(conversationId)
+  }
+
   private async startDraft(conversationId: string): Promise<void> {
     if (this.finishedDrafts.has(conversationId)) return
+    const current = this.drafts.get(conversationId)
+    if (current) return // Alice's activity lease heartbeat must not erase draft text.
     this.stopDraft(conversationId)
     const session: TelegramDraftSession = {
       draftId: telegramDraftId(conversationId),
