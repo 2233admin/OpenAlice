@@ -473,6 +473,27 @@ describe('prepareMirrorAssets', () => {
       })).toThrow('data directory exceeds the declared image')
     })
   })
+  it('rejects PE raw section bytes outside the declared image', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-win32-x64.exe'
+      const bytes = Buffer.alloc(0x2000)
+      nativeBootstrapFixture('win32', 'x64').copy(bytes)
+      bytes.writeUInt32LE(0x1001, 0x188 + 16)
+      bytes.writeUInt32LE(0, 0x188 + 20)
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('section exceeds the declared image')
+    })
+  })
   it('rejects an incomplete native bootstrap publication', () => {
     withTempDir((dir) => {
       const asset = 'openalice-bootstrap-1.2.3-linux-x64'

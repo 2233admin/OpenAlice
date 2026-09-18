@@ -73,7 +73,7 @@ function verifyPeExecutable(descriptor, size, arch) {
     if (rawSize > 0 && checkedEnd(rawOffset, rawSize, 'PE section') > size) {
       throw new Error('native bootstrap PE section exceeds the file')
     }
-    const mappedBytes = virtualSize > 0 ? virtualSize : rawSize
+    const mappedBytes = Math.max(virtualSize, rawSize)
     const mappedEnd = checkedEnd(virtualAddress, mappedBytes, 'PE mapped section')
     if (mappedEnd > sizeOfImage) throw new Error('native bootstrap PE section exceeds the declared image')
     if (
