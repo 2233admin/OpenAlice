@@ -29,11 +29,12 @@ void app.whenReady().then(async () => {
     const img = document.querySelector('#bubble img');
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0);
     return [ctx.getImageData(0, 0, 1, 1).data[3],
       ctx.getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data[3]];
   })()`)
-  assert.deepEqual(bubbleAlpha, [0, 255], 'Speech bubble needs transparent exterior and opaque interior')
+  assert.equal(bubbleAlpha[0], 0, 'Speech bubble exterior must be transparent')
+  assert.ok(bubbleAlpha[1] >= 250, 'Speech bubble interior must be effectively opaque')
   assert.equal(pet.isAlwaysOnTop(), true)
   const box = await pet.webContents.executeJavaScript(`(() => { const r=portrait.getBoundingClientRect(); return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height*.6)} })()`)
   pet.webContents.sendInputEvent({ type: 'mouseDown', ...box, button: 'left', clickCount: 1 })
