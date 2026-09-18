@@ -29,7 +29,7 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
     if (Number.isFinite(value.x) && Number.isFinite(value.y)) saved = { x: value.x, y: value.y }
   } catch { /* First launch or damaged launcher preference: use defaults. */ }
   const area = screen.getDisplayMatching(owner.getBounds()).workArea
-  const width = Math.round(size * 1.5)
+  const width = Math.round(size * 2.7)
   const initial = { x: saved.x ?? area.x + area.width - width - 24, y: saved.y ?? area.y + area.height - Math.round(size * 1.65) - 24, width, height: Math.round(size * 1.65) }
   const bounds = settleCompanion(initial, screen.getDisplayMatching(initial).workArea, false)
   const pet = new BrowserWindow({
@@ -96,7 +96,7 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
       click: () => {
         const old = pet.getBounds(); size = value
         const height = Math.round(size * 1.65)
-        const width = Math.round(size * 1.5)
+        const width = Math.round(size * 2.7)
         pet.setBounds({ x: Math.round(old.x + (old.width - width) / 2), y: old.y + old.height - height, width, height })
         settle(false); save()
       },

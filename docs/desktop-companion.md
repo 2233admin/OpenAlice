@@ -21,8 +21,9 @@ The replacement speech bubble has a connected lower-right tail, rather than
 the original thought dots. It scales/fades in as one image over 200ms from its
 tail; text follows at 120ms. This visual revision is distinct from the upstream
 staggered thought-dot animation.
-The bubble sits 22% of the character stage width to the left, at its original
-height. Symmetric transparent window gutters preserve the artwork size
+The bubble sits 80% of the character stage width to the left and 30% of stage
+height down, so its tail points toward the face rather than the bow.
+Symmetric transparent window gutters preserve the artwork size
 and prevent clipping; mirroring puts the bubble on the opposite side. Alpha
 hit testing still targets only the character, not the additional empty space.
 System reduced-motion disables the transitions. Transparent pixels pass input

@@ -34,5 +34,10 @@ original PNG. Replaced dot layers with a single 200ms pop and re-centered text.
 Generation prompt and provenance are saved alongside the asset. Native smoke
 also checks transparent exterior and opaque interior of the generated bubble.
 
+Position correction after maintainer screenshot: move speech to the side of
+the face (left 80% stage width, down 30% stage height), keeping the image size.
+Expand transparent gutters for both mirrored directions. Native smoke checks
+all sizes/directions and captures a light background to inspect the black tail.
+
 Completion: all available automated gates pass; actual evidence and any remaining
 physical multi-monitor/manual Windows limitations are reported explicitly.
