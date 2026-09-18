@@ -74,6 +74,8 @@ export default defineConfig({
         test: {
           name: 'ui',
           environment: 'jsdom',
+          execArgv: ['--no-experimental-webstorage'],
+          setupFiles: ['./vitest.setup.ts'],
           include: ['ui/**/*.spec.*'],
         },
       },
