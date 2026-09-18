@@ -137,20 +137,52 @@ describe.skipIf(process.platform === 'win32')('CLI dev channel assets', () => {
 })
 
 function nativeBootstrapFixture(platform, arch) {
-  const bytes = Buffer.alloc(512)
+  const bytes = Buffer.alloc(1024)
   if (platform === 'win32') {
     bytes.write('MZ', 0, 'ascii')
-    bytes.writeUInt32LE(0x80, 0x3c)
-    bytes.write('PE\0\0', 0x80, 'ascii')
-    bytes.writeUInt16LE(arch === 'x64' ? 0x8664 : 0xaa64, 0x84)
+    const peOffset = 0x80
+    bytes.writeUInt32LE(peOffset, 0x3c)
+    bytes.write('PE\0\0', peOffset, 'ascii')
+    bytes.writeUInt16LE(arch === 'x64' ? 0x8664 : 0xaa64, peOffset + 4)
+    bytes.writeUInt16LE(1, peOffset + 6)
+    bytes.writeUInt16LE(112, peOffset + 20)
+    bytes.writeUInt16LE(0x0002, peOffset + 22)
+    const optional = peOffset + 24
+    bytes.writeUInt16LE(0x20b, optional)
+    bytes.writeUInt32LE(0x1000, optional + 16)
+    bytes.writeUInt32LE(0x2000, optional + 56)
+    const section = optional + 112
+    bytes.writeUInt32LE(16, section + 16)
+    bytes.writeUInt32LE(0x200, section + 20)
+    bytes.writeUInt32LE(0x20000000, section + 36)
   } else if (platform === 'linux') {
     Buffer.from([0x7f, 0x45, 0x4c, 0x46]).copy(bytes)
     bytes[4] = 2
     bytes[5] = 1
+    bytes.writeUInt16LE(2, 16)
     bytes.writeUInt16LE(arch === 'x64' ? 0x3e : 0xb7, 18)
+    bytes.writeBigUInt64LE(0x1000n, 24)
+    bytes.writeBigUInt64LE(64n, 32)
+    bytes.writeUInt16LE(64, 52)
+    bytes.writeUInt16LE(56, 54)
+    bytes.writeUInt16LE(1, 56)
+    bytes.writeUInt32LE(1, 64)
+    bytes.writeUInt32LE(1, 68)
+    bytes.writeBigUInt64LE(0n, 72)
+    bytes.writeBigUInt64LE(BigInt(bytes.length), 96)
   } else {
     bytes.writeUInt32LE(0xfeedfacf, 0)
     bytes.writeUInt32LE(arch === 'x64' ? 0x01000007 : 0x0100000c, 4)
+    bytes.writeUInt32LE(2, 12)
+    bytes.writeUInt32LE(2, 16)
+    bytes.writeUInt32LE(96, 20)
+    bytes.writeUInt32LE(0x19, 32)
+    bytes.writeUInt32LE(72, 36)
+    bytes.writeBigUInt64LE(0n, 72)
+    bytes.writeBigUInt64LE(BigInt(bytes.length), 80)
+    bytes.writeUInt32LE(4, 92)
+    bytes.writeUInt32LE(0x80000028, 104)
+    bytes.writeUInt32LE(24, 108)
   }
   return bytes
 }
