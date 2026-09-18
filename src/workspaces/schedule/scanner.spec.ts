@@ -142,6 +142,7 @@ function scannerFor(
     canRetryIssueRun?: ScheduleScannerDeps['canRetryIssueRun']
     isIssueRunning?: ScheduleScannerDeps['isIssueRunning']
     observeIssues?: ScheduleScannerDeps['observeIssues']
+    reconcileSessionRuntimeBindings?: ScheduleScannerDeps['reconcileSessionRuntimeBindings']
   } = {},
 ) {
   const dispatch = vi.fn(opts.dispatch ?? (async () => ({ taskId: 'run-1', resumeId: 'resume-new-worker-a1b2c3' })))
@@ -158,6 +159,7 @@ function scannerFor(
     dispatch,
     claimFreshSession: opts.claimFreshSession,
     observeIssues: opts.observeIssues,
+    reconcileSessionRuntimeBindings: opts.reconcileSessionRuntimeBindings,
     markers,
     logger: noopLogger,
     now: () => opts.now ?? NOW,
@@ -166,6 +168,16 @@ function scannerFor(
 }
 
 describe('ScheduleScanner', () => {
+  it('runs Session dossier reconciliation on the infrastructure scan tick', async () => {
+    const ws = await makeWs('w1', [])
+    const reconcileSessionRuntimeBindings = vi.fn(async () => undefined)
+    const { scanner } = scannerFor([ws], { reconcileSessionRuntimeBindings })
+
+    await scanner.scan()
+
+    expect(reconcileSessionRuntimeBindings).toHaveBeenCalledOnce()
+  })
+
   it('stamps connector cron metadata on scheduled and run-now phone-desk runs', async () => {
     const ws = await makeWs('w1', [{
       id: 'telegram-phone-desk',

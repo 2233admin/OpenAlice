@@ -217,9 +217,10 @@ explicit credential, model, or effort choice into one immutable, secret-free
 object. An optional sibling `displayName` is the mutable coworker nametag
 and is not part of this binding. The global resume registry stores identity,
 lifecycle, and native-session mapping only; it hydrates the binding and
-nametag from the Workspace file when Alice starts and never flushes either
-into `resume-identities.json`. The binding is
-then projected on every launch of that Session:
+nametag from the Workspace file when Alice starts, periodically reconciles
+valid external dossier edits, and never flushes either into
+`resume-identities.json`. The binding is then projected on every launch of
+that Session:
 interactive TUI, structured Web surface, headless Issue turn, and exact resume.
 It is not a headless-only override.
 
