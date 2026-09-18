@@ -43,8 +43,8 @@ all sizes/directions and captures a light background to inspect the black tail.
 Completion: all available automated gates pass; actual evidence and any remaining
 physical multi-monitor/manual Windows limitations are reported explicitly.
 
-Recovery entry: Alice’s Settings now includes a desktop-only Show Alice /
-Hide Alice row backed by owner-frame-validated preload IPC. Tray visibility
+Recovery entry: Alice’s Settings now includes a desktop-only Show pet /
+Hide pet row backed by owner-frame-validated preload IPC. Tray visibility
 changes synchronize with the menu; browser/disabled companions omit the row.
 Native demo smoke and manual native menu clicks verified hide/show recovery.
 English, Simplified/Traditional Chinese and Japanese labels are included.

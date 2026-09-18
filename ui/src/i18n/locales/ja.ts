@@ -200,9 +200,9 @@ export const ja: Resources = {
   projectSetup: { connectPi: 'Chat 用に Pi の AI プロバイダーを設定', title: '準備が必要なワークスペースがあります', description: 'プロジェクトは作成済みです。残りの準備を再試行するか、準備済みのワークスペースを利用できます。', pending: '準備待ち', preparing: '準備中…' },
   quickStart: { chooseHarness: 'Harness を選択' },
   nav: {
-    showCompanion: 'Alice を表示',
-    hideCompanion: 'Alice を非表示',
-    companionError: 'Alice の表示状態を変更できませんでした。もう一度お試しください。',
+    showCompanion: 'ペットを表示',
+    hideCompanion: 'ペットを非表示',
+    companionError: 'ペットの表示状態を変更できませんでした。もう一度お試しください。',
     quickStart: 'Quick Start',
     generalChat: 'Chat',
     harnessLabel: '{{name}} Harness',

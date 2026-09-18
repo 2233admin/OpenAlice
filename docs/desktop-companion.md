@@ -5,7 +5,7 @@ from `apps/desktop/src/app-window.ts`. It shares the Electron main process and
 adds a renderer, with no additional Guardian, Alice, UTA or remote connection.
 Closing the main window destroys the companion; minimizing the main window
 leaves the companion available. The menu/tray can restore the main window.
-The bottom-left Alice’s Settings menu also provides Show Alice / Hide Alice in
+The bottom-left Alice’s Settings menu also provides Show pet / Hide pet in
 desktop mode. Its local preload bridge reads the saved preference, toggles the
 same native controller as the tray, and subscribes to visibility changes. The
 entry is omitted in browsers and when the companion is unavailable; only the

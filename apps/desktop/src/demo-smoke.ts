@@ -45,7 +45,7 @@ export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
     };
     await wait(() => document.querySelector('.oa-application-menu'));
     document.querySelector('.oa-application-menu').click();
-    const row = () => [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent === 'Hide Alice');
+    const row = () => [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent === 'Hide pet');
     await wait(row); row().click();
     await wait(() => !document.querySelector('[role="menuitem"]'));
     const hiddenStart = Date.now();
@@ -58,8 +58,8 @@ export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
   await win.webContents.executeJavaScript(`(async () => {
     document.querySelector('.oa-application-menu').click();
     const start = Date.now(); let row;
-    while (!(row = [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent === 'Show Alice'))) {
-      if (Date.now() - start > 5000) throw new Error('Show Alice recovery entry missing');
+    while (!(row = [...document.querySelectorAll('[role="menuitem"]')].find(el => el.textContent === 'Show pet'))) {
+      if (Date.now() - start > 5000) throw new Error('Show pet recovery entry missing');
       await new Promise(r => setTimeout(r, 50));
     }
     row.click();

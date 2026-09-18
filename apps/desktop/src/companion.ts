@@ -108,7 +108,7 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
   })
   const menu = () => Menu.buildFromTemplate([
     { label: '打开 OpenAlice', click: open },
-    { label: enabled ? '隐藏 Alice' : '显示 Alice', click: toggle },
+    { label: enabled ? 'Hide pet' : 'Show pet', click: toggle },
     { label: '大小', submenu: [170, 220, 280].map(value => ({
       label: value === 170 ? '小' : value === 220 ? '中' : '大', type: 'radio' as const, checked: size === value,
       click: () => {

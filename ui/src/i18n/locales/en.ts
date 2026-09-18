@@ -210,9 +210,9 @@ export const en = {
   projectSetup: { connectPi: 'Connect a provider for Chat with Pi', title: 'Some workspaces need attention', description: 'Your project is ready. Retry preparing the remaining workspaces, or continue with the ones already available.', pending: 'Waiting for setup', preparing: 'Preparing…' },
   quickStart: { chooseHarness: 'Choose Harness' },
   nav: {
-    showCompanion: 'Show Alice',
-    hideCompanion: 'Hide Alice',
-    companionError: 'Could not change Alice’s visibility. Please try again.',
+    showCompanion: 'Show pet',
+    hideCompanion: 'Hide pet',
+    companionError: 'Could not change pet visibility. Please try again.',
     quickStart: 'Quick Start',
     generalChat: 'Chat',
     harnessLabel: '{{name}} Harness',
