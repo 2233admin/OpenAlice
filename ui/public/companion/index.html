@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alice</title>
+  <link rel="stylesheet" href="pet.css">
+</head>
+<body>
+  <div id="mirror">
+    <div id="body">
+      <div id="bubble" aria-live="polite">
+        <img class="bubble-main" src="bubble.png" alt="" draggable="false">
+        <img class="bubble-dot-one" src="bubble.png" alt="" draggable="false">
+        <img class="bubble-dot-two" src="bubble.png" alt="" draggable="false">
+        <div id="message">我在这里。</div>
+      </div>
+      <button id="pet" aria-label="Alice：点击互动，拖动移动，右键设置" title="点击互动 · 拖动移动 · 右键设置">
+        <img id="portrait" src="alice.png" alt="Alice" draggable="false">
+      </button>
+    </div>
+  </div>
+  <script src="pet.js"></script>
+</body>
+</html>
