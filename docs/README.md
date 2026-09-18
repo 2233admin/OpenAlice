@@ -25,6 +25,7 @@ GitHub navigation.
 | [[docs/docker-deployment.md]] | [Docker deployment](docker-deployment.md) | Server image topology, remote-host safety, persistence, health, and container acceptance |
 | [[docs/remote-access.md]] | [Remote Runtime and access](remote-access.md) | Server lifecycle, SSH transport, managed remote bootstrap, client authority, and staged Studio protocol |
 | [[docs/demo-mode.md]] | [Demo mode](demo-mode.md) | Shared mock data, isolated native Electron preview and demo smoke |
+| [[docs/desktop-companion.md]] | [Desktop companion](desktop-companion.md) | Alice floating window, native lifecycle, interaction, assets and platform acceptance |
 | [[docs/inbox-content.md]] | [Inbox content](inbox-content.md) | Markdown publication, shared file references, migration and UI hook |
 | [[docs/connector-service.md]] | [Connector Service](connector-service.md) | Optional Discord/Telegram Inbox projection, adapters, secrets, health, Guardian lifecycle |
 | [[docs/ui-interaction-and-motion.md]] | [UI interaction and motion](ui-interaction-and-motion.md) | Clickable affordances, shared motion tokens, entrances/disclosures, reduced-motion policy |

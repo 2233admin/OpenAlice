@@ -29,6 +29,9 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/desktop-companion.md]] — Native Alice companion using supplied art,
+  upstream press/drag/bubble motion and macOS/Windows acceptance.
+
 - [[plans/web-conversation-surface.md]] — Generalizes WebPi into one Web
   conversation surface: a neutral `WebSessionHost` with `pi-rpc`, `acp`,
   `claude-stream-json`, and `codex-app-server` transports, first-class

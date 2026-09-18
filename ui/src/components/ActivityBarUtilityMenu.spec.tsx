@@ -27,6 +27,8 @@ vi.mock('react-i18next', () => ({
       'nav.appearanceMenu': `Appearance: ${params?.mode}`,
       'nav.item.settings': 'Settings',
       'nav.item.connectors': 'Connectors',
+      'nav.showCompanion': 'Show pet',
+      'nav.hideCompanion': 'Hide pet',
       'nav.connectorNeedsAttention': '1 connector needs attention',
       'settings.category.appearance': 'Appearance',
       'theme.mode.auto': 'Auto',
@@ -38,11 +40,27 @@ vi.mock('react-i18next', () => ({
 
 afterEach(() => {
   cleanup()
+  Reflect.deleteProperty(window, 'openAlice')
   mocks.theme = 'auto'
   vi.clearAllMocks()
 })
 
 describe('ActivityBarUtilityMenu', () => {
+  it('recovers a hidden companion from Alice Settings and then offers Hide pet', async () => {
+    let visible = false
+    const toggle = vi.fn(async () => { visible = !visible; return visible })
+    Object.defineProperty(window, 'openAlice', { configurable: true, value: { companion: {
+      getVisible: async () => visible, toggle, onVisibility: () => () => {},
+    } } })
+    const user = userEvent.setup()
+    render(<ActivityBarUtilityMenu compactRail={false} denseRail={false}
+      onOpenSettings={vi.fn()} onOpenConnectors={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Alice’s Settings: Open application menu' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Show pet' }))
+    expect(toggle).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: 'Alice’s Settings: Open application menu' }))
+    expect(await screen.findByRole('menuitem', { name: 'Hide pet' })).toBeTruthy()
+  })
   it('keeps theme choices in an Appearance submenu', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()

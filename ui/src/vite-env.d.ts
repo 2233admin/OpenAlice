@@ -28,6 +28,15 @@ interface Window {
    * sync with apps/desktop/src/preload.ts; never expose raw ipcRenderer.
    */
   readonly openAlice?: {
+    readonly companion?: {
+      getSound(): Promise<PetSoundSettings>
+      updateSound(settings: Partial<PetSoundSettings>): Promise<PetSoundSettings>
+      resetSound(): Promise<PetSoundSettings>
+      onSound(callback: (settings: PetSoundSettings) => void): () => void
+      getVisible(): Promise<boolean>
+      toggle(): Promise<boolean>
+      onVisibility(callback: (visible: boolean) => void): () => void
+    }
     readonly windowChrome?: {
       readonly platform: string
       setTheme?(theme: { color: string; symbolColor: string }): Promise<void>
@@ -142,6 +151,12 @@ interface OpenAliceDataHomeStatus {
   readonly askOnStartup: boolean
   readonly selectionLocked: boolean
   readonly selectionLock: 'openalice-home-env' | 'workspace-root-env' | null
+}
+
+interface PetSoundSettings {
+  enabled: boolean
+  volume: number
+  source: { name: string; dataUrl: string } | null
 }
 
 interface OpenAliceDataHomeActionResult {

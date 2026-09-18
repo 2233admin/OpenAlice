@@ -188,6 +188,10 @@ jobs:
       - name: Build Alice + UTA + desktop shell
         run: pnpm electron:build
 
+      - name: Smoke native companion interaction
+        run: pnpm -F @traderalice/desktop exec electron ../../dist/electron/companion-preview.js --smoke
+        timeout-minutes: 2
+
       - name: Smoke Guardian takeover through Electron
         run: pnpm electron:smoke:guardian-recovery --skip-build
         timeout-minutes: 5

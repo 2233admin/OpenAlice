@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Activity,
   Bot,
+  Ghost,
   Camera,
   Cpu,
   CandlestickChart,
@@ -68,6 +69,7 @@ const CATEGORY_GROUPS = [
     items: [
       { labelKey: 'settings.category.general', category: 'general', Icon: SlidersHorizontal },
       { labelKey: 'settings.category.appearance', category: 'appearance', Icon: Palette },
+      { labelKey: 'pet.title', category: 'pet', Icon: Ghost },
       { labelKey: 'settings.category.activityBar', category: 'activity-bar', Icon: PanelLeft },
     ],
   },
