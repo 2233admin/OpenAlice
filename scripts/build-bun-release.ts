@@ -190,6 +190,7 @@ const report = {
   archiveSha256: archiveHash,
   bootstrapExecutable: basename(bootstrap.executablePath),
   bootstrapSha256: bootstrap.sha256,
+  bootstrapFormatVerification: bootstrap.formatVerification,
   bootstrapRuntimeVerification: bootstrap.runtimeVerification,
   smoke,
 }

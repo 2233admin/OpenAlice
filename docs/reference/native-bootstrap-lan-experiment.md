@@ -120,6 +120,8 @@ rollback steps to every Agent.
 A deployment is accepted only when all of the following are true:
 
 - the Bootstrap executable matches the manifest SHA-256;
+- release publication verifies the executable container and architecture and
+  rejects a missing or incomplete current six-target Bootstrap matrix;
 - the CLI archive matches its trusted SHA-256;
 - platform, architecture, release version, payload identity, and complete file
   inventory verify before activation;

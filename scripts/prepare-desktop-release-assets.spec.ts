@@ -235,6 +235,18 @@ describe('prepareMirrorAssets', () => {
     })
   })
 
+  it('requires native bootstraps for a new release publication', () => {
+    withTempDir((dir) => {
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+        requireNativeBootstraps: true,
+      })).toThrow('native bootstrap set is required')
+    })
+  })
+
   it('rejects an incomplete native bootstrap publication', () => {
     withTempDir((dir) => {
       const asset = 'openalice-bootstrap-1.2.3-linux-x64'

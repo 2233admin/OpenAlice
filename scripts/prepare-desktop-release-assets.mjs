@@ -87,14 +87,17 @@ const NATIVE_BOOTSTRAP_TARGETS = [
   ['win32', 'x64'],
 ]
 
-function collectNativeBootstraps({ names, outDir, version, baseUrl }) {
+function collectNativeBootstraps({ names, outDir, version, baseUrl, required }) {
   const expected = NATIVE_BOOTSTRAP_TARGETS.map(([platform, arch]) => ({
     platform,
     arch,
     asset: `openalice-bootstrap-${version}-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`,
   }))
   const present = expected.filter(({ asset }) => names.includes(asset) || names.includes(`${asset}.sha256`))
-  if (present.length === 0) return []
+  if (present.length === 0) {
+    if (required) throw new Error('[release-assets] native bootstrap set is required')
+    return []
+  }
 
   const missing = expected.flatMap(({ asset }) => [asset, `${asset}.sha256`])
     .filter((name) => !names.includes(name))
@@ -122,7 +125,7 @@ function collectNativeBootstraps({ names, outDir, version, baseUrl }) {
   })
 }
 
-export function prepareMirrorAssets({ outDir, tag, baseUrl, repository }) {
+export function prepareMirrorAssets({ outDir, tag, baseUrl, repository, requireNativeBootstraps = false }) {
   const version = tag.replace(/^v/, '')
   const channel = prereleaseChannel(version)
   const releaseChannel = channel === 'latest' ? 'stable' : channel
@@ -173,6 +176,7 @@ export function prepareMirrorAssets({ outDir, tag, baseUrl, repository }) {
     outDir,
     version,
     baseUrl: normalizedBaseUrl,
+    required: requireNativeBootstraps,
   })
   const manifest = {
     channel: releaseChannel,
@@ -260,6 +264,7 @@ function main() {
       tag: values.tag,
       baseUrl: values['base-url'],
       repository: values.repository,
+      requireNativeBootstraps: values['require-native-bootstraps'] === 'true',
     })
     return
   }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { access, chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -105,6 +105,34 @@ describe.skipIf(process.platform === 'win32')('CLI dev channel assets', () => {
       version,
       installerPath: join(root, 'install'),
     })).toThrow('content identity does not match its release manifest')
+  })
+
+  it('rejects a bootstrap asset that is not a regular file', async () => {
+    const root = await fixture()
+    const asset = join(root, 'input', `openalice-bootstrap-${version}-linux-x64`)
+    await rm(asset)
+    await symlink(join(root, 'install'), asset)
+
+    expect(() => prepareCliDevAssets({
+      inputDir: join(root, 'input'),
+      outputDir: join(root, 'output'),
+      commit,
+      version,
+      installerPath: join(root, 'install'),
+    })).toThrow('must be a regular file')
+  })
+
+  it('rejects unexpected bootstrap sidecars', async () => {
+    const root = await fixture()
+    await writeFile(join(root, 'input', 'openalice-bootstrap-stale.sha256'), 'stale')
+
+    expect(() => prepareCliDevAssets({
+      inputDir: join(root, 'input'),
+      outputDir: join(root, 'output'),
+      commit,
+      version,
+      installerPath: join(root, 'install'),
+    })).toThrow('unexpected native bootstrap assets')
   })
 })
 

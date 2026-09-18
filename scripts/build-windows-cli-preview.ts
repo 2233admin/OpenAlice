@@ -115,6 +115,7 @@ await writeFile(join(output, 'candidate.json'), JSON.stringify({
   archive, sha256: digest, release, executable, sourceCommit, sourceDirty, version, arch,
   contentIdentity: metadata.contentIdentity, channelBuild, runtimeVerification: 'not-run',
   bootstrapExecutable: bootstrap.executablePath, bootstrapSha256: bootstrap.sha256,
+  bootstrapFormatVerification: bootstrap.formatVerification,
   bootstrapRuntimeVerification: bootstrap.runtimeVerification,
 }, null, 2) + '\n')
 console.log(`Windows ${arch} preview built (native runtime verification pending): ${archive}`)
