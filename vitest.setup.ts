@@ -24,7 +24,11 @@ const testHome = process.env['OPENALICE_TEST_HOME']
   ?? mkdtempSync(join(tmpdir(), 'oa-vitest-'))
 mkdirSync(testHome, { recursive: true })
 const gitConfigPath = join(testHome, 'gitconfig')
-writeFileSync(gitConfigPath, '')
+// An empty global config still inherits $XDG_CONFIG_HOME/git/ignore (or
+// ~/.config/git/ignore). Explicitly replace that default with an empty file.
+const gitExcludesPath = join(testHome, 'git-excludes')
+writeFileSync(gitExcludesPath, '')
+writeFileSync(gitConfigPath, `[core]\n\texcludesFile = ${JSON.stringify(gitExcludesPath.replaceAll('\\', '/'))}\n`)
 process.env['GIT_CONFIG_GLOBAL'] = gitConfigPath
 process.env['GIT_CONFIG_NOSYSTEM'] = '1'
 
