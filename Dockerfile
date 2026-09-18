@@ -147,7 +147,6 @@ COPY --from=build /src/scripts                    ./scripts
 # auth tokens + agent state persist across container rebuild.
 ENV OPENALICE_APP_HOME=/app \
     OPENALICE_HOME=/data \
-    AQ_LAUNCHER_ROOT=/data/workspaces \
     HOME=/data/home \
     NODE_ENV=production \
     OPENALICE_WEB_PORT=47331 \
@@ -156,7 +155,6 @@ ENV OPENALICE_APP_HOME=/app \
     OPENALICE_CONNECTOR_PORT=47334 \
     OPENALICE_BIND_HOST=0.0.0.0
 
-VOLUME ["/data"]
 EXPOSE 47331
 
 # Compose and remote orchestrators can distinguish "container process exists"
