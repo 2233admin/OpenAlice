@@ -1,7 +1,7 @@
 # Native Bootstrap LAN experiment
 
 **Date:** 2026-09-16
-**Status:** native protocol implemented and accepted on Windows x64 and Linux x64
+**Status:** native protocol accepted on Windows x64 and Linux x64; four target-native runs remain pending
 **Scope:** non-trading OpenAlice CLI deployment to Windows and Linux over an ordinary LAN
 
 ## Question
@@ -23,6 +23,29 @@ from the product itself rather than treating a script exit code as deployment?
 No broker account, trading permission, credential, or live trading operation was
 loaded. Both temporary native deployments were removed after acceptance. The
 pre-existing Windows deployment was restored and left running.
+
+## Deployment models covered
+
+This experiment validates the **native host** model. It does not validate the
+Docker image, packaged Electron app, or source-development workflow. Docker has
+its own image, volume, healthcheck, bundled Agent runtimes, and acceptance path;
+it does not use the platform persistence adapters tested here.
+
+| Native target | Persistence design | Acceptance status |
+|---|---|---|
+| Windows x64 | Per-user Task Scheduler logon task | Accepted on a physical LAN target |
+| Windows ARM64 | Same Task Scheduler adapter and ARM64 release contract | Target-native run pending |
+| Linux x64 | Enabled `systemd --user` foreground service | Accepted in a WSL2 user-systemd guest |
+| Linux ARM64 | Same user-systemd adapter and ARM64 release contract | Target-native run pending |
+| macOS x64 | Per-user LaunchAgent in `gui/<uid>` | Target-native run pending |
+| macOS ARM64 | Per-user LaunchAgent in `gui/<uid>` | Target-native run pending |
+
+The macOS design intentionally follows the logged-in user lifecycle: it is a
+LaunchAgent with `RunAtLoad`, not a root LaunchDaemon. The Linux design follows
+the user systemd lifecycle: Bootstrap enables the unit, but an unattended host
+must already keep that user manager alive outside login sessions. Windows uses a
+least-privilege logon task. These are three adapters for one native transaction,
+not three unrelated installers.
 
 ## Procedure and observations
 

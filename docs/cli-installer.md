@@ -1,4 +1,4 @@
-# CLI Installer
+# Deployment Models and CLI Installer
 
 This guide owns the macOS/Linux/Windows OpenAlice CLI bootstrap, installed layout,
 activation, provenance, update, rollback, uninstall, and release acceptance.
@@ -9,17 +9,100 @@ The current CLI payload is one target-native Bun executable plus immutable
 OpenAlice resources. The installer does not install Node.js, Bun, npm, source
 dependencies, build tools, or an Agent Runtime.
 
-The direct installer expects Bash, `tar` with gzip support, `diff`, and either `sha256sum` or
-`shasum`; a network install also needs `curl`. Safe transaction ownership uses
-the platform kernel: macOS uses `lockf` when available and falls back to the
-system `shlock` utility on older releases, while Linux must provide `flock`
-(normally from `util-linux`). These are host prerequisites, not packages that
-the installer silently adds. Minimal images and remote hosts should install
-them before running the shared installer.
+The POSIX compatibility installer expects Bash, `tar` with gzip support, `diff`,
+and either `sha256sum` or `shasum`; a network install also needs `curl`. Safe
+transaction ownership uses the platform kernel: macOS uses `lockf` when available
+and falls back to the system `shlock` utility on older releases, while Linux must
+provide `flock` (normally from `util-linux`). These are host prerequisites, not
+packages that the installer silently adds. Windows native Bootstrap has a
+separate native prerequisite set described below.
 
 npm, Bun, Homebrew, and Arch/AUR installation consume the same accepted native
 archives but remain owned by their package manager. Their topology, commands,
 and update behavior live in [[docs/cli-package-managers.md]].
+
+## Choose a deployment model
+
+Choose where the Runtime should live before choosing an installer command. The
+same browser UI can connect to different Runtime owners; download syntax does
+not define the deployment model.
+
+| Model | Runtime owner | Choose it when |
+|---|---|---|
+| Packaged desktop | Electron on the local workstation | One user wants the complete signed desktop product and local lifecycle |
+| Native host | The host OS and a per-user service manager | Workspaces, files, and native Agent CLIs should live directly on one Windows, Linux, or macOS machine |
+| Native host over SSH | The remote host, reached through an SSH loopback tunnel | The Runtime belongs on a private remote machine while the browser remains local |
+| Docker server | A Linux container with a persistent volume | Operators want image-based rollout, isolation, and container health/lifecycle |
+| Source development | The checked-out source tree | Contributors are changing OpenAlice; this is not a production install |
+
+The native Bootstrap is the formal machine-install protocol for the native-host
+and native-over-SSH models. Bash, PowerShell, npm, Bun, Homebrew, and AUR are
+distribution or compatibility entry paths into the same native payload; they do
+not create additional Runtime topologies. Docker is different: it deploys the
+server image, owns its bundled Agent runtimes, stores state in a volume, and does
+not install the native host service. See [[docs/docker-deployment.md]] for that
+contract and [[docs/remote-access.md]] for SSH transport.
+
+### Native host persistence by operating system
+
+All three native targets use the same plan, verified archive, immutable release,
+activation, readiness, receipt, and rollback transaction. Only the persistence
+adapter changes:
+
+- **Windows:** select the `win32-x64` or `win32-arm64` artifacts. Bootstrap probes
+  through `cmd.exe`, then registers the native executable directly as the
+  per-user `OpenAliceServer` Task Scheduler task. The task runs at user logon,
+  uses least privilege, and owns foreground `openalice server run`. The formal
+  path does not invoke PowerShell; `install.ps1` is compatibility only.
+- **Linux:** select the `linux-x64` or `linux-arm64` artifacts. Bootstrap writes
+  the per-user `openalice.service`, then runs `systemctl --user daemon-reload`,
+  `enable`, and `restart`. The user service owns foreground
+  `openalice server run` after the deployment session disconnects. A host meant
+  to run without an active login must already provide a persistent user manager;
+  Bootstrap does not change host login or lingering policy.
+- **macOS:** select the `darwin-x64` or `darwin-arm64` artifacts. Bootstrap writes
+  the per-user `ai.openalice.server` LaunchAgent and loads it into the current
+  `gui/<uid>` launchd domain with `bootstrap` and `kickstart`. It starts at user
+  login and is intentionally not a root LaunchDaemon or pre-login system service.
+  The adapter and artifact contracts are implemented; target-native macOS
+  Runtime acceptance is still pending.
+
+Use `--service none` on any native platform when another supervisor will own the
+Runtime. Bootstrap still installs and verifies the release, but it does not
+register or start platform persistence.
+
+Formal native Bootstrap requires the target's archive utility and service-manager
+commands, not the compatibility script toolchain:
+
+- Windows uses `tar.exe`, `cmd.exe`, `whoami.exe`, and `schtasks.exe`;
+- Linux uses `tar` and `systemctl --user` with a working user manager; and
+- macOS uses `tar`, `id`, and `launchctl` in the logged-in GUI user domain.
+
+Bootstrap computes SHA-256 itself. It does not require Bash, `diff`,
+`sha256sum`, `shasum`, or PowerShell. Network download and SSH connectivity stay
+with the invoking Agent rather than the local Bootstrap executable.
+
+Removal is not yet symmetric with deployment. `openalice uninstall` owns the
+direct-installer files and PATH changes, but it does not unregister a
+Bootstrap-created task, unit, or LaunchAgent. Do not treat that command as full
+removal of a Bootstrap-managed host. Use `--service none` when another supervisor
+or a disposable environment must own teardown; an integrated managed-removal
+transaction remains outstanding.
+
+### Docker versus native host deployment
+
+Native deployment preserves direct access to host files, host-native Agent CLIs,
+and the platform service manager. Updates switch an immutable native release and
+can roll back to the prior activation.
+
+Docker deployment runs the non-Electron product as a Linux server image under
+`tini` and Guardian. `/app` is immutable, `/data` is the persistent state root,
+and container replacement is the update boundary. The image bundles its pinned
+Agent runtimes because it cannot borrow binaries from the host. Only the Alice
+web port is published; internal CLI/MCP, UTA, and Connector ports remain on
+container loopback. Docker can be hosted through Docker Desktop on Windows or
+macOS, but the deployed Runtime is still the Linux container, not the host's
+Task Scheduler or LaunchAgent path.
 
 ## Native Bootstrap deployment protocol
 
@@ -227,7 +310,7 @@ It contains exactly one top-level directory with:
 
 ```text
 openalice-cli-<version>-<platform>-<arch>/
-├── bin/openalice
+├── bin/openalice (macOS/Linux) or bin/openalice.exe (Windows)
 ├── release.json
 ├── share/openalice/
 │   ├── ui/dist/
@@ -236,6 +319,9 @@ openalice-cli-<version>-<platform>-<arch>/
 ├── LICENSE
 └── THIRD_PARTY_NOTICES.md
 ```
+
+`release.json` names the exact executable for its target; the archive contains
+one of those two paths, never both.
 
 The sidecar `<archive>.sha256` is part of the release contract. The installer
 verifies the downloaded bytes before extraction, rejects unsafe or multi-root
@@ -263,7 +349,7 @@ https://download.openalice.ai/cli/dev/releases/<commit>/openalice-cli-<version>-
 https://download.openalice.ai/cli/dev/releases/<commit>/openalice-cli-<version>-<platform>-<arch>.tar.gz.sha256
 ```
 
-Every `dev` push builds all four native targets. Publication verifies each
+Every `dev` push builds all six native targets. Publication verifies each
 sidecar and the archive's target/version metadata, uploads an immutable copy
 under `cli/dev/releases/<commit>/`, and preserves a small candidate receipt.
 A separate activation stage rechecks that remote `refs/heads/dev` is exactly
@@ -293,7 +379,7 @@ updates do not consume them. Remove the compatibility writes after a beta or
 stable release has placed the manifest-driven installer on the shared public
 endpoint; do not make aliases part of the next manifest schema.
 
-Versioned beta and stable releases publish the same four target archives and
+Versioned beta and stable releases publish the same six target archives and
 sidecars as GitHub Release assets and mirror them unchanged to the download
 CDN. Stable and beta manifests remain separate; immutable
 `OpenAlice-<version>-install` and
@@ -726,9 +812,11 @@ OpenAlice assumes the target is already reachable through ordinary SSH. These
 checks exercise installation and transfer on disposable targets; they do not
 provision a cloud service or manage an infrastructure provider.
 
-The Docker smoke uses a clean non-root Debian host with Node, npm, pnpm, Bun,
-and Agent Runtimes absent. It verifies plan, consent, native installation,
-dynamic launchers, update activation, retention, PATH, and lock cleanup. Use
+The installer container smoke uses a clean non-root Debian host with Node, npm,
+pnpm, Bun, and Agent Runtimes absent. It verifies plan, consent, native
+installation, dynamic launchers, update activation, retention, PATH, and lock
+cleanup. It is separate from the server-image smoke described in the
+corresponding [Docker deployment guide](docker-deployment.md). Run
 `pnpm test:system:installer -- --interactive` for the manual prompt playground.
 
 Use `pnpm test:system:installer:dev` only for the published dev-channel path.
@@ -741,7 +829,7 @@ Before promotion also:
 1. build the real target-native Bun archive;
 2. install it into an isolated root and run `version --json`;
 3. update from a distinct retained release and exercise rollback;
-4. build/install on native macOS and clean Linux for each supported arch;
+4. run target-native install/readiness acceptance on Windows, macOS, and clean Linux for every architecture being promoted;
 5. publish the immutable dev candidate, activate its exact-commit manifest,
    and exercise the raw `dev/install` plus `--channel dev` network path;
 6. verify release assets and sidecar checksums before making any channel alias
