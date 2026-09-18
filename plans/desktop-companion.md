@@ -28,5 +28,11 @@ changing portrait/bubble size or animation. Native smoke verifies all three
 sizes in both directions, alongside press/release. Desktop 75 tests and desktop/UI
 typechecks pass. Keep the feature branch open for visual acceptance.
 
+Follow-up: maintainer requested regenerating the awkward thought bubble. Added
+generated bubble-speech.png with a connected lower-right tail; preserved the
+original PNG. Replaced dot layers with a single 200ms pop and re-centered text.
+Generation prompt and provenance are saved alongside the asset. Native smoke
+also checks transparent exterior and opaque interior of the generated bubble.
+
 Completion: all available automated gates pass; actual evidence and any remaining
 physical multi-monitor/manual Windows limitations are reported explicitly.

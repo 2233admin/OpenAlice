@@ -6,7 +6,7 @@ adds a renderer, with no additional Guardian, Alice, UTA or remote connection.
 Closing the main window destroys the companion; minimizing the main window
 leaves the companion available. The menu/tray can restore the main window.
 
-The first version uses maintainer-supplied transparent PNGs in
+The first version uses a maintainer-supplied character and a generated speech bubble in
 `ui/public/companion/`. Its local speech is decorative, never a claim about an
 Agent's execution status. Single click cycles through short lines, double click
 opens the main window, and right click opens the native menu. The tray remains
@@ -17,8 +17,10 @@ Interaction follows MeteorNOX's Whale Widget (MIT attribution ships in
 `ui/public/companion/NOTICE.md`): bottom-anchored 0.88Y/1.05X press transform,
 220ms `cubic-bezier(.34,1.56,.64,1)`, 3-DIP drag threshold, 300ms mirror,
 160ms CSS-ease snapping, 10% side and 15% bottom snap zones, no top snap.
-The bubble image is rendered as three clipped layers so the small dot, larger
-dot and body appear with 0/130/260ms delays; text follows at 360ms.
+The replacement speech bubble has a connected lower-right tail, rather than
+the original thought dots. It scales/fades in as one image over 200ms from its
+tail; text follows at 120ms. This visual revision is distinct from the upstream
+staggered thought-dot animation.
 The bubble sits 22% of the character stage width to the left, at its original
 height. Symmetric transparent window gutters preserve the artwork size
 and prevent clipping; mirroring puts the bubble on the opposite side. Alpha

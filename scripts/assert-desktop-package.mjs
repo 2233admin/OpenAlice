@@ -25,6 +25,7 @@ export const BASE_REQUIRED_FILES = [
   'ui/dist/companion/pet.css',
   'ui/dist/companion/alice.png',
   'ui/dist/companion/bubble.png',
+  'ui/dist/companion/bubble-speech.png',
   'ui/dist/companion/NOTICE.md',
   'src/workspaces/cli/bin/openalice-cli.cjs',
   'src/workspaces/cli/bin/alice',

@@ -1,6 +1,9 @@
 # Alice companion
 
 Character and bubble PNGs supplied by the OpenAlice maintainer, September 2026.
+The original bubble.png is retained as a source asset. The active
+bubble-speech.png was generated with the built-in image generation tool at the
+maintainer's request on September 18, 2026; see bubble-generation.md for its prompt.
 
 Press/release transforms, easing, pointer threshold, mirror timing and alpha
 hit-testing interaction adapted from MeteorNOX's DeepSeek Balance Whale Widget:
