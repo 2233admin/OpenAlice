@@ -32,7 +32,7 @@ function verifyPeExecutable(descriptor, size, arch) {
   if (
     sectionCount === 0
     || sectionCount > 96
-    || optionalSize < 112
+    || optionalSize < 240
     || optionalSize > 4096
     || (characteristics & 0x0002) === 0
     || (characteristics & 0x2000) !== 0
@@ -41,8 +41,13 @@ function verifyPeExecutable(descriptor, size, arch) {
   }
   const optional = readExactly(descriptor, size, peOffset + 24, optionalSize, 'PE optional header')
   const entryPoint = optional.readUInt32LE(16)
-  if (optional.readUInt16LE(0) !== 0x20b || entryPoint === 0 || optional.readUInt32LE(56) === 0) {
+  const sizeOfImage = optional.readUInt32LE(56)
+  if (optional.readUInt16LE(0) !== 0x20b || entryPoint === 0 || sizeOfImage === 0 || entryPoint >= sizeOfImage) {
     throw new Error('native bootstrap is not an executable PE32+ image')
+  }
+  const directoryCount = optional.readUInt32LE(108)
+  if (directoryCount > 16 || optionalSize < 112 + directoryCount * 8) {
+    throw new Error('native bootstrap PE data directory table is invalid')
   }
   const sectionTable = peOffset + 24 + optionalSize
   readExactly(descriptor, size, sectionTable, sectionCount * 40, 'PE section table')
@@ -54,13 +59,16 @@ function verifyPeExecutable(descriptor, size, arch) {
     const rawSize = section.readUInt32LE(16)
     const rawOffset = section.readUInt32LE(20)
     const flags = section.readUInt32LE(36)
-    if (rawSize > 0 && rawOffset + rawSize > size) throw new Error('native bootstrap PE section exceeds the file')
+    if (rawSize > 0 && checkedEnd(rawOffset, rawSize, 'PE section') > size) {
+      throw new Error('native bootstrap PE section exceeds the file')
+    }
     const mappedBytes = Math.max(virtualSize, rawSize)
+    const mappedEnd = checkedEnd(virtualAddress, mappedBytes, 'PE mapped section')
     if (
       mappedBytes > 0
       && (flags & 0x20000000) !== 0
       && entryPoint >= virtualAddress
-      && entryPoint < virtualAddress + mappedBytes
+      && entryPoint < mappedEnd
     ) {
       entryInExecutableSection = true
     }
@@ -93,16 +101,24 @@ function verifyElfExecutable(descriptor, size, arch) {
     const entry = readExactly(descriptor, size, programOffset + index * programEntrySize, 56, 'ELF program header')
     const fileOffset = safeUInt64(entry, 8, 'ELF segment offset')
     const virtualAddress = safeUInt64(entry, 16, 'ELF segment virtual address')
-    const fileBytes = safeUInt64(entry, 32, 'ELF segment size')
+    const fileBytes = safeUInt64(entry, 32, 'ELF segment file size')
     const memoryBytes = safeUInt64(entry, 40, 'ELF segment memory size')
+    const alignment = safeUInt64(entry, 48, 'ELF segment alignment')
+    if (fileBytes > memoryBytes) throw new Error('native bootstrap ELF segment file size exceeds memory size')
     if (checkedEnd(fileOffset, fileBytes, 'ELF segment') > size) throw new Error('native bootstrap ELF segment exceeds the file')
-    const mappedEnd = checkedEnd(virtualAddress, Math.max(fileBytes, memoryBytes), 'ELF mapped segment')
+    if (
+      alignment > 1
+      && (!isPowerOfTwo(alignment) || fileOffset % alignment !== virtualAddress % alignment)
+    ) {
+      throw new Error('native bootstrap ELF segment alignment is invalid')
+    }
+    const fileBackedEnd = checkedEnd(virtualAddress, fileBytes, 'ELF file-backed segment')
     if (
       entry.readUInt32LE(0) === 1
       && fileBytes > 0
       && (entry.readUInt32LE(4) & 1) !== 0
       && entryPoint >= virtualAddress
-      && entryPoint < mappedEnd
+      && entryPoint < fileBackedEnd
     ) {
       entryInExecutableSegment = true
     }
@@ -130,12 +146,20 @@ function verifyMachExecutable(descriptor, size, arch) {
     const commandHeader = readExactly(descriptor, size, offset, 8, 'Mach-O load command')
     const command = commandHeader.readUInt32LE(0)
     const commandSize = commandHeader.readUInt32LE(4)
-    if (commandSize < 8 || offset + commandSize > commandsEnd) throw new Error('native bootstrap Mach-O load command is invalid')
+    if (commandSize < 8 || commandSize % 8 !== 0 || offset + commandSize > commandsEnd) {
+      throw new Error('native bootstrap Mach-O load command is invalid')
+    }
     if (command === 0x19) {
       if (commandSize < 72) throw new Error('native bootstrap Mach-O segment command is invalid')
       const segment = readExactly(descriptor, size, offset, 72, 'Mach-O segment command')
+      const memoryBytes = safeUInt64(segment, 32, 'Mach-O segment memory size')
       const fileOffset = safeUInt64(segment, 40, 'Mach-O segment offset')
-      const fileBytes = safeUInt64(segment, 48, 'Mach-O segment size')
+      const fileBytes = safeUInt64(segment, 48, 'Mach-O segment file size')
+      const sectionCount = segment.readUInt32LE(64)
+      if (commandSize !== checkedEnd(72, sectionCount * 80, 'Mach-O segment command')) {
+        throw new Error('native bootstrap Mach-O segment section table is invalid')
+      }
+      if (fileBytes > memoryBytes) throw new Error('native bootstrap Mach-O segment file size exceeds memory size')
       const segmentEnd = checkedEnd(fileOffset, fileBytes, 'Mach-O segment')
       if (segmentEnd > size) throw new Error('native bootstrap Mach-O segment exceeds the file')
       if (fileBytes > 0 && (segment.readUInt32LE(60) & 4) !== 0) {
@@ -143,7 +167,7 @@ function verifyMachExecutable(descriptor, size, arch) {
       }
     }
     if (command === 0x80000028) {
-      if (commandSize < 24) throw new Error('native bootstrap Mach-O entry command is invalid')
+      if (commandSize !== 24 || entryOffset !== null) throw new Error('native bootstrap Mach-O entry command is invalid')
       const entry = readExactly(descriptor, size, offset, 24, 'Mach-O entry command')
       entryOffset = safeUInt64(entry, 8, 'Mach-O entry offset')
     }
@@ -184,6 +208,10 @@ function checkedEnd(start, length, label) {
   return end
 }
 
+function isPowerOfTwo(value) {
+  const big = BigInt(value)
+  return (big & (big - 1n)) === 0n
+}
 function architectureError(platform, arch) {
   return new Error(`native bootstrap architecture mismatch: expected ${platform}-${arch}`)
 }

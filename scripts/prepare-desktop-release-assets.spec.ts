@@ -25,13 +25,14 @@ function nativeBootstrapFixture(platform: string, arch: string) {
     bytes.write('PE\0\0', peOffset, 'ascii')
     bytes.writeUInt16LE(arch === 'x64' ? 0x8664 : 0xaa64, peOffset + 4)
     bytes.writeUInt16LE(1, peOffset + 6)
-    bytes.writeUInt16LE(112, peOffset + 20)
+    bytes.writeUInt16LE(240, peOffset + 20)
     bytes.writeUInt16LE(0x0002, peOffset + 22)
     const optional = peOffset + 24
     bytes.writeUInt16LE(0x20b, optional)
     bytes.writeUInt32LE(0x1000, optional + 16)
     bytes.writeUInt32LE(0x2000, optional + 56)
-    const section = optional + 112
+    bytes.writeUInt32LE(16, optional + 108)
+    const section = optional + 240
     bytes.writeUInt32LE(0x100, section + 8)
     bytes.writeUInt32LE(0x1000, section + 12)
     bytes.writeUInt32LE(16, section + 16)
@@ -62,6 +63,7 @@ function nativeBootstrapFixture(platform: string, arch: string) {
     bytes.writeUInt32LE(96, 20)
     bytes.writeUInt32LE(0x19, 32)
     bytes.writeUInt32LE(72, 36)
+    bytes.writeBigUInt64LE(BigInt(bytes.length), 64)
     bytes.writeBigUInt64LE(0n, 72)
     bytes.writeBigUInt64LE(BigInt(bytes.length), 80)
     bytes.writeUInt32LE(4, 92)
@@ -372,6 +374,65 @@ describe('prepareMirrorAssets', () => {
     })
   })
 
+  it('rejects a PE entry point outside the declared image', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-win32-x64.exe'
+      const bytes = nativeBootstrapFixture('win32', 'x64')
+      bytes.writeUInt32LE(1, 0x80 + 24 + 56)
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('not an executable PE32+ image')
+    })
+  })
+
+  it('rejects an ELF segment whose file bytes exceed its memory extent', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-linux-x64'
+      const bytes = nativeBootstrapFixture('linux', 'x64')
+      bytes.writeBigUInt64LE(1n, 104)
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('file size exceeds memory size')
+    })
+  })
+
+  it('rejects a Mach-O segment with missing section records', () => {
+    withTempDir((dir) => {
+      writeNativeBootstrapMatrix(dir)
+      const asset = 'openalice-bootstrap-1.2.3-darwin-x64'
+      const bytes = nativeBootstrapFixture('darwin', 'x64')
+      bytes.writeUInt32LE(1, 96)
+      writeFileSync(join(dir, asset), bytes)
+      writeFileSync(
+        join(dir, `${asset}.sha256`),
+        `${createHash('sha256').update(bytes).digest('hex')}  ${asset}\n`,
+      )
+      expect(() => prepareMirrorAssets({
+        outDir: dir,
+        tag: 'v1.2.3',
+        baseUrl: 'https://download.openalice.ai',
+        repository: 'TraderAlice/OpenAlice',
+      })).toThrow('segment section table is invalid')
+    })
+  })
   it('rejects an incomplete native bootstrap publication', () => {
     withTempDir((dir) => {
       const asset = 'openalice-bootstrap-1.2.3-linux-x64'
