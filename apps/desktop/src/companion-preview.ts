@@ -36,6 +36,9 @@ void app.whenReady().then(async () => {
   assert.equal(bubbleAlpha[0], 0, 'Speech bubble exterior must be transparent')
   assert.ok(bubbleAlpha[1] >= 250, 'Speech bubble interior must be effectively opaque')
   assert.equal(pet.isAlwaysOnTop(), true)
+  pet.focus()
+  await new Promise(done => setTimeout(done, 150))
+  await pet.webContents.executeJavaScript(`window.smokeEvents=[]; for(const name of ['pointerdown','pointerup','pointercancel','lostpointercapture','blur']) window.addEventListener(name, e => window.smokeEvents.push([name,e.clientX,e.clientY]),true)`)
   const box = await pet.webContents.executeJavaScript(`(() => { const r=portrait.getBoundingClientRect(); return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height*.6)} })()`)
   pet.webContents.sendInputEvent({ type: 'mouseDown', ...box, button: 'left', clickCount: 1 })
   await new Promise(done => setTimeout(done, 280))
@@ -43,7 +46,8 @@ void app.whenReady().then(async () => {
   writeFileSync(join(home, 'pressed.png'), (await pet.webContents.capturePage()).toPNG())
   pet.webContents.sendInputEvent({ type: 'mouseUp', ...box, button: 'left', clickCount: 1 })
   await new Promise(done => setTimeout(done, 650))
-  assert.equal(await pet.webContents.executeJavaScript(`bubble.classList.contains('open')`), true)
+  assert.equal(await pet.webContents.executeJavaScript(`bubble.classList.contains('open')`), true,
+    await pet.webContents.executeJavaScript(`JSON.stringify({events:window.smokeEvents,held,pressed:body.className})`))
   assert.equal(await pet.webContents.executeJavaScript(`body.classList.contains('pressed')`), false)
   writeFileSync(join(home, 'bubble.png'), (await pet.webContents.capturePage()).toPNG())
   // A light renderer backdrop exposes outline/tail placement hidden by dark previews.
@@ -68,7 +72,8 @@ void app.whenReady().then(async () => {
       assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1, 'Bubble clipped')
       assert.ok(Math.abs(layout.portrait - size * .9) < 1, 'Portrait size changed')
       assert.ok(Math.abs(layout.offset - size * .8 * (flipped ? 1 : -1)) < 1, 'Bubble offset changed')
-      assert.ok(Math.abs(layout.top - layout.height * .26) < 1, 'Bubble must sit beside the face')
+      assert.ok(Math.abs(layout.top - (layout.height * .26 - 55)) < 1, 'Bubble must sit above-left of Alice')
+      assert.ok(layout.top >= 0, 'Raised bubble must remain inside the window')
     }
   }
   console.log('[companion-preview] smoke passed', JSON.stringify(info))
