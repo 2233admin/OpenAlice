@@ -9,7 +9,8 @@ export function settleCompanion(bounds: Rect, area: Rect, snap = true): Rect & {
   if (snap) {
     // Upstream v3 defaults: left/right 10%, bottom 15%, top disabled.
     const centerX = x + bounds.width / 2
-    const centerY = y + bounds.height - bounds.width * .45
+    // Width includes bubble gutters; character size is derived from stage height.
+    const centerY = y + bounds.height - bounds.height / 1.65 * .45
     if (centerX < area.x + area.width * .1) x = area.x
     else if (centerX > area.x + area.width * .9) x = maxX
     if (centerY > area.y + area.height * .85) y = maxY

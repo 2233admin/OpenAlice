@@ -22,5 +22,11 @@ speech is not runtime status. Keep local-only IPC and packaged resource checks.
 - [ ] Windows native interaction smoke in Desktop Package Smoke workflow.
 - [ ] Review final diff, integrate through dev PR, leave reviewable preview.
 
+Maintainer visual iteration: shifted bubble left 22% of stage width, retaining
+its original height to avoid bow overlap. Added symmetric native gutters without
+changing portrait/bubble size or animation. Native smoke verifies all three
+sizes in both directions, alongside press/release. Desktop 75 tests and desktop/UI
+typechecks pass. Keep the feature branch open for visual acceptance.
+
 Completion: all available automated gates pass; actual evidence and any remaining
 physical multi-monitor/manual Windows limitations are reported explicitly.

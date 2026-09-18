@@ -40,6 +40,22 @@ void app.whenReady().then(async () => {
   await new Promise(done => setTimeout(done, 350))
   assert.equal(await pet.webContents.executeJavaScript(`mirror.classList.contains('flipped')`), true)
   writeFileSync(join(home, 'flipped.png'), (await pet.webContents.capturePage()).toPNG())
+  // Window gutters must preserve portrait size and contain the bubble on both sides.
+  for (const size of [170, 220, 280]) {
+    pet.setSize(Math.round(size * 1.5), Math.round(size * 1.65))
+    for (const flipped of [false, true]) {
+      pet.webContents.send('openalice:companion:flip', flipped)
+      await new Promise(done => setTimeout(done, 350))
+      const layout = await pet.webContents.executeJavaScript(`(() => {
+        const b = bubble.getBoundingClientRect(), p = portrait.getBoundingClientRect();
+        return {left:b.left, right:b.right, viewport:innerWidth, portrait:p.width,
+          offset:(b.left+b.right-p.left-p.right)/2};
+      })()`)
+      assert.ok(layout.left >= -1 && layout.right <= layout.viewport + 1, 'Bubble clipped')
+      assert.ok(Math.abs(layout.portrait - size * .9) < 1, 'Portrait size changed')
+      assert.ok(Math.abs(layout.offset - size * .22 * (flipped ? 1 : -1)) < 1, 'Bubble offset changed')
+    }
+  }
   console.log('[companion-preview] smoke passed', JSON.stringify(info))
   owner.destroy()
   assert.equal(pet.isDestroyed(), true)

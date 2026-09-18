@@ -19,6 +19,10 @@ Interaction follows MeteorNOX's Whale Widget (MIT attribution ships in
 160ms CSS-ease snapping, 10% side and 15% bottom snap zones, no top snap.
 The bubble image is rendered as three clipped layers so the small dot, larger
 dot and body appear with 0/130/260ms delays; text follows at 360ms.
+The bubble sits 22% of the character stage width to the left, at its original
+height. Symmetric transparent window gutters preserve the artwork size
+and prevent clipping; mirroring puts the bubble on the opposite side. Alpha
+hit testing still targets only the character, not the additional empty space.
 System reduced-motion disables the transitions. Transparent pixels pass input
 through to the desktop. Keyboard Space/Enter speaks; Escape dismisses speech;
 Shift+F10 opens the menu.
