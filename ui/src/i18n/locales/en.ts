@@ -1423,7 +1423,7 @@ export const en = {
     harnessVersion: 'Pinned Harness version',
     initializeAction: 'Initialize AutoQuant',
     initializing: 'Initializing AutoQuant…',
-    initializingBody: 'Preparing the pinned Harness and local Git workspace. This may take a moment.',
+    initializingBody: 'Preparing the pinned Harness and local Git workspace. You can switch pages; initialization will continue.',
   },
   autoPrediction: {
     newResearch: 'New prediction research',
@@ -1459,7 +1459,7 @@ export const en = {
     persistentBody: 'Evidence, campaigns, SQLite state, files, and Git history remain owned by Auto Prediction inside this Workspace.',
     initializeAction: 'Initialize Auto Prediction',
     initializing: 'Initializing Auto Prediction…',
-    initializingBody: 'Cloning and verifying the approved source snapshot. This may take a moment.',
+    initializingBody: 'Cloning and verifying the approved source snapshot. You can switch pages; initialization will continue.',
   },
   chatSetup: {
     loading: 'Loading Ask Alice',
@@ -1476,7 +1476,7 @@ export const en = {
     persistentBody: 'Files, Sessions, and history stay in this Workspace.',
     initializeAction: 'Initialize Ask Alice',
     initializing: 'Initializing Ask Alice…',
-    initializingBody: 'Preparing the Chat workspace. This may take a moment.',
+    initializingBody: 'Preparing the Chat workspace. You can switch pages; initialization will continue.',
   },
   workspaceManager: {
     title: 'Workspace Manager',

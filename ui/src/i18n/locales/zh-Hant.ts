@@ -1420,7 +1420,7 @@ export const zhHant: Resources = {
     harnessVersion: '鎖定的 Harness 版本',
     initializeAction: '初始化 AutoQuant',
     initializing: '正在初始化 AutoQuant…',
-    initializingBody: '正在準備鎖定版本的 Harness 與本機 Git 工作區，可能需要一些時間。',
+    initializingBody: '正在準備鎖定版本的 Harness 與本機 Git 工作區。可以切換頁面，初始化會繼續進行。',
   },
   autoPrediction: {
     newResearch: '新增預測研究', newWorkspace: '新增 Auto Prediction 工作區',
@@ -1441,7 +1441,7 @@ export const zhHant: Resources = {
     workspaceMeta: '{{count}} 個工作階段 · 快照 {{version}}', manageWorkspaces: '前往工作區管理',
     persistentTitle: '一個持久的預測研究工作區', persistentBody: '證據、Campaign、SQLite 狀態、檔案和 Git 歷史由此工作區內的 Auto Prediction 持有。',
     initializeAction: '初始化 Auto Prediction', initializing: '正在初始化 Auto Prediction…',
-    initializingBody: '正在複製並驗證核准的原始碼快照，請稍候。',
+    initializingBody: '正在複製並驗證核准的原始碼快照。可以切換頁面，初始化會繼續進行。',
   },
   chatSetup: {
     loading: '正在載入 Ask Alice',
@@ -1458,7 +1458,7 @@ export const zhHant: Resources = {
     persistentBody: '檔案、Session 與歷史都會留在此 Workspace。',
     initializeAction: '初始化 Ask Alice',
     initializing: '正在初始化 Ask Alice…',
-    initializingBody: '正在準備 Chat 工作區，可能需要一些時間。',
+    initializingBody: '正在準備 Chat 工作區。可以切換頁面，初始化會繼續進行。',
   },
   workspaceManager: {
     title: '工作臺主管',
