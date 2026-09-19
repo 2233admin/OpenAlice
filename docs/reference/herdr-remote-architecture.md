@@ -343,7 +343,7 @@ settings. The directory and bridge socket are user-only. See
 
 OpenAlice should reuse its own installer/update trust chain for remote hosts.
 It should not copy Herdr's binary transfer implementation or grow a second
-remote-only installer inside `openalice remote`.
+remote-only installer inside `openalice --remote`.
 
 Concretely, OpenAlice SSH carries the approved installer command, not the full
 Runtime artifact. The remote host pulls the small control CLI from the same

@@ -23,9 +23,9 @@ import {
   runObservabilityCommand,
 } from '../src/observability-command.mjs'
 import { connectRemote, formatRemoteHelp, parseRemoteArgs } from '../src/remote.mjs'
+import { formatMachineTargetHelp, runMachineTarget } from '../src/machine-target-command.mjs'
 import { formatRollbackHelp, runRollbackCommand } from '../src/rollback.mjs'
 import { formatServerHelp, parseServerArgs, runServerCommand } from '../src/server.mjs'
-import { connectSsh, formatSshHelp, parseSshConnectArgs } from '../src/ssh-connect.mjs'
 import { formatUninstallHelp, runUninstallCommand } from '../src/uninstall.mjs'
 import { formatUpdateHelp, maybeNotifyUpdate, runUpdateCommand } from '../src/update.mjs'
 import {
@@ -61,6 +61,23 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === '--version' || command === '-v' || command === 'version') {
     process.stdout.write(`${readVersion()}\n`)
     return 0
+  }
+  if (command === '--remote') {
+    if (args.includes('--help') || args.includes('-h')) {
+      process.stdout.write(formatRemoteHelp())
+      return 0
+    }
+    return connectRemote(parseRemoteArgs(args))
+  }
+  if (command === '--machine') {
+    const [selector, ...commandArgs] = args
+    if (!selector || selector === '--help' || selector === '-h' || commandArgs.includes('--help') && commandArgs.length === 1) {
+      process.stdout.write(formatMachineTargetHelp())
+      return selector ? 0 : 2
+    }
+    return runMachineTarget(selector, commandArgs, {
+      runLocal: (localArgs) => main(localArgs),
+    })
   }
   if (!command || command === 'start' || command.startsWith('-')) {
     const startArgs = command === 'start' ? args : argv
@@ -108,13 +125,6 @@ Prints a completion script to stdout without modifying shell configuration.
     process.stdout.write(formatShellCompletion(args[0]))
     return 0
   }
-  if (command === 'ssh') {
-    if (args.includes('--help') || args.includes('-h')) {
-      process.stdout.write(formatSshHelp())
-      return 0
-    }
-    return connectSsh(parseSshConnectArgs(args))
-  }
   if (command === 'server') {
     const [action, ...serverArgs] = args
     if (!action || action === 'help' || action === '--help' || action === '-h' || serverArgs.includes('--help') || serverArgs.includes('-h')) {
@@ -122,13 +132,6 @@ Prints a completion script to stdout without modifying shell configuration.
       return 0
     }
     return runServerCommand(action, parseServerArgs(action, serverArgs))
-  }
-  if (command === 'remote') {
-    if (args.includes('--help') || args.includes('-h')) {
-      process.stdout.write(formatRemoteHelp())
-      return 0
-    }
-    return connectRemote(parseRemoteArgs(args))
   }
   if (command === 'update') {
     if (args.includes('--help') || args.includes('-h')) {

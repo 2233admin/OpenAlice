@@ -3431,7 +3431,7 @@ export const ja: Resources = {
     backendUnavailableHelp:
       'このページを提供している OpenAlice ランタイムを確認してから再試行してください。ターミナルから起動した場合は、pnpm dev または openalice up が実行中か確認してください。',
     backendUnavailableRemoteHelp:
-      'このトンネルを保持しているターミナルを確認するか、openalice remote {{target}} を再実行してから再試行してください。',
+      'このトンネルを保持しているターミナルを確認するか、openalice --remote {{target}} を再実行してから再試行してください。',
     reconnectingRemote: '{{target}} に再接続しています…',
     connectionType: '接続方式',
     sshTunnel: 'SSH トンネル',

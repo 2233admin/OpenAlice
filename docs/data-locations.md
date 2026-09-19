@@ -196,12 +196,12 @@ pins; delete the key or the file to restore probing. `openalice up --port`
 and `OPENALICE_WEB_PORT` remain one-run pins and do not rewrite the file.
 
 The machine-wide Supervisor root also owns `machines.json`. This second
-registry names SSH Machines for fleet inspection; it does not move with a
-complete home and does not belong to the Electron browser profile. The local
-Machine is implicit. Stored rows contain only connection metadata (target,
-port, display name, and optional local identity-file path), never key bytes or
-AliceProject data. `remote-targets.json` beside it remains a hashed,
-non-enumerable tunnel-port cache rather than durable fleet identity.
+registry stores Herdr-style remote Machine profiles; it does not move with a
+complete home and does not belong to the Electron browser profile. Stored rows
+contain an opaque id, label, SSH target, optional session, port, enabled state,
+and local identity-file path, never key bytes or AliceProject data.
+`remote-targets.json` beside it remains a hashed, non-enumerable tunnel-port
+cache rather than durable fleet identity.
 
 A received AliceProject is registered in this machine-wide registry only after
 its sibling staging Home has passed checksum and space validation and has been

@@ -18,19 +18,27 @@ import {
 const MACHINE_SCHEMA_VERSION = 1
 const MACHINE_FILE_NAME = 'machines.json'
 const MACHINE_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/
+const MACHINE_ID_PATTERN = /^[a-f0-9]{32}$/
 const ROOT_KEYS = new Set(['schemaVersion', 'defaultMachine', 'machines'])
 const MACHINE_KEYS = new Set([
+  'id',
   'displayName',
   'sshTarget',
   'sshPort',
   'identityFile',
+  'remoteSession',
+  'enabled',
 ])
 
 export interface StoredMachineConfig {
+  /** Herdr-compatible opaque profile id. Legacy rows may not have one. */
+  id?: string
   displayName: string
   sshTarget: string
   sshPort?: number
   identityFile?: string
+  remoteSession?: string
+  enabled?: boolean
   [key: string]: unknown
 }
 
@@ -61,6 +69,17 @@ export interface RegisterMachineInput {
   sshTarget: string
   sshPort?: number
   identityFile?: string
+  id?: string
+  remoteSession?: string
+  enabled?: boolean
+}
+
+export interface RegisterMachineProfileInput {
+  label: string
+  sshTarget: string
+  sshPort?: number
+  identityFile?: string
+  remoteSession?: string
 }
 
 export async function readMachineRegistry(
@@ -127,7 +146,13 @@ export async function registerMachine(
   if (current.machines?.[key]) {
     throw machineRegistryError(`Machine "${key}" is already registered.`)
   }
+  if (input.id !== undefined && Object.values(current.machines ?? {}).some((machine) => machine.id === input.id)) {
+    throw machineRegistryError(`Machine id "${input.id}" is already registered.`)
+  }
   const machine: StoredMachineConfig = {
+    ...(input.id === undefined
+      ? {}
+      : { id: normalizeMachineId(input.id, `machines.${key}.id`) }),
     displayName: normalizeDisplayName(
       input.displayName ?? humanizeMachineKey(key),
       `machines.${key}.displayName`,
@@ -141,6 +166,10 @@ export async function registerMachine(
           identityFile: normalizeIdentityFile(input.identityFile, options),
         }
       : {}),
+    ...(input.remoteSession === undefined
+      ? {}
+      : { remoteSession: normalizeRemoteSession(input.remoteSession, `machines.${key}.remoteSession`) }),
+    ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
   }
   await writeMachineRegistry({
     ...current,
@@ -153,18 +182,45 @@ export async function registerMachine(
   return { key, ...machine, isDefault: current.defaultMachine === key }
 }
 
-export async function removeMachine(
-  keyInput: string,
+/**
+ * Register a Herdr-shaped Machine profile. The existing registry key remains
+ * an internal compatibility handle for Fleet and transfer code; callers use
+ * the opaque id or label returned in the public Machine surface.
+ */
+export async function registerMachineProfile(
+  input: RegisterMachineProfileInput,
   options: MachineRegistryOptions = {},
 ): Promise<RegisteredMachine> {
-  const key = requireMachineKey(keyInput)
+  const label = normalizeDisplayName(input.label, 'label')
+  const current = await readMachineRegistry(options)
+  if (Object.values(current.machines ?? {}).some((machine) => machine.displayName === label)) {
+    throw machineRegistryError(`Machine label "${label}" is already registered.`)
+  }
+  const key = deriveMachineKey(label, Object.keys(current.machines ?? {}))
+  return registerMachine({
+    key,
+    displayName: label,
+    sshTarget: input.sshTarget,
+    sshPort: input.sshPort,
+    identityFile: input.identityFile,
+    id: createMachineId(),
+    remoteSession: input.remoteSession,
+    enabled: true,
+  }, options)
+}
+
+export async function removeMachine(
+  selector: string,
+  options: MachineRegistryOptions = {},
+): Promise<RegisteredMachine> {
+  const current = await readMachineRegistry(options)
+  const key = resolveMachineKey(current, selector)
   if (key === 'local') {
     throw machineRegistryError('The implicit local machine cannot be removed.')
   }
-  const current = await readMachineRegistry(options)
   const existing = current.machines?.[key]
   if (!existing) {
-    throw machineRegistryError(`Machine "${key}" is not registered.`)
+    throw machineRegistryError(`Machine "${selector}" is not registered.`)
   }
   const machines = { ...current.machines }
   delete machines[key]
@@ -177,6 +233,57 @@ export async function removeMachine(
     machines: Object.keys(machines).length > 0 ? machines : undefined,
   }, options)
   return { key, ...existing, isDefault: current.defaultMachine === key }
+}
+
+export async function renameMachine(
+  selector: string,
+  label: string,
+  options: MachineRegistryOptions = {},
+): Promise<RegisteredMachine> {
+  const current = await readMachineRegistry(options)
+  const key = resolveMachineKey(current, selector)
+  if (key === 'local') {
+    throw machineRegistryError('The implicit local machine cannot be renamed.')
+  }
+  const existing = current.machines?.[key]
+  if (!existing) throw machineRegistryError(`Machine "${selector}" is not registered.`)
+  const normalizedLabel = normalizeDisplayName(label, `machines.${key}.displayName`)
+  if (Object.entries(current.machines ?? {}).some(([otherKey, machine]) => (
+    otherKey !== key && machine.displayName === normalizedLabel
+  ))) {
+    throw machineRegistryError(`Machine label "${normalizedLabel}" is already registered.`)
+  }
+  const renamed = {
+    ...existing,
+    displayName: normalizedLabel,
+  }
+  await writeMachineRegistry({
+    ...current,
+    schemaVersion: MACHINE_SCHEMA_VERSION,
+    machines: { ...current.machines, [key]: renamed },
+  }, options)
+  return { key, ...renamed, isDefault: current.defaultMachine === key }
+}
+
+export async function setMachineEnabled(
+  selector: string,
+  enabled: boolean,
+  options: MachineRegistryOptions = {},
+): Promise<RegisteredMachine> {
+  const current = await readMachineRegistry(options)
+  const key = resolveMachineKey(current, selector)
+  if (key === 'local') {
+    throw machineRegistryError('The implicit local machine cannot be enabled or disabled.')
+  }
+  const existing = current.machines?.[key]
+  if (!existing) throw machineRegistryError(`Machine "${selector}" is not registered.`)
+  const updated = { ...existing, enabled }
+  await writeMachineRegistry({
+    ...current,
+    schemaVersion: MACHINE_SCHEMA_VERSION,
+    machines: { ...current.machines, [key]: updated },
+  }, options)
+  return { key, ...updated, isDefault: current.defaultMachine === key }
 }
 
 export async function readMachineRegistrySummary(
@@ -194,6 +301,27 @@ export async function readMachineRegistrySummary(
         isDefault: key === defaultMachine,
       })),
   }
+}
+
+export function findRegisteredMachine(
+  summary: MachineRegistrySummary,
+  selector: string,
+): RegisteredMachine | undefined {
+  const value = selector.trim()
+  if (!value) return undefined
+  return summary.machines.find((machine) => (
+    machine.key === value
+    || machine.id === value
+    || machine.displayName === value
+  ))
+}
+
+export function machineProfileId(machine: RegisteredMachine): string {
+  return machine.id ?? machine.key
+}
+
+export function machineIsEnabled(machine: RegisteredMachine): boolean {
+  return machine.enabled !== false
 }
 
 export function parseMachineRegistry(value: unknown): MachineRegistryDocument {
@@ -219,12 +347,18 @@ export function parseMachineRegistry(value: unknown): MachineRegistryDocument {
   if (root['machines'] !== undefined) {
     const rawMachines = requireRecord(root['machines'], 'machines')
     machines = {}
+    const ids = new Set<string>()
     for (const [key, value] of Object.entries(rawMachines)) {
       requireMachineKey(key)
       if (key === 'local') {
         throw machineRegistryError('machines.local is reserved for this computer.')
       }
-      machines[key] = parseStoredMachine(value, `machines.${key}`)
+      const machine = parseStoredMachine(value, `machines.${key}`)
+      if (machine.id !== undefined) {
+        if (ids.has(machine.id)) throw machineRegistryError(`Machine id "${machine.id}" is duplicated.`)
+        ids.add(machine.id)
+      }
+      machines[key] = machine
     }
   }
   if (
@@ -269,6 +403,9 @@ export function isMachineRegistryError(
 function parseStoredMachine(value: unknown, label: string): StoredMachineConfig {
   const record = requireRecord(value, label)
   const parsed: StoredMachineConfig = {
+    ...(record['id'] === undefined
+      ? {}
+      : { id: normalizeMachineId(record['id'], `${label}.id`) }),
     displayName: normalizeDisplayName(record['displayName'], `${label}.displayName`),
     sshTarget: normalizeSshTarget(record['sshTarget']),
     ...(record['sshPort'] === undefined
@@ -277,6 +414,12 @@ function parseStoredMachine(value: unknown, label: string): StoredMachineConfig 
     ...(record['identityFile'] === undefined
       ? {}
       : { identityFile: requireAbsolutePath(record['identityFile'], `${label}.identityFile`) }),
+    ...(record['remoteSession'] === undefined
+      ? {}
+      : { remoteSession: normalizeRemoteSession(record['remoteSession'], `${label}.remoteSession`) }),
+    ...(record['enabled'] === undefined
+      ? {}
+      : { enabled: requireBoolean(record['enabled'], `${label}.enabled`) }),
   }
   return retainUnknownFields(parsed, record, MACHINE_KEYS)
 }
@@ -313,6 +456,22 @@ function normalizeSshTarget(value: unknown): string {
     throw machineRegistryError('sshTarget contains unsupported characters.')
   }
   return target
+}
+
+function normalizeMachineId(value: unknown, label: string): string {
+  const id = requireString(value, label)
+  if (!MACHINE_ID_PATTERN.test(id)) {
+    throw machineRegistryError(`${label} must be 32 lowercase hexadecimal characters.`)
+  }
+  return id
+}
+
+function normalizeRemoteSession(value: unknown, label: string): string {
+  const session = requireString(value, label)
+  if (session.length > 80 || /[\u0000-\u001f\u007f\s]/u.test(session)) {
+    throw machineRegistryError(`${label} must contain 1-80 non-whitespace characters.`)
+  }
+  return session
 }
 
 function normalizeDisplayName(value: unknown, label: string): string {
@@ -352,6 +511,47 @@ function requireString(value: unknown, label: string): string {
     throw machineRegistryError(`${label} must be a non-empty string.`)
   }
   return value.trim()
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw machineRegistryError(`${label} must be a boolean.`)
+  return value
+}
+
+function deriveMachineKey(label: string, existingKeys: string[]): string {
+  const used = new Set(existingKeys)
+  const normalized = label
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-')
+    .replace(/^[^a-z]+/u, '')
+    .replace(/-+/gu, '-')
+    .replace(/-+$/u, '')
+  const base = (normalized || 'machine').slice(0, 32)
+  let candidate = base
+  let suffix = 2
+  while (used.has(candidate) || candidate === 'local') {
+    const tail = `-${suffix}`
+    candidate = `${base.slice(0, 32 - tail.length)}${tail}`
+    suffix += 1
+  }
+  return candidate
+}
+
+function createMachineId(): string {
+  return randomUUID().replaceAll('-', '').toLowerCase()
+}
+
+function resolveMachineKey(document: MachineRegistryDocument, selector: string): string {
+  const value = requireString(selector, 'machine')
+  if (value === 'local') return 'local'
+  const machines = document.machines ?? {}
+  const match = Object.entries(machines).find(([key, machine]) => (
+    key === value
+    || machine.id === value
+    || machine.displayName === value
+  ))
+  if (!match) throw machineRegistryError(`Machine "${selector}" is not registered.`)
+  return match[0]
 }
 
 function retainUnknownFields<T extends Record<string, unknown>>(

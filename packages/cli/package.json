@@ -21,6 +21,7 @@
     "src/project-transfer-ssh.ts",
     "src/project-transfer-stream.ts",
     "src/machine-command.ts",
+    "src/machine-target-command.mjs",
     "src/machine-inventory.ts",
     "src/machine-registry.ts",
     "src/launch-context.ts",

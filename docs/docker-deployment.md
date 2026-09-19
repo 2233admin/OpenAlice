@@ -73,8 +73,8 @@ unencrypted public endpoint. Configure `OPENALICE_TRUSTED_PROXIES` only with
 the actual proxy peer addresses; an overly broad trusted-proxy range weakens
 the localhost/auth boundary.
 
-For the Stage 1 SSH path, keep `47331` private on the host and use
-`openalice ssh <host>` as described in [[docs/remote-access.md]]. The tunnel
+For the SSH path, keep `47331` private on the host and use
+`openalice --remote <host>` as described in [[docs/remote-access.md]]. The tunnel
 targets host loopback; it does not expose the internal CLI/MCP or UTA ports.
 
 ## Health and Lifecycle

@@ -3429,7 +3429,7 @@ export const zh: Resources = {
     backendUnavailableHelp:
       '请检查承载此页面的 OpenAlice 运行时，然后重试。如果是从终端启动的，请确认 pnpm dev 或 openalice up 仍在运行。',
     backendUnavailableRemoteHelp:
-      '请检查持有此隧道的终端，或重新运行 openalice remote {{target}}，然后重试。',
+      '请检查持有此隧道的终端，或重新运行 openalice --remote {{target}}，然后重试。',
     reconnectingRemote: '正在重新连接 {{target}}…',
     connectionType: '连接方式',
     sshTunnel: 'SSH 隧道',
