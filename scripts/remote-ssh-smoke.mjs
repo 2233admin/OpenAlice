@@ -189,7 +189,7 @@ try {
   const reusePlan = run(process.execPath, [
     cliEntry, '--remote', remoteTarget, '--plan', '--no-open',
   ], { cwd: repoRoot, env: smokeEnv })
-  requireText(reusePlan, 'reuse compatible remote CLI Server')
+  requireText(reusePlan, 'reuse compatible remote Runtime')
   const reconnectedTunnelUrl = await attachAndProbe(remoteTarget, smokeEnv, ['--no-open', '--wait', '30'])
   if (reconnectedTunnelUrl !== firstTunnelUrl) {
     throw new Error(`Reconnect changed the remembered browser origin (${firstTunnelUrl} -> ${reconnectedTunnelUrl})`)

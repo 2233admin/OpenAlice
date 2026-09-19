@@ -15,8 +15,6 @@
     "dev": "tsx scripts/guardian/dev.ts",
     "dev:onboarding": "tsx scripts/onboarding-test-dev.ts",
     "remote": "node packages/cli/bin/openalice.ts --remote",
-    "docker:build": "docker build --tag openalice:local .",
-    "docker:smoke": "node scripts/docker-runtime-smoke.mjs",
     "prebuild": "tsx scripts/build-migration-index.ts",
     "build": "turbo run build && tsup src/main.ts --format esm --dts",
     "prebuild:server": "tsx scripts/build-migration-index.ts",

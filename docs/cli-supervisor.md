@@ -114,8 +114,8 @@ separate verified browser open after readiness.
 - `openalice tui` is the explicit equivalent for tests and scripts;
 - `openalice start` retains the existing foreground, browser-oriented
   compatibility launcher and also selects the installed bundle by default;
-- `openalice server run|start|status|stop` remains available for managed remote
-  and existing scripts;
+- `openalice server run|start|status|stop` remains available for managed
+  remote and existing scripts;
 - new code uses `run|up|status|down`;
 - `server status --json` retains its legacy raw status payload.
 
@@ -1072,10 +1072,10 @@ Human `status` reports:
 
 Dev-owned Runtimes may be inspected and opened. A healthy local `dev` or
 `cli-server` owner also advertises a verified loopback Web endpoint that
-Electron can open in the default browser without takeover. `down` still
-refuses both. Only a matching `cli-server` that advertises `runtime.stop`
-accepts the stop transaction. The Electron browser handoff is documented in
-[[docs/data-locations.md]].
+Electron can open in the default browser without takeover. A compatible
+Runtime accepts the stop transaction only when it
+advertises `runtime.stop`; its owner surface remains diagnostic. The Electron
+browser handoff is documented in [[docs/data-locations.md]].
 
 Source dev and built Guardian entries publish the same private, local
 `runtime.status` contract. In particular, `pnpm dev` advertises its owner PID,
