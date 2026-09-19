@@ -71,10 +71,10 @@ command.
 | `create alice-project` | Register a named complete home. Interactive or `--yes` with `--name`, `--home`, and optional `--product trader\|nano`. Product is immutable birth (Trader default; Nano never starts UTA). TUI create remains Trader-equivalent. |
 | `project list` | Print registered AliceProjects and the remembered bare-start default. `--json` emits the registry summary. |
 | `project use <key>` | Record that AliceProject as the next bare-start default. Does not start, stop, or copy another project. |
-| `machine list` | Print saved Herdr-style Machine profiles by opaque id, label, target, session, and enabled state. `--json` emits a versioned secret-free summary. |
+| `machine list` | Print saved Machine profiles by opaque id, label, target, and enabled state. `--json` emits a versioned secret-free summary. |
 | `machine add` | Prepare the selected remote Server, then atomically save its SSH profile. Non-interactive mutation requires `--yes`. |
 | `machine rename/enable/disable/remove` | Mutate local profile metadata after explicit confirmation; remove never deletes remote data. |
-| `machine inspect [key]` | Build a typed Machine → AliceProject inventory; each remote Machine uses one bounded aggregate SSH command. |
+| `machine inspect [id-or-label]` | Build a typed Machine → AliceProject inventory; each enabled remote Machine uses one bounded aggregate SSH command. Disabled rows stay visible without SSH. |
 | `project copy-ai-creds` | Copy AI credential rows from one complete home into another. Interactive unless `--from`, `--to`, and `--yes` are set. Matching vendor+key rows are skipped; colliding slugs are renamed. Workspace launch preferences, broker accounts, and `sealing.key` are never copied. Secrets are never printed. |
 | `project transfer` | Plan or copy a stopped local AliceProject to a new complete Home on a registered SSH Machine. Portable configuration and Workspace/Git state transfer; Session/runtime/auth state does not. Credentials use the SSH stream and are re-sealed with a new remote key. The source and remote default remain unchanged. |
 | `up` | Prepare the selected provider when needed, start `cli-server` detached, and return only after Guardian control plus Alice HTTP readiness |

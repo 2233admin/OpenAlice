@@ -556,7 +556,7 @@ function bashCompletionCases() {
     .join('\n')
   return `${lifecycle}
     project) COMPREPLY=( $(compgen -W "list use copy-ai-creds transfer --json --from --to --to-machine --to-project --to-home --name --plan --yes --without-credentials --session-owner-policy --stop-source" -- "$current") ) ;;
-    machine) COMPREPLY=( $(compgen -W "list add rename remove enable disable inspect --label --remote-session --ssh-port --identity --json --yes" -- "$current") ) ;;`
+    machine) COMPREPLY=( $(compgen -W "list add rename remove enable disable inspect --label --ssh-port --identity --json --yes" -- "$current") ) ;;`
 }
 
 function zshCompletionCases() {
@@ -565,7 +565,7 @@ function zshCompletionCases() {
     .join('\n')
   return `${lifecycle}
   project) _values 'option' 'list' 'use' 'copy-ai-creds' 'transfer' '--json' '--from' '--to' '--to-machine' '--to-project' '--to-home' '--name' '--plan' '--yes' '--without-credentials' '--session-owner-policy' '--stop-source' ;;
-  machine) _values 'option' 'list' 'add' 'rename' 'remove' 'enable' 'disable' 'inspect' '--label' '--remote-session' '--ssh-port' '--identity' '--json' '--yes' ;;`
+  machine) _values 'option' 'list' 'add' 'rename' 'remove' 'enable' 'disable' 'inspect' '--label' '--ssh-port' '--identity' '--json' '--yes' ;;`
 }
 
 function fishCompletionOptions() {
@@ -575,7 +575,7 @@ function fishCompletionOptions() {
       return `complete -c openalice -n '__fish_seen_subcommand_from ${command}' -l ${name}`
     }))
     .join('\n')
-  const machine = ['label', 'remote-session', 'ssh-port', 'identity', 'json', 'yes']
+  const machine = ['label', 'ssh-port', 'identity', 'json', 'yes']
     .map((name) => `complete -c openalice -n '__fish_seen_subcommand_from machine' -l ${name}`)
     .join('\n')
   const project = ['json', 'from', 'to', 'to-machine', 'to-project', 'to-home', 'name', 'plan', 'yes', 'without-credentials', 'session-owner-policy', 'stop-source']

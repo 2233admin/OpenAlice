@@ -76,7 +76,7 @@ export async function main(argv = process.argv.slice(2)) {
       return selector ? 0 : 2
     }
     return runMachineTarget(selector, commandArgs, {
-      runLocal: (localArgs) => main(localArgs),
+      runLocal: async (localArgs) => (await import('../src/main.ts')).main(localArgs),
     })
   }
   if (!command || command === 'start' || command.startsWith('-')) {
