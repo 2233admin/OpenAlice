@@ -593,6 +593,14 @@ export const AgentLaunchSelectors = forwardRef<AgentLaunchSelectorsHandle, Agent
                   </DropdownMenuItem>
                 )
               })}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onConfigureProvider} className="min-h-11 px-2.5 py-2 text-[12px]">
+                <KeyRound className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block">{t('chatLanding.addApiAccount')}</span>
+                  <span className="block text-[10px] text-muted-foreground">{t('chatLanding.addApiAccountDetail')}</span>
+                </span>
+              </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
