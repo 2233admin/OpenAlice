@@ -107,7 +107,11 @@ runtime's native launch interface:
   Alice launches PATH `agy` only — never `antigravity` or `gemini`;
 - Grok Build `XAI_API_KEY` / optional `GROK_MODELS_BASE_URL` plus `--model`
   and `--effort`;
-- Oh My Pi provider env plus `--model` and `--thinking`;
+- Oh My Pi process-local provider registration (reusing Pi's explicit extension
+  and secret-bearing child environment) plus provider-qualified `--model` and
+  `--thinking`; generic Anthropic/OpenAI environment keys do not authenticate
+  MiniMax or register a custom gateway's model in OMP. Native bindings retain
+  OMP's own provider selection and login;
 - Codex provider arguments/environment plus `--model` and
   `model_reasoning_effort` configuration arguments.
 
