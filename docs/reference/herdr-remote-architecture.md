@@ -45,6 +45,18 @@ Current references:
 
 ## Executive Summary
 
+### OpenAlice command adaptation (2026-09-19)
+
+The current command work follows Herdr's global `--remote` / `--machine`
+selectors and saved-machine lifecycle. It is not file-schema or wire-protocol
+compatibility. See upstream [machine commands](https://github.com/herdrdev/herdr/blob/master/src/cli/machine.rs)
+and [target dispatch](https://github.com/herdrdev/herdr/blob/master/src/cli/target.rs).
+Herdr passes its saved session name to server preparation. OpenAlice has no
+equivalent named server session and rejects `--remote-session`; Agent Sessions
+and AliceProjects must not be silently substituted for that concept. Our
+persisted registry and operational contract belong to [[docs/data-locations.md]]
+and [[docs/remote-access.md]].
+
 Herdr is not merely a TUI launched inside SSH. Its default architecture is a
 persistent terminal Runtime with one or more thin clients:
 

@@ -5,6 +5,21 @@ import type { MachineInspectEnvelope } from './machine-inventory.ts'
 import type { MachineRegistrySummary } from './machine-registry.ts'
 
 describe('openalice machine', () => {
+  it('rejects invalid or duplicate profiles and unsupported sessions before remote setup', async () => {
+    const setupRemote = vi.fn()
+    const addMachineProfile = vi.fn()
+    for (const extra of [
+      ['--label', 'Cloud box'],
+      ['--label', 'local'],
+      ['--label', 'Cloud', '--remote-session', 'default'],
+    ]) {
+      await expect(runMachineCommand(['add', 'host', ...extra, '--yes'], {
+        setupRemote, addMachineProfile, loadMachines: async () => summary(),
+      })).rejects.toThrow()
+    }
+    expect(setupRemote).not.toHaveBeenCalled()
+    expect(addMachineProfile).not.toHaveBeenCalled()
+  })
   it('lists saved Herdr-style Machine profiles as JSON', async () => {
     let output = ''
     await runMachineCommand(['list', '--json'], {
@@ -18,7 +33,6 @@ describe('openalice machine', () => {
           id: 'cloud',
           label: 'Cloud box',
           target: 'alice@example.com',
-          remoteSession: null,
           enabled: true,
           sshPort: 22,
         },
@@ -38,7 +52,7 @@ describe('openalice machine', () => {
     }))
     await expect(runMachineCommand([
       'add', 'alice@example.com', '--label', 'Cloud', '--yes',
-    ], { setupRemote, addMachineProfile, interactive: false })).resolves.toBe(0)
+    ], { setupRemote, addMachineProfile, loadMachines: async () => summary(), interactive: false })).resolves.toBe(0)
     expect(setupRemote).toHaveBeenCalledWith(expect.objectContaining({
       label: 'Cloud',
       sshTarget: 'alice@example.com',
@@ -51,7 +65,7 @@ describe('openalice machine', () => {
 
     await expect(runMachineCommand([
       'add', 'alice@example.com', '--label', 'Cloud',
-    ], { setupRemote, addMachineProfile, interactive: false })).rejects.toMatchObject({ code: 'EUSAGE' })
+    ], { setupRemote, addMachineProfile, loadMachines: async () => summary(), interactive: false })).rejects.toMatchObject({ code: 'EUSAGE' })
   })
 
   it('cancels an interactive mutation without writing', async () => {
@@ -64,6 +78,7 @@ describe('openalice machine', () => {
       stdout: { write: (chunk) => { output += chunk } },
       setupRemote,
       addMachineProfile,
+      loadMachines: async () => summary(),
       interactive: true,
       prompt: async () => 'n',
     })).resolves.toBe(0)

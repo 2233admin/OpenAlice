@@ -17,6 +17,7 @@ import {
   machineProfileId,
   readMachineRegistrySummary,
   registerMachineProfile,
+  validateMachineProfile,
   renameMachine,
   removeMachine,
   setMachineEnabled,
@@ -43,11 +44,12 @@ fleet refreshes:
 
 Machine profiles are stored outside every AliceProject. Adding a profile
 prepares the matching remote OpenAlice Server before saving it. The profile
-contains only connection metadata and an optional remote session name.
+contains only connection metadata. Select an AliceProject with --project or
+--home on commands that support it; Herdr server sessions have no equivalent
+in OpenAlice.
 
 Options:
   --label <label>       Human-readable Machine label
-  --remote-session <name>  Remote session name
   --ssh-port <port>     Override the OpenSSH-configured port
   --identity <path>     Absolute or ~/ local private-key path
   --json                Print a versioned machine-readable result
@@ -107,6 +109,7 @@ async function runList(argv: string[], io: MachineCommandIo): Promise<number> {
 
 async function runAdd(argv: string[], io: MachineCommandIo): Promise<number> {
   const parsed = parseAddArgs(argv)
+  validateMachineProfile(parsed, await loadMachines(io))
   if (!await confirmMutation(
     io,
     parsed.yes,
@@ -120,7 +123,6 @@ async function runAdd(argv: string[], io: MachineCommandIo): Promise<number> {
     sshTarget: parsed.sshTarget,
     sshPort: parsed.sshPort,
     identityFile: parsed.identityFile,
-    remoteSession: parsed.remoteSession,
   }
   await (io.setupRemote ?? setupRemote)(
     { ...input, assumeYes: parsed.yes },
@@ -212,7 +214,6 @@ function parseAddArgs(argv: string[]): {
   sshTarget: string
   sshPort?: number
   identityFile?: string
-  remoteSession?: string
   yes: boolean
 } {
   const sshTarget = argv[0]
@@ -220,19 +221,18 @@ function parseAddArgs(argv: string[]): {
   let label: string | undefined
   let identityFile: string | undefined
   let sshPort: number | undefined
-  let remoteSession: string | undefined
   let yes = false
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--label') label = requireValue(argv, ++index, arg)
-    else if (arg === '--remote-session') remoteSession = requireValue(argv, ++index, arg)
+    else if (arg === '--remote-session') throw usageError('--remote-session is unsupported: OpenAlice has no named server sessions. Use --project or --home on the target command.')
     else if (arg === '--identity') identityFile = requireValue(argv, ++index, arg)
     else if (arg === '--ssh-port') sshPort = requirePort(requireValue(argv, ++index, arg), arg)
     else if (arg === '--yes' || arg === '-y') yes = true
     else throw usageError(`Unknown option: ${String(arg)}`)
   }
   if (!label) throw usageError('--label is required')
-  return { label, sshTarget, sshPort, identityFile, remoteSession, yes }
+  return { label, sshTarget, sshPort, identityFile, yes }
 }
 
 function parseRemoveArgs(argv: string[]): { selector: string; yes: boolean } {
@@ -362,7 +362,6 @@ function publicMachineRow(machine: RegisteredMachine) {
     id: machineProfileId(machine),
     label: machine.displayName,
     target: machine.sshTarget,
-    remoteSession: machine.remoteSession ?? null,
     enabled: machineIsEnabled(machine),
     sshPort: machine.sshPort ?? null,
   }

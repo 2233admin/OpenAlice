@@ -1,5 +1,6 @@
 import { readMachineRegistrySummary, findRegisteredMachine, machineIsEnabled } from './machine-registry.ts'
-import { runSshCommand } from './remote.mjs'
+import { spawn } from 'node:child_process'
+import { buildRemoteSshArgs } from './remote.mjs'
 
 /**
  * Herdr's --machine mode is a target selector in front of the ordinary
@@ -30,14 +31,27 @@ export async function runMachineTarget(selector, commandArgs, dependencies = {})
   }
 
   const remoteCommand = buildRemoteCommand(commandArgs)
-  const runRemote = dependencies.runRemote ?? runSshCommand
-  const output = await runRemote({
+  const runRemote = dependencies.runRemote ?? runTargetCommand
+  return runRemote({
     destination: machine.sshTarget,
     sshPort: machine.sshPort ?? null,
     identityFile: machine.identityFile ?? null,
   }, remoteCommand, dependencies)
-  ;(dependencies.stdout ?? process.stdout).write(output)
-  return 0
+}
+
+/** User commands stream directly and run once: disconnect is not retry authority. */
+export async function runTargetCommand(options, command, dependencies = {}) {
+  const child = (dependencies.spawnProcess ?? spawn)('ssh', buildRemoteSshArgs(options, command), {
+    stdio: 'inherit',
+    windowsHide: true,
+  })
+  return new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code, signal) => {
+      if (signal) reject(new Error(`Remote command interrupted by ${signal}`))
+      else resolve(code ?? 1)
+    })
+  })
 }
 
 export function formatMachineTargetHelp() {
@@ -46,6 +60,10 @@ export function formatMachineTargetHelp() {
 
 Run an ordinary OpenAlice CLI command against a saved remote Machine.
 The remote CLI is selected by its normal PATH or ~/.openalice installation.
+Output streams directly and the remote exit code is preserved. Commands are
+never retried automatically. Interactive TUI use requires a terminal on the
+remote host; use --remote for the browser tunnel. "local" uses the full local
+dispatcher. Pass --project or --home to commands that support those options.
 `
 }
 

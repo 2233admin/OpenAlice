@@ -1,14 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 
 import {
   buildRemoteCommand,
   runMachineTarget,
+  runTargetCommand,
 } from './machine-target-command.mjs'
 
 describe('OpenAlice --machine target dispatch', () => {
+  it('streams once and preserves SSH/command failures instead of replaying mutations', async () => {
+    const child = new EventEmitter()
+    const spawnProcess = vi.fn(() => child)
+    const result = runTargetCommand({ destination: 'host' }, 'command', { spawnProcess })
+    child.emit('exit', 255, null)
+    expect(await result).toBe(255)
+    expect(spawnProcess).toHaveBeenCalledOnce()
+    expect(spawnProcess).toHaveBeenCalledWith('ssh', expect.any(Array), expect.objectContaining({ stdio: 'inherit' }))
+  })
   it('forwards the ordinary command through the selected SSH Machine', async () => {
-    const runRemote = vi.fn(async () => 'status-json\n')
-    let output = ''
+    const runRemote = vi.fn(async () => 7)
     await expect(runMachineTarget('0123456789abcdef0123456789abcdef', ['status', '--json'], {
       loadMachines: async () => ({
         defaultMachine: 'local',
@@ -24,14 +34,12 @@ describe('OpenAlice --machine target dispatch', () => {
         }],
       }),
       runRemote,
-      stdout: { write: (chunk) => { output += chunk } },
-    })).resolves.toBe(0)
+    })).resolves.toBe(7)
     expect(runRemote).toHaveBeenCalledWith({
       destination: 'alice@example.com',
       sshPort: 2222,
       identityFile: '/keys/cloud',
     }, expect.stringContaining("exec \"$cli\" 'status' '--json'"), expect.any(Object))
-    expect(output).toBe('status-json\n')
   })
 
   it('does not dispatch to a disabled Machine', async () => {

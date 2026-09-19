@@ -158,6 +158,20 @@ try {
     cliEntry, 'machine', 'add', remoteTarget,
     '--label', 'Smoke Cloud', '--yes',
   ], { cwd: repoRoot, env: smokeEnv })
+  console.log('[remote-ssh-smoke] checking saved-target dispatch and disable/enable')
+  const profiles = JSON.parse(run(process.execPath, [cliEntry, 'machine', 'list', '--json'], { cwd: repoRoot, env: smokeEnv }))
+  const profileId = profiles.machines.find((row) => row.label === 'Smoke Cloud')?.id
+  if (!profileId) throw new Error('Saved Machine profile was not listed')
+  const targetedVersion = JSON.parse(run(process.execPath, [cliEntry, '--machine', profileId, 'version', '--json'], { cwd: repoRoot, env: smokeEnv }))
+  if (!targetedVersion.version) throw new Error('Saved Machine did not execute the installed remote CLI')
+  const rejectedCommand = spawnSync(process.execPath, [cliEntry, '--machine', profileId, 'no-such-command'], { cwd: repoRoot, env: smokeEnv, encoding: 'utf8' })
+  if (rejectedCommand.status !== 2) throw new Error(`Remote exit code was not preserved: ${rejectedCommand.status}`)
+  run(process.execPath, [cliEntry, 'machine', 'disable', profileId, '--yes'], { cwd: repoRoot, env: smokeEnv })
+  const disabled = JSON.parse(run(process.execPath, [cliEntry, 'machine', 'inspect', profileId, '--json'], { cwd: repoRoot, env: smokeEnv }))
+  if (disabled.machine.issue?.code !== 'EMACHINEDISABLED') throw new Error('Disabled Machine still advertises remote inventory')
+  const blockedCommand = spawnSync(process.execPath, [cliEntry, '--machine', profileId, 'version'], { cwd: repoRoot, env: smokeEnv, encoding: 'utf8' })
+  if (blockedCommand.status !== 2 || !blockedCommand.stderr.includes('disabled')) throw new Error('Disabled Machine accepted target dispatch')
+  run(process.execPath, [cliEntry, 'machine', 'enable', profileId, '--yes'], { cwd: repoRoot, env: smokeEnv })
   const fleet = JSON.parse(run(process.execPath, [
     cliEntry, 'machine', 'inspect', 'smoke-cloud', '--json',
   ], { cwd: repoRoot, env: smokeEnv }))

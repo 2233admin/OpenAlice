@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   machineRegistryPath,
+  findRegisteredMachine,
   parseMachineRegistry,
   readMachineRegistry,
   readMachineRegistrySummary,
@@ -32,6 +33,13 @@ async function temporarySupervisorRoot(): Promise<string> {
 }
 
 describe('Supervisor machine registry', () => {
+  it('resolves public labels before internal keys and uses the same target for mutations', async () => {
+    const supervisorRoot = await temporarySupervisorRoot()
+    await registerMachineProfile({ label: 'Cloud Box', sshTarget: 'first-host' }, { supervisorRoot })
+    const second = await registerMachineProfile({ label: 'cloud-box', sshTarget: 'second-host' }, { supervisorRoot })
+    expect(findRegisteredMachine(await readMachineRegistrySummary({ supervisorRoot }), 'cloud-box')?.id).toBe(second.id)
+    expect((await setMachineEnabled('cloud-box', false, { supervisorRoot })).id).toBe(second.id)
+  })
   it('treats a missing document as a local-only registry', async () => {
     const supervisorRoot = await temporarySupervisorRoot()
 
@@ -186,18 +194,16 @@ describe('Supervisor machine registry', () => {
     )
   })
 
-  it('creates Herdr-shaped profiles and resolves later mutations by id or label', async () => {
+  it('creates opaque profiles and resolves later mutations by id or label', async () => {
     const supervisorRoot = await temporarySupervisorRoot()
     const added = await registerMachineProfile({
       label: 'Cloud Box',
       sshTarget: 'alice@cloud',
-      remoteSession: 'alice-default',
     }, { supervisorRoot })
 
     expect(added).toMatchObject({
       displayName: 'Cloud Box',
       sshTarget: 'alice@cloud',
-      remoteSession: 'alice-default',
       enabled: true,
     })
     expect(added.id).toMatch(/^[a-f0-9]{32}$/)

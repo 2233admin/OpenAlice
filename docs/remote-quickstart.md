@@ -209,6 +209,26 @@ openalice --remote openalice-box \
   confirm the previous instance is gone before following the operator recovery
   guidance in [[docs/remote-access.md]].
 
+## Saved Machine commands
+
+Save a prepared SSH host and use its label for commands:
+
+```bash
+openalice machine add openalice-box --label "Cloud" --yes
+openalice machine list --json
+openalice --machine "Cloud" status --json
+openalice --machine "Cloud" exec --project research alice --help
+openalice machine disable "Cloud" --yes
+openalice machine enable "Cloud" --yes
+```
+
+Adding may install/update and start the remote Server. Targeted commands run
+on that host, stream output, and preserve its exit code without automatic
+retry. Disabling prevents new operations through the saved profile; it does
+not stop the Server or an existing tunnel. Use `--remote openalice-box` to open
+the browser tunnel. Named Herdr server sessions are not supported; select a
+remote AliceProject on the command with `--project` or `--home` where supported.
+
 ## Docker Is a First-Class Alternative
 
 Choose Docker when the container image, volume, healthcheck, bundled Agent

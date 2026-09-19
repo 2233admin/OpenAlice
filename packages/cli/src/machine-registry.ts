@@ -26,18 +26,16 @@ const MACHINE_KEYS = new Set([
   'sshTarget',
   'sshPort',
   'identityFile',
-  'remoteSession',
   'enabled',
 ])
 
 export interface StoredMachineConfig {
-  /** Herdr-compatible opaque profile id. Legacy rows may not have one. */
+  /** Opaque OpenAlice profile id inspired by Herdr; not a shared file schema. */
   id?: string
   displayName: string
   sshTarget: string
   sshPort?: number
   identityFile?: string
-  remoteSession?: string
   enabled?: boolean
   [key: string]: unknown
 }
@@ -70,7 +68,6 @@ export interface RegisterMachineInput {
   sshPort?: number
   identityFile?: string
   id?: string
-  remoteSession?: string
   enabled?: boolean
 }
 
@@ -79,7 +76,6 @@ export interface RegisterMachineProfileInput {
   sshTarget: string
   sshPort?: number
   identityFile?: string
-  remoteSession?: string
 }
 
 export async function readMachineRegistry(
@@ -166,9 +162,6 @@ export async function registerMachine(
           identityFile: normalizeIdentityFile(input.identityFile, options),
         }
       : {}),
-    ...(input.remoteSession === undefined
-      ? {}
-      : { remoteSession: normalizeRemoteSession(input.remoteSession, `machines.${key}.remoteSession`) }),
     ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
   }
   await writeMachineRegistry({
@@ -183,7 +176,7 @@ export async function registerMachine(
 }
 
 /**
- * Register a Herdr-shaped Machine profile. The existing registry key remains
+ * Register an OpenAlice Machine profile. The existing registry key remains
  * an internal compatibility handle for Fleet and transfer code; callers use
  * the opaque id or label returned in the public Machine surface.
  */
@@ -191,7 +184,7 @@ export async function registerMachineProfile(
   input: RegisterMachineProfileInput,
   options: MachineRegistryOptions = {},
 ): Promise<RegisteredMachine> {
-  const label = normalizeDisplayName(input.label, 'label')
+  const label = normalizeProfileLabel(input.label)
   const current = await readMachineRegistry(options)
   if (Object.values(current.machines ?? {}).some((machine) => machine.displayName === label)) {
     throw machineRegistryError(`Machine label "${label}" is already registered.`)
@@ -204,7 +197,6 @@ export async function registerMachineProfile(
     sshPort: input.sshPort,
     identityFile: input.identityFile,
     id: createMachineId(),
-    remoteSession: input.remoteSession,
     enabled: true,
   }, options)
 }
@@ -247,7 +239,7 @@ export async function renameMachine(
   }
   const existing = current.machines?.[key]
   if (!existing) throw machineRegistryError(`Machine "${selector}" is not registered.`)
-  const normalizedLabel = normalizeDisplayName(label, `machines.${key}.displayName`)
+  const normalizedLabel = normalizeProfileLabel(label)
   if (Object.entries(current.machines ?? {}).some(([otherKey, machine]) => (
     otherKey !== key && machine.displayName === normalizedLabel
   ))) {
@@ -309,11 +301,27 @@ export function findRegisteredMachine(
 ): RegisteredMachine | undefined {
   const value = selector.trim()
   if (!value) return undefined
-  return summary.machines.find((machine) => (
-    machine.key === value
-    || machine.id === value
-    || machine.displayName === value
-  ))
+  return summary.machines.find((machine) => machine.id === value)
+    ?? summary.machines.find((machine) => machine.displayName === value)
+    ?? summary.machines.find((machine) => machine.key === value)
+}
+
+/** Validate before preparing a remote host; saving rechecks the current file. */
+export function validateMachineProfile(input: RegisterMachineProfileInput, summary: MachineRegistrySummary): void {
+  const label = normalizeProfileLabel(input.label)
+  normalizeSshTarget(input.sshTarget)
+  if (input.sshPort !== undefined) normalizePort(input.sshPort, 'sshPort')
+  if (summary.machines.some((machine) => machine.displayName === label)) {
+    throw machineRegistryError(`Machine label "${label}" is already registered.`)
+  }
+}
+
+function normalizeProfileLabel(value: string): string {
+  const label = normalizeDisplayName(value, 'label')
+  if (label === 'local' || MACHINE_ID_PATTERN.test(label)) {
+    throw machineRegistryError('Machine label cannot be "local" or a 32-character profile id.')
+  }
+  return label
 }
 
 export function machineProfileId(machine: RegisteredMachine): string {
@@ -322,6 +330,12 @@ export function machineProfileId(machine: RegisteredMachine): string {
 
 export function machineIsEnabled(machine: RegisteredMachine): boolean {
   return machine.enabled !== false
+}
+
+export function requireMachineEnabled(machine: RegisteredMachine): void {
+  if (!machineIsEnabled(machine)) {
+    throw machineRegistryError(`Machine "${machine.displayName}" is disabled. Enable it with openalice machine enable before connecting.`)
+  }
 }
 
 export function parseMachineRegistry(value: unknown): MachineRegistryDocument {
@@ -414,9 +428,6 @@ function parseStoredMachine(value: unknown, label: string): StoredMachineConfig 
     ...(record['identityFile'] === undefined
       ? {}
       : { identityFile: requireAbsolutePath(record['identityFile'], `${label}.identityFile`) }),
-    ...(record['remoteSession'] === undefined
-      ? {}
-      : { remoteSession: normalizeRemoteSession(record['remoteSession'], `${label}.remoteSession`) }),
     ...(record['enabled'] === undefined
       ? {}
       : { enabled: requireBoolean(record['enabled'], `${label}.enabled`) }),
@@ -464,14 +475,6 @@ function normalizeMachineId(value: unknown, label: string): string {
     throw machineRegistryError(`${label} must be 32 lowercase hexadecimal characters.`)
   }
   return id
-}
-
-function normalizeRemoteSession(value: unknown, label: string): string {
-  const session = requireString(value, label)
-  if (session.length > 80 || /[\u0000-\u001f\u007f\s]/u.test(session)) {
-    throw machineRegistryError(`${label} must contain 1-80 non-whitespace characters.`)
-  }
-  return session
 }
 
 function normalizeDisplayName(value: unknown, label: string): string {
@@ -545,13 +548,12 @@ function resolveMachineKey(document: MachineRegistryDocument, selector: string):
   const value = requireString(selector, 'machine')
   if (value === 'local') return 'local'
   const machines = document.machines ?? {}
-  const match = Object.entries(machines).find(([key, machine]) => (
-    key === value
-    || machine.id === value
-    || machine.displayName === value
-  ))
+  const match = findRegisteredMachine({
+    defaultMachine: document.defaultMachine ?? 'local',
+    machines: Object.entries(machines).map(([key, machine]) => ({ key, ...machine, isDefault: false })),
+  }, value)
   if (!match) throw machineRegistryError(`Machine "${selector}" is not registered.`)
-  return match[0]
+  return match.key
 }
 
 function retainUnknownFields<T extends Record<string, unknown>>(

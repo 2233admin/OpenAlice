@@ -243,6 +243,13 @@ re-enters the ordinary OpenAlice CLI on that host. The remote profile's
 `enabled` flag is checked before SSH is opened; `machine disable` therefore
 acts as a local circuit breaker for automated target selection.
 
+`--machine local` uses the full local dispatcher, including `exec` and `tui`.
+Saved remote targets execute the installed CLI over SSH with inherited streams
+and preserve its exit code. They do not allocate a remote PTY or retry commands
+after disconnect. Use ordinary interactive SSH for a remote TUI, and `--remote`
+for a local browser tunnel. The selected remote host owns paths and browser
+actions in forwarded commands. `--machine` does not bootstrap or upgrade a host.
+
 ### Server lifecycle
 
 ```bash
@@ -347,8 +354,7 @@ target `openalice --remote <target>` contract:
 
 ```bash
 openalice machine list [--json]
-openalice machine add alice@example.com --label "Cloud" [--ssh-port 22]
-  [--identity ~/.ssh/cloud] [--remote-session default] --yes
+openalice machine add alice@example.com --label "Cloud" --yes
 openalice machine rename <id-or-label> --label "Cloud production" --yes
 openalice machine disable <id-or-label> --yes
 openalice machine enable <id-or-label> --yes
@@ -358,12 +364,25 @@ openalice machine inspect [id-or-label] [--json]
 ```
 
 Machine profiles live in the machine-wide Supervisor root's owner-private
-`machines.json`; they contain an opaque id, label, OpenSSH target, optional
-remote session, port, and local identity-file path, but never passwords,
+`machines.json`; they contain an opaque id, display name, OpenSSH target,
+enabled state, optional port, and local identity-file path, but never passwords,
 private-key bytes, passphrases, host keys, agent material, or remote
 credentials. OpenSSH config, agent, ProxyJump, and host-key policy stay
 authoritative. Removing or disabling a row changes local metadata only after
 the explicit confirmation; remove never deletes remote data.
+
+`machine add` accepts `--ssh-port` and `--identity`. It validates the profile
+before remote setup and rechecks the registry before saving. Herdr's named
+server sessions have no OpenAlice equivalent: `--remote-session` is rejected,
+not silently stored. Select an AliceProject with `--project` or `--home` on the
+target command where supported. Persisted keys and JSON output fields are
+documented separately in [[docs/data-locations.md]].
+
+Disabled profiles remain visible as offline inventory rows with
+`EMACHINEDISABLED`, no projects, and no remote capabilities. Inventory does not
+contact them; new TUI connections, starts, and transfers check enablement too.
+Disabling a profile does not stop the remote Server or close an existing tunnel.
+Explicit raw-target `--remote` remains independent of saved profiles.
 
 `machine inspect` uses the same typed inventory for local and remote Machines.
 Each remote probe invokes `openalice machine inspect local --json` once; that
@@ -864,7 +883,7 @@ Runtime model.
   integration, and managed-remote selection are implemented;
 - add release signature/provenance verification and reproducible-build
   evidence before describing the asset as cryptographically authenticated;
-- retain the same `server` and `remote` commands, status schema, state root, and
+- retain the `server` commands and `--remote` selector, status schema, state root, and
   consent model;
 - keep source-backed development as a supported diagnostic path.
 
@@ -935,7 +954,7 @@ When this surface changes:
    locks, or the control endpoint changes;
 4. start the real localhost route and verify the Workspace terminal and
    loginless loopback Origin contract;
-5. exercise pure `ssh` and managed `remote` against a disposable SSH/Docker
+5. exercise OpenSSH transport and managed `--remote` against a disposable SSH/Docker
    host with `pnpm test:system:remote`, including default-no, installed payload
    equality, detach persistence, reconnect, and structured stop;
 6. follow [[docs/docker-deployment.md]] and run `pnpm docker:smoke` when
