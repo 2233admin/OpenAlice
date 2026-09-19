@@ -36,6 +36,10 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
   const pet = new BrowserWindow({
     x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
     title: 'Alice', transparent: true, frame: false, hasShadow: false,
+    // Frameless transparent Windows windows reserve a native border outside
+    // the requested bounds unless their dimensions are content dimensions.
+    // Keep macOS on its existing input-coordinate path.
+    useContentSize: process.platform === 'win32',
     resizable: false, maximizable: false, fullscreenable: false,
     skipTaskbar: true, alwaysOnTop: true, show: false,
     ...(process.platform === 'win32' ? { thickFrame: false, type: 'toolbar' } : {}),
