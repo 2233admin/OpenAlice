@@ -53,14 +53,28 @@ openalice create alice-project [options]
 openalice project [list|use|copy-ai-creds|transfer] [options]
 ```
 
+Remote targeting is a global selector rather than a second command tree:
+
+```bash
+openalice --remote <user@host> [options]
+openalice machine add <user@host> --label <label> [options]
+openalice --machine <id-or-label> <command> [options]
+```
+
+`--remote` owns the managed SSH attach and loopback tunnel. `machine` stores
+Herdr-style remote profiles, and `--machine` re-enters an ordinary CLI command
+on the selected enabled profile. There is no separate public `ssh` or `remote`
+command.
+
 | Command | Contract |
 |---|---|
 | `create alice-project` | Register a named complete home. Interactive or `--yes` with `--name`, `--home`, and optional `--product trader\|nano`. Product is immutable birth (Trader default; Nano never starts UTA). TUI create remains Trader-equivalent. |
 | `project list` | Print registered AliceProjects and the remembered bare-start default. `--json` emits the registry summary. |
 | `project use <key>` | Record that AliceProject as the next bare-start default. Does not start, stop, or copy another project. |
-| `machine list` | Print the implicit local Machine and explicitly registered SSH Machines. `--json` emits a versioned secret-free summary. |
-| `machine add/remove` | Atomically remember or forget local SSH connection metadata. Non-interactive mutation requires `--yes`; remote state is never changed. |
-| `machine inspect [key]` | Build a typed Machine → AliceProject inventory; each remote Machine uses one bounded aggregate SSH command. |
+| `machine list` | Print saved Machine profiles by opaque id, label, target, and enabled state. `--json` emits a versioned secret-free summary. |
+| `machine add` | Prepare the selected remote Server, then atomically save its SSH profile. Non-interactive mutation requires `--yes`. |
+| `machine rename/enable/disable/remove` | Mutate local profile metadata after explicit confirmation; remove never deletes remote data. |
+| `machine inspect [id-or-label]` | Build a typed Machine → AliceProject inventory; each enabled remote Machine uses one bounded aggregate SSH command. Disabled rows stay visible without SSH. |
 | `project copy-ai-creds` | Copy AI credential rows from one complete home into another. Interactive unless `--from`, `--to`, and `--yes` are set. Matching vendor+key rows are skipped; colliding slugs are renamed. Workspace launch preferences, broker accounts, and `sealing.key` are never copied. Secrets are never printed. |
 | `project transfer` | Plan or copy a stopped local AliceProject to a new complete Home on a registered SSH Machine. Portable configuration and Workspace/Git state transfer; Session/runtime/auth state does not. Credentials use the SSH stream and are re-sealed with a new remote key. The source and remote default remain unchanged. |
 | `up` | Prepare the selected provider when needed, start `cli-server` detached, and return only after Guardian control plus Alice HTTP readiness |
@@ -100,8 +114,8 @@ separate verified browser open after readiness.
 - `openalice tui` is the explicit equivalent for tests and scripts;
 - `openalice start` retains the existing foreground, browser-oriented
   compatibility launcher and also selects the installed bundle by default;
-- `openalice server run|start|status|stop` remains available for managed remote
-  and existing scripts;
+- `openalice server run|start|status|stop` remains available for managed
+  remote and existing scripts;
 - new code uses `run|up|status|down`;
 - `server status --json` retains its legacy raw status payload.
 
@@ -840,10 +854,10 @@ the Supervisor reads a versioned machine-local document at
 AliceProject map outside every selectable complete home.
 
 The same Supervisor root may contain `machines.json`, a separate versioned
-registry for the implicit local computer plus named SSH hosts. It is not part
-of any AliceProject and is not selected by `OPENALICE_HOME`. Writes are atomic
-and owner-private; unknown additive fields survive rewrites, while an invalid
-or newer known schema fails visibly. This registry remains separate from the
+registry for saved Herdr-style remote Machine profiles. It is not part of any
+AliceProject and is not selected by `OPENALICE_HOME`. Writes are atomic and
+owner-private; unknown additive fields survive rewrites, while an invalid or
+newer known schema fails visibly. This registry remains separate from the
 hashed `remote-targets.json` tunnel-port cache.
 
 Bare `openalice` and flag-less `openalice tui` must still open a machine-level
@@ -1058,10 +1072,10 @@ Human `status` reports:
 
 Dev-owned Runtimes may be inspected and opened. A healthy local `dev` or
 `cli-server` owner also advertises a verified loopback Web endpoint that
-Electron can open in the default browser without takeover. `down` still
-refuses both. Only a matching `cli-server` that advertises `runtime.stop`
-accepts the stop transaction. The Electron browser handoff is documented in
-[[docs/data-locations.md]].
+Electron can open in the default browser without takeover. A compatible
+Runtime accepts the stop transaction only when it
+advertises `runtime.stop`; its owner surface remains diagnostic. The Electron
+browser handoff is documented in [[docs/data-locations.md]].
 
 Source dev and built Guardian entries publish the same private, local
 `runtime.status` contract. In particular, `pnpm dev` advertises its owner PID,

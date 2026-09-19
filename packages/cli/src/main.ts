@@ -51,6 +51,9 @@ Options:
     await setup()
     return (dependencies.runTui ?? runSupervisorTui)(flags)
   }
+  if (command === '--remote' || command === '--machine') {
+    return (dependencies.runCommand ?? runLegacyCommand)(argv)
+  }
   if (command === undefined) {
     await setup()
     return (dependencies.runTui ?? runSupervisorTui)({})

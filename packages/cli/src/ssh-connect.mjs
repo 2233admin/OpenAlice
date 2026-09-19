@@ -168,10 +168,10 @@ export async function isLoopbackPortAvailable(port, dependencies = {}) {
 
 export function formatSshHelp() {
   return `Usage:
-  openalice ssh <user@host> [options]
+  Internal SSH loopback tunnel transport
 
-Connects the local browser to an AliceProject that is already running on
-the SSH host. The local listener and remote target are both fixed to 127.0.0.1.
+This transport is owned by the Supervisor and the --remote connector. It is
+not a public top-level CLI command.
 
 Options:
   --local-port <port|auto>  Local tunnel port (default: auto)

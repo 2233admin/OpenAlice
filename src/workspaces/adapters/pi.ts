@@ -192,9 +192,10 @@ function sortPiTrust(trust: Readonly<Record<string, boolean | null>>): Record<st
 }
 
 function piHeadlessApproveArgs(env: Readonly<Record<string, string | undefined>>): readonly string[] {
-  // Packaged desktop and Docker both use an OpenAlice-pinned Pi. Contributor
-  // dev intentionally uses whatever `pi` is on PATH; its install/version/trust
-  // policy belongs to that developer, so do not attach version-specific flags.
+  // Packaged desktop uses an OpenAlice-managed Pi and Docker uses its
+  // image-provided Pi. Contributor dev intentionally uses whatever `pi` is on
+  // PATH; its install/version/trust policy belongs to that developer, so do not
+  // attach version-specific flags.
   const profile = runtimeProfileFromEnv(env);
   return usesManagedPiBinary(env) || profile.launcher === 'docker' ? ['--approve'] : [];
 }

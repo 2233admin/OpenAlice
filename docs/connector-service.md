@@ -365,6 +365,15 @@ Request URL. Slash commands are created in the Slack app settings; Connector
 listens for them over the socket and does not register them at runtime. Raw
 Slack messages are not read. The owner DMs the app and runs `/link`.
 
+Telegram's Bot API does not allow `getUpdates` long polling while an outgoing
+webhook is configured. grammY therefore calls `deleteWebhook` as part of
+`bot.start()` before entering the polling loop. This cleanup is idempotent, but
+Connector must not pass `drop_pending_updates: true`: queued owner messages are
+valid work, not disposable startup residue. A failure or timeout before
+`onStart` is reported with its stage (`bot_init`, `webhook_cleanup`, or
+`polling`) so the health record distinguishes Bot API initialization from
+webhook cleanup and the actual update stream.
+
 Do not use Slack's hosted Deno/Functions platform for this connector. That
 path expects Slack to host the app. Socket Mode plus the Web API is the
 current local-app shape after the 2026 Node SDK majors (`@slack/web-api` 8,

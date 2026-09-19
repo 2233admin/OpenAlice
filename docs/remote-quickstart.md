@@ -5,10 +5,8 @@ that you can already reach with SSH, while the browser stays on your laptop.
 The remote host owns Workspaces, native Agent processes, credentials, and
 optional trading services; the laptop owns only the browser and SSH tunnel.
 
-The lifecycle and security contract lives in [[docs/remote-access.md]]. For an
-always-on container exposed through HTTPS, Tailscale, or a private proxy, use
-[[docs/docker-deployment.md]]. Remote and Docker are parallel deployment
-choices: neither is a compatibility fallback for the other.
+The lifecycle and security contract lives in [[docs/remote-access.md]].
+OpenAlice supplies the CLI; operators own their execution environment.
 
 ## Choose a Deployment
 
@@ -16,11 +14,10 @@ choices: neither is a compatibility fallback for the other.
 |---|---|
 | Complete packaged desktop app | Electron |
 | OpenAlice from a local source checkout | `openalice start` |
-| Existing private machine reached through SSH | `openalice remote` |
-| Existing compatible Server; tunnel only | `openalice ssh` |
-| Container lifecycle, volume, healthcheck, and HTTPS | Docker |
+| Existing private machine reached through SSH | `openalice --remote` |
+| Saved remote Machine profile | `openalice --machine` |
 
-`openalice remote` follows the Herdr-style ownership model: execution and
+`openalice --remote` follows the Herdr-style ownership model: execution and
 durable state stay on the machine with the files, while a replaceable local
 client can disconnect and return. OpenAlice uses an ordinary loopback HTTP/WS
 tunnel rather than Herdr's TUI protocol, so the normal browser UI remains the
@@ -90,7 +87,7 @@ authentication policy.
 ## 3. Review the Plan
 
 ```bash
-openalice remote openalice-box --plan
+openalice --remote openalice-box --plan
 ```
 
 The read-only plan reports the remote platform, CLI, Runtime owner/provider,
@@ -108,7 +105,7 @@ connections. Nothing changes until you approve the plan.
 ## 4. Connect
 
 ```bash
-openalice remote openalice-box
+openalice --remote openalice-box
 ```
 
 Approve the displayed plan. The native archive downloads and activates as one
@@ -124,7 +121,7 @@ tunnel. Alice itself remains bound to remote `127.0.0.1`.
 Reconnect with the short command:
 
 ```bash
-openalice remote openalice-box
+openalice --remote openalice-box
 ```
 
 OpenAlice prefers the last successful local port, so an existing browser tab
@@ -134,8 +131,8 @@ the command chooses another one and tells you.
 Inspect or stop the remote Server without writing raw SSH commands:
 
 ```bash
-openalice remote openalice-box --status
-openalice remote openalice-box --stop
+openalice --remote openalice-box --status
+openalice --remote openalice-box --stop
 ```
 
 Status bundles the control lookup into one SSH round trip instead of repeating
@@ -168,7 +165,7 @@ For development or a deliberately pinned checkout, pass your own absolute
 path:
 
 ```bash
-openalice remote openalice-box \
+openalice --remote openalice-box \
   --app-dir /srv/OpenAlice
 ```
 
@@ -181,17 +178,17 @@ Useful variations:
 
 ```bash
 # Keep one explicit browser origin.
-openalice remote openalice-box --local-port 49891
+openalice --remote openalice-box --local-port 49891
 
 # Print the URL without opening a browser.
-openalice remote openalice-box --no-open
+openalice --remote openalice-box --no-open
 
 # Use an identity without an SSH config alias.
-openalice remote alice@server.example.com \
+openalice --remote alice@server.example.com \
   --identity ~/.ssh/id_ed25519
 
 # Put durable state on a mounted volume.
-openalice remote openalice-box \
+openalice --remote openalice-box \
   --home /data/openalice-home
 ```
 
@@ -209,18 +206,34 @@ openalice remote openalice-box \
   confirm the previous instance is gone before following the operator recovery
   guidance in [[docs/remote-access.md]].
 
-## Docker Is a First-Class Alternative
+## Saved Machine commands
 
-Choose Docker when the container image, volume, healthcheck, bundled Agent
-runtimes, and HTTPS/private-proxy lifecycle are benefits rather than overhead:
+Save a prepared SSH host and use its label for commands:
 
 ```bash
-docker compose up -d --build
-docker compose ps
+openalice machine add openalice-box --label "Cloud" --yes
+openalice machine list --json
+openalice --machine "Cloud" status --json
+openalice --machine "Cloud" exec --project research alice --help
+openalice machine disable "Cloud" --yes
+openalice machine enable "Cloud" --yes
 ```
 
-The Docker image is not deprecated by managed remote, and remote users are not
-expected to wrap their SSH host in Docker. Both surfaces run the same
-Guardian/Alice product with different operational ownership. Continue with
-[[docs/docker-deployment.md]] for authentication, backups, upgrades, and the
-full container acceptance contract.
+Adding may install/update and start the remote Server. Targeted commands run
+on that host, stream output, and preserve its exit code without automatic
+retry. Disabling prevents new operations through the saved profile; it does
+not stop the Server or an existing tunnel. Use `--remote openalice-box` to open
+the browser tunnel. Named Herdr server sessions are not supported; select a
+remote AliceProject on the command with `--project` or `--home` where supported.
+
+## User-managed containers
+
+OpenAlice does not provide a backend Dockerfile, Compose recipe, or container
+supervisor. Operators who package it themselves own process supervision,
+persistence, networking, authentication, and updates to that deployment.
+
+SSH reaches the execution context selected by its endpoint. OpenAlice uses the
+compatible Guardian control contract in that context; it does not discover or
+enter nested containers. The normal managed CLI update requires that the
+execution context remain available while the old Runtime stops and the new
+Runtime starts. A user deployment must provide that lifecycle.

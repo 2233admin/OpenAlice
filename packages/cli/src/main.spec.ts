@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { main } from './main.ts'
 
 describe('OpenAlice TypeScript application entry', () => {
+  it('routes --machine local exec through the full dispatcher', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(await main(['--machine', 'local', 'exec', '--help'])).toBe(0)
+      expect(stdout).toHaveBeenCalledWith(expect.stringContaining('openalice exec'))
+    } finally {
+      stdout.mockRestore()
+    }
+  })
   it('continues native first-launch dependency installation before opening TUI', async () => {
     const calls: string[] = []
     expect(await main([], { standalone: true, runSetup: async () => { calls.push('setup'); return 0 }, runTui: async () => { calls.push('tui'); return 0 } })).toBe(0)
@@ -15,11 +24,22 @@ describe('OpenAlice TypeScript application entry', () => {
     expect(runTui).toHaveBeenCalled()
   })
 
-  it.each(['status', 'down', 'version', 'doctor', 'setup', 'completion', 'remote', 'ssh'])('does not gate %s on local dependencies', async command => {
+  it.each(['status', 'down', 'version', 'doctor', 'setup', 'completion'])('does not gate %s on local dependencies', async command => {
     const runSetup = vi.fn(async () => 1)
     const runCommand = vi.fn(async () => 0)
     expect(await main([command], { standalone: true, runSetup, runCommand })).toBe(0)
     expect(runSetup).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['--remote', 'alice@example.com'],
+    ['--machine', 'cloud', 'status'],
+  ])('routes %s through the legacy command dispatcher without local setup', async (...argv: string[]) => {
+    const runSetup = vi.fn(async () => 1)
+    const runCommand = vi.fn(async () => 0)
+    expect(await main(argv, { standalone: true, runSetup, runCommand })).toBe(0)
+    expect(runSetup).not.toHaveBeenCalled()
+    expect(runCommand).toHaveBeenCalledWith(argv)
   })
 
   it('keeps JSON startup noninteractive', async () => {

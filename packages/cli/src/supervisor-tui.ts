@@ -24,6 +24,7 @@ import {
 } from './machine-inventory.ts'
 import {
   readMachineRegistrySummary,
+  requireMachineEnabled,
   type MachineRegistrySummary,
   type RegisteredMachine,
 } from './machine-registry.ts'
@@ -1049,6 +1050,7 @@ export async function runSupervisorTui(
     const registry = await loadMachines()
     const target = registry.machines.find((entry) => entry.key === machine.key)
     if (!target) throw new Error(`Machine "${machine.key}" is no longer registered.`)
+    requireMachineEnabled(target)
     const remotePort = loopbackEndpointPort(project.runtime.webEndpoint)
     if (remotePort === null) {
       throw new Error(`AliceProject "${project.key}" does not advertise a loopback Web endpoint.`)
@@ -1069,8 +1071,12 @@ export async function runSupervisorTui(
   const sendTransfer = dependencies.sendProjectTransfer ?? ((input) => transferProjectOverSsh(input))
   const inspectTransferSource = dependencies.inspectTransferSource
     ?? ((home) => inspectRuntime({ homeRoot: home, waitMs: 2_000 }))
-  const startRemoteProject = dependencies.startRemoteProject
-    ?? ((machine, projectKey) => runRemoteProjectStart(machine, projectKey))
+  const startRemoteProject = async (machine: RegisteredMachine, projectKey: string) => {
+    const current = (await loadMachines()).machines.find((entry) => entry.key === machine.key)
+    if (!current) throw new Error(`Machine "${machine.key}" is no longer registered.`)
+    requireMachineEnabled(current)
+    return (dependencies.startRemoteProject ?? runRemoteProjectStart)(current, projectKey)
+  }
   const probeTarget = dependencies.probeTarget
     ?? ((endpoint) => probeOpenAlice(endpoint, { timeoutMs: 1_500 }))
 
@@ -3375,6 +3381,7 @@ export async function runSupervisorTui(
       const registry = await loadMachines()
       const machine = registry.machines.find((entry) => entry.key === destination.key)
       if (!machine) { state.error = 'Destination Machine is no longer registered.'; state.phase = 'failed'; component = failureComponent(); return }
+      if (machine.enabled === false) { state.error = 'Destination Machine is disabled.'; state.phase = 'failed'; component = failureComponent(); return }
       state.phase = 'transferring'
       transferController = new AbortController()
       let progress = { files: 0, bytes: 0, totalFiles: state.plan!.portable.files, totalBytes: state.plan!.portable.bytes }

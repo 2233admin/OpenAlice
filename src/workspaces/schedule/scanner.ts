@@ -123,6 +123,8 @@ export interface ScheduleScannerDeps {
   }) => Promise<void>
   /** Observe direct Issue file edits during the scanner's normal live read. */
   observeIssues?: (workspace: WorkspaceMeta, issues: readonly IssueRecord[]) => Promise<void>
+  /** Reconcile Workspace-owned Session config files on the infrastructure tick. */
+  reconcileSessionRuntimeBindings?: () => Promise<void>
   markers: MarkerStore
   logger: Logger
   /** Injectable clock for tests. */
@@ -258,6 +260,7 @@ export class ScheduleScanner {
     const nowMs = this.now()
     const seen = new Set<string>()
     try {
+      await this.deps.reconcileSessionRuntimeBindings?.()
       // registry.list() order is preserved by Promise.all → stable display order.
       const extraDesks = extraConnectorDeskKeys(
         await findConnectorDesks(

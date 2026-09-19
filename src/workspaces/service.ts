@@ -2395,6 +2395,16 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       });
     },
     observeIssues: (workspace, issues) => observeIssueRecords(workspace, issues),
+    reconcileSessionRuntimeBindings: async () => {
+      try {
+        const changed = await resumeRegistry.reconcileRuntimeBindings()
+        if (changed > 0) {
+          launcherLogger.info('resume_registry.runtime_bindings_reconciled', { changed })
+        }
+      } catch (err) {
+        launcherLogger.warn('resume_registry.runtime_binding_reconcile_failed', { err })
+      }
+    },
     markers: scheduleMarkers,
     logger: launcherLogger.child({ scope: 'schedule' }),
     ...(opts.scheduleScannerIntervalMs !== undefined

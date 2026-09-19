@@ -200,7 +200,7 @@ export async function connectRemote(options, dependencies = {}) {
       installSource: plan.installSource,
       contentIdentity: plan.contentIdentity,
       expectedRemoteTarget: plan.expectedRemoteTarget,
-      nativeRuntimeRequired: !connectionOptions.appDir,
+      nativeRuntimeRequired: plan.nativeRuntimeExpected,
     })
     if (installerError && matchingRemoteCli) {
       stdout.write('The remote install completed before the disconnect; continuing from detected state.\n')
@@ -314,16 +314,17 @@ export async function connectRemote(options, dependencies = {}) {
     } catch (probeError) {
       throw startError ?? probeError
     }
-    if (startError && remote.status?.class === 'running' && remote.status?.owner?.surface === 'cli-server') {
+    if (startError && isRemoteRuntimeAttachable(remote.status)) {
       stdout.write('The remote Server became ready before the disconnect; continuing from detected state.\n')
     } else if (startError) {
       throw startError
     }
   }
-  if (remote.status?.class !== 'running' || remote.status?.owner?.surface !== 'cli-server') {
+  if (!isRemoteRuntimeAttachable(remote.status)) {
     throw new Error(`Remote OpenAlice Server is not ready after apply (${remote.status?.class ?? 'no status'})`)
   }
-  if (!runningRuntimeMatchesPlan(connectionOptions, remote)) {
+  if ((plan.nativeRuntimeExpected || remoteRuntimeMustMatchPlan(connectionOptions, remote))
+    && !runningRuntimeMatchesPlan(connectionOptions, remote)) {
     throw new Error(formatRunningRuntimeMismatch(connectionOptions, remote))
   }
   const runtimePort = remoteRuntimePort(remote.status)
@@ -367,8 +368,11 @@ async function stopManagedRemote(options, initialRemote, dependencies) {
     stdout.write(`OpenAlice Server is already stopped on ${options.destination}.\n`)
     return 0
   }
-  if (initialRemote.status?.class !== 'running' || initialRemote.status?.owner?.surface !== 'cli-server') {
-    throw new Error(`Remote Runtime is ${initialRemote.status?.class ?? 'unknown'} and is not a controllable CLI Server`)
+  if (initialRemote.status?.class !== 'running') {
+    throw new Error(`Remote Runtime is ${initialRemote.status?.class ?? 'unknown'} and is not controllable`)
+  }
+  if (!initialRemote.status.capabilities?.includes('runtime.stop')) {
+    throw new Error('Remote Runtime does not advertise structured runtime.stop support')
   }
 
   stdout.write(`Stopping OpenAlice Server on ${options.destination}...\n`)
@@ -469,20 +473,29 @@ export function createRemotePlan(options, remote, install = {}) {
   let startServer = false
   let restartServer = false
   let restartOwner = null
+  const status = remote.status
+  const reusableExternalRuntime = isRemoteRuntimeAttachable(status)
+    && !options.appDir
+    && status?.provider?.kind !== 'bun'
   const cliMatchesLocal = remoteCliMatchesRelease(remote, {
     installSource,
     contentIdentity,
     expectedRemoteTarget,
-    nativeRuntimeRequired: !options.appDir,
+    nativeRuntimeRequired: !options.appDir && !reusableExternalRuntime,
   })
   const bundledRuntime = !options.appDir && remote.managedRuntime?.compatible === true
-  const installCli = !remote.cliPath
+  const cliUpdateRequired = !remote.cliPath
     || !remote.cliCompatible
     || !cliMatchesLocal
-    || (!options.appDir && !bundledRuntime)
-  const nativeRuntimeExpected = !options.appDir && (bundledRuntime || installCli)
+    || (!options.appDir && !reusableExternalRuntime && !bundledRuntime)
+  const deferredCliUpdate = cliUpdateRequired
+    && reusableExternalRuntime
+  const installCli = cliUpdateRequired && !deferredCliUpdate
+  const nativeRuntimeExpected = !options.appDir
+    && !reusableExternalRuntime
+    && (bundledRuntime || cliUpdateRequired)
   let serverAppDir = options.appDir
-    || (bundledRuntime ? remote.managedRuntime.path : '')
+    || (nativeRuntimeExpected && bundledRuntime ? remote.managedRuntime.path : '')
     || ''
   let remotePort = options.remotePort
   if (!['linux', 'darwin'].includes(remote.platform?.os)) {
@@ -497,14 +510,12 @@ export function createRemotePlan(options, remote, install = {}) {
     blocker = `${options.appDir} exists but is not an OpenAlice source checkout. Choose another --app-dir or move the existing path.`
   }
 
-  const status = remote.status
   const detectedRuntimePort = remoteRuntimePort(status)
-  const runningRuntimeMismatch = status?.class === 'running'
-    && status?.owner?.surface === 'cli-server'
+  const runningRuntimeMismatch = remoteRuntimeMustMatchPlan(options, remote)
     && !runningRuntimeMatchesPlan(options, remote)
   if (!blocker && runningRuntimeMismatch) {
     blocker = formatRunningRuntimeMismatch(options, remote)
-  } else if (!blocker && status?.class === 'running' && status?.owner?.surface === 'cli-server') {
+  } else if (!blocker && status?.class === 'running') {
     if (detectedRuntimePort === null) {
       blocker = 'The remote CLI Server reported an invalid non-loopback web endpoint.'
     } else if (options.remotePortExplicit && detectedRuntimePort !== options.remotePort) {
@@ -544,8 +555,7 @@ export function createRemotePlan(options, remote, install = {}) {
     !blocker
     && !options.appDir
     && installCli
-    && status?.class === 'running'
-    && status?.owner?.surface === 'cli-server'
+    && isManagedNativeRemoteRuntime(status)
   ) {
     if (!Array.isArray(status.capabilities) || !status.capabilities.includes('runtime.stop')) {
       blocker = 'The running remote CLI Server does not advertise structured stop support, so OpenAlice cannot restart it safely after the CLI update. Stop it explicitly before retrying.'
@@ -598,8 +608,8 @@ export function createRemotePlan(options, remote, install = {}) {
     remoteHome: options.remoteHome || '~/.openalice (remote default)',
     sourceMode: options.appDir
       ? 'user-selected'
-      : nativeRuntimeExpected
-        ? 'installed-native'
+      : reusableExternalRuntime
+        ? 'existing-runtime'
         : 'installed-native',
     bundledRuntime,
     nativeRuntimeExpected,
@@ -610,11 +620,19 @@ export function createRemotePlan(options, remote, install = {}) {
     remotePort,
     localPort: options.localPort || (options.preferredLocalPort ? `${options.preferredLocalPort} (remembered)` : 'auto'),
     installCli,
+    deferredCliUpdate,
     cloneSource,
     runInstaller,
     startServer,
     restartServer,
     restartOwner,
+    activationRoute: restartServer
+      ? 'stop-start'
+      : startServer
+        ? 'start'
+        : deferredCliUpdate
+          ? 'unavailable'
+          : 'reuse',
     sourceCheckoutPresent: remote.sourceCheckoutPresent ?? null,
     sourceArtifactsReady: remote.sourceArtifactsReady ?? null,
     runtimeBuildToolsMissing,
@@ -633,7 +651,7 @@ export function createRemotePlan(options, remote, install = {}) {
 export function formatRemotePlan(plan) {
   const actions = plan.mutations.length > 0
     ? [...plan.mutations, 'open local SSH tunnel']
-    : ['reuse compatible remote CLI Server', 'open local SSH tunnel']
+    : ['reuse compatible remote Runtime', 'open local SSH tunnel']
   const buildTools = plan.nativeRuntimeExpected
     ? 'Not needed (installed Runtime)'
     : plan.sourceArtifactsReady === true
@@ -643,16 +661,25 @@ export function formatRemotePlan(plan) {
       : plan.appDir === 'not selected'
         ? 'Not inspected'
         : 'Ready'
-  const cliState = plan.cliCompatible && plan.cliMatchesLocal
-    ? ', compatible and matches local CLI'
-    : ', install/update required'
+  const cliState = plan.deferredCliUpdate
+    ? ', update deferred: the running Runtime has no safe activation capability'
+    : plan.cliCompatible && plan.cliMatchesLocal
+      ? ', compatible and matches local CLI'
+      : ', install/update required'
   const runtimeState = plan.bundledRuntime
     ? `, content ${plan.runtimeContentIdentity}`
     : plan.cloneSource
     ? ', will clone'
     : plan.sourceCheckoutState === 'present' ? ', ready' : ''
   const runtimeLabel = plan.nativeRuntimeExpected ? 'Release' : 'Source'
-  return `\nOpenAlice Remote\n\nRemote plan\n  Target         ${plan.target}\n  Platform       ${plan.platform}\n  CLI            ${plan.cliPath} (${plan.cliVersion}${cliState})\n  Runtime        ${plan.runtimeClass} (${plan.runtimeOwner})\n  ${runtimeLabel.padEnd(14)} ${plan.appDir} (${plan.sourceMode}${runtimeState})\n  Build tools    ${buildTools}\n  Home           ${plan.remoteHome}\n  Tunnel         127.0.0.1:${plan.localPort} -> remote 127.0.0.1:${plan.remotePort}\n  Actions        ${actions.join('; ')}\n${plan.runInstaller ? `  Installer      ${plan.installSource.installerUrl} (CLI ${plan.installSource.cliVersion}, ${formatInstallSelector(plan.installSource)}, selected by local CLI)\n` : ''}${plan.blocker ? `\nBlocked: ${plan.blocker}\n` : '\nNothing has changed yet.\n'}\n`
+  return `\nOpenAlice Remote\n\nRemote plan\n  Target         ${plan.target}\n  Platform       ${plan.platform}\n  CLI            ${plan.cliPath} (${plan.cliVersion}${cliState})\n  Runtime        ${plan.runtimeClass} (${plan.runtimeOwner})\n  Activation     ${formatActivationRoute(plan.activationRoute)}\n  ${runtimeLabel.padEnd(14)} ${plan.appDir} (${plan.sourceMode}${runtimeState})\n  Build tools    ${buildTools}\n  Home           ${plan.remoteHome}\n  Tunnel         127.0.0.1:${plan.localPort} -> remote 127.0.0.1:${plan.remotePort}\n  Actions        ${actions.join('; ')}\n${plan.runInstaller ? `  Installer      ${plan.installSource.installerUrl} (CLI ${plan.installSource.cliVersion}, ${formatInstallSelector(plan.installSource)}, selected by local CLI)\n` : ''}${plan.blocker ? `\nBlocked: ${plan.blocker}\n` : '\nNothing has changed yet.\n'}\n`
+}
+
+function formatActivationRoute(route) {
+  if (route === 'start') return 'start the selected Runtime'
+  if (route === 'stop-start') return 'stop then start the installed native release'
+  if (route === 'unavailable') return 'reuse only; update cannot be activated safely'
+  return 'reuse the healthy Runtime'
 }
 
 async function resolveLocalInstallIdentity(dependencies, env) {
@@ -1072,15 +1099,16 @@ export async function confirmRemotePlan(message, dependencies = {}) {
 
 export function formatRemoteHelp() {
   return `Usage:
-  openalice remote <user@host> [options]
+  openalice --remote <user@host> [options]
 
 Plans and, after explicit consent, installs or reuses the matching OpenAlice
 Runtime on the SSH host. It then opens the normal loopback browser tunnel.
 Disconnecting closes only the tunnel; the remote Server keeps running.
 
-When --app-dir is omitted, OpenAlice requires the installed platform-native
-Runtime. It does not install Node/build tools or fall back to a checkout. Pass
-an absolute checkout path only to opt into the source-development path.
+When --app-dir is omitted, a new Runtime uses the installed platform-native
+release. A healthy compatible Runtime already present in the SSH execution
+context is attached without replacing it. Pass an absolute checkout path only
+to select a specific source-development Runtime.
 
 Options:
   --app-dir <path>        Advanced: explicit existing or new source checkout
@@ -1099,7 +1127,7 @@ Options:
   -h, --help              Show this help
 
 --yes never implies --takeover. Stage 2 supports Linux and macOS SSH hosts.
-Remote CLI installation always uses the invoking local CLI's recorded installer
+  Remote CLI installation always uses the invoking local CLI's recorded installer
 source; this command has no independent branch or version selector.
 `
 }
@@ -1194,7 +1222,7 @@ function nodeVersionSupported(version) {
 }
 
 function remoteRuntimePort(status) {
-  if (status?.class !== 'running' || status?.owner?.surface !== 'cli-server') return null
+  if (status?.class !== 'running') return null
   try {
     const endpoint = new URL(status.endpoints?.web)
     if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) return null
@@ -1202,6 +1230,19 @@ function remoteRuntimePort(status) {
   } catch {
     return null
   }
+}
+
+function isRemoteRuntimeAttachable(status) {
+  return status?.class === 'running' && remoteRuntimePort(status) !== null
+}
+
+function isManagedNativeRemoteRuntime(status) {
+  return status?.class === 'running' && status?.provider?.kind === 'bun'
+}
+
+function remoteRuntimeMustMatchPlan(options, remote) {
+  return remote.status?.class === 'running'
+    && (Boolean(options.appDir) || isManagedNativeRemoteRuntime(remote.status))
 }
 
 function remainingMutationsAfterInstall(plan) {
@@ -1306,7 +1347,7 @@ function remoteCliMatchesRelease(remote, expected) {
 
 function runningRuntimeMatchesPlan(options, remote) {
   const status = remote.status
-  if (status?.class !== 'running' || status?.owner?.surface !== 'cli-server') return false
+  if (status?.class !== 'running') return false
   const provider = status.provider
   const actualRoot = normalizeRemoteRuntimeRoot(provider?.root ?? status.owner?.launchRoot)
   if (options.appDir) {
@@ -1332,9 +1373,7 @@ function runningRuntimeMatchesPlan(options, remote) {
 }
 
 function runningOwnerIdentity(status) {
-  const owner = status?.class === 'running' && status?.owner?.surface === 'cli-server'
-    ? status.owner
-    : null
+  const owner = status?.class === 'running' ? status.owner : null
   if (
     !Number.isInteger(owner?.pid)
     || owner.pid < 1
@@ -1367,7 +1406,7 @@ function formatRunningRuntimeMismatch(options, remote) {
   const provider = remote.status?.provider
   const actualRoot = normalizeRemoteRuntimeRoot(provider?.root ?? remote.status?.owner?.launchRoot)
   const actual = `${provider?.kind ?? 'unknown'} Runtime${actualRoot ? ` ${actualRoot}` : ''}`
-  return `The running remote CLI Server uses ${actual}, not the requested ${expected}. Stop it with "openalice remote ${options.destination} --stop" before reconnecting.`
+  return `The running remote Runtime uses ${actual}, not the requested ${expected}. Stop it with "openalice --remote ${options.destination} --stop" before reconnecting.`
 }
 
 function normalizeRemoteRuntimeRoot(value) {

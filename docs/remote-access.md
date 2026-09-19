@@ -7,8 +7,7 @@ path toward an independent Studio frontend.
 
 Start with [[docs/remote-quickstart.md]] for the user-facing setup and daily
 workflow. This owner guide complements [[docs/local-runtime.md]],
-[[docs/cli-supervisor.md]],
-[[docs/docker-deployment.md]], and [[docs/managed-workspace-runtime.md]]. The
+[[docs/cli-supervisor.md]], and [[docs/managed-workspace-runtime.md]]. The
 Herdr comparison that informed this design is recorded in
 [[docs/reference/herdr-remote-architecture.md]]. That reference is research;
 this guide is the OpenAlice contract.
@@ -25,16 +24,15 @@ source checkout support retained only as an explicit development override:
   installed-Runtime preference;
 - `openalice up|run|status|open|down` provides the canonical local Shell
   lifecycle and presentation over the same `cli-server` Guardian owner;
-- `openalice ssh <target>` creates a loopback SSH tunnel to an already-running
-  remote OpenAlice Runtime;
-- `openalice server run|start|status|stop` provides a browserless foreground or
-  detached Runtime lifecycle backed by Guardian's local control endpoint;
-- `openalice remote <target>` probes, plans, installs the matching native CLI
-  release when approved, starts or reuses the remote Server, and opens the same
-  loopback tunnel; an explicit `--app-dir` remains the source-development path;
-- `openalice machine list|add|remove|inspect` owns an explicit local registry
-  of SSH hosts and reads each compatible host's registered AliceProjects with
-  one bounded aggregate SSH command;
+- `openalice --remote <target>` probes, prepares, and attaches to a remote
+  OpenAlice Runtime through the normal loopback SSH tunnel;
+- `openalice server run|start|status|stop` provides a browserless
+  foreground or detached Runtime lifecycle backed by Guardian's local control
+  endpoint;
+- `openalice machine list|add|rename|remove|enable|disable` owns Herdr-style
+  saved Machine profiles; `--machine <id-or-label> <command>` targets one
+  saved profile, while `machine inspect` remains the product-specific bounded
+  fleet inventory probe;
 - `openalice project transfer` plans and copies one quiescent local
   AliceProject into a new complete home on a registered SSH Machine, preserving
   portable configuration and Workspace repositories while deliberately
@@ -43,11 +41,11 @@ source checkout support retained only as an explicit development override:
 
 The release-owned installer advances one checksum-bound native OpenAlice
 release. Agent Runtime executables remain user-owned and are only discovered
-from the remote host's `PATH`. The clean Docker SSH acceptance covers native
-download, install, multi-process startup, AliceProject transfer, and the tunnel
-loop on a host with no Node, Bun, or Agent Runtime installed. Real long-latency
-Agent TUI measurements remain a separate release observation rather than a
-reason to invent a new terminal protocol preemptively.
+from the selected execution context's `PATH`. The clean Docker SSH acceptance
+covers native download, install, multi-process startup, AliceProject transfer,
+and the tunnel loop on a context with no Node, Bun, or Agent Runtime installed.
+Real long-latency Agent TUI measurements remain a separate release observation
+rather than a reason to invent a new terminal protocol preemptively.
 
 Native `server run/start` derives its content identity from the installed
 `release.json`, matching the interactive launcher. Readiness confirms pending
@@ -82,7 +80,7 @@ protocol is deferred until the local/server boundary is stable.
 
 - **Runtime**: the Guardian-owned process tree and user state under one
   `OPENALICE_HOME`. It includes Alice, optional UTA, optional Connector Service,
-  workspaces, PTYs, native Agent CLIs, schedules, and file-backed state.
+  workspaces, PTYs, user-owned Agent CLIs, schedules, and file-backed state.
 - **Server**: a Runtime deliberately started without owning a browser or
   terminal client. It continues after the command that requested detached
   startup exits.
@@ -222,11 +220,12 @@ browser work.
 
 ## Command Contract
 
-### Existing local and transport commands
+### Global remote target selectors
 
 ```bash
 openalice start [app-dir]
-openalice ssh <target>
+openalice --remote <target>
+openalice --machine <id-or-label> <command> [options]
 ```
 
 `openalice start` is an interactive foreground convenience command. It prepares
@@ -235,10 +234,21 @@ set, and stops its Runtime when the command receives a termination signal. If a
 healthy Runtime already owns the requested home and port, it reuses that URL
 instead of replacing the owner.
 
-`openalice ssh` is a pure transport command. It chooses a free local loopback
-port, forwards it to the remote Alice loopback port, optionally opens the
-browser, and stays in the foreground to own the tunnel. It never installs,
-updates, starts, stops, or takes over the remote Runtime.
+`openalice --remote` is the single raw-target remote entry point. It plans,
+prepares, starts or reuses the remote Server, and then owns the loopback tunnel
+until the command exits. There is no separate top-level `ssh` command.
+
+`openalice --machine` selects a saved Machine by opaque id or label and
+re-enters the ordinary OpenAlice CLI on that host. The remote profile's
+`enabled` flag is checked before SSH is opened; `machine disable` therefore
+acts as a local circuit breaker for automated target selection.
+
+`--machine local` uses the full local dispatcher, including `exec` and `tui`.
+Saved remote targets execute the installed CLI over SSH with inherited streams
+and preserve its exit code. They do not allocate a remote PTY or retry commands
+after disconnect. Use ordinary interactive SSH for a remote TUI, and `--remote`
+for a local browser tunnel. The selected remote host owns paths and browser
+actions in forwarded commands. `--machine` does not bootstrap or upgrade a host.
 
 ### Server lifecycle
 
@@ -258,22 +268,25 @@ openalice server stop
 
 The top-level lifecycle is canonical for direct Shell use. The `server`
 commands remain its compatibility presenter because managed remote must keep
-working across CLI upgrades. Both families operate the same `cli-server`
-Guardian owner and accept the same explicit `--home`, `--port`, and source
-checkout selection as local start. `run`, `up`, and `server start` also accept
-`--rebuild` and `--takeover` where the existing start contract does.
+working across CLI upgrades. Direct local lifecycle normally starts a
+`cli-server` Guardian and treats a matching `cli-server` as its idempotent
+start owner. Separately, remote attach and capability-gated control use a
+compatible Guardian endpoint plus advertised capabilities, not that diagnostic
+owner surface. The start commands accept the same explicit `--home`, `--port`,
+and source checkout selection as local start. `run`, `up`, and `server start`
+also accept `--rebuild` and `--takeover` where the existing start contract does.
 
 | Command | Lifetime and side effects |
 |---|---|
 | `server run` | foreground Guardian; no browser; logs remain attached; signals cascade through Guardian |
 | `server start` | idempotent detached start; waits for control and HTTP readiness before succeeding; never opens a browser |
 | `server status` | read-only probe; human output by default and stable `--json` for orchestration |
-| `server stop` | structured local stop request to the matching CLI Server, followed by a bounded wait for tree and endpoint exit |
+| `server stop` | structured local stop request to a compatible Runtime that advertises `runtime.stop`, followed by a bounded wait for tree and endpoint exit |
 
 `server start` has three valid outcomes:
 
 1. **started**: it prepared the Runtime, detached it, and observed readiness;
-2. **already running**: the requested CLI Server was already healthy and
+2. **already running**: the requested `cli-server` was already healthy and
    compatible, so no process was replaced;
 3. **owned elsewhere**: another launcher or incompatible owner holds the
    Guardian lease. The command reports the owner and exits without mutation.
@@ -283,42 +296,43 @@ normal start must never interrupt an Electron session, another checkout, a
 Docker-owned home, or a healthy CLI foreground start.
 
 `server stop` is deliberately narrower than takeover. It stops a Runtime only
-when the reachable control endpoint proves that it is the requested CLI Server
-for the same canonical home. If Electron or another launcher owns the lease but
-does not advertise that control contract, status reports `owned_elsewhere` and
-stop refuses. The user may then close that surface normally or make a separate
-explicit takeover decision.
+when the reachable control endpoint proves the same canonical home and
+advertises `runtime.stop`. Owner surface is diagnostic metadata, not authority.
+If a lease exists without a compatible controllable endpoint, status reports
+`owned_elsewhere` and stop refuses. The user may then close that surface
+normally or make a separate explicit takeover decision.
 
 ### Managed remote command
 
 ```bash
-openalice remote <target>
+openalice --remote <target>
 ```
 
-`openalice remote` is orchestration around the same Server and SSH contracts:
+`openalice --remote` is orchestration around the same Server and SSH contracts:
 
 1. verify ordinary SSH connectivity and host-key policy;
 2. detect remote platform, home, and an installed `openalice` CLI;
-3. select the compatible Runtime embedded in the installed native CLI release,
-   or the explicit source checkout named by `--app-dir`;
-4. probe `openalice server status --json`, Runtime provider state, and protocol
-   compatibility;
-5. on an ordinary SSH-managed host, compare stable, beta, or pinned installs by
+3. probe `openalice server status --json`, Runtime provider state, and protocol
+   compatibility in that same execution context;
+4. attach directly when a compatible healthy Runtime advertises a valid loopback
+   Web endpoint, regardless of its diagnostic launcher/provider;
+5. otherwise select the compatible Runtime embedded in the installed native CLI
+   release, or the explicit source checkout named by `--app-dir`;
+6. on an ordinary SSH-managed host, compare stable, beta, or pinned installs by
    logical release, then validate the remote target's own platform,
    architecture, archive checksum, content identity, and embedded Runtime
    identity; for dev, first require the invoking CLI to match the latest
    completed dev manifest and bind the remote target to that same manifest;
-6. if CLI install or update is required, show the exact matching plan and ask
+7. if CLI install or update is required, show the exact matching plan and ask
    separately before calling the normal installer on the remote host;
-7. re-probe and re-plan after installation so a newly visible owner can block
-   or require a second explicit takeover decision;
-8. when `--app-dir` is explicit, validate and prepare that user-selected source
+8. re-probe and re-plan after installation; reuse a compatible Runtime or
+   activate a managed native release with `runtime.stop` then `server start`;
+9. when `--app-dir` is explicit, validate and prepare that user-selected source
    checkout without turning it into a second default distribution path;
-9. run `openalice server start` with the selected installed Runtime or explicit
-   source root and wait for readiness;
-10. create the same loopback tunnel used by `openalice ssh`;
+10. verify the newly active content identity and readiness before creating the
+    loopback tunnel;
 11. reuse the last successful local port for this target and remote home when it
-   is available, so an existing browser tab can reconnect to the same origin;
+    is available, so an existing browser tab can reconnect to the same origin;
 12. open or print the local URL and stay in the foreground to own only the
     tunnel.
 
@@ -326,37 +340,53 @@ When reusing a healthy Server, `remote` takes the loopback web port from the
 versioned status response. An explicitly supplied `--remote-port` must match
 that owner; a mismatch is reported before opening a misleading tunnel.
 
-On an ordinary SSH-managed host, closing `openalice remote` closes the tunnel
+On an ordinary SSH-managed host, closing `openalice --remote` closes the tunnel
 but leaves the detached remote Server running. Status and stop remain explicit
 and do not require users to compose raw SSH commands:
 
 ```bash
-openalice remote <target> --status
-openalice remote <target> --stop
+openalice --remote <target> --status
+openalice --remote <target> --stop
 ```
 
 Neither command conflates “disconnect” with “stop my remote work.”
 
 ### Registered Machines and aggregate inventory
 
-`openalice machine` adds durable fleet identity without changing the existing
-raw-target `openalice remote <target>` contract:
+`openalice machine` adds durable Herdr-style fleet identity around the raw
+target `openalice --remote <target>` contract:
 
 ```bash
 openalice machine list [--json]
-openalice machine add cloud --target alice@example.com [--ssh-port 22]
-  [--identity ~/.ssh/cloud] [--name "Cloud"] --yes
-openalice machine remove cloud --yes
-openalice machine inspect [cloud] [--json]
+openalice machine add alice@example.com --label "Cloud" --yes
+openalice machine rename <id-or-label> --label "Cloud production" --yes
+openalice machine disable <id-or-label> --yes
+openalice machine enable <id-or-label> --yes
+openalice machine remove <id-or-label> --yes
+openalice --machine <id-or-label> status --json
+openalice machine inspect [id-or-label] [--json]
 ```
 
-The implicit `local` Machine cannot be removed. SSH rows live in the
-machine-wide Supervisor root's owner-private `machines.json`; they contain a
-display name, OpenSSH target, port, and optional local identity-file path, but
-never passwords, private-key bytes, passphrases, host keys, agent material, or
-remote credentials. OpenSSH config, agent, ProxyJump, and host-key policy stay
-authoritative. Removing a row forgets local metadata only and never connects
-to or mutates the host.
+Machine profiles live in the machine-wide Supervisor root's owner-private
+`machines.json`; they contain an opaque id, display name, OpenSSH target,
+enabled state, optional port, and local identity-file path, but never passwords,
+private-key bytes, passphrases, host keys, agent material, or remote
+credentials. OpenSSH config, agent, ProxyJump, and host-key policy stay
+authoritative. Removing or disabling a row changes local metadata only after
+the explicit confirmation; remove never deletes remote data.
+
+`machine add` accepts `--ssh-port` and `--identity`. It validates the profile
+before remote setup and rechecks the registry before saving. Herdr's named
+server sessions have no OpenAlice equivalent: `--remote-session` is rejected,
+not silently stored. Select an AliceProject with `--project` or `--home` on the
+target command where supported. Persisted keys and JSON output fields are
+documented separately in [[docs/data-locations.md]].
+
+Disabled profiles remain visible as offline inventory rows with
+`EMACHINEDISABLED`, no projects, and no remote capabilities. Inventory does not
+contact them; new TUI connections, starts, and transfers check enablement too.
+Disabling a profile does not stop the remote Server or close an existing tunnel.
+Explicit raw-target `--remote` remains independent of saved profiles.
 
 `machine inspect` uses the same typed inventory for local and remote Machines.
 Each remote probe invokes `openalice machine inspect local --json` once; that
@@ -402,12 +432,12 @@ explicit approval fails without remote mutation.
 
 The remembered local port is user-local connection state, not remote Runtime
 state. An explicit `--local-port` wins. If an automatically remembered port is
-already occupied, `remote` reports the conflict, allocates a free loopback port,
+already occupied, `--remote` reports the conflict, allocates a free loopback port,
 and remembers the replacement only after the tunnel passes OpenAlice readiness.
 
 The browser also needs enough client-owned identity to explain a tunnel outage
-after the remote Runtime becomes unreachable. `openalice ssh` and
-`openalice remote` therefore open the local UI with a short-lived URL fragment
+after the remote Runtime becomes unreachable. `openalice --remote` therefore
+opens the local UI with a short-lived URL fragment
 containing only the validated SSH destination, SSH port, and remote loopback
 Runtime port. The Web UI consumes that fragment into tab-scoped session storage
 before rendering and immediately removes it from the address bar. Fragments are
@@ -465,7 +495,7 @@ the OS temporary root. Native Windows derives an equivalent per-home named
 pipe. Every form is deterministic for the canonical home and is removed only
 when the closing Guardian still sees the socket identity it created.
 
-The endpoint is never bound to TCP and is never forwarded by `openalice ssh`.
+The endpoint is never bound to TCP and is never forwarded by `openalice --remote`.
 Remote orchestration reaches it only by executing the remote CLI through SSH.
 
 Stale path handling follows reachability and ownership, not existence alone:
@@ -513,17 +543,22 @@ The status result is presentation-neutral and includes at least:
 }
 ```
 
+`owner.surface` is diagnostic metadata. A healthy compatible Guardian whose
+Alice component is ready is `running` regardless of whether its launcher calls
+itself `cli-server`, `docker`, `electron`, or something else. Mutation is
+authorized only by the same canonical home and the matching capability.
+
 Human `server status` output may be friendly, but `--json` preserves this
 machine-readable meaning and stable exit classes:
 
 | Class | Meaning |
 |---|---|
-| `running` | compatible CLI Server is ready |
-| `starting` / `stopping` | matching owner is in a transitional state |
+| `running` | compatible Guardian is ready and Alice reports ready |
+| `starting` / `stopping` | compatible owner is in a transitional state |
 | `absent` | no reachable control endpoint and no live Guardian owner |
-| `owned_elsewhere` | Guardian evidence exists, but it is not a matching controllable CLI Server |
+| `owned_elsewhere` | Guardian lease evidence exists, but no compatible controllable endpoint is reachable |
 | `incompatible` | endpoint is reachable but protocol/runtime compatibility fails |
-| `unhealthy` | matching owner exists but readiness checks fail |
+| `unhealthy` | compatible owner exists but readiness checks fail |
 
 Status must not return credentials, auth tokens, complete environment
 variables, arbitrary command lines, or private internal-port URLs.
@@ -560,7 +595,7 @@ HTTP, authentication, and Workspace WebSockets stay on one local loopback
 origin. No public domain, hosted-cookie bridge, relay, or second frontend
 protocol is required.
 
-`openalice ssh` and the tunnel phase of `openalice remote`:
+`openalice --remote`:
 
 - bind only local `127.0.0.1`;
 - target only remote `127.0.0.1`;
@@ -571,7 +606,7 @@ protocol is required.
 - buffer transient command stderr while retrying, so provider control-plane
   noise is shown only if the connection ultimately fails;
 - exit clearly when the local port cannot bind or the remote forward fails;
-- for managed `openalice remote`, prefer the last successful per-target local
+- for managed `openalice --remote`, prefer the last successful per-target local
   port so the old browser origin can recover after a tunnel reconnect, and
   visibly fall back when that port is occupied;
 - never disable host-key checking;
@@ -595,8 +630,8 @@ is not sufficient authorization. The browser contract remains:
   open;
 - state-changing requests and WebSocket upgrades keep origin validation;
 - `OPENALICE_DISABLE_AUTH=1` is never a remote-access instruction;
-- a deployment intentionally exposed beyond loopback follows
-  [[docs/docker-deployment.md]] and its normal HTTPS/auth boundary.
+- operators exposing a deployment beyond loopback own its HTTPS,
+  authentication, and network-access policy.
 
 The future independent Studio cannot reuse “it arrived from loopback” as its
 identity. It needs an explicit pairing/capability flow with revocation,
@@ -806,12 +841,12 @@ Runtime model.
 
 ## Delivery Stages
 
-### Stage 0 — pure SSH tunnel (implemented)
+### Stage 0 — SSH transport (folded into remote attach)
 
-- remote Runtime is started manually;
-- `openalice ssh` owns only the tunnel;
+- `openalice --remote` owns the SSH loopback tunnel;
 - normal browser UI and PTY WebSocket traverse one local loopback origin;
-- no remote mutation.
+- remote preparation and Server lifecycle remain explicit parts of the same
+  target entry point.
 
 ### Stage 1 — native Server lifecycle (implemented)
 
@@ -819,12 +854,12 @@ Runtime model.
 - Guardian-owned local status/stop endpoint;
 - detached start waits for real readiness;
 - status distinguishes absent, compatible, unhealthy, and other owner;
-- stop is structured and self-owned;
+- stop is structured and capability-gated;
 - Electron behavior remains unchanged.
 
 ### Stage 2 — managed Bun-native remote (implemented)
 
-- `openalice remote` plan/apply orchestration;
+- `openalice --remote` plan/apply orchestration;
 - probe and bootstrap the matching native CLI release with explicit consent;
 - run the installed release without Node, Bun, source checkout, build tools, or
   bundled Agent Runtime executables;
@@ -857,7 +892,7 @@ Runtime model.
   integration, and managed-remote selection are implemented;
 - add release signature/provenance verification and reproducible-build
   evidence before describing the asset as cryptographically authenticated;
-- retain the same `server` and `remote` commands, status schema, state root, and
+- retain the `server` commands and `--remote` selector, status schema, state root, and
   consent model;
 - keep source-backed development as a supported diagnostic path.
 
@@ -928,15 +963,13 @@ When this surface changes:
    locks, or the control endpoint changes;
 4. start the real localhost route and verify the Workspace terminal and
    loginless loopback Origin contract;
-5. exercise pure `ssh` and managed `remote` against a disposable SSH/Docker
+5. exercise OpenSSH transport and managed `--remote` against a disposable SSH/Docker
    host with `pnpm test:system:remote`, including default-no, installed payload
    equality, detach persistence, reconnect, and structured stop;
-6. follow [[docs/docker-deployment.md]] and run `pnpm docker:smoke` when
-   `scripts/guardian/prod.mjs` or the server image path changes;
-7. follow [[docs/managed-workspace-runtime.md]] and run the matching Electron
+6. follow [[docs/managed-workspace-runtime.md]] and run the matching Electron
    and package smoke whenever shared Guardian, PTY, startup, or dependency
    behavior changes;
-8. run the repository-wide TypeScript and test gates required by `AGENTS.md`.
+7. run the repository-wide TypeScript and test gates required by `AGENTS.md`.
 
 Record any network-shaping gap explicitly. A localhost smoke does not verify
 remote TUI behavior, and an SSH tunnel smoke does not verify Electron package
