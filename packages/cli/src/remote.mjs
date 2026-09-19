@@ -1072,7 +1072,7 @@ export async function confirmRemotePlan(message, dependencies = {}) {
 
 export function formatRemoteHelp() {
   return `Usage:
-  openalice remote <user@host> [options]
+  openalice --remote <user@host> [options]
 
 Plans and, after explicit consent, installs or reuses the matching OpenAlice
 Runtime on the SSH host. It then opens the normal loopback browser tunnel.
@@ -1099,7 +1099,7 @@ Options:
   -h, --help              Show this help
 
 --yes never implies --takeover. Stage 2 supports Linux and macOS SSH hosts.
-Remote CLI installation always uses the invoking local CLI's recorded installer
+  Remote CLI installation always uses the invoking local CLI's recorded installer
 source; this command has no independent branch or version selector.
 `
 }
@@ -1367,7 +1367,7 @@ function formatRunningRuntimeMismatch(options, remote) {
   const provider = remote.status?.provider
   const actualRoot = normalizeRemoteRuntimeRoot(provider?.root ?? remote.status?.owner?.launchRoot)
   const actual = `${provider?.kind ?? 'unknown'} Runtime${actualRoot ? ` ${actualRoot}` : ''}`
-  return `The running remote CLI Server uses ${actual}, not the requested ${expected}. Stop it with "openalice remote ${options.destination} --stop" before reconnecting.`
+  return `The running remote CLI Server uses ${actual}, not the requested ${expected}. Stop it with "openalice --remote ${options.destination} --stop" before reconnecting.`
 }
 
 function normalizeRemoteRuntimeRoot(value) {

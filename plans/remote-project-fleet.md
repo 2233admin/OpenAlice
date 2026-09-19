@@ -538,7 +538,7 @@ Rules:
   parser; never parse human output or scan arbitrary directories.
 - [x] Represent local and remote inventory through the same typed model and
   capability flags.
-- [x] Keep existing raw-target `openalice remote <target>` behavior compatible;
+- [x] Keep existing raw-target `openalice --remote <target>` behavior compatible;
   registered-selector connection is owned by Increment 2 after fleet selection
   exists.
 - [x] Add parser/store/inventory/compatibility/security unit tests and an

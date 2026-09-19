@@ -53,13 +53,27 @@ openalice create alice-project [options]
 openalice project [list|use|copy-ai-creds|transfer] [options]
 ```
 
+Remote targeting is a global selector rather than a second command tree:
+
+```bash
+openalice --remote <user@host> [options]
+openalice machine add <user@host> --label <label> [options]
+openalice --machine <id-or-label> <command> [options]
+```
+
+`--remote` owns the managed SSH attach and loopback tunnel. `machine` stores
+Herdr-style remote profiles, and `--machine` re-enters an ordinary CLI command
+on the selected enabled profile. There is no separate public `ssh` or `remote`
+command.
+
 | Command | Contract |
 |---|---|
 | `create alice-project` | Register a named complete home. Interactive or `--yes` with `--name`, `--home`, and optional `--product trader\|nano`. Product is immutable birth (Trader default; Nano never starts UTA). TUI create remains Trader-equivalent. |
 | `project list` | Print registered AliceProjects and the remembered bare-start default. `--json` emits the registry summary. |
 | `project use <key>` | Record that AliceProject as the next bare-start default. Does not start, stop, or copy another project. |
-| `machine list` | Print the implicit local Machine and explicitly registered SSH Machines. `--json` emits a versioned secret-free summary. |
-| `machine add/remove` | Atomically remember or forget local SSH connection metadata. Non-interactive mutation requires `--yes`; remote state is never changed. |
+| `machine list` | Print saved Herdr-style Machine profiles by opaque id, label, target, session, and enabled state. `--json` emits a versioned secret-free summary. |
+| `machine add` | Prepare the selected remote Server, then atomically save its SSH profile. Non-interactive mutation requires `--yes`. |
+| `machine rename/enable/disable/remove` | Mutate local profile metadata after explicit confirmation; remove never deletes remote data. |
 | `machine inspect [key]` | Build a typed Machine → AliceProject inventory; each remote Machine uses one bounded aggregate SSH command. |
 | `project copy-ai-creds` | Copy AI credential rows from one complete home into another. Interactive unless `--from`, `--to`, and `--yes` are set. Matching vendor+key rows are skipped; colliding slugs are renamed. Workspace launch preferences, broker accounts, and `sealing.key` are never copied. Secrets are never printed. |
 | `project transfer` | Plan or copy a stopped local AliceProject to a new complete Home on a registered SSH Machine. Portable configuration and Workspace/Git state transfer; Session/runtime/auth state does not. Credentials use the SSH stream and are re-sealed with a new remote key. The source and remote default remain unchanged. |
@@ -840,10 +854,10 @@ the Supervisor reads a versioned machine-local document at
 AliceProject map outside every selectable complete home.
 
 The same Supervisor root may contain `machines.json`, a separate versioned
-registry for the implicit local computer plus named SSH hosts. It is not part
-of any AliceProject and is not selected by `OPENALICE_HOME`. Writes are atomic
-and owner-private; unknown additive fields survive rewrites, while an invalid
-or newer known schema fails visibly. This registry remains separate from the
+registry for saved Herdr-style remote Machine profiles. It is not part of any
+AliceProject and is not selected by `OPENALICE_HOME`. Writes are atomic and
+owner-private; unknown additive fields survive rewrites, while an invalid or
+newer known schema fails visibly. This registry remains separate from the
 hashed `remote-targets.json` tunnel-port cache.
 
 Bare `openalice` and flag-less `openalice tui` must still open a machine-level

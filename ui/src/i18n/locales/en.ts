@@ -3464,7 +3464,7 @@ export const en = {
     backendUnavailableHelp:
       'Check the OpenAlice runtime that owns this page, then retry. If you started it from a terminal, confirm that pnpm dev or openalice up is still running.',
     backendUnavailableRemoteHelp:
-      'Check the terminal that owns this tunnel, or run openalice remote {{target}} again, then retry.',
+      'Check the terminal that owns this tunnel, or run openalice --remote {{target}} again, then retry.',
     reconnectingRemote: 'Reconnecting to {{target}}…',
     connectionType: 'Connection',
     sshTunnel: 'SSH tunnel',

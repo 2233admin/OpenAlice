@@ -10,7 +10,10 @@ import {
   readMachineRegistry,
   readMachineRegistrySummary,
   registerMachine,
+  registerMachineProfile,
+  renameMachine,
   removeMachine,
+  setMachineEnabled,
   writeMachineRegistry,
 } from './machine-registry.ts'
 
@@ -181,5 +184,39 @@ describe('Supervisor machine registry', () => {
     await expect(removeMachine('local', { supervisorRoot })).rejects.toThrow(
       'cannot be removed',
     )
+  })
+
+  it('creates Herdr-shaped profiles and resolves later mutations by id or label', async () => {
+    const supervisorRoot = await temporarySupervisorRoot()
+    const added = await registerMachineProfile({
+      label: 'Cloud Box',
+      sshTarget: 'alice@cloud',
+      remoteSession: 'alice-default',
+    }, { supervisorRoot })
+
+    expect(added).toMatchObject({
+      displayName: 'Cloud Box',
+      sshTarget: 'alice@cloud',
+      remoteSession: 'alice-default',
+      enabled: true,
+    })
+    expect(added.id).toMatch(/^[a-f0-9]{32}$/)
+
+    await expect(renameMachine(added.id!, 'Cloud Production', { supervisorRoot })).resolves.toMatchObject({
+      displayName: 'Cloud Production',
+    })
+    await expect(setMachineEnabled('Cloud Production', false, { supervisorRoot })).resolves.toMatchObject({
+      enabled: false,
+    })
+    await expect(readMachineRegistrySummary({ supervisorRoot })).resolves.toMatchObject({
+      machines: [{
+        id: added.id,
+        displayName: 'Cloud Production',
+        enabled: false,
+      }],
+    })
+    await expect(removeMachine(added.id!, { supervisorRoot })).resolves.toMatchObject({
+      id: added.id,
+    })
   })
 })

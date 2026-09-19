@@ -3438,7 +3438,7 @@ export const zhHant: Resources = {
     backendUnavailableHelp:
       '請檢查承載此頁面的 OpenAlice 執行環境，然後重試。如果是從終端啟動的，請確認 pnpm dev 或 openalice up 仍在執行。',
     backendUnavailableRemoteHelp:
-      '請檢查持有此通道的終端，或重新執行 openalice remote {{target}}，然後重試。',
+      '請檢查持有此通道的終端，或重新執行 openalice --remote {{target}}，然後重試。',
     reconnectingRemote: '正在重新連線 {{target}}…',
     connectionType: '連線方式',
     sshTunnel: 'SSH 通道',

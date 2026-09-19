@@ -121,7 +121,7 @@ try {
 
   console.log('[remote-ssh-smoke] checking read-only missing-host plan')
   const initialPlan = run(process.execPath, [
-    cliEntry, 'remote', remoteTarget,
+    cliEntry, '--remote', remoteTarget,
     '--plan', '--no-open',
   ], { cwd: repoRoot, env: smokeEnv })
   requireText(initialPlan, 'install remote OpenAlice CLI')
@@ -155,8 +155,8 @@ try {
     '"$HOME/.openalice/bin/openalice" create alice-project --name research --home /home/smoke/.openalice-research --product nano --yes',
   ], { env: smokeEnv })
   run(process.execPath, [
-    cliEntry, 'machine', 'add', 'smoke-cloud', '--target', remoteTarget,
-    '--name', 'Smoke Cloud', '--yes',
+    cliEntry, 'machine', 'add', remoteTarget,
+    '--label', 'Smoke Cloud', '--yes',
   ], { cwd: repoRoot, env: smokeEnv })
   const fleet = JSON.parse(run(process.execPath, [
     cliEntry, 'machine', 'inspect', 'smoke-cloud', '--json',
@@ -173,7 +173,7 @@ try {
 
   console.log('[remote-ssh-smoke] checking reuse plan and reconnecting')
   const reusePlan = run(process.execPath, [
-    cliEntry, 'remote', remoteTarget, '--plan', '--no-open',
+    cliEntry, '--remote', remoteTarget, '--plan', '--no-open',
   ], { cwd: repoRoot, env: smokeEnv })
   requireText(reusePlan, 'reuse compatible remote CLI Server')
   const reconnectedTunnelUrl = await attachAndProbe(remoteTarget, smokeEnv, ['--no-open', '--wait', '30'])
@@ -182,9 +182,9 @@ try {
   }
 
   console.log('[remote-ssh-smoke] stopping the remote Server through its control endpoint')
-  const statusOutput = run(process.execPath, [cliEntry, 'remote', remoteTarget, '--status'], { cwd: repoRoot, env: smokeEnv })
+  const statusOutput = run(process.execPath, [cliEntry, '--remote', remoteTarget, '--status'], { cwd: repoRoot, env: smokeEnv })
   requireText(statusOutput, 'Runtime: running (cli-server)')
-  const stopOutput = run(process.execPath, [cliEntry, 'remote', remoteTarget, '--stop', '--wait', '15'], { cwd: repoRoot, env: smokeEnv })
+  const stopOutput = run(process.execPath, [cliEntry, '--remote', remoteTarget, '--stop', '--wait', '15'], { cwd: repoRoot, env: smokeEnv })
   requireText(stopOutput, 'OpenAlice Server is stopped')
   const absent = remoteJson(remoteTarget, smokeEnv, '"$HOME/.openalice/bin/openalice" server status --json')
   if (absent.class !== 'absent') throw new Error(`Remote Server did not stop cleanly: ${JSON.stringify(absent)}`)
@@ -584,7 +584,7 @@ async function fetchRemoteJson(origin, path) {
 }
 
 async function startTunnel(target, env, remoteArgs) {
-  const child = spawn(process.execPath, [cliEntry, 'remote', target, ...remoteArgs], {
+  const child = spawn(process.execPath, [cliEntry, '--remote', target, ...remoteArgs], {
     cwd: repoRoot,
     env,
     stdio: ['ignore', 'pipe', 'inherit'],

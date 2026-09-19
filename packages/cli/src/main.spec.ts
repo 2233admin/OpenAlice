@@ -15,11 +15,22 @@ describe('OpenAlice TypeScript application entry', () => {
     expect(runTui).toHaveBeenCalled()
   })
 
-  it.each(['status', 'down', 'version', 'doctor', 'setup', 'completion', 'remote', 'ssh'])('does not gate %s on local dependencies', async command => {
+  it.each(['status', 'down', 'version', 'doctor', 'setup', 'completion'])('does not gate %s on local dependencies', async command => {
     const runSetup = vi.fn(async () => 1)
     const runCommand = vi.fn(async () => 0)
     expect(await main([command], { standalone: true, runSetup, runCommand })).toBe(0)
     expect(runSetup).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['--remote', 'alice@example.com'],
+    ['--machine', 'cloud', 'status'],
+  ])('routes %s through the legacy command dispatcher without local setup', async (...argv: string[]) => {
+    const runSetup = vi.fn(async () => 1)
+    const runCommand = vi.fn(async () => 0)
+    expect(await main(argv, { standalone: true, runSetup, runCommand })).toBe(0)
+    expect(runSetup).not.toHaveBeenCalled()
+    expect(runCommand).toHaveBeenCalledWith(argv)
   })
 
   it('keeps JSON startup noninteractive', async () => {

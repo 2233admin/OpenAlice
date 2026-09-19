@@ -20,7 +20,7 @@ export const ROOT_COMMANDS = Object.freeze([
   { name: 'create', description: 'Create a named AliceProject (Trader or Nano)' },
   { name: 'exec', description: 'Run a capability CLI in the selected AliceProject' },
   { name: 'project', description: 'List, select, or transfer AliceProjects' },
-  { name: 'machine', description: 'Register SSH hosts and inspect their AliceProjects' },
+  { name: 'machine', description: 'Save and manage remote Machine profiles' },
   { name: 'up', description: 'Start a persistent local Runtime in the background' },
   { name: 'run', description: 'Run a local Runtime in the foreground' },
   { name: 'down', description: 'Stop the persistent local Runtime' },
@@ -31,8 +31,6 @@ export const ROOT_COMMANDS = Object.freeze([
   { name: 'open', description: 'Open the verified local Web UI' },
   { name: 'start', description: 'Compatibility foreground browser launcher' },
   { name: 'server', description: 'Compatibility Server lifecycle commands' },
-  { name: 'ssh', description: 'Open a tunnel to an existing remote Runtime' },
-  { name: 'remote', description: 'Plan, prepare, and connect to a remote Runtime' },
   { name: 'update', description: 'Check or switch the stable, beta, or dev channel' },
   { name: 'rollback', description: 'Switch a direct install to a retained release' },
   { name: 'uninstall', description: 'Remove installer-owned CLI files and preserve data' },
@@ -296,6 +294,10 @@ ${commands}
 The default without a command opens the Supervisor TUI. Use "openalice run"
 for a foreground Runtime or "openalice up" for a persistent background Runtime.
 
+Remote selectors:
+  openalice --remote <user@host> [options]
+  openalice --machine <id-or-label> <command> [options]
+
 Run "openalice <command> --help" for command details.
 `
 }
@@ -554,7 +556,7 @@ function bashCompletionCases() {
     .join('\n')
   return `${lifecycle}
     project) COMPREPLY=( $(compgen -W "list use copy-ai-creds transfer --json --from --to --to-machine --to-project --to-home --name --plan --yes --without-credentials --session-owner-policy --stop-source" -- "$current") ) ;;
-    machine) COMPREPLY=( $(compgen -W "list add remove inspect --target --name --ssh-port --identity --json --yes" -- "$current") ) ;;`
+    machine) COMPREPLY=( $(compgen -W "list add rename remove enable disable inspect --label --remote-session --ssh-port --identity --json --yes" -- "$current") ) ;;`
 }
 
 function zshCompletionCases() {
@@ -563,7 +565,7 @@ function zshCompletionCases() {
     .join('\n')
   return `${lifecycle}
   project) _values 'option' 'list' 'use' 'copy-ai-creds' 'transfer' '--json' '--from' '--to' '--to-machine' '--to-project' '--to-home' '--name' '--plan' '--yes' '--without-credentials' '--session-owner-policy' '--stop-source' ;;
-  machine) _values 'option' 'list' 'add' 'remove' 'inspect' '--target' '--name' '--ssh-port' '--identity' '--json' '--yes' ;;`
+  machine) _values 'option' 'list' 'add' 'rename' 'remove' 'enable' 'disable' 'inspect' '--label' '--remote-session' '--ssh-port' '--identity' '--json' '--yes' ;;`
 }
 
 function fishCompletionOptions() {
@@ -573,7 +575,7 @@ function fishCompletionOptions() {
       return `complete -c openalice -n '__fish_seen_subcommand_from ${command}' -l ${name}`
     }))
     .join('\n')
-  const machine = ['target', 'name', 'ssh-port', 'identity', 'json', 'yes']
+  const machine = ['label', 'remote-session', 'ssh-port', 'identity', 'json', 'yes']
     .map((name) => `complete -c openalice -n '__fish_seen_subcommand_from machine' -l ${name}`)
     .join('\n')
   const project = ['json', 'from', 'to', 'to-machine', 'to-project', 'to-home', 'name', 'plan', 'yes', 'without-credentials', 'session-owner-policy', 'stop-source']
