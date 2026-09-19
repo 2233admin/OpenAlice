@@ -78,7 +78,7 @@ describe('probeFreePort', () => {
     const closeObserved = new Promise<void>((resolve) => {
       releaseObserved = resolve
     })
-    const closeSpy = vi.spyOn(Server.prototype, 'close').mockImplementation(function (
+    const closeSpy = vi.spyOn(Server.prototype, 'close').mockImplementationOnce(function (
       this: Server,
       callback?: (error?: Error) => void,
     ) {
@@ -95,7 +95,10 @@ describe('probeFreePort', () => {
         resolved = true
         return port
       })
+      void probe.catch(() => {}) // Keep a failing regression from becoming an unhandled rejection.
       await closeObserved
+      expect(pendingCallback).toBeTypeOf('function')
+      await new Promise<void>((resolve) => setImmediate(resolve))
       expect(resolved).toBe(false)
       expect(pendingServer).toBeDefined()
 
