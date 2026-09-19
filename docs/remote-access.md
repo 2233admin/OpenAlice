@@ -7,8 +7,7 @@ path toward an independent Studio frontend.
 
 Start with [[docs/remote-quickstart.md]] for the user-facing setup and daily
 workflow. This owner guide complements [[docs/local-runtime.md]],
-[[docs/cli-supervisor.md]],
-[[docs/docker-deployment.md]], and [[docs/managed-workspace-runtime.md]]. The
+[[docs/cli-supervisor.md]], and [[docs/managed-workspace-runtime.md]]. The
 Herdr comparison that informed this design is recorded in
 [[docs/reference/herdr-remote-architecture.md]]. That reference is research;
 this guide is the OpenAlice contract.
@@ -27,8 +26,9 @@ source checkout support retained only as an explicit development override:
   lifecycle and presentation over the same `cli-server` Guardian owner;
 - `openalice --remote <target>` probes, prepares, and attaches to a remote
   OpenAlice Runtime through the normal loopback SSH tunnel;
-- `openalice server run|start|status|stop` provides a browserless foreground or
-  detached Runtime lifecycle backed by Guardian's local control endpoint;
+- `openalice server run|start|status|stop` provides a browserless
+  foreground or detached Runtime lifecycle backed by Guardian's local control
+  endpoint;
 - `openalice machine list|add|rename|remove|enable|disable` owns Herdr-style
   saved Machine profiles; `--machine <id-or-label> <command>` targets one
   saved profile, while `machine inspect` remains the product-specific bounded
@@ -41,11 +41,11 @@ source checkout support retained only as an explicit development override:
 
 The release-owned installer advances one checksum-bound native OpenAlice
 release. Agent Runtime executables remain user-owned and are only discovered
-from the remote host's `PATH`. The clean Docker SSH acceptance covers native
-download, install, multi-process startup, AliceProject transfer, and the tunnel
-loop on a host with no Node, Bun, or Agent Runtime installed. Real long-latency
-Agent TUI measurements remain a separate release observation rather than a
-reason to invent a new terminal protocol preemptively.
+from the selected execution context's `PATH`. The clean Docker SSH acceptance
+covers native download, install, multi-process startup, AliceProject transfer,
+and the tunnel loop on a context with no Node, Bun, or Agent Runtime installed.
+Real long-latency Agent TUI measurements remain a separate release observation
+rather than a reason to invent a new terminal protocol preemptively.
 
 Native `server run/start` derives its content identity from the installed
 `release.json`, matching the interactive launcher. Readiness confirms pending
@@ -80,7 +80,7 @@ protocol is deferred until the local/server boundary is stable.
 
 - **Runtime**: the Guardian-owned process tree and user state under one
   `OPENALICE_HOME`. It includes Alice, optional UTA, optional Connector Service,
-  workspaces, PTYs, native Agent CLIs, schedules, and file-backed state.
+  workspaces, PTYs, user-owned Agent CLIs, schedules, and file-backed state.
 - **Server**: a Runtime deliberately started without owning a browser or
   terminal client. It continues after the command that requested detached
   startup exits.
@@ -268,22 +268,25 @@ openalice server stop
 
 The top-level lifecycle is canonical for direct Shell use. The `server`
 commands remain its compatibility presenter because managed remote must keep
-working across CLI upgrades. Both families operate the same `cli-server`
-Guardian owner and accept the same explicit `--home`, `--port`, and source
-checkout selection as local start. `run`, `up`, and `server start` also accept
-`--rebuild` and `--takeover` where the existing start contract does.
+working across CLI upgrades. Direct local lifecycle normally starts a
+`cli-server` Guardian and treats a matching `cli-server` as its idempotent
+start owner. Separately, remote attach and capability-gated control use a
+compatible Guardian endpoint plus advertised capabilities, not that diagnostic
+owner surface. The start commands accept the same explicit `--home`, `--port`,
+and source checkout selection as local start. `run`, `up`, and `server start`
+also accept `--rebuild` and `--takeover` where the existing start contract does.
 
 | Command | Lifetime and side effects |
 |---|---|
 | `server run` | foreground Guardian; no browser; logs remain attached; signals cascade through Guardian |
 | `server start` | idempotent detached start; waits for control and HTTP readiness before succeeding; never opens a browser |
 | `server status` | read-only probe; human output by default and stable `--json` for orchestration |
-| `server stop` | structured local stop request to the matching CLI Server, followed by a bounded wait for tree and endpoint exit |
+| `server stop` | structured local stop request to a compatible Runtime that advertises `runtime.stop`, followed by a bounded wait for tree and endpoint exit |
 
 `server start` has three valid outcomes:
 
 1. **started**: it prepared the Runtime, detached it, and observed readiness;
-2. **already running**: the requested CLI Server was already healthy and
+2. **already running**: the requested `cli-server` was already healthy and
    compatible, so no process was replaced;
 3. **owned elsewhere**: another launcher or incompatible owner holds the
    Guardian lease. The command reports the owner and exits without mutation.
@@ -293,11 +296,11 @@ normal start must never interrupt an Electron session, another checkout, a
 Docker-owned home, or a healthy CLI foreground start.
 
 `server stop` is deliberately narrower than takeover. It stops a Runtime only
-when the reachable control endpoint proves that it is the requested CLI Server
-for the same canonical home. If Electron or another launcher owns the lease but
-does not advertise that control contract, status reports `owned_elsewhere` and
-stop refuses. The user may then close that surface normally or make a separate
-explicit takeover decision.
+when the reachable control endpoint proves the same canonical home and
+advertises `runtime.stop`. Owner surface is diagnostic metadata, not authority.
+If a lease exists without a compatible controllable endpoint, status reports
+`owned_elsewhere` and stop refuses. The user may then close that surface
+normally or make a separate explicit takeover decision.
 
 ### Managed remote command
 
@@ -309,26 +312,27 @@ openalice --remote <target>
 
 1. verify ordinary SSH connectivity and host-key policy;
 2. detect remote platform, home, and an installed `openalice` CLI;
-3. select the compatible Runtime embedded in the installed native CLI release,
-   or the explicit source checkout named by `--app-dir`;
-4. probe `openalice server status --json`, Runtime provider state, and protocol
-   compatibility;
-5. on an ordinary SSH-managed host, compare stable, beta, or pinned installs by
+3. probe `openalice server status --json`, Runtime provider state, and protocol
+   compatibility in that same execution context;
+4. attach directly when a compatible healthy Runtime advertises a valid loopback
+   Web endpoint, regardless of its diagnostic launcher/provider;
+5. otherwise select the compatible Runtime embedded in the installed native CLI
+   release, or the explicit source checkout named by `--app-dir`;
+6. on an ordinary SSH-managed host, compare stable, beta, or pinned installs by
    logical release, then validate the remote target's own platform,
    architecture, archive checksum, content identity, and embedded Runtime
    identity; for dev, first require the invoking CLI to match the latest
    completed dev manifest and bind the remote target to that same manifest;
-6. if CLI install or update is required, show the exact matching plan and ask
+7. if CLI install or update is required, show the exact matching plan and ask
    separately before calling the normal installer on the remote host;
-7. re-probe and re-plan after installation so a newly visible owner can block
-   or require a second explicit takeover decision;
-8. when `--app-dir` is explicit, validate and prepare that user-selected source
+8. re-probe and re-plan after installation; reuse a compatible Runtime or
+   activate a managed native release with `runtime.stop` then `server start`;
+9. when `--app-dir` is explicit, validate and prepare that user-selected source
    checkout without turning it into a second default distribution path;
-9. run `openalice server start` with the selected installed Runtime or explicit
-   source root and wait for readiness;
-10. create the loopback tunnel to the remote Web endpoint;
+10. verify the newly active content identity and readiness before creating the
+    loopback tunnel;
 11. reuse the last successful local port for this target and remote home when it
-   is available, so an existing browser tab can reconnect to the same origin;
+    is available, so an existing browser tab can reconnect to the same origin;
 12. open or print the local URL and stay in the foreground to own only the
     tunnel.
 
@@ -539,17 +543,22 @@ The status result is presentation-neutral and includes at least:
 }
 ```
 
+`owner.surface` is diagnostic metadata. A healthy compatible Guardian whose
+Alice component is ready is `running` regardless of whether its launcher calls
+itself `cli-server`, `docker`, `electron`, or something else. Mutation is
+authorized only by the same canonical home and the matching capability.
+
 Human `server status` output may be friendly, but `--json` preserves this
 machine-readable meaning and stable exit classes:
 
 | Class | Meaning |
 |---|---|
-| `running` | compatible CLI Server is ready |
-| `starting` / `stopping` | matching owner is in a transitional state |
+| `running` | compatible Guardian is ready and Alice reports ready |
+| `starting` / `stopping` | compatible owner is in a transitional state |
 | `absent` | no reachable control endpoint and no live Guardian owner |
-| `owned_elsewhere` | Guardian evidence exists, but it is not a matching controllable CLI Server |
+| `owned_elsewhere` | Guardian lease evidence exists, but no compatible controllable endpoint is reachable |
 | `incompatible` | endpoint is reachable but protocol/runtime compatibility fails |
-| `unhealthy` | matching owner exists but readiness checks fail |
+| `unhealthy` | compatible owner exists but readiness checks fail |
 
 Status must not return credentials, auth tokens, complete environment
 variables, arbitrary command lines, or private internal-port URLs.
@@ -621,8 +630,8 @@ is not sufficient authorization. The browser contract remains:
   open;
 - state-changing requests and WebSocket upgrades keep origin validation;
 - `OPENALICE_DISABLE_AUTH=1` is never a remote-access instruction;
-- a deployment intentionally exposed beyond loopback follows
-  [[docs/docker-deployment.md]] and its normal HTTPS/auth boundary.
+- operators exposing a deployment beyond loopback own its HTTPS,
+  authentication, and network-access policy.
 
 The future independent Studio cannot reuse “it arrived from loopback” as its
 identity. It needs an explicit pairing/capability flow with revocation,
@@ -845,7 +854,7 @@ Runtime model.
 - Guardian-owned local status/stop endpoint;
 - detached start waits for real readiness;
 - status distinguishes absent, compatible, unhealthy, and other owner;
-- stop is structured and self-owned;
+- stop is structured and capability-gated;
 - Electron behavior remains unchanged.
 
 ### Stage 2 — managed Bun-native remote (implemented)
@@ -957,12 +966,10 @@ When this surface changes:
 5. exercise OpenSSH transport and managed `--remote` against a disposable SSH/Docker
    host with `pnpm test:system:remote`, including default-no, installed payload
    equality, detach persistence, reconnect, and structured stop;
-6. follow [[docs/docker-deployment.md]] and run `pnpm docker:smoke` when
-   `scripts/guardian/prod.mjs` or the server image path changes;
-7. follow [[docs/managed-workspace-runtime.md]] and run the matching Electron
+6. follow [[docs/managed-workspace-runtime.md]] and run the matching Electron
    and package smoke whenever shared Guardian, PTY, startup, or dependency
    behavior changes;
-8. run the repository-wide TypeScript and test gates required by `AGENTS.md`.
+7. run the repository-wide TypeScript and test gates required by `AGENTS.md`.
 
 Record any network-shaping gap explicitly. A localhost smoke does not verify
 remote TUI behavior, and an SSH tunnel smoke does not verify Electron package

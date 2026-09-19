@@ -5,10 +5,8 @@ that you can already reach with SSH, while the browser stays on your laptop.
 The remote host owns Workspaces, native Agent processes, credentials, and
 optional trading services; the laptop owns only the browser and SSH tunnel.
 
-The lifecycle and security contract lives in [[docs/remote-access.md]]. For an
-always-on container exposed through HTTPS, Tailscale, or a private proxy, use
-[[docs/docker-deployment.md]]. Remote and Docker are parallel deployment
-choices: neither is a compatibility fallback for the other.
+The lifecycle and security contract lives in [[docs/remote-access.md]].
+OpenAlice supplies the CLI; operators own their execution environment.
 
 ## Choose a Deployment
 
@@ -18,7 +16,6 @@ choices: neither is a compatibility fallback for the other.
 | OpenAlice from a local source checkout | `openalice start` |
 | Existing private machine reached through SSH | `openalice --remote` |
 | Saved remote Machine profile | `openalice --machine` |
-| Container lifecycle, volume, healthcheck, and HTTPS | Docker |
 
 `openalice --remote` follows the Herdr-style ownership model: execution and
 durable state stay on the machine with the files, while a replaceable local
@@ -229,18 +226,14 @@ not stop the Server or an existing tunnel. Use `--remote openalice-box` to open
 the browser tunnel. Named Herdr server sessions are not supported; select a
 remote AliceProject on the command with `--project` or `--home` where supported.
 
-## Docker Is a First-Class Alternative
+## User-managed containers
 
-Choose Docker when the container image, volume, healthcheck, bundled Agent
-runtimes, and HTTPS/private-proxy lifecycle are benefits rather than overhead:
+OpenAlice does not provide a backend Dockerfile, Compose recipe, or container
+supervisor. Operators who package it themselves own process supervision,
+persistence, networking, authentication, and updates to that deployment.
 
-```bash
-docker compose up -d --build
-docker compose ps
-```
-
-The Docker image is not deprecated by managed remote, and remote users are not
-expected to wrap their SSH host in Docker. Both surfaces run the same
-Guardian/Alice product with different operational ownership. Continue with
-[[docs/docker-deployment.md]] for authentication, backups, upgrades, and the
-full container acceptance contract.
+SSH reaches the execution context selected by its endpoint. OpenAlice uses the
+compatible Guardian control contract in that context; it does not discover or
+enter nested containers. The normal managed CLI update requires that the
+execution context remain available while the old Runtime stops and the new
+Runtime starts. A user deployment must provide that lifecycle.

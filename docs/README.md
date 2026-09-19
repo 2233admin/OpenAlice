@@ -22,7 +22,6 @@ GitHub navigation.
 | [[docs/cli-supervisor.md]] | [Shell CLI Supervisor](cli-supervisor.md) | Top-level Runtime lifecycle, status/JSON presentation, browser opening, completion, compatibility aliases, and TUI boundary |
 | [[docs/local-runtime.md]] | [Local Runtime and CLI bootstrap](local-runtime.md) | Source-backed localhost startup, dependency bootstrap, Runtime ownership, and headless bundle boundary |
 | [[docs/data-locations.md]] | [Data locations](data-locations.md) | Complete-home selection, desktop launcher preferences, concurrent instances, and directory safety |
-| [[docs/docker-deployment.md]] | [Docker deployment](docker-deployment.md) | Server image topology, remote-host safety, persistence, health, and container acceptance |
 | [[docs/remote-access.md]] | [Remote Runtime and access](remote-access.md) | Server lifecycle, SSH transport, managed remote bootstrap, client authority, and staged Studio protocol |
 | [[docs/demo-mode.md]] | [Demo mode](demo-mode.md) | Shared mock data, isolated native Electron preview and demo smoke |
 | [[docs/desktop-companion.md]] | [Desktop companion](desktop-companion.md) | Alice floating window, native lifecycle, interaction, assets and platform acceptance |

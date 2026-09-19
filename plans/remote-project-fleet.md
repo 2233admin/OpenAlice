@@ -697,7 +697,7 @@ Rules:
 - [ ] Add focused managed-SSH, dev-manifest, stale-controller, cross-channel,
   consent/default-No, and post-install identity tests. Extend the disposable
   Docker SSH journey without exposing a public Web port.
-- [ ] Update `docs/remote-access.md`, `docs/docker-deployment.md`, CLI help, and
+- [ ] Update `docs/remote-access.md`, CLI help, and
   Supervisor wording with the shipped apply authority and downgrade rules.
 
 ### Increment 8 — remote readiness and browser truth
