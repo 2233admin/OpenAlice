@@ -13,6 +13,15 @@
  */
 
 export const en = {
+  modelCatalog: {
+    loading: "Loading models from this AI access…",
+    failed: "Could not load models. Retry, or enter an ID manually if this provider has no model list API.",
+    empty: "No models found. Configure a provider in this account, then refresh.",
+    loaded: "{{count}} models available",
+    refresh: "Refresh",
+    selectHelp: "Choose a model available through this AI access.",
+    selectPlaceholder: "Choose a model",
+  },
   stickers: {
     "meaning": "Meaning (optional)",
     "title": "Stickers",

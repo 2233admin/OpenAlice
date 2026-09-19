@@ -2,6 +2,15 @@ import type { Resources } from './en'
 
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
+  modelCatalog: {
+    loading: "正在读取此 AI 访问的模型列表…",
+    failed: "读取模型失败，请重试；若服务商不提供模型列表 API，可手动输入 ID。",
+    empty: "未发现模型。请先为此账户配置模型提供商，再刷新。",
+    loaded: "可选 {{count}} 个模型",
+    refresh: "刷新",
+    selectHelp: "选择此 AI 访问提供的模型。",
+    selectPlaceholder: "选择模型",
+  },
   stickers: {
     "meaning": "含义（可选）",
     "title": "表情包",

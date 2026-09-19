@@ -2,6 +2,15 @@ import type { Resources } from './en'
 
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
+  modelCatalog: {
+    loading: "この AI アクセスのモデルを読み込み中…",
+    failed: "モデルを取得できませんでした。再試行するか、一覧 API がない場合は ID を入力してください。",
+    empty: "モデルがありません。このアカウントのプロバイダーを設定して更新してください。",
+    loaded: "{{count}} 個のモデルを利用可能",
+    refresh: "更新",
+    selectHelp: "この AI アクセスで利用できるモデルを選択してください。",
+    selectPlaceholder: "モデルを選択",
+  },
   stickers: {
     "meaning": "Meaning (optional)",
     "title": "Stickers",

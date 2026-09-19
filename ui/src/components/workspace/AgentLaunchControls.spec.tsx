@@ -363,7 +363,7 @@ describe('AgentLaunchSelectors keyboard menus', () => {
     await user.click(screen.getByRole('menuitem', { name: /Model/ }))
     fireEvent.click(await screen.findByRole('menuitem', { name: i18n.t('chatLanding.customModel') }))
 
-    const input = await screen.findByRole('textbox', { name: i18n.t('chatLanding.customModelId') })
+    const input = await screen.findByRole('combobox', { name: i18n.t('chatLanding.customModelId') })
     await user.clear(input)
     await user.type(input, 'private-model-1')
     await user.click(screen.getByRole('button', { name: i18n.t('common.save') }))

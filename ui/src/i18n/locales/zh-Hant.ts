@@ -10,6 +10,15 @@ import type { Resources } from './en'
  * Content is UI chrome only — no geographic or other non-technical terms.
  */
 export const zhHant: Resources = {
+  modelCatalog: {
+    loading: "正在讀取此 AI 存取的模型清單…",
+    failed: "讀取模型失敗，請重試；若服務商未提供模型清單 API，可手動輸入 ID。",
+    empty: "未發現模型。請先為此帳戶設定模型提供商，再重新整理。",
+    loaded: "可選 {{count}} 個模型",
+    refresh: "重新整理",
+    selectHelp: "選擇此 AI 存取提供的模型。",
+    selectPlaceholder: "選擇模型",
+  },
   stickers: {
     "meaning": "含义（可选）",
     "title": "表情包",
