@@ -221,8 +221,8 @@ async function main(): Promise<void> {
   // stop or replace it. This is the discovery contract that prevents CLI and
   // dev surfaces from treating a healthy shared home as an opaque dead end.
   const discovered = await readRuntimeStatus({ homeRoot: dataHome, timeoutMs: 5_000 })
-  if (discovered.class !== 'owned_elsewhere') {
-    fail(`dev owner classified as ${discovered.class} instead of owned_elsewhere`)
+  if (discovered.class !== 'running') {
+    fail(`dev owner classified as ${discovered.class} instead of running`)
   }
   if (discovered.state !== 'running' || discovered.components.alice !== 'ready') {
     fail(`dev discovery did not report running Alice: ${JSON.stringify(discovered)}`)
