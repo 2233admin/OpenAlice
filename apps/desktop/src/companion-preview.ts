@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
-import { createCompanion } from './companion.js'
+import { createCompanion, resizeCompanionWindow } from './companion.js'
 
 const home = mkdtempSync(join(tmpdir(), 'openalice-companion-'))
 app.setPath('userData', home)
@@ -71,7 +71,7 @@ void app.whenReady().then(async () => {
   writeFileSync(join(home, 'flipped.png'), (await pet.webContents.capturePage()).toPNG())
   // Window gutters must preserve portrait size and contain the bubble on both sides.
   for (const size of [170, 220, 280]) {
-    pet.setSize(Math.round(size * 2.7), Math.round(size * 1.65))
+    resizeCompanionWindow(pet, Math.round(size * 2.7), Math.round(size * 1.65))
     for (const flipped of [false, true]) {
       pet.webContents.send('openalice:companion:flip', flipped)
       await new Promise(done => setTimeout(done, 350))

@@ -6,6 +6,21 @@ import { fileURLToPath } from 'node:url'
 import { settleCompanion, snapEase, type Rect } from './companion-geometry.js'
 import { createCompanionSoundStore, DEFAULT_SOUND, type CompanionSound } from './companion-sound.js'
 
+/** Keep the renderer viewport dimensions stable across native window frames. */
+export function resizeCompanionWindow(window: BrowserWindow, width: number, height: number): void {
+  if (process.platform === 'win32') window.setContentSize(width, height)
+  else window.setSize(width, height)
+}
+
+function setCompanionBounds(window: BrowserWindow, bounds: Rect): void {
+  if (process.platform === 'win32') {
+    window.setContentSize(bounds.width, bounds.height)
+    window.setPosition(bounds.x, bounds.y)
+  } else {
+    window.setBounds(bounds)
+  }
+}
+
 /**
  * One presentation window belonging to the existing desktop process.
  * Thanks to MeteorNOX's DeepSeek Balance Whale Widget for the interaction model:
@@ -156,7 +171,7 @@ export function createCompanion(owner: BrowserWindow): BrowserWindow | undefined
         const old = pet.getBounds(); size = value
         const height = Math.round(size * 1.65)
         const width = Math.round(size * 2.7)
-        pet.setBounds({ x: Math.round(old.x + (old.width - width) / 2), y: old.y + old.height - height, width, height })
+        setCompanionBounds(pet, { x: Math.round(old.x + (old.width - width) / 2), y: old.y + old.height - height, width, height })
         settle(false); save()
       },
     })) },
