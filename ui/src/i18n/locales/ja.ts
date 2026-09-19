@@ -1413,7 +1413,7 @@ export const ja: Resources = {
     harnessVersion: '固定 Harness バージョン',
     initializeAction: 'AutoQuant を初期化',
     initializing: 'AutoQuant を初期化中…',
-    initializingBody: '固定 Harness とローカル Git Workspace を準備しています。しばらくお待ちください。',
+    initializingBody: '固定 Harness とローカル Git Workspace を準備しています。別のページに移動しても初期化は続行されます。',
   },
   autoPrediction: {
     newResearch: '予測リサーチを開始', newWorkspace: 'Auto Prediction ワークスペースを作成',
@@ -1434,7 +1434,7 @@ export const ja: Resources = {
     workspaceMeta: '{{count}} セッション · スナップショット {{version}}', manageWorkspaces: 'ワークスペースを管理',
     persistentTitle: '永続的な予測研究デスク', persistentBody: '証拠、Campaign、SQLite 状態、ファイル、Git 履歴はこのワークスペース内の Auto Prediction が所有します。',
     initializeAction: 'Auto Prediction を初期化', initializing: 'Auto Prediction を初期化中…',
-    initializingBody: '承認済みソーススナップショットを複製して検証しています。',
+    initializingBody: '承認済みソーススナップショットを複製して検証しています。別のページに移動しても初期化は続行されます。',
   },
   chatSetup: {
     loading: 'Ask Alice を読み込み中',
@@ -1451,7 +1451,7 @@ export const ja: Resources = {
     persistentBody: 'ファイル、Session、履歴はこの Workspace に残ります。',
     initializeAction: 'Ask Alice を初期化',
     initializing: 'Ask Alice を初期化中…',
-    initializingBody: 'Chat ワークスペースを準備しています。しばらくお待ちください。',
+    initializingBody: 'Chat ワークスペースを準備しています。別のページに移動しても初期化は続行されます。',
   },
   workspaceManager: {
     title: 'ワークスペース管理者',

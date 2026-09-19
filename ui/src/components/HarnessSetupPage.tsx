@@ -5,6 +5,8 @@ import { ArrowRight, Check, Loader2, PanelsTopLeft } from 'lucide-react'
 import { useWorkspaces } from '../contexts/workspaces-context'
 import { RecoverySurface, RefreshNotice } from './StateViews'
 import { workspaceDisplayTitle } from './workspace/display'
+import { idleInitialization, useHarnessInitialization } from '../live/harness-initialization'
+import { IndeterminateProgress } from './ui/indeterminate-progress'
 
 export type HarnessSetupCopyPrefix = 'autoQuantSetup' | 'autoPredictionSetup' | 'chatSetup'
 
@@ -38,8 +40,10 @@ export function HarnessSetupPage({
   const { t } = useTranslation()
   const ctx = useWorkspaces()
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<string | null>(null)
-  const [initializing, setInitializing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const initialization = useHarnessInitialization((state) => state.templates[templateName] ?? idleInitialization)
+  const initialize = useHarnessInitialization((state) => state.initialize)
+  const initializing = initialization.pending
   const workspaces = useMemo(
     () => ctx.workspaces
       .filter((workspace) => workspace.template === templateName)
@@ -48,18 +52,6 @@ export function HarnessSetupPage({
   )
   const template = ctx.templates.find((candidate) => candidate.name === templateName)
   const version = template?.source?.defaultVersion
-
-  const initialize = async () => {
-    setInitializing(true)
-    setError(null)
-    try {
-      await initializeWorkspace()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setInitializing(false)
-    }
-  }
 
   const chooseWorkspace = async (workspaceId: string) => {
     if (!selectWorkspace) return
@@ -118,7 +110,7 @@ export function HarnessSetupPage({
     )
   }
 
-  const hasExisting = workspaces.length > 0 && selectWorkspace !== undefined
+  const hasExisting = !initializing && workspaces.length > 0 && selectWorkspace !== undefined
 
   return (
     <div
@@ -202,21 +194,26 @@ export function HarnessSetupPage({
             <button
               type="button"
               disabled={initializing}
-              onClick={() => void initialize()}
+              onClick={() => void initialize(templateName, initializeWorkspace)}
               className="oa-pressable flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
             >
-              {initializing && <Loader2 className="h-4 w-4 animate-spin" />}
+              {initializing && <Loader2 aria-hidden className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
               {initializing ? t(`${copyPrefix}.initializing`) : t(`${copyPrefix}.initializeAction`)}
             </button>
             {initializing && (
-              <p className="mt-3 text-center text-xs leading-5 text-muted-foreground">
-                {t(`${copyPrefix}.initializingBody`)}
-              </p>
+              <div className="mt-3 space-y-2">
+                <IndeterminateProgress label={t(`${copyPrefix}.initializing`)} />
+                <p role="status" className="text-center text-xs leading-5 text-muted-foreground">
+                  {t(`${copyPrefix}.initializingBody`)}
+                </p>
+              </div>
             )}
           </div>
         )}
 
-        {error && <p className="mt-4 text-center text-xs text-destructive">{error}</p>}
+        {(error || initialization.error) && (
+          <p role="alert" className="mt-4 text-center text-xs text-destructive">{error || initialization.error}</p>
+        )}
       </main>
     </div>
   )
