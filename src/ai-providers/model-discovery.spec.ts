@@ -45,3 +45,10 @@ it('rejects malformed, repeated-page and failed responses without exposing provi
   await expect(discoverModels(input)).rejects.toThrow('repeated a page cursor')
   await expect(discoverModels({ ...input, baseUrl: 'file:///private' })).rejects.toThrow('Invalid model API endpoint')
 })
+
+it('carries normalized capabilities through transport pagination, stripping unrecognized response data', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ data: [{ id: 'private', context_length: 64000, supported_parameters: ['reasoning'], secret: 'never-persist' }] })))
+  expect(await discoverModels({ wireShape: 'openai-chat', apiKey: 'fixture' })).toEqual([
+    { id: 'private', label: 'private', semantics: { contextWindow: 64000, reasoning: { supported: true } } },
+  ])
+})

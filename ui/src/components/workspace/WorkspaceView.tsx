@@ -108,6 +108,7 @@ export function WorkspaceView(props: WorkspaceViewProps): ReactElement {
               >
                 {(s.surface ?? 'terminal') === 'webpi' ? (
                   <WebSessionView
+                    record={s}
                     wsId={props.wsId}
                     sessionId={s.id}
                     agent={s.agent}

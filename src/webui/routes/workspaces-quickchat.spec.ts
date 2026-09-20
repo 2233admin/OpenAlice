@@ -352,7 +352,7 @@ describe('GET /credentials — Quick Chat launch metadata', () => {
     expect(result.body.credentials).toEqual([
       expect.objectContaining({
         slug: 'google-1',
-        resolvedModel: 'gemini-3.6-flash',
+        resolvedModel: 'gemini-3.8-flash',
         resolvedReasoning: true,
         resolvedReasoningMode: 'adaptive',
       }),

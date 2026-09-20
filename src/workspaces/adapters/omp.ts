@@ -1,3 +1,4 @@
+import { discoverNativeModels } from '../native-model-discovery.js';
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -199,6 +200,7 @@ function sessionIdFromFilename(name: string): string | null {
  * omp project file, so this adapter has no deprecated `writeAiConfig` export.
  */
 export const ompAdapter: CliAdapter = {
+  discoverModels: (cwd) => discoverNativeModels('omp', 'omp', cwd),
   id: 'omp',
   displayName: 'Oh My Pi',
   binary: 'omp',

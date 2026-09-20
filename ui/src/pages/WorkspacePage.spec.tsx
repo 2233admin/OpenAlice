@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,7 +24,7 @@ vi.mock('../contexts/workspaces-context', () => ({
   useWorkspaces: () => ({
     workspaces: mocks.workspaces,
     defaultAgent: 'codex',
-    agents: [{ id: 'codex', kind: 'agent' }, { id: 'pi', kind: 'agent' }],
+    agents: [{ id: 'codex', kind: 'agent' }, { id: 'pi', kind: 'agent', capabilities: { web: { wire: 'pi-rpc' } } }],
     spawn: mocks.spawn,
     openAgentConfig: mocks.openAgentConfig,
     resumeSession: mocks.resumeSession,
@@ -206,4 +206,13 @@ it('leaves only the panel entry in the Harness header', () => {
   expect(screen.getByRole('button', { name: 'Files' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Web Beta' })).toBeNull()
+})
+
+it('offers GUI directly in the running TUI Harness header', () => {
+  mocks.workspaces = [workspace({ sessions: [{ id: 'pi-one', resumeId: 'native-one', wsId: 'chat-1', agent: 'pi', name: 'p1', title: 'Research', state: 'running', surface: 'terminal', pid: 1, startedAt: 1, createdAt: '', lastActiveAt: '' }] })]
+  render(<HarnessWorkbenchContext.Provider value={{ wsId: 'chat-1', open: false, toggle: vi.fn() }}>
+    <WorkspacePage spec={{ kind: 'workspace', params: { wsId: 'chat-1', sessionId: 'pi-one', source: 'chat' } }} visible />
+  </HarnessWorkbenchContext.Provider>)
+  fireEvent.click(screen.getByRole('button', { name: 'GUI' }))
+  expect(mocks.openWebSession).toHaveBeenCalledWith('chat-1', 'pi-one', 'chat')
 })

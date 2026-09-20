@@ -118,7 +118,7 @@ export function WorkspacePage({ spec, visible }: Props) {
     (activeRecord.surface ?? 'terminal') === 'terminal'
   const pausedCanvas = activeRecord?.state === 'paused'
   const webCanvas = activeRecord?.state === 'running' && activeRecord.surface === 'webpi'
-  const workspaceCanvas = terminalCanvas || pausedCanvas
+  const workspaceCanvas = terminalCanvas || webCanvas || pausedCanvas
   // The surface toggle is offered only for runtimes that expose a structured
   // protocol; a TUI-only runtime keeps its terminal without a dead button.
   const canSwitchSurface = activeRecord?.state === 'running' && activeRecord.surface !== 'headless'
@@ -128,7 +128,7 @@ export function WorkspacePage({ spec, visible }: Props) {
     : ''
   const workspaceActions = (
     <>
-      {!workbench && activeRecord && canSwitchSurface && (
+      {activeRecord && canSwitchSurface && (
         <Button
           type="button"
           onClick={() => {
@@ -146,7 +146,7 @@ export function WorkspacePage({ spec, visible }: Props) {
           {webCanvas
             ? <Monitor size={13} strokeWidth={2.25} aria-hidden="true" />
             : <AgentRuntimeIcon agentId={activeRecord.agent} className="h-[13px] w-[13px]" />}
-          {webCanvas ? 'Open TUI' : 'Web Beta'}
+          {webCanvas ? 'TUI' : 'GUI'}
         </Button>
       )}
       {activeRecord && (terminalCanvas || webCanvas) && <DropdownMenu>

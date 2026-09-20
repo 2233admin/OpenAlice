@@ -3,6 +3,8 @@ import type { Resources } from './en'
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
   modelCatalog: {
+    bundled: "正在使用内置模型建议。",
+    missing: "最新模型列表中没有 {{model}}。已保留你的选择，该模型的可用性可能发生了变化。",
     loading: "正在读取此 AI 访问的模型列表…",
     failed: "读取模型失败，请重试；若服务商不提供模型列表 API，可手动输入 ID。",
     empty: "未发现模型。请先为此账户配置模型提供商，再刷新。",
@@ -1487,6 +1489,7 @@ export const zh: Resources = {
     resumeError: '无法恢复这段主管对话。',
   },
   chatLanding: {
+    startingSession: '正在启动会话…',
     uiMode: 'UI 模式',
     heading: '先让 Alice 处理什么？',
     subheading: '在选定的 Workspace 中开展研究、分析和交易工作。',
@@ -1524,8 +1527,8 @@ export const zh: Resources = {
     openInstallDocs: '打开 {{name}} 安装文档',
     noAgentsTitle: '未检测到托管运行时',
     noAgentsBody: 'OpenAlice 通常会自带 Pi 用于工作区对话。如果打包版出现这个提示，说明运行时包需要检查；你仍然可以先以 Lite 模式继续使用。',
-    selectCredential: 'AI 访问',
-    aiAccess: 'AI 访问',
+    selectCredential: 'AI Provider',
+    aiAccess: 'AI Provider',
     credentialMenuTitle: '选择 {{runtime}} 使用的 AI 账户',
     addApiAccount: '添加 API 账户…',
     addApiAccountDetail: '在设置中添加 Coding Plan 或自定义 API',
@@ -2094,6 +2097,7 @@ export const zh: Resources = {
     apiDescription: '从外部触发工作区自动化，并查看调度文件格式。',
   },
   activityToast: {
+    session: '一个会话',
     agent: 'Agent',
     conversationRunning: '{{agent}} 正在处理另一个 Agent 的请求',
     conversationFailed: '{{agent}} 未能完成 Agent 请求',

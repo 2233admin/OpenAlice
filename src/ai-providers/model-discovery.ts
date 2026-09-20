@@ -7,19 +7,21 @@ export const modelDiscoveryInput = z.object({
   apiKey: z.string().trim().min(1),
 }).strict()
 
-export interface DiscoveredModel { id: string; label: string }
+import type { DiscoveredModel } from './discovered-model.js'
+export type { DiscoveredModel } from './discovered-model.js'
+import { discoverModelSemantics } from './discovery-semantics.js'
 
 const catalogPage = z.object({
-  data: z.array(z.object({ id: z.string().min(1).max(512), display_name: z.string().optional(), name: z.string().optional() })).optional(),
+  data: z.array(z.object({ id: z.string().min(1).max(512), display_name: z.string().optional(), name: z.string().optional() }).passthrough()).optional(),
   models: z.array(z.object({
     name: z.string().min(1).max(512), displayName: z.string().optional(),
     supportedGenerationMethods: z.array(z.string()).optional(),
-  })).optional(),
+  }).passthrough()).optional(),
   has_more: z.boolean().optional(), last_id: z.string().optional(), nextPageToken: z.string().optional(),
 })
 
 /** Read model IDs from the selected endpoint; never send a generation request. */
-export async function discoverModels(input: z.infer<typeof modelDiscoveryInput>): Promise<DiscoveredModel[]> {
+export async function discoverModels(input: z.infer<typeof modelDiscoveryInput>, semanticsProtocol?: 'anthropic' | 'google' | 'openai'): Promise<DiscoveredModel[]> {
   const google = input.wireShape === 'google-generative-ai'
   const anthropic = input.wireShape === 'anthropic'
   const base = input.baseUrl || (google ? 'https://generativelanguage.googleapis.com/v1beta'
@@ -56,7 +58,12 @@ export async function discoverModels(input: z.infer<typeof modelDiscoveryInput>)
       ? data.models!.filter((model) => !model.supportedGenerationMethods || model.supportedGenerationMethods.includes('generateContent'))
         .map((model) => ({ id: model.name.replace(/^models\//, ''), label: model.displayName || model.name.replace(/^models\//, '') }))
       : data.data!.map((model) => ({ id: model.id, label: model.display_name || model.name || model.id }))
-    for (const model of entries) models.set(model.id, model)
+    const originals = google ? data.models! : data.data!
+    for (const model of entries) {
+      const raw = originals.find((item) => ('id' in item ? item.id : String(item.name).replace(/^models\//, '')) === model.id)
+      const semantics = discoverModelSemantics(raw, semanticsProtocol ?? (google ? 'google' : anthropic ? 'anthropic' : 'openai'))
+      models.set(model.id, { ...model, ...(semantics ? { semantics } : {}) })
+    }
     const cursor = google ? data.nextPageToken : anthropic && data.has_more ? data.last_id : undefined
     if (!cursor) {
       if (anthropic && data.has_more) throw new Error('Model API returned an invalid page cursor')

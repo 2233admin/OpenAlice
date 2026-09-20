@@ -11,6 +11,8 @@ import type { Resources } from './en'
  */
 export const zhHant: Resources = {
   modelCatalog: {
+    bundled: "正在使用內建模型建議。",
+    missing: "最新模型列表中沒有 {{model}}。已保留你的選擇，該模型的可用性可能已變更。",
     loading: "正在讀取此 AI 存取的模型清單…",
     failed: "讀取模型失敗，請重試；若服務商未提供模型清單 API，可手動輸入 ID。",
     empty: "未發現模型。請先為此帳戶設定模型提供商，再重新整理。",
@@ -1496,6 +1498,7 @@ export const zhHant: Resources = {
     resumeError: '無法恢復這段主管對話。',
   },
   chatLanding: {
+    startingSession: '正在啟動工作階段…',
     uiMode: 'UI 模式',
     heading: '先讓 Alice 處理什麼？',
     subheading: '在選定的 Workspace 中進行研究、分析與交易工作。',
@@ -1533,8 +1536,8 @@ export const zhHant: Resources = {
     openInstallDocs: '開啟 {{name}} 安裝文件',
     noAgentsTitle: '未偵測到託管執行環境',
     noAgentsBody: 'OpenAlice 通常會自帶 Pi 用於工作區對話。如果打包版出現這個提示，表示執行環境包需要檢查；你仍然可以先以 Lite 模式繼續使用。',
-    selectCredential: 'AI 存取',
-    aiAccess: 'AI 存取',
+    selectCredential: 'AI Provider',
+    aiAccess: 'AI Provider',
     credentialMenuTitle: '選擇 {{runtime}} 使用的 AI 帳戶',
     addApiAccount: '新增 API 帳戶…',
     addApiAccountDetail: '在設定中新增 Coding Plan 或自訂 API',
@@ -2103,6 +2106,7 @@ export const zhHant: Resources = {
     apiDescription: '從外部觸發工作區自動化，並查看排程檔案格式。',
   },
   activityToast: {
+    session: '一個對話',
     agent: 'Agent',
     conversationRunning: '{{agent}} 正在處理另一個 Agent 的請求',
     conversationFailed: '{{agent}} 未能完成 Agent 請求',

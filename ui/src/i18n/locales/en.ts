@@ -14,6 +14,8 @@
 
 export const en = {
   modelCatalog: {
+    bundled: "Using built-in model suggestions.",
+    missing: "{{model}} is not in the latest model list. Your selection is kept; availability may have changed.",
     loading: "Loading models from this AI access…",
     failed: "Could not load models. Retry, or enter an ID manually if this provider has no model list API.",
     empty: "No models found. Configure a provider in this account, then refresh.",
@@ -1514,6 +1516,7 @@ export const en = {
     resumeError: 'Could not resume this manager conversation.',
   },
   chatLanding: {
+    startingSession: 'Starting session…',
     uiMode: 'UI mode',
     heading: 'What should Alice work on?',
     subheading: 'Research, analysis, and trading workflows in the selected Workspace.',
@@ -1551,8 +1554,8 @@ export const en = {
     openInstallDocs: 'Open {{name}} setup docs',
     noAgentsTitle: 'Managed runtime not detected',
     noAgentsBody: 'OpenAlice normally includes Pi for workspace chat. If this appears in a packaged build, the runtime bundle needs attention; you can continue in Lite while setup is checked.',
-    selectCredential: 'AI access',
-    aiAccess: 'AI access',
+    selectCredential: 'AI Provider',
+    aiAccess: 'AI Provider',
     credentialMenuTitle: 'Select an AI account for {{runtime}}',
     addApiAccount: 'Add API account…',
     addApiAccountDetail: 'Configure a Coding Plan or custom API in Settings',
@@ -2127,6 +2130,7 @@ export const en = {
     apiDescription: 'Trigger workspace automation from outside, and review the schedule-file format.',
   },
   activityToast: {
+    session: 'A session',
     agent: 'Agent',
     conversationRunning: '{{agent}} is handling another Agent request',
     conversationFailed: '{{agent}} could not complete an Agent request',

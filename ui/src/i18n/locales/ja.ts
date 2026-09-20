@@ -3,6 +3,8 @@ import type { Resources } from './en'
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
   modelCatalog: {
+    bundled: "組み込みのモデル候補を表示しています。",
+    missing: "最新のモデル一覧に {{model}} がありません。選択は保持されていますが、利用可否が変わった可能性があります。",
     loading: "この AI アクセスのモデルを読み込み中…",
     failed: "モデルを取得できませんでした。再試行するか、一覧 API がない場合は ID を入力してください。",
     empty: "モデルがありません。このアカウントのプロバイダーを設定して更新してください。",
@@ -1489,6 +1491,7 @@ export const ja: Resources = {
     resumeError: 'この管理者会話を再開できませんでした。',
   },
   chatLanding: {
+    startingSession: 'セッションを起動中…',
     uiMode: 'UI モード',
     heading: 'Alice に何を任せますか？',
     subheading: '選択した Workspace で調査、分析、取引を進めます。',
@@ -1526,8 +1529,8 @@ export const ja: Resources = {
     openInstallDocs: '{{name}} のセットアップ手順を開く',
     noAgentsTitle: '管理ランタイムが見つかりません',
     noAgentsBody: 'OpenAlice には通常、ワークスペースチャット用の Pi が同梱されます。パッケージ版でこの表示が出る場合は、ランタイム同梱を確認してください。確認中も Lite モードで続行できます。',
-    selectCredential: 'AI アクセス',
-    aiAccess: 'AI アクセス',
+    selectCredential: 'AI Provider',
+    aiAccess: 'AI Provider',
     credentialMenuTitle: '{{runtime}} で使う AI アカウントを選択',
     addApiAccount: 'API アカウントを追加…',
     addApiAccountDetail: '設定で Coding Plan またはカスタム API を追加',
@@ -2096,6 +2099,7 @@ export const ja: Resources = {
     apiDescription: '外部からワークスペース自動化を起動し、スケジュールファイル形式を確認します。',
   },
   activityToast: {
+    session: 'セッション',
     agent: 'Agent',
     conversationRunning: '{{agent}} が別の Agent からの依頼を処理中です',
     conversationFailed: '{{agent}} が Agent からの依頼を完了できませんでした',

@@ -140,7 +140,7 @@ describe('WorkspaceAIPreferencesPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '编辑交互式 Session中的 Codex 偏好' }))
     fireEvent.click(screen.getByRole('radio', { name: /固定默认值/ }))
-    const access = await screen.findByRole('button', { name: 'AI 访问' })
+    const access = await screen.findByRole('button', { name: 'AI Provider' })
     expect(screen.getByRole('button', { name: '模型与推理强度' })).toBeTruthy()
 
     fireEvent.click(access)

@@ -11,7 +11,7 @@ import type { AgentInfo } from '../workspace/api'
 import { CredentialModal } from './CredentialModal'
 import { configApi } from '../../api/config'
 
-vi.mock('../../api/config', () => ({ configApi: { discoverModels: vi.fn().mockResolvedValue([]), getCredentialModels: vi.fn().mockResolvedValue([]) } }))
+vi.mock('../../api/config', () => ({ configApi: { discoverModels: vi.fn().mockResolvedValue([]), getCredentialModels: vi.fn().mockResolvedValue({ models: [], source: 'snapshot', fetchedAt: 1, refreshing: false, error: null }) } }))
 
 vi.mock('../../api', () => ({
   api: {
@@ -221,13 +221,13 @@ afterEach(() => {
 
 describe('CredentialModal', () => {
   it('reads an existing account catalog without asking for its saved secret again', async () => {
-    vi.mocked(configApi.getCredentialModels).mockResolvedValueOnce([{ id: 'saved/model', label: 'Saved model' }])
+    vi.mocked(configApi.getCredentialModels).mockResolvedValueOnce({ models: [{ id: 'saved/model', label: 'Saved model' }], source: 'snapshot', fetchedAt: 1, refreshing: false, error: null })
     render(<CredentialModal mode="edit" presets={[openAiPreset]} agents={agents}
       cred={{ slug: 'openai-1', vendor: 'openai', authType: 'api-key', apiKey: null, hasApiKey: true,
         wires: { 'openai-responses': 'https://api.openai.com/v1' }, lastModel: 'gpt-test' }}
       onClose={vi.fn()} onSaved={vi.fn()} />)
     await screen.findByText(i18n.t('modelCatalog.loaded', { count: 1 }))
-    expect(configApi.getCredentialModels).toHaveBeenCalledWith('openai-1', undefined, expect.any(AbortSignal), 'openai-responses')
+    expect(configApi.getCredentialModels).toHaveBeenCalledWith('openai-1', undefined, expect.any(AbortSignal), 'openai-responses', false)
     fireEvent.focus(screen.getByRole('combobox', { name: /model/i }))
     fireEvent.click(screen.getByRole('option', { name: /saved\/model/ }))
     expect(screen.getByDisplayValue('saved/model')).toBeTruthy()
@@ -241,7 +241,7 @@ describe('CredentialModal', () => {
   })
 
   it('selects an exact discovered model ID and uses it for the credential test', async () => {
-    vi.mocked(configApi.discoverModels).mockResolvedValueOnce([{ id: 'account-only/model-9', label: 'Account model' }])
+    vi.mocked(configApi.discoverModels).mockResolvedValueOnce({ models: [{ id: 'account-only/model-9', label: 'Account model' }] })
     vi.mocked(api.config.testCredential).mockResolvedValue({ ok: true, response: 'ok' })
     setup()
     await screen.findByText(i18n.t('modelCatalog.loaded', { count: 1 }))

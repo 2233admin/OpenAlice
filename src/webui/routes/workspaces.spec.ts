@@ -1712,6 +1712,34 @@ describe('Web surface routes', () => {
     expect(svc.startWebSession).toHaveBeenCalledOnce();
   });
 
+  it('passes a complete model/effort binding to the same Web Session restart', async () => {
+    const { app, svc } = buildWeb();
+    const result = await post(app, `/ws-1/sessions/${TOKEN}/web/open`, {
+      credentialSource: 'native', model: 'test-model', reasoningEffort: 'high',
+    });
+    expect(result.status).toBe(200);
+    expect(svc.startWebSession).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: TOKEN }), {
+      runtimeSelection: { credentialSource: 'native', model: 'test-model', reasoningEffort: 'high' },
+    });
+  });
+
+  it('rejects malformed configuration before changing the running Session', async () => {
+    const { app, svc } = buildWeb();
+    const result = await post(app, `/ws-1/sessions/${TOKEN}/web/open`, { credentialSource: 'vault' });
+    expect(result.status).toBe(400);
+    expect(svc.startWebSession).not.toHaveBeenCalled();
+    expect(svc.sessionRegistry.update).not.toHaveBeenCalled();
+  });
+
+  it('retains the running Session when replacement credentials fail validation', async () => {
+    const { app, svc, web } = buildWeb();
+    web.has.mockReturnValue(true);
+    vi.mocked(svc.startWebSession).mockRejectedValue(new Error('Credential is unavailable'));
+    const result = await post(app, `/ws-1/sessions/${TOKEN}/web/open`, { credentialSource: 'native' });
+    expect(result.status).toBe(400);
+    expect(svc.sessionRegistry.update).not.toHaveBeenCalled();
+  });
+
   it('disconnects a live interactive Session without deleting its identity', async () => {
     const { app, svc } = buildWeb();
     const disposeAndWait = vi.fn(async () => undefined);
@@ -2128,5 +2156,18 @@ describe('Workspace manager surface routes', () => {
       status: 400,
       body: { error: 'unsupported_agent_runtime' },
     });
+  });
+});
+
+describe('native provider model directory', () => {
+  it('discovers through any adapter in the selected Workspace and returns model capabilities together', async () => {
+    const discoverModels = vi.fn(async () => [{ id: 'runtime-alias', label: 'Native', semantics: { reasoning: { efforts: ['high'] } } }]);
+    const { app } = build({ adapters: { fixture: { id: 'fixture', binary: 'fixture-missing', discoverModels } } });
+    const response = await app.request('/agents/fixture/models?workspaceId=ws-1', { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ discoverySupported: true, refreshing: false, models: [{ id: 'runtime-alias', semantics: { reasoning: { efforts: ['high'] } } }] });
+    expect(discoverModels).toHaveBeenCalledWith('/w');
+    expect((await app.request('/agents/missing/models')).status).toBe(404);
+    expect((await app.request('/agents/fixture/models?workspaceId=missing')).status).toBe(404);
   });
 });

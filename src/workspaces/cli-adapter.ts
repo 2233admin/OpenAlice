@@ -267,6 +267,9 @@ export type AgentInteractiveSetupStatus =
   | 'unknown';
 
 export interface CliAdapter {
+  /** Runtime-owned model directory. Never inject Vault credentials into discovery. */
+  discoverModels?(cwd: string): Promise<import('../ai-providers/discovered-model.js').DiscoveredModel[]>;
+
   readonly id: string;                          // 'claude' | 'codex' | 'shell'
   readonly displayName: string;
   /**

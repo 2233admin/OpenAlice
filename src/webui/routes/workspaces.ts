@@ -1,3 +1,4 @@
+import { createAIProvider } from '../../ai-providers/provider.js'
 import { createWorkspaceContentRoutes } from './workspace-content.js';
 import { createStickerRoutes } from './stickers.js';
 import { prepareProjectWorkspaces, readProjectWorkspaceSetup } from '../../workspaces/project-workspace-setup.js';
@@ -10,7 +11,8 @@ import { prepareProjectWorkspaces, readProjectWorkspaceSetup } from '../../works
  */
 
 import { Hono, type Context } from 'hono';
-import { listOmpModels } from '../../workspaces/omp-models.js';
+import { NativeAIProvider } from '../../ai-providers/native-provider.js';
+import { providerModelCatalog } from '../../ai-providers/model-catalog.js';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
@@ -76,6 +78,7 @@ import {
   createSessionRuntimeBinding,
   resolveSessionRuntimeBinding,
   SessionRuntimeBindingError,
+  type SessionRuntimeSelection,
 } from '../../workspaces/session-runtime-binding.js';
 import type { SessionCreatedBy } from '../../workspaces/session-metadata.js';
 import { sessionMetadata } from '../../workspaces/session-metadata.js';
@@ -869,7 +872,7 @@ export function createWorkspaceRoutes(
           baseUrl: cfg.baseUrl ?? undefined,
           wireShape: cfg.wireShape ?? undefined,
         });
-    const reasoningSemantics = resolveModelSemantics(vendor, cfg.model)?.reasoning;
+    const reasoningSemantics = (slug && cfg.model ? createAIProvider(slug, credentials[slug]!).resolveModel(cfg.model).semantics : resolveModelSemantics(vendor, cfg.model))?.reasoning;
     return {
       slug,
       model: cfg.model ?? null,
@@ -979,12 +982,14 @@ export function createWorkspaceRoutes(
     });
   });
 
-  app.get('/agents/omp/models', async (c) => {
+  app.on(['GET', 'POST'], '/agents/:agent/models', async (c) => {
     const workspaceId = c.req.query('workspaceId');
     const workspace = workspaceId ? svc.resolveRuntimeWorkspace(workspaceId) : undefined;
     if (workspaceId && !workspace) return c.json({ error: 'Workspace not found' }, 404);
     try {
-      return c.json({ models: await listOmpModels(workspace?.dir ?? process.cwd()) });
+      const adapter = svc.adapters.get(c.req.param('agent'));
+      if (!adapter || !isAgentRuntime(adapter)) return c.json({ error: 'Agent runtime not found' }, 404);
+      return c.json(await providerModelCatalog.read(new NativeAIProvider(adapter, workspace?.dir ?? process.cwd()), c.req.method === 'POST'));
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'Model discovery failed' }, 502);
     }
@@ -2585,6 +2590,21 @@ export function createWorkspaceRoutes(
     if (svc.isResumeActive(record.resumeId)) {
       return c.json({ error: 'resume_busy', message: 'this conversation has a running headless turn' }, 409);
     }
+    const body = await c.req.text();
+    let runtimeSelection: SessionRuntimeSelection | undefined;
+    if (body.trim()) {
+      let input: unknown;
+      try { input = JSON.parse(body); } catch { return c.json({ error: 'bad_request' }, 400); }
+      const parsed = pausedSessionRuntimeRequestSchema.safeParse(input);
+      if (!parsed.success) return c.json({ error: 'bad_request', message: parsed.error.issues[0]?.message }, 400);
+      runtimeSelection = {
+        ...(parsed.data.credentialSource === 'native'
+          ? { credentialSource: 'native' as const }
+          : { credentialSlug: parsed.data.credentialSlug! }),
+        ...(parsed.data.model ? { model: parsed.data.model } : {}),
+        ...(parsed.data.reasoningEffort ? { reasoningEffort: parsed.data.reasoningEffort } : {}),
+      };
+    }
     try {
       await prepareAgentRuntimeWorkspace(adapter, {
         wsId: id,
@@ -2594,12 +2614,15 @@ export function createWorkspaceRoutes(
       const snapshot = await svc.startWebSession(
         meta,
         record,
-        id === svc.managerWorkspace?.id ? managerWebOptions : undefined,
+        { ...(id === svc.managerWorkspace?.id ? managerWebOptions : {}), ...(runtimeSelection ? { runtimeSelection } : {}) },
       );
       return c.json({ ok: true, snapshot, session: publicSession(record) });
     } catch (err) {
       if (err instanceof HeadlessResumeError) {
         return c.json({ error: 'resume_busy', message: err.message }, 409);
+      }
+      if (svc.web.has(token)) {
+        return c.json({ error: 'web_open_failed', message: (err as Error).message }, 400);
       }
       await svc.sessionRegistry.update(id, token, {
         state: 'paused',
@@ -2627,6 +2650,7 @@ export function createWorkspaceRoutes(
   app.post('/:id/sessions/:sid/web/prompt', async (c) => {
     const ctx = webSessionContext(c);
     if (!ctx) return c.json({ error: 'not_found' }, 404);
+    if (svc.isResumeActive(ctx.record.resumeId)) return c.json({ error: 'resume_busy', message: 'Session configuration is changing; try again shortly' }, 409);
     const body = await safeJson(c).catch(() => null);
     const message = body && typeof body === 'object' ? (body as Record<string, unknown>)['message'] : null;
     if (typeof message !== 'string' || !message.trim()) {
@@ -3060,9 +3084,9 @@ export function createWorkspaceRoutes(
       const list = entries.map(([slug, cred]) => {
         const resolvedModel = resolveInjectionModel(cred);
         const projected = adapter && resolvedModel
-          ? credentialToWorkspaceAiCred(cred, adapter, { model: resolvedModel })
+          ? credentialToWorkspaceAiCred(cred, adapter, { model: resolvedModel }, slug)
           : null;
-        const reasoningMode = resolveModelSemantics(cred.vendor, resolvedModel)?.reasoning?.mode;
+        const reasoningMode = resolvedModel ? createAIProvider(slug, cred).resolveModel(resolvedModel).semantics?.reasoning?.mode : undefined;
         return {
           slug,
           vendor: cred.vendor,
@@ -3258,6 +3282,7 @@ export function createWorkspaceRoutes(
         cfg,
         adapter.capabilities.aiProvider,
         vendor,
+        slug && cfg.model ? createAIProvider(slug, credentials[slug]!).resolveModel(cfg.model).semantics : undefined,
       );
       await adapter.writeAiConfig(meta.dir, projected);
       // Remember an explicit model choice on the originating vault credential

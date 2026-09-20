@@ -261,9 +261,17 @@ sidebar, and use the shared reading renderer rather than a new Markdown stack.
 ### Agent conversation presentation
 
 `components/conversation/` owns the adapter-neutral browser conversation view,
-content/activity rendering and composer shell. `ComposerShell` is shared with
-the Harness launch page; its context, controls and details are caller-owned
-slots, not embedded Pi selectors. Existing `oa-harness-composer-*` styling seams
+content/activity rendering and `ChatComposer` input/actions. `AgentChatComposer`
+composes that primitive with the shared provider/model/effort selector for both
+Start and GUI. Start retains runtime/surface selection in its composer context
+tray. In an existing GUI Session, the fixed runtime icon/name lives in the top
+bar beside the TUI action; narrow screens show the icon with its accessible
+name and tooltip. The GUI composer has no runtime tray. One compact
+button shows the provider icon, model and effort, with submenus for each choice.
+The AI Provider submenu and native account option use the matching provider or
+runtime icon; the full provider name remains available in the button tooltip.
+Narrow layouts truncate this summary without wrapping it onto multiple rows.
+The Start composer follows sidebar Workspace selection and has no Workspace picker. Existing `oa-harness-composer-*` styling seams
 remain the shared visual material. Messages and composer use a 46rem reading
 measure, with local scrolling for wide output and wrapping toolbar controls.
 User messages use a quiet, borderless bubble; assistant prose sits directly on
@@ -646,3 +654,26 @@ uses the shared 250ms ease-out curve for the resizable outer panels, with a
 subtle content fade/translation. Pointer and keyboard resizing remain immediate;
 reduced-motion mode disables the transitions. Content width is held during the
 short disclosure to avoid repeatedly wrapping file and Studio content.
+
+### Session header and tablet work panels
+
+Running TUI Sessions expose GUI switching in their shared top bar whenever the
+runtime supports the Web surface; GUI Sessions expose the reverse TUI action.
+The Harness shell must not hide this action behind the work-panel menu.
+At 768–1279px, opening the right work panel collapses the left activity rail
+and keeps the conversation visible beside the panel. Only phone viewports
+below 768px replace the conversation with the work panel.
+
+Start keeps Suggested workflows in the shared Collapsible panel. Typing closes
+its measured height and fades it; clearing the draft reverses the transition.
+Closed content becomes inert and aria-hidden immediately. The shared reduced
+motion rule removes the transition.
+
+First submission renders the submitted user message on the same conversation
+canvas with a live startup status while the request is pending. The composer
+stays mounted, clears visually and locks until launch settles; a failed launch
+restores the retained draft. GUI navigation carries one transient, identity-keyed
+prompt preview into useWebConversation until its first authoritative snapshot.
+It never persists or resends this preview. No artificial startup delay is added;
+the short message entrance honors reduced motion. TUI launches share the pending
+feedback, then hand over to the terminal normally.
