@@ -9,6 +9,7 @@ interface Catalog {
   models: PresetModel[] | null
   error: string | null
   loading: boolean
+  discoverySupported?: boolean
   source?: 'bundled' | 'snapshot'
   fetchedAt?: number | null
 }
@@ -36,17 +37,18 @@ export function useModelCatalog(request: Request | null) {
           const result = await configApi.getCredentialModels(input.slug, input.agent, controller.signal, input.wireShape, force)
           if (!Array.isArray(result.models)) throw new Error('Invalid model list')
           if (!controller.signal.aborted) {
-            setCatalog({ key, models: result.models, error: result.error, loading: result.refreshing, source: result.source, fetchedAt: result.fetchedAt })
+            setCatalog({ key, models: result.models, error: result.error, loading: result.refreshing, source: result.source, discoverySupported: result.discoverySupported, fetchedAt: result.fetchedAt })
             // Poll only while the shared backend refresh is in flight. The GET
             // serves local state; it never starts a second provider request.
             if (result.refreshing) timer = window.setTimeout(() => { void read() }, 1000)
           }
         } else {
-          const models = 'native' in input
-            ? await listNativeModels(input.native, input.workspaceId, controller.signal)
+          const result = 'native' in input
+            ? { models: await listNativeModels(input.native, input.workspaceId, controller.signal), discoverySupported: true }
             : await configApi.discoverModels(input, controller.signal)
+          const { models, discoverySupported } = result
           if (!Array.isArray(models)) throw new Error('Invalid model list')
-          if (!controller.signal.aborted) setCatalog({ key, models, error: null, loading: false })
+          if (!controller.signal.aborted) setCatalog({ key, models, error: null, loading: false, discoverySupported, ...(discoverySupported === false ? { source: 'bundled' } : {}) })
         }
       } catch (error) {
         if (!controller.signal.aborted) setCatalog((old) => ({
@@ -65,6 +67,7 @@ export function useModelCatalog(request: Request | null) {
     loading: request !== null && (current?.loading ?? true),
     error: current?.error ?? null,
     source: current?.source,
+    discoverySupported: current?.discoverySupported,
     fetchedAt: current?.fetchedAt,
     refresh,
   }

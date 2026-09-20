@@ -241,7 +241,7 @@ describe('CredentialModal', () => {
   })
 
   it('selects an exact discovered model ID and uses it for the credential test', async () => {
-    vi.mocked(configApi.discoverModels).mockResolvedValueOnce([{ id: 'account-only/model-9', label: 'Account model' }])
+    vi.mocked(configApi.discoverModels).mockResolvedValueOnce({ models: [{ id: 'account-only/model-9', label: 'Account model' }] })
     vi.mocked(api.config.testCredential).mockResolvedValue({ ok: true, response: 'ok' })
     setup()
     await screen.findByText(i18n.t('modelCatalog.loaded', { count: 1 }))
