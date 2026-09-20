@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ConversationLayout } from './ConversationLayout'
 import { ChatComposer, type ChatComposerProps } from './ChatComposer'
 import { ConversationTranscriptItem } from './ConversationTranscript'
 import type { ConversationItem } from './types'
 import './conversation.css'
 
 export interface ConversationViewProps {
+  readonly header?: ReactNode
   readonly renderComposer?: (props: ChatComposerProps) => ReactNode
   readonly fileHrefs?: Record<string, string>
   readonly onFileReference?: (path: string) => void
@@ -95,20 +97,14 @@ export function ConversationView(props: ConversationViewProps) {
   }
 
   const error = actionError ?? props.error
-  return <div className="conversation-shell">
-    <div ref={scroller} className="conversation-messages" onScroll={(event) => {
+  return <ConversationLayout
+    header={props.header}
+    scrollRef={scroller}
+    onScroll={(event) => {
       followingRef.current = isConversationNearBottom(event.currentTarget)
       setFollowing(followingRef.current)
-    }}>
-      {props.items.length === 0 && !error && <div className="conversation-empty">{props.empty}</div>}
-      {props.items.map((item, index) => <ConversationTranscriptItem key={item.key} fileHrefs={props.fileHrefs} onFileReference={props.onFileReference} item={item} animate={props.busy && !stopped && JSON.stringify(initialItems.current?.get(item.key)) !== JSON.stringify(item) && index === props.items.length - 1} latest={index === props.items.length - 1} working={props.busy && index === props.items.length - 1} />)}
-      {error && <div className="conversation-error" role="alert">
-        <strong>Could not continue</strong><span>{error}</span>
-        {props.retry && <button type="button" onClick={() => { setActionError(null); props.retry?.() }}>Retry</button>}
-        {props.recover && <button type="button" onClick={props.recover}>Refresh session</button>}
-      </div>}
-    </div>
-    <div className="conversation-composer-wrap">
+    }}
+    composer={<>
       {!following && <div className="conversation-jump-row"><button type="button" className="conversation-jump-latest" onClick={() => jump()}>Jump to latest</button></div>}
       {props.status}
       {(props.send || (props.busy && props.stop)) && (props.renderComposer ?? ((composer) => <ChatComposer {...composer} />))({
@@ -120,6 +116,14 @@ export function ConversationView(props: ConversationViewProps) {
         onSubmit: () => void submit(), onStop: props.stop ? () => void stop() : undefined,
         stopLabel: props.stopLabel ?? 'Stop response',
       })}
-    </div>
-  </div>
+    </>}
+  >
+      {props.items.length === 0 && !error && <div className="conversation-empty">{props.empty}</div>}
+      {props.items.map((item, index) => <ConversationTranscriptItem key={item.key} fileHrefs={props.fileHrefs} onFileReference={props.onFileReference} item={item} animate={props.busy && !stopped && JSON.stringify(initialItems.current?.get(item.key)) !== JSON.stringify(item) && index === props.items.length - 1} latest={index === props.items.length - 1} working={props.busy && index === props.items.length - 1} />)}
+      {error && <div className="conversation-error" role="alert">
+        <strong>Could not continue</strong><span>{error}</span>
+        {props.retry && <button type="button" onClick={() => { setActionError(null); props.retry?.() }}>Retry</button>}
+        {props.recover && <button type="button" onClick={props.recover}>Refresh session</button>}
+      </div>}
+  </ConversationLayout>
 }

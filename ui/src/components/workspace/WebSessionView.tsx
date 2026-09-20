@@ -58,13 +58,13 @@ function WebSession({ record, wsId, sessionId, agent, agents, label, headerActio
   const stopped = snapshot?.phase === 'stopped'
 
   return <>
-    <PageTopBar title={label ?? 'Conversation'} actions={headerActions}>
-      {(busy || !snapshot || snapshot.phase === 'failed') && <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        {(busy || !snapshot) && <LoaderCircle size={12} className="animate-spin" aria-hidden />}
-        {phaseLabel}
-      </span>}
-    </PageTopBar>
     <ConversationView
+      header={<PageTopBar title={label ?? 'Conversation'} actions={headerActions}>
+        {(busy || !snapshot || snapshot.phase === 'failed') && <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          {(busy || !snapshot) && <LoaderCircle size={12} className="animate-spin" aria-hidden />}
+          {phaseLabel}
+        </span>}
+      </PageTopBar>}
       fileHrefs={files.fileHrefs}
       onFileReference={files.onFileReference}
       items={session.items}
@@ -73,7 +73,7 @@ function WebSession({ record, wsId, sessionId, agent, agents, label, headerActio
       ready={!!snapshot && snapshot.phase !== 'failed' && snapshot.phase !== 'starting' && !stopped && !session.reconfiguring && configurationReady}
       placeholder={`Message ${agentLabel}…`}
       empty={snapshot ? 'What should Alice work on next?' : 'Opening conversation…'}
-      context={<span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-xs text-muted-foreground" title={snapshot ? wireDescription(snapshot.wire) : 'Web conversation surface'}>
+      context={<span className="inline-flex min-h-7 items-center gap-1.5 px-1.5 py-1 text-xs text-muted-foreground" title={snapshot ? wireDescription(snapshot.wire) : 'Web conversation surface'}>
         <AgentRuntimeIcon agentId={agentId} className="h-[12px] w-[12px]" />
         {agentLabel} <span className="opacity-60">· Web</span>
       </span>}
