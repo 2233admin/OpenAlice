@@ -1712,6 +1712,34 @@ describe('Web surface routes', () => {
     expect(svc.startWebSession).toHaveBeenCalledOnce();
   });
 
+  it('passes a complete model/effort binding to the same Web Session restart', async () => {
+    const { app, svc } = buildWeb();
+    const result = await post(app, `/ws-1/sessions/${TOKEN}/web/open`, {
+      credentialSource: 'native', model: 'test-model', reasoningEffort: 'high',
+    });
+    expect(result.status).toBe(200);
+    expect(svc.startWebSession).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: TOKEN }), {
+      runtimeSelection: { credentialSource: 'native', model: 'test-model', reasoningEffort: 'high' },
+    });
+  });
+
+  it('rejects malformed configuration before changing the running Session', async () => {
+    const { app, svc } = buildWeb();
+    const result = await post(app, `/ws-1/sessions/${TOKEN}/web/open`, { credentialSource: 'vault' });
+    expect(result.status).toBe(400);
+    expect(svc.startWebSession).not.toHaveBeenCalled();
+    expect(svc.sessionRegistry.update).not.toHaveBeenCalled();
+  });
+
+  it('retains the running Session when replacement credentials fail validation', async () => {
+    const { app, svc, web } = buildWeb();
+    web.has.mockReturnValue(true);
+    vi.mocked(svc.startWebSession).mockRejectedValue(new Error('Credential is unavailable'));
+    const result = await post(app, `/ws-1/sessions/${TOKEN}/web/open`, { credentialSource: 'native' });
+    expect(result.status).toBe(400);
+    expect(svc.sessionRegistry.update).not.toHaveBeenCalled();
+  });
+
   it('disconnects a live interactive Session without deleting its identity', async () => {
     const { app, svc } = buildWeb();
     const disposeAndWait = vi.fn(async () => undefined);

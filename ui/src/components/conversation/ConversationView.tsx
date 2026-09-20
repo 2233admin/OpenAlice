@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, LoaderCircle, Square } from 'lucide-react'
-import { Textarea } from '../ui/textarea'
-import { Button } from '../ui/button'
-import { ComposerShell } from './ComposerShell'
+import { ChatComposer, type ChatComposerProps } from './ChatComposer'
 import { ConversationTranscriptItem } from './ConversationTranscript'
 import type { ConversationItem } from './types'
 import './conversation.css'
 
 export interface ConversationViewProps {
+  readonly renderComposer?: (props: ChatComposerProps) => ReactNode
   readonly fileHrefs?: Record<string, string>
   readonly onFileReference?: (path: string) => void
   readonly items: readonly ConversationItem[]
@@ -113,14 +111,15 @@ export function ConversationView(props: ConversationViewProps) {
     <div className="conversation-composer-wrap">
       {!following && <div className="conversation-jump-row"><button type="button" className="conversation-jump-latest" onClick={() => jump()}>Jump to latest</button></div>}
       {props.status}
-      {(props.send || (props.busy && props.stop)) && <ComposerShell context={props.context} controls={props.controls} action={
-        props.busy ? (props.stop && <Button size="icon" className="conversation-send" disabled={pending} aria-label={props.stopLabel ?? 'Stop response'} onClick={() => void stop()}>{pending ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : <Square size={14} fill="currentColor" aria-hidden />}</Button>)
-          : props.send && <Button size="icon" className="conversation-send" disabled={!props.ready || !draft.trim() || pending} aria-label="Send message" aria-busy={pending} onClick={() => void submit()}>{pending ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : <ArrowUp size={18} aria-hidden />}</Button>
-      }>
-        <Textarea value={draft} rows={1} className="conversation-input" aria-label={props.placeholder} placeholder={props.placeholder} disabled={!props.ready || !props.send || pending} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit() }
-        }} />
-      </ComposerShell>}
+      {(props.send || (props.busy && props.stop)) && (props.renderComposer ?? ((composer) => <ChatComposer {...composer} />))({
+        context: props.context, controls: props.controls,
+        value: draft, onChange: setDraft, placeholder: props.placeholder,
+        disabled: !props.ready || !props.send || pending,
+        canSend: !!props.send && props.ready && !!draft.trim() && !props.busy,
+        pending, busy: props.busy,
+        onSubmit: () => void submit(), onStop: props.stop ? () => void stop() : undefined,
+        stopLabel: props.stopLabel ?? 'Stop response',
+      })}
     </div>
   </div>
 }

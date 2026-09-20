@@ -180,7 +180,7 @@
 .conversation-input[data-slot="textarea"] { display: block; width: 100%; min-height: 68px; max-height: 168px; resize: none; border: 0; border-radius: 0; padding: 6px; color: var(--foreground); background: transparent; box-shadow: none; font-size: 14px; line-height: 21px; }
 /* The composer shell owns focus feedback. Outrank the shared field-control
  * focus rule so its inset textarea does not draw a second rectangular ring. */
-:root .conversation-shell .conversation-input[data-slot="textarea"]:focus-visible { outline: none; box-shadow: none; }
+:root .oa-harness-composer .conversation-input[data-slot="textarea"]:focus-visible { outline: none; box-shadow: none; }
 .conversation-send[data-slot="button"] { flex-shrink: 0; border-radius: 999px; color: var(--background); background: var(--foreground); }
 .conversation-send[data-slot="button"]:hover { opacity: .9; }
 .conversation-send[data-slot="button"]:disabled { color: var(--muted-foreground); background: var(--muted); opacity: .55; }

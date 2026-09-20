@@ -261,9 +261,12 @@ sidebar, and use the shared reading renderer rather than a new Markdown stack.
 ### Agent conversation presentation
 
 `components/conversation/` owns the adapter-neutral browser conversation view,
-content/activity rendering and composer shell. `ComposerShell` is shared with
-the Harness launch page; its context, controls and details are caller-owned
-slots, not embedded Pi selectors. Existing `oa-harness-composer-*` styling seams
+content/activity rendering and `ChatComposer` input/actions. `AgentChatComposer`
+composes that primitive with the shared provider/model/effort selector for both
+Start and GUI; runtime and surface differences use the context slot. One compact
+button summarizes provider, model and effort, with submenus for each choice.
+Narrow layouts truncate this summary without wrapping it onto multiple rows.
+The Start composer follows sidebar Workspace selection and has no Workspace picker. Existing `oa-harness-composer-*` styling seams
 remain the shared visual material. Messages and composer use a 46rem reading
 measure, with local scrolling for wide output and wrapping toolbar controls.
 User messages use a quiet, borderless bubble; assistant prose sits directly on

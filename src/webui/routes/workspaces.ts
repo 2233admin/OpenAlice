@@ -78,6 +78,7 @@ import {
   createSessionRuntimeBinding,
   resolveSessionRuntimeBinding,
   SessionRuntimeBindingError,
+  type SessionRuntimeSelection,
 } from '../../workspaces/session-runtime-binding.js';
 import type { SessionCreatedBy } from '../../workspaces/session-metadata.js';
 import { sessionMetadata } from '../../workspaces/session-metadata.js';
@@ -2589,6 +2590,21 @@ export function createWorkspaceRoutes(
     if (svc.isResumeActive(record.resumeId)) {
       return c.json({ error: 'resume_busy', message: 'this conversation has a running headless turn' }, 409);
     }
+    const body = await c.req.text();
+    let runtimeSelection: SessionRuntimeSelection | undefined;
+    if (body.trim()) {
+      let input: unknown;
+      try { input = JSON.parse(body); } catch { return c.json({ error: 'bad_request' }, 400); }
+      const parsed = pausedSessionRuntimeRequestSchema.safeParse(input);
+      if (!parsed.success) return c.json({ error: 'bad_request', message: parsed.error.issues[0]?.message }, 400);
+      runtimeSelection = {
+        ...(parsed.data.credentialSource === 'native'
+          ? { credentialSource: 'native' as const }
+          : { credentialSlug: parsed.data.credentialSlug! }),
+        ...(parsed.data.model ? { model: parsed.data.model } : {}),
+        ...(parsed.data.reasoningEffort ? { reasoningEffort: parsed.data.reasoningEffort } : {}),
+      };
+    }
     try {
       await prepareAgentRuntimeWorkspace(adapter, {
         wsId: id,
@@ -2598,12 +2614,15 @@ export function createWorkspaceRoutes(
       const snapshot = await svc.startWebSession(
         meta,
         record,
-        id === svc.managerWorkspace?.id ? managerWebOptions : undefined,
+        { ...(id === svc.managerWorkspace?.id ? managerWebOptions : {}), ...(runtimeSelection ? { runtimeSelection } : {}) },
       );
       return c.json({ ok: true, snapshot, session: publicSession(record) });
     } catch (err) {
       if (err instanceof HeadlessResumeError) {
         return c.json({ error: 'resume_busy', message: err.message }, 409);
+      }
+      if (svc.web.has(token)) {
+        return c.json({ error: 'web_open_failed', message: (err as Error).message }, 400);
       }
       await svc.sessionRegistry.update(id, token, {
         state: 'paused',
@@ -2631,6 +2650,7 @@ export function createWorkspaceRoutes(
   app.post('/:id/sessions/:sid/web/prompt', async (c) => {
     const ctx = webSessionContext(c);
     if (!ctx) return c.json({ error: 'not_found' }, 404);
+    if (svc.isResumeActive(ctx.record.resumeId)) return c.json({ error: 'resume_busy', message: 'Session configuration is changing; try again shortly' }, 409);
     const body = await safeJson(c).catch(() => null);
     const message = body && typeof body === 'object' ? (body as Record<string, unknown>)['message'] : null;
     if (typeof message !== 'string' || !message.trim()) {
