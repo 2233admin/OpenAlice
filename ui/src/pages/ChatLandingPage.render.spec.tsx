@@ -183,7 +183,7 @@ function context(
 }
 
 async function findInferenceTrigger(model: string): Promise<HTMLButtonElement> {
-  const trigger = await screen.findByRole('button', { name: 'AI access, Model and reasoning' }) as HTMLButtonElement
+  const trigger = await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' }) as HTMLButtonElement
   await waitFor(() => {
     expect(trigger.textContent).toContain(model)
   })
@@ -191,11 +191,11 @@ async function findInferenceTrigger(model: string): Promise<HTMLButtonElement> {
 }
 
 function expectDefaultEffort(label: string): void {
-  expect(screen.getByRole('button', { name: 'AI access, Model and reasoning' }).textContent).toContain(label)
+  expect(screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }).textContent).toContain(label)
 }
 
 async function openInferenceSubmenu(label: 'Model' | 'Effort'): Promise<void> {
-  const trigger = await screen.findByRole('button', { name: 'AI access, Model and reasoning' })
+  const trigger = await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })
   trigger.focus()
   fireEvent.keyDown(trigger, { key: 'ArrowDown' })
   fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(label) }))
@@ -283,7 +283,7 @@ describe('ChatLandingPage polling stability', () => {
   it('does not inspect deprecated native config when a poll replaces the Workspace object with the same id', async () => {
     const view = render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
-    expect(await screen.findByRole('button', { name: 'AI access, Model and reasoning' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })).toBeTruthy()
     expect(mocks.detectWorkspaceCredential).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -440,8 +440,8 @@ describe('ChatLandingPage adapter inventory', () => {
     const inferenceRow = screen.getByTestId('harness-landing-controls')
     expect(screen.queryByRole('button', { name: /Start in:/ })).toBeNull()
     expect(contextRow.contains(screen.getByRole('button', { name: 'Select agent' }))).toBe(true)
-    expect(inferenceRow.contains(await screen.findByRole('button', { name: 'AI access, Model and reasoning' }))).toBe(true)
-    expect(inferenceRow.contains(screen.getByRole('button', { name: 'AI access, Model and reasoning' }))).toBe(true)
+    expect(inferenceRow.contains(await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' }))).toBe(true)
+    expect(inferenceRow.contains(screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }))).toBe(true)
     expect(inferenceRow.querySelectorAll('button').length).toBe(2)
     expect(screen.queryByRole('button', { name: 'Attach' })).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'AI model' })).toBeNull()
@@ -522,7 +522,7 @@ describe('ChatLandingPage keyboard submission', () => {
       agents: [{ ...piAgent, capabilities: { ...piAgent.capabilities, web: { wire: 'pi-rpc', freshSession: true } } }],
     }))
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
-    await screen.findByRole('button', { name: 'AI access, Model and reasoning' })
+    await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })
     fireEvent.click(screen.getByRole('button', { name: 'UI mode: TUI' }))
     fireEvent.click(await screen.findByRole('menuitemradio', { name: 'GUI' }))
     const composer = screen.getByPlaceholderText('Describe the task, question, or decision…')
@@ -535,7 +535,7 @@ describe('ChatLandingPage keyboard submission', () => {
   it('does not submit when Enter confirms an IME composition candidate', async () => {
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
-    await screen.findByRole('button', { name: 'AI access, Model and reasoning' })
+    await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })
     const composer = screen.getByPlaceholderText('Describe the task, question, or decision…')
     fireEvent.change(composer, { target: { value: '你好' } })
 
@@ -680,10 +680,10 @@ describe('ChatLandingPage keyboard submission', () => {
 
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
-    expect((await screen.findByRole('button', { name: 'AI access, Model and reasoning' })).textContent)
+    expect((await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })).textContent)
       .toContain('Default model')
-    fireEvent.click(screen.getByRole('button', { name: 'AI access, Model and reasoning' }))
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI access/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI Provider/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /deepseek-1/ }))
     expect(await findInferenceTrigger('deepseek-v4-flash')).toBeTruthy()
     expect(screen.queryByText('New Session only')).toBeNull()
@@ -769,11 +769,11 @@ describe('ChatLandingPage AI source disclosure', () => {
 
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'AI access, Model and reasoning' }))
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI access/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI Provider/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /^Pi account/ }))
     expect(mocks.rememberQuickChatLaunch).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'AI access, Model and reasoning' }).textContent)
+    expect(screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }).textContent)
       .toContain('Default model')
 
     fireEvent.change(screen.getByPlaceholderText('Describe the task, question, or decision…'), { target: { value: 'Use my account.' } })
@@ -830,9 +830,9 @@ describe('ChatLandingPage AI source disclosure', () => {
 
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
-    expect((await screen.findByRole('button', { name: 'AI access, Model and reasoning' })).textContent).toContain('DeepSeek')
+    expect((await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })).getAttribute('title')).toContain('DeepSeek')
     await waitFor(() => {
-      const summary = screen.getByRole('button', { name: 'AI access, Model and reasoning' }).textContent
+      const summary = screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }).textContent
       expect(summary).toContain('deepseek-v4-flash')
       expect(summary).toContain('high reasoning')
     })
@@ -947,8 +947,8 @@ describe('ChatLandingPage AI source disclosure', () => {
   it('shows an explicitly selected vault credential without native-config injection copy', async () => {
     render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'AI access, Model and reasoning' }))
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI access/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI Provider/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /google-1/ }))
     expect(screen.queryByText('New Session only')).toBeNull()
     expect(screen.queryByText('Workspace settings stay unchanged')).toBeNull()
@@ -1007,8 +1007,8 @@ describe('ChatLandingPage AI source disclosure', () => {
     const view = render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
 
     expect(await findInferenceTrigger('gemini-3.1-flash-lite')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'AI access, Model and reasoning' }))
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI access/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^AI Provider/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /deepseek-1/ }))
     expect(await findInferenceTrigger('deepseek-v3.2')).toBeTruthy()
 
@@ -1019,7 +1019,7 @@ describe('ChatLandingPage AI source disclosure', () => {
 
     expect(mocks.detectWorkspaceCredential).not.toHaveBeenCalled()
     expect(await findInferenceTrigger('deepseek-v3.2')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'AI access, Model and reasoning' }).textContent).not.toContain('gemini-3.1-pro-preview')
+    expect(screen.getByRole('button', { name: 'AI Provider, Model and reasoning' }).textContent).not.toContain('gemini-3.1-pro-preview')
   })
 })
 
@@ -1031,7 +1031,7 @@ describe('Workspace embedded composer', () => {
     workspaces = [target, other]
     mocks.useWorkspaces.mockImplementation(() => context(workspaces, other.id))
     render(<HarnessLandingPage mode="auto-quant" spec={{ params: { targetWsId: target.id } }} showHeader={false} />)
-    await screen.findByRole('button', { name: 'AI access, Model and reasoning' })
+    await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })
     const input = screen.getByPlaceholderText('Describe the strategy, market, hypothesis, or iteration goal…')
     fireEvent.change(input, { target: { value: 'Inspect existing research' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })

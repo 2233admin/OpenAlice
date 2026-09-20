@@ -48,6 +48,7 @@ import {
 import { formatContextWindow, type AgentLaunchConfigState } from '../../hooks/useAgentLaunchConfig'
 import { useAgentRuntimes } from '../../hooks/useAgentRuntimes'
 import { projectAgentRuntimeQuickAccess } from '../../lib/agentRuntimeQuickAccess'
+import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
 import { AIProviderIcon } from '@/lib/aiProviderIcon'
 import { ModelCatalogStatus } from '../ModelCatalogStatus'
 import { ModelCombobox } from '../credentials/PresetFields'
@@ -240,6 +241,7 @@ function AgentLaunchAccessItems({ config, onConfigureProvider }: {
         }}
         className={`min-h-11 px-2.5 py-2 text-[12px] ${config.accessMode === 'native' ? 'text-primary' : 'text-foreground'}`}
       >
+        <AgentRuntimeIcon agentId={config.effectiveAgent} className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1">
           <span className="block truncate">{t('chatLanding.runtimeAccount', { runtime: runtimeName })}</span>
           <span className="block truncate text-[10px] text-muted-foreground">{t('chatLanding.runtimeAccountDetail', { runtime: runtimeName })}</span>
@@ -357,6 +359,7 @@ function AgentLaunchInferenceMenu({
           render={<button
             type="button"
             disabled={disabled}
+            title={access?.label}
             aria-label={access ? `${t('chatLanding.selectCredential')}, ${t('chatLanding.selectModelAndEffort')}` : t('chatLanding.selectModelAndEffort')}
             className={settings
               ? 'oa-pressable flex min-h-14 w-full min-w-0 items-center gap-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2 text-left transition-colors hover:bg-muted/45'
@@ -376,7 +379,6 @@ function AgentLaunchInferenceMenu({
             </span>
           ) : (
             <>
-              {access && <><span className="max-w-[120px] truncate text-muted-foreground">{access.label}</span><span aria-hidden className="text-muted-foreground">·</span></>}
               <span className="min-w-0 max-w-[180px] truncate">{resolvedModel}</span>
               <span className="min-w-0 truncate text-muted-foreground">{resolvedEffort}</span>
             </>
@@ -393,6 +395,7 @@ function AgentLaunchInferenceMenu({
         >
           {access && <DropdownMenuSub>
             <DropdownMenuSubTrigger className="min-h-10 px-2.5 py-2 text-[12px]">
+              {access.icon}
               <span>{t('chatLanding.selectCredential')}</span>
               <span className="ml-auto max-w-[170px] truncate text-muted-foreground">{access.label}</span>
             </DropdownMenuSubTrigger>
@@ -559,7 +562,12 @@ export const AgentLaunchSelectors = forwardRef<AgentLaunchSelectorsHandle, Agent
         ? t('chatLanding.workspaceAccessDetail', { credential: credentialAccessDetail(config.credential) })
         : t('chatLanding.savedAccessDetail', { credential: credentialAccessDetail(config.credential) })
       : config.detectedCredential?.model ?? t('chatLanding.workspaceAccessDetailFallback')
-  const selectedVaultVendor = config.accessMode === 'vault' ? config.credential?.vendor : undefined
+  const selectedVaultVendor = !nativeAccess ? config.credential?.vendor : undefined
+  const providerIcon = selectedVaultVendor
+    ? <AIProviderIcon vendor={selectedVaultVendor} className="h-4 w-4 shrink-0" />
+    : nativeAccess
+      ? <AgentRuntimeIcon agentId={config.effectiveAgent} className="h-4 w-4 shrink-0" />
+      : <KeyRound className="h-4 w-4 shrink-0" />
 
   useImperativeHandle(ref, () => ({
     openAgentMenu() {
@@ -610,9 +618,7 @@ export const AgentLaunchSelectors = forwardRef<AgentLaunchSelectorsHandle, Agent
             className={`oa-pressable inline-flex min-w-0 items-center rounded-lg text-left text-muted-foreground transition-colors hover:text-foreground ${settingsLayout ? 'min-h-14 w-full gap-2 border border-border/70 bg-muted/25 px-3 py-2 hover:bg-muted/45' : toolbar ? 'min-h-7 max-w-[190px] gap-1.5 bg-transparent px-1.5 py-1 hover:bg-muted' : labeled ? 'min-h-12 w-full max-w-none gap-2 bg-muted px-2.5 py-1.5 sm:w-auto sm:max-w-[240px]' : 'min-h-8 max-w-[240px] gap-2 bg-muted px-2.5 py-1'}`}
           >
             <span className={`flex shrink-0 items-center justify-center ${settingsLayout ? 'h-[18px] w-[18px]' : 'h-4 w-4'}`}>
-              {selectedVaultVendor
-                ? <AIProviderIcon vendor={selectedVaultVendor} className="h-full w-full" />
-                : <KeyRound className={settingsLayout ? 'h-[18px] w-[18px]' : 'h-4 w-4'} />}
+              {providerIcon}
             </span>
             <span className="min-w-0 flex-1">
               {(labeled || settingsLayout) && (
@@ -652,7 +658,7 @@ export const AgentLaunchSelectors = forwardRef<AgentLaunchSelectorsHandle, Agent
               disabled={disabled}
               access={combinedAi && showAccess ? {
                 label: selectedAccessLabel,
-                icon: selectedVaultVendor ? <AIProviderIcon vendor={selectedVaultVendor} className="h-4 w-4 shrink-0" /> : <KeyRound className="h-3.5 w-3.5 shrink-0" />,
+                icon: providerIcon,
                 items: <AgentLaunchAccessItems config={config} onConfigureProvider={onConfigureProvider} />,
               } : undefined}
               menuPositionerClassName={menuPositionerClassName}

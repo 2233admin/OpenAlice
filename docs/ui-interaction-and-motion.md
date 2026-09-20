@@ -264,7 +264,9 @@ sidebar, and use the shared reading renderer rather than a new Markdown stack.
 content/activity rendering and `ChatComposer` input/actions. `AgentChatComposer`
 composes that primitive with the shared provider/model/effort selector for both
 Start and GUI; runtime and surface differences use the context slot. One compact
-button summarizes provider, model and effort, with submenus for each choice.
+button shows the provider icon, model and effort, with submenus for each choice.
+The AI Provider submenu and native account option use the matching provider or
+runtime icon; the full provider name remains available in the button tooltip.
 Narrow layouts truncate this summary without wrapping it onto multiple rows.
 The Start composer follows sidebar Workspace selection and has no Workspace picker. Existing `oa-harness-composer-*` styling seams
 remain the shared visual material. Messages and composer use a 46rem reading
