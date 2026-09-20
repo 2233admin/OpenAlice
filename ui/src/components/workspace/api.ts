@@ -1437,8 +1437,8 @@ async function webSessionMutation(url: string, action: string, payload?: unknown
   return body.snapshot;
 }
 
-export async function openWebSession(wsId: string, sessionId: string): Promise<WebSessionSnapshot> {
-  return webSessionMutation(webSessionUrl(wsId, sessionId, '/open'), 'open');
+export async function openWebSession(wsId: string, sessionId: string, runtime?: PausedSessionRuntimeUpdate): Promise<WebSessionSnapshot> {
+  return webSessionMutation(webSessionUrl(wsId, sessionId, '/open'), 'open', runtime);
 }
 
 export async function getWebSession(

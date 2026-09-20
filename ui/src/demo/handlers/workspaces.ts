@@ -42,7 +42,7 @@ import type {
 const demoSessionPresence = new Map<string, 'active' | 'archived' | 'deleted'>()
 
 
-const demoManagerSession = {
+let demoManagerSession: SessionRecord & { pid: number; startedAt: number } = {
   id: 'demo-manager-session',
   resumeId: 'demo-resume-manager',
   wsId: 'workspace-manager',
@@ -1525,10 +1525,18 @@ export const workspacesHandlers = [
   http.get('/api/workspaces/:id/sessions/:sid/diagnostics', () =>
     HttpResponse.json({ status: 'demo' }),
   ),
-  http.post('/api/workspaces/:id/sessions/:sid/web/open', ({ params }) => {
+  http.post('/api/workspaces/:id/sessions/:sid/web/open', async ({ params, request }) => {
     const wsId = String(params.id)
     const sessionId = String(params.sid)
+    const update = await request.json().catch(() => null) as PausedSessionRuntimeUpdate | null
+    const runtime = update ? {
+      credentialSource: update.credentialSource,
+      ...(update.credentialSlug ? { credentialSlug: update.credentialSlug } : {}),
+      ...(update.model ? { model: update.model } : {}),
+      ...(update.reasoningEffort ? { reasoningEffort: update.reasoningEffort } : {}),
+    } : undefined
     if (wsId === demoManagerSession.wsId && sessionId === demoManagerSession.id) {
+      if (runtime) demoManagerSession = { ...demoManagerSession, runtime }
       return HttpResponse.json({ snapshot: demoManagerSnapshot() })
     }
     const record = demoWorkspaces
@@ -1539,6 +1547,12 @@ export const workspacesHandlers = [
         error: 'unsupported_surface',
         message: `${record.agent} has no Web conversation surface; open it in the terminal instead`,
       }, { status: 409 })
+    }
+    if (record && runtime) {
+      const workspace = demoWorkspaces.find(workspace => workspace.id === wsId)!
+      demoWorkspaces.splice(demoWorkspaces.indexOf(workspace), 1, { ...workspace, sessions: workspace.sessions.map(session => session.id === sessionId ? {
+        ...session, runtime,
+      } : session) })
     }
     const snapshot = ensureDemoWebSession(wsId, sessionId)
     return snapshot

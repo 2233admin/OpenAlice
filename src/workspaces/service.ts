@@ -467,6 +467,7 @@ export interface WorkspaceService {
       appendSystemPrompt?: string;
       skills?: readonly string[];
       approveProject?: boolean;
+      runtimeSelection?: SessionRuntimeSelection;
     },
   ): Promise<WebSessionSnapshot>;
   /** Best-effort background reconciliation of native runtime Session titles. */
@@ -3017,6 +3018,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       appendSystemPrompt?: string;
       skills?: readonly string[];
       approveProject?: boolean;
+      runtimeSelection?: SessionRuntimeSelection;
     } = {},
   ): Promise<WebSessionSnapshot> => {
     if (!claimResume(record.resumeId)) throw new HeadlessResumeError('busy', 'this conversation already has a running turn');
@@ -3031,6 +3033,21 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     const webCapability = adapter.capabilities.web;
     if (!webCapability || !adapter.composeWebCommand) {
       throw new Error(`${adapter.displayName} has no Web conversation surface; open it in the terminal instead`);
+    }
+    if (opts.runtimeSelection) {
+      const identity = resumeRegistry.get(record.resumeId);
+      if (!identity || identity.lifecycle === 'retired') throw new Error('Session identity is unavailable');
+      // Resolve before stopping: invalid credentials must leave the current child intact.
+      const replacement = await createSessionRuntimeBinding({ adapter, cwd: meta.dir, selection: opts.runtimeSelection });
+      const phase = web.get(record.id)?.phase;
+      if (phase && !['idle', 'failed', 'stopped'].includes(phase)) {
+        throw new HeadlessResumeError('busy', 'Wait for the current response before changing AI configuration');
+      }
+      await web.stop(record.id, 'AI configuration changed');
+      await resumeRegistry.replaceRuntimeBinding({
+        resumeId: record.resumeId, wsId: record.wsId, agent: record.agent,
+        runtimeBinding: replacement.binding,
+      });
     }
     const recordedNativeId = resumeRegistry.get(record.resumeId)?.agentSessionId
       ?? record.resumeHint?.value;

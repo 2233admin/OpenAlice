@@ -87,7 +87,13 @@ components, labels) use "Web". User-facing copy says "Web", never "WebPi".
 
 ## Routes
 
-- `POST /web/open` — checks `capabilities.web`, refuses a Session with a
+- `POST /web/open` — optionally accepts the same complete native/vault, model
+  and effort selection as the paused Session editor. A selection restarts the
+  same native conversation under the resume lease: validate first, wait for the
+  old child to stop, replace the secret-free binding, then reopen. Busy turns
+  reject changes; no per-runtime hot-switch protocol is needed. Invalid
+  credentials retain the old process. A failed new launch remains paused for
+  recovery. Without a selection, the existing open behavior is unchanged. It checks `capabilities.web`, refuses a Session with a
   running headless turn, disposes a PTY on the same record, starts the host.
 - `GET /web?revision=` — snapshot or `{ unchanged: true }`.
 - `POST /web/prompt`, `POST /web/abort` — turn control.
@@ -216,3 +222,15 @@ and inline links whole. History (including the first asynchronously loaded
 snapshot) appears immediately. Completion, Stop, and reduced-motion preference
 flush the visual buffer; unmount cancels animation. A ResizeObserver follows
 text growth only while the reader remains near the bottom.
+
+### Shared Start and GUI composer
+
+`AgentChatComposer` owns the common `ChatComposer` input/actions and the combined
+AI access/model/effort menu. Start supplies runtime and surface selection in the
+context slot and follows the sidebar Workspace target; it has no Workspace
+picker. GUI supplies a fixed runtime badge. Its `useWebSessionModelConfig` uses
+the existing pinned runtime draft and unified model catalog hook, never launch
+preferences. Selecting AI configuration restarts the same Session via `/web/open`.
+Sending and configuration are locked during restart; the mounted composer keeps
+its draft and transcript. `useWebConversation` invalidates in-flight polls and
+accepts the restarted process's new revision sequence. No persisted shape changes.
