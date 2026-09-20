@@ -660,3 +660,17 @@ The Harness shell must not hide this action behind the work-panel menu.
 At 768–1279px, opening the right work panel collapses the left activity rail
 and keeps the conversation visible beside the panel. Only phone viewports
 below 768px replace the conversation with the work panel.
+
+Start keeps Suggested workflows in the shared Collapsible panel. Typing closes
+its measured height and fades it; clearing the draft reverses the transition.
+Closed content becomes inert and aria-hidden immediately. The shared reduced
+motion rule removes the transition.
+
+First submission renders the submitted user message on the same conversation
+canvas with a live startup status while the request is pending. The composer
+stays mounted, clears visually and locks until launch settles; a failed launch
+restores the retained draft. GUI navigation carries one transient, identity-keyed
+prompt preview into useWebConversation until its first authoritative snapshot.
+It never persists or resends this preview. No artificial startup delay is added;
+the short message entrance honors reduced motion. TUI launches share the pending
+feedback, then hand over to the terminal normally.

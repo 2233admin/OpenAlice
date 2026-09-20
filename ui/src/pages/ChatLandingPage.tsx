@@ -1,3 +1,5 @@
+import { Collapsible, CollapsibleContent } from '../components/ui/collapsible'
+import { ConversationTranscriptItem } from '../components/conversation/ConversationTranscript'
 import aliceWave from '../../../default/stickers/alice-color/wave.png'
 import { layout, prepare } from '@chenglou/pretext'
 import {
@@ -23,6 +25,7 @@ import {
   Inbox,
   KeyRound,
   LayoutGrid,
+  LoaderCircle,
   ExternalLink,
   RefreshCw,
   SearchCheck,
@@ -332,7 +335,7 @@ export function HarnessLandingPage({
 
   return (
     <ConversationLayout
-      welcome
+      welcome={!launching}
       header={showHeader && <PageTopBar title={t(mode === 'chat' ? 'chat.newChat' : mode === 'auto-quant' ? 'autoQuant.newResearch' : 'autoPrediction.newResearch')} />}
       composer={<>
         <AgentChatComposer
@@ -340,7 +343,7 @@ export function HarnessLandingPage({
           onConfigureProvider={goConfigureProvider}
           configurationDisabled={launching}
           hasWorkspaceTarget={!!credentialWorkspace}
-          value={value}
+          value={launching ? '' : value}
           onChange={setValue}
           onSubmit={() => void submit()}
           placeholder={t(`${copyKey}.placeholder`)}
@@ -421,6 +424,13 @@ export function HarnessLandingPage({
           )}
       </>}
     >
+      {launching ? <div className="oa-chat-launch-preview">
+        <ConversationTranscriptItem item={{ kind: 'user', key: 'launch-preview', content: [{ kind: 'markdown', text: value.trim() }] }} working={false} />
+        <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle size={14} className="animate-spin motion-reduce:animate-none" aria-hidden />
+          {t('chatLanding.startingSession')}
+        </div>
+      </div> : <>
       {listError !== null && (
         <RefreshNotice
           message={t('workspace.dataStale')}
@@ -441,12 +451,15 @@ export function HarnessLandingPage({
         </h1>
       </header>
 
-      <div
+      <Collapsible open={showStarterIntents}>
+      <CollapsibleContent keepMounted
         data-testid="harness-landing-suggestions"
         data-state={showStarterIntents ? 'visible' : 'hidden'}
-        className={showStarterIntents ? 'oa-harness-starters mt-7' : 'hidden'}
+        className="oa-harness-starters"
+        aria-hidden={!showStarterIntents}
         inert={!showStarterIntents}
       >
+        <div className="pt-7">
         <div className="flex h-7 items-center justify-between px-1">
           <span className="text-[12px] font-medium text-muted-foreground">
             {t(`${copyKey}.examplesLabel`)}
@@ -492,7 +505,10 @@ export function HarnessLandingPage({
             )
           })}
         </div>
-      </div>
+        </div>
+      </CollapsibleContent>
+      </Collapsible>
+      </>}
     </ConversationLayout>
   )
 }
