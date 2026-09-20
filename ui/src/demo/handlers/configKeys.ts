@@ -233,7 +233,7 @@ export const configKeysHandlers = [
   http.all('/api/config/credentials/:slug/models', ({ params }) => HttpResponse.json({
     discoverySupported: true, source: 'snapshot', fetchedAt: Date.now(), refreshing: false, error: null,
     models: String(params.slug).startsWith('minimax-')
-      ? [{ id: 'MiniMax-M3', label: 'MiniMax M3' }]
+      ? [{ id: 'MiniMax-M3', label: 'MiniMax M3', semantics: { contextWindow: 1_000_000, reasoning: { supported: true, mode: 'adaptive', interleaved: true } } }]
       : demoCredentialPresets.find((preset) => String(params.slug).startsWith(preset.id.split('-')[0]!))?.models ?? demoCredentialPresets[1]!.models,
   })),
   http.post('/api/config/credentials/models', async ({ request }) => {

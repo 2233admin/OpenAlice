@@ -25,7 +25,7 @@ import { AIProviderIcon } from '../../lib/aiProviderIcon'
 import { Dialog } from '../uta/Dialog'
 import { Button } from '../ui/button'
 import { ModelCombobox } from './PresetFields'
-import { catalogModelOptions, useModelCatalog } from '../../hooks/useModelCatalog'
+import { useProviderModels } from '../../hooks/useProviderModels'
 import { ModelCatalogStatus } from '../ModelCatalogStatus'
 
 const SHAPE_ORDER: WireShape[] = ['anthropic', 'google-generative-ai', 'openai-chat', 'openai-responses']
@@ -114,11 +114,11 @@ export function CredentialModal({ mode, cred, presets, agents, initialPresetId, 
   const primaryUrl = primaryShape ? (wires[primaryShape] ?? '') : ''
   const storedAccess = cred && primaryShape && primaryShape in (cred.wires ?? {})
     && primaryUrl === cred.wires?.[primaryShape] && (!apiKey.trim() || apiKey === cred.apiKey)
-  const modelCatalog = useModelCatalog(!isDirect && primaryShape && (!isCustom || primaryUrl.trim()) && (!primaryUrl || validEndpoint(primaryUrl))
+  const modelCatalog = useProviderModels({ model, fallback: preset ? presetModels(preset) : [], request: !isDirect && primaryShape && (!isCustom || primaryUrl.trim()) && (!primaryUrl || validEndpoint(primaryUrl))
     ? storedAccess ? { slug: cred.slug, wireShape: primaryShape }
       : apiKey.trim() ? { vendor: preset ? VENDOR_BY_PRESET[preset.id] ?? 'custom' : 'custom', wires, wireShape: primaryShape, baseUrl: primaryUrl, apiKey: apiKey.trim() } : null
-    : null)
-  const models = catalogModelOptions(modelCatalog.models, preset ? presetModels(preset) : [])
+    : null })
+  const models = modelCatalog.models
   const compatibilityWires = isCustom ? { [customShape]: customUrl.trim() } : wires
   const compatibleAgents = isDirect && preset?.directAgentId
     ? agents.some((agent) => agent.id === preset.directAgentId) ? [preset.directAgentId] : []

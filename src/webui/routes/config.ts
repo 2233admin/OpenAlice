@@ -28,7 +28,6 @@ import type { EngineContext } from '../../core/types.js'
 import { triggerUTARestart } from '../../services/uta-supervisor/restart-trigger.js'
 import { BUILTIN_PRESETS } from '../../ai-providers/presets.js'
 import type { WireShape } from '../../ai-providers/preset-catalog.js'
-import { resolveModelSemantics } from '../../ai-providers/model-semantics.js'
 import { providerModelCatalog, type ProviderModelCatalogStore } from '../../ai-providers/model-catalog.js'
 import { modelDiscoveryInput } from '../../ai-providers/model-discovery.js'
 import { resolveAnthropicAuthMode } from '../../core/credential-inference.js'
@@ -361,10 +360,7 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
           const selectedModel = typeof def.model === 'string' && def.model
             ? def.model
             : credential ? resolveInjectionModel(credential) : null
-          const reasoningIsRegistered = !!resolveModelSemantics(
-            credential?.vendor,
-            selectedModel,
-          )?.reasoning
+          const reasoningIsRegistered = !!(credential && selectedModel && createAIProvider(def.credentialSlug, credential).resolveModel(selectedModel).semantics?.reasoning)
           if (def.contextWindow !== undefined && (
             typeof def.contextWindow !== 'number' ||
             !Number.isFinite(def.contextWindow) ||

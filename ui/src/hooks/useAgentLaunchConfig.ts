@@ -20,12 +20,10 @@ import {
   type WorkspaceCredentialDetection,
 } from '../components/workspace/api'
 import { useAgentRuntimes } from './useAgentRuntimes'
-import { catalogModelOptions, useModelCatalog } from './useModelCatalog'
+import { useProviderModels } from './useProviderModels'
 import { requiresWorkspaceCredential, resolveAgentRuntime } from '../lib/agentRuntime'
 import {
-  runtimeEffortOptions,
   runtimeModelOptions,
-  runtimeModelSemantics,
 } from '../components/issue-runtime-options'
 import {
   WORKSPACE_AGENT_CONFIG_CHANGED_EVENT,
@@ -411,7 +409,7 @@ export interface AgentLaunchConfigState {
   readonly workspaceConfigResolved: boolean
   readonly defaultModel: string | null
   readonly modelOptions: readonly PresetModel[]
-  readonly modelCatalog?: ReturnType<typeof useModelCatalog>
+  readonly modelCatalog?: ReturnType<typeof useProviderModels>
   readonly launchModel: string | undefined
   readonly effortOptions: readonly ModelReasoningEffort[]
   /** Explicit picker value. Undefined means use the selected model's registered default. */
@@ -675,28 +673,25 @@ export function useAgentLaunchConfig({
   const defaultModel = launchCredentialSlug
     ? credential?.resolvedModel ?? null
     : baseAiDetails?.model ?? null
-  const modelCatalog = useModelCatalog(accessMode !== 'native' && credential && effectiveAgent
-    ? { slug: credential.slug, agent: effectiveAgent }
-    : effectiveAgent === 'omp' && accessMode !== 'vault' && !effectiveCredential
-      ? { native: 'omp', ...(workspaceId ? { workspaceId } : {}) } : null)
-  const modelOptions = catalogModelOptions(modelCatalog.models, runtimeModelOptions({
-    agent: effectiveAgent,
-    // Catalog ownership follows the resolved access source, not whether the
-    // user explicitly picked the credential in this launch row. Installation
-    // defaults and detected Workspace credentials are Vault-backed too.
-    credential: accessMode === 'native' ? null : credential,
-    defaultModel,
-    presets,
-  }))
   const effectiveModel = launchModel ?? defaultModel
-  const selectedModelSemantics = runtimeModelSemantics(effectiveModel, modelOptions)
-  const launchReasoningEffort = selectedReasoningEffort
-  const effortOptions = runtimeEffortOptions({
-    agent: effectiveAgent,
-    semantics: selectedModelSemantics,
-    modelKnown: selectedModelSemantics !== null,
-    model: effectiveModel,
+  const modelCatalog = useProviderModels({
+    request: accessMode !== 'native' && credential && effectiveAgent
+      ? { slug: credential.slug, agent: effectiveAgent }
+      : effectiveAgent === 'omp' && accessMode !== 'vault' && !effectiveCredential
+        ? { native: 'omp', ...(workspaceId ? { workspaceId } : {}) } : null,
+    fallback: runtimeModelOptions({
+      agent: effectiveAgent,
+      // Installation defaults and detected Workspace credentials are Vault-backed too.
+      credential: accessMode === 'native' ? null : credential,
+      defaultModel,
+      presets,
+    }),
+    model: effectiveModel, agent: effectiveAgent,
   })
+  const modelOptions = modelCatalog.models
+  const selectedModelSemantics = modelCatalog.semantics
+  const launchReasoningEffort = selectedReasoningEffort
+  const effortOptions = modelCatalog.effortOptions
   const aiDetails = launchModel || launchReasoningEffort
     ? {
         model: effectiveModel,

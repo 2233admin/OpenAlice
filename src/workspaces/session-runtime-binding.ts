@@ -152,7 +152,7 @@ function resolveVault(
     ...(input.requestedWireShape ? { wireShape: input.requestedWireShape } : {}),
     ...(selectedModel ? { model: selectedModel } : {}),
     ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
-  })
+  }, credentialSlug)
   if (!ai) {
     throw new SessionRuntimeBindingError(
       'credential_incompatible',

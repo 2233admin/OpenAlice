@@ -46,7 +46,9 @@ export interface ModelReasoningSemantics {
    * adaptive: the model/runtime dynamically chooses how much to reason
    * required: requests cannot disable reasoning
    */
-  mode: ModelReasoningMode
+  mode?: ModelReasoningMode
+  /** Capability can be known even when switching behavior is not advertised. */
+  supported?: boolean
   /** Provider-native effort levels, when the official contract documents them. */
   efforts?: ModelReasoningEffort[]
   /** Provider default. Omitted when the provider does not publish one. */
@@ -521,7 +523,7 @@ export function resolveModelSemantics(
 /** Coarse capability required by Pi and opencode custom-model registrations. */
 export function modelSupportsReasoning(semantics: ModelSemantics | null | undefined): boolean | null {
   const mode = semantics?.reasoning?.mode
-  if (mode === undefined) return null
+  if (mode === undefined) return semantics?.reasoning?.supported ?? null
   return mode !== 'none'
 }
 
@@ -536,7 +538,8 @@ export function describeModelSemantics(semantics: ModelSemantics | null | undefi
       adaptive: 'Adaptive reasoning',
       required: 'Reasoning always on',
     }
-    parts.push(labels[semantics.reasoning.mode])
+    if (semantics.reasoning.mode) parts.push(labels[semantics.reasoning.mode])
+    else if (semantics.reasoning.supported !== undefined) parts.push(semantics.reasoning.supported ? 'Reasoning supported' : 'No reasoning mode')
     if (semantics.reasoning.defaultEffort) parts.push(`default effort ${semantics.reasoning.defaultEffort}`)
     else if (semantics.reasoning.defaultEnabled !== undefined) {
       parts.push(`thinking default ${semantics.reasoning.defaultEnabled ? 'on' : 'off'}`)
@@ -554,4 +557,23 @@ function formatTokenCount(value: number): string {
   }
   if (value >= 1_000) return `${Math.round(value / 1_000)}K`
   return String(value)
+}
+
+/** Upstream facts override individual fallback fields, including false/empty values. */
+export function mergeModelSemantics(fallback: ModelSemantics | null | undefined, discovered: ModelSemantics | undefined): ModelSemantics | undefined {
+  if (!fallback && !discovered) return undefined
+  const merged: ModelSemantics = { ...fallback, ...discovered }
+  if (fallback?.reasoning || discovered?.reasoning) {
+    const live = discovered?.reasoning
+    const base = live?.supported === true && fallback?.reasoning?.mode === 'none' ? undefined : fallback?.reasoning
+    const reasoning = { ...base, ...live }
+    if (live?.supported === false || live?.mode === 'none') {
+      merged.reasoning = { supported: false, mode: 'none', efforts: [] }
+    } else {
+      if (reasoning.mode === 'none') reasoning.supported = false
+      if (reasoning.defaultEffort && reasoning.efforts && !reasoning.efforts.includes(reasoning.defaultEffort)) delete reasoning.defaultEffort
+      merged.reasoning = reasoning
+    }
+  }
+  return merged
 }
