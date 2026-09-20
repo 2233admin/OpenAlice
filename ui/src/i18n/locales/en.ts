@@ -2129,6 +2129,7 @@ export const en = {
     apiDescription: 'Trigger workspace automation from outside, and review the schedule-file format.',
   },
   activityToast: {
+    session: 'A session',
     agent: 'Agent',
     conversationRunning: '{{agent}} is handling another Agent request',
     conversationFailed: '{{agent}} could not complete an Agent request',

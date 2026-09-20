@@ -2096,6 +2096,7 @@ export const zh: Resources = {
     apiDescription: '从外部触发工作区自动化，并查看调度文件格式。',
   },
   activityToast: {
+    session: '一个会话',
     agent: 'Agent',
     conversationRunning: '{{agent}} 正在处理另一个 Agent 的请求',
     conversationFailed: '{{agent}} 未能完成 Agent 请求',

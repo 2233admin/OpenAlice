@@ -2098,6 +2098,7 @@ export const ja: Resources = {
     apiDescription: '外部からワークスペース自動化を起動し、スケジュールファイル形式を確認します。',
   },
   activityToast: {
+    session: 'セッション',
     agent: 'Agent',
     conversationRunning: '{{agent}} が別の Agent からの依頼を処理中です',
     conversationFailed: '{{agent}} が Agent からの依頼を完了できませんでした',

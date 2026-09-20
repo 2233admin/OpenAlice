@@ -128,7 +128,7 @@ export function WorkspacePage({ spec, visible }: Props) {
     : ''
   const workspaceActions = (
     <>
-      {!workbench && activeRecord && canSwitchSurface && (
+      {activeRecord && canSwitchSurface && (
         <Button
           type="button"
           onClick={() => {
@@ -146,7 +146,7 @@ export function WorkspacePage({ spec, visible }: Props) {
           {webCanvas
             ? <Monitor size={13} strokeWidth={2.25} aria-hidden="true" />
             : <AgentRuntimeIcon agentId={activeRecord.agent} className="h-[13px] w-[13px]" />}
-          {webCanvas ? 'Open TUI' : 'Web Beta'}
+          {webCanvas ? 'TUI' : 'GUI'}
         </Button>
       )}
       {activeRecord && (terminalCanvas || webCanvas) && <DropdownMenu>
