@@ -51,9 +51,9 @@ vendor. One key declares three wires: OpenAI Chat and Responses at
 `/v1/messages`). The Anthropic skin uses Bearer auth
 (`ANTHROPIC_AUTH_TOKEN`). Suggested model IDs are OpenRouter slugs
 (`provider/model`); any other catalog ID may be pasted. The current coding
-default is `openai/gpt-5.6-luna`. The suggestion list also includes
-OpenRouter's current top-weekly text models (`deepseek/deepseek-v4-flash-0731`,
-`tencent/hy3`, `openai/gpt-5.6-luna`, `z-ai/glm-5.2`, `xiaomi/mimo-v2.5`).
+default is `openai/gpt-5.6-luna`. The suggestion list also includes current coding and general-purpose models
+(`deepseek/deepseek-v4.1-flash`, `tencent/hy3`, `openai/gpt-6-astra`,
+`z-ai/glm-5.3`, `xiaomi/mimo-v2.5`).
 Existing Custom credentials that already point at `openrouter.ai` keep
 working as `custom`.
 
@@ -614,6 +614,30 @@ Tests for this subsystem must cover:
 - diagnostic readiness failures never block an ordinary native launch or resume;
 - missing OpenAlice credentials never block a runtime that can manage its own access;
 - failed interactive resumes return a visible error and remain retryable.
+
+### September 20, 2026 preset audit
+
+Bundled suggestions were checked against the configured providers' live model
+catalogs and primary documentation. New defaults apply to new forms and
+unspecified selections; this audit does not rewrite stored model choices.
+
+- OpenAI/Codex adds GPT-6 Astra; API limits follow [the model page](https://developers.openai.com/api/docs/models/gpt-6-astra).
+  Native Codex subscription metadata retains its separate 272K context and
+  `ultra` effort, verified against the local CLI model catalog.
+- Anthropic adds [Fable 5.1](https://platform.claude.com/docs/en/models/fable-5-1/overview);
+  the direct API ID is `claude-fable-5-1`, while OpenRouter uses `anthropic/claude-fable-5.1`.
+  Opus 5 remains the normal default.
+- Google defaults to [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash),
+  retaining earlier general-purpose tiers; media-only models are not preset suggestions.
+- GLM defaults to [5.3](https://docs.z.ai/guides/llm/glm-5.3), whose reasoning is mandatory.
+  Exact direct-API context remains unspecified; OpenRouter's separately reported limits are retained.
+- DeepSeek uses the live `deepseek-flash` ID for [V4.1 Flash](https://api-docs.deepseek.com/news/news260910/).
+  Old model semantic entries remain resolvable. Volatile price figures are removed from form hints.
+- MiniMax adds the current M2.7/M2.5 HighSpeed choices. Kimi, LongCat and Grok
+  suggestions were checked and remain current. Cursor/native subscription
+  catalogs are runtime-owned, so API listings do not redefine their identifiers.
+- OpenRouter's compact suggestions use IDs verified in its public directory;
+  rankings are not embedded in labels. Its full live catalog stays separate.
 
 ## Registry Maintenance
 
