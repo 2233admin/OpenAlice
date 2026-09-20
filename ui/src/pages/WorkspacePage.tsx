@@ -118,7 +118,7 @@ export function WorkspacePage({ spec, visible }: Props) {
     (activeRecord.surface ?? 'terminal') === 'terminal'
   const pausedCanvas = activeRecord?.state === 'paused'
   const webCanvas = activeRecord?.state === 'running' && activeRecord.surface === 'webpi'
-  const workspaceCanvas = terminalCanvas || pausedCanvas
+  const workspaceCanvas = terminalCanvas || webCanvas || pausedCanvas
   // The surface toggle is offered only for runtimes that expose a structured
   // protocol; a TUI-only runtime keeps its terminal without a dead button.
   const canSwitchSurface = activeRecord?.state === 'running' && activeRecord.surface !== 'headless'

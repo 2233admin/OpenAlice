@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AgentChatComposer } from '../components/workspace/AgentChatComposer'
+import { ConversationLayout } from '../components/conversation/ConversationLayout'
 import { PageTopBar } from '../components/PageTopBar'
 import {
   BriefcaseBusiness,
@@ -330,134 +331,48 @@ export function HarnessLandingPage({
   const showStarterIntents = value.trim().length === 0 && !launching
 
   return (
-    <div
-      data-testid="harness-landing-root"
-      className="@container/harness flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
-    >
-      {showHeader && <PageTopBar title={t(mode === 'chat' ? 'chat.newChat' : mode === 'auto-quant' ? 'autoQuant.newResearch' : 'autoPrediction.newResearch')} />}
-      <div
-        data-testid="harness-landing-scroll"
-        className="oa-harness-scroll flex min-h-0 flex-1 justify-start overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-8 @min-[42rem]/harness:px-8 @min-[42rem]/harness:py-10"
-      >
-        <div
-          data-testid="harness-landing-stack"
-          className="mx-auto my-auto w-full max-w-[42rem]"
-        >
-          {listError !== null && (
-            <RefreshNotice
-              message={t('workspace.dataStale')}
-              actionLabel={t('common.retry')}
-              onAction={() => void refresh()}
+    <ConversationLayout
+      welcome
+      header={showHeader && <PageTopBar title={t(mode === 'chat' ? 'chat.newChat' : mode === 'auto-quant' ? 'autoQuant.newResearch' : 'autoPrediction.newResearch')} />}
+      composer={<>
+        <AgentChatComposer
+          config={launchConfig}
+          onConfigureProvider={goConfigureProvider}
+          configurationDisabled={launching}
+          hasWorkspaceTarget={!!credentialWorkspace}
+          value={value}
+          onChange={setValue}
+          onSubmit={() => void submit()}
+          placeholder={t(`${copyKey}.placeholder`)}
+          inputRef={textareaRef}
+          autoFocus
+          canSend={canSend}
+          pending={launching}
+          disabled={launching}
+          sendLabel={t('chatLanding.send')}
+          context={<>
+            <AgentLaunchSelectors
+              ref={launchSelectorsRef}
+              config={launchConfig}
+              onConfigureProvider={goConfigureProvider}
+              showAi={false}
+              menuPlacement="up"
+              toolbar
             />
-          )}
-          <header className="flex flex-col items-center text-center">
-            <img
-              src={aliceWave}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-              className="oa-harness-hero-mark h-20 w-20 object-contain select-none sm:h-24 sm:w-24"
-            />
-            <h1 className="oa-harness-title mt-3 max-w-[38rem] text-balance text-[24px] font-semibold leading-[30px] tracking-[-0.018em] text-foreground @min-[42rem]/harness:text-[28px] @min-[42rem]/harness:leading-[34px]">
-              {t(`${copyKey}.heading`)}
-            </h1>
-          </header>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="sm" aria-label={`${t('chatLanding.uiMode')}: ${surface === 'webpi' ? 'GUI' : 'TUI'}`} disabled={launching} />}>
+                <LayoutGrid size={14} aria-hidden />
+                <span>{surface === 'webpi' ? 'GUI' : 'TUI'}</span><ChevronDown size={14} aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start">
+                <DropdownMenuRadioGroup value={surface} onValueChange={value => setUiMode(value as 'terminal' | 'webpi')}>
+                  <DropdownMenuRadioItem value="terminal" closeOnClick>TUI</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="webpi" disabled={!supportsGui} closeOnClick>GUI</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <div
-            data-testid="harness-landing-suggestions"
-            data-state={showStarterIntents ? 'visible' : 'hidden'}
-            className={showStarterIntents ? 'oa-harness-starters mt-7' : 'hidden'}
-            inert={!showStarterIntents}
-          >
-            <div className="flex h-7 items-center justify-between px-1">
-              <span className="text-[12px] font-medium text-muted-foreground">
-                {t(`${copyKey}.examplesLabel`)}
-              </span>
-              {mode === 'chat' && exampleGroups.length > 1 && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={(
-                      <Button
-                        type="button"
-                        onClick={() => setExamplePage((page) => (page + 1) % exampleGroups.length)}
-                        disabled={launching}
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-muted-foreground"
-                        aria-label={t('chatLanding.moreExamples')}
-                      />
-                    )}
-                  >
-                    <RefreshCw aria-hidden className="h-3.5 w-3.5" />
-                  </TooltipTrigger>
-                  <TooltipContent>{t('chatLanding.moreExamples')}</TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-            <div role="group" aria-label={t(`${copyKey}.examplesLabel`)}>
-              {examples.map((example) => {
-                const IntentIcon = WORKFLOW_ICONS[example.id] ?? SearchCheck
-                return (
-                  <button
-                    key={example.id}
-                    type="button"
-                    onClick={() => useExample(example.prompt)}
-                    disabled={launching}
-                    className="group flex min-h-11 w-full items-center gap-3 border-b border-border/70 px-1 text-left outline-none transition-[border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-border hover:text-foreground focus-visible:[box-shadow:var(--oa-focus-shadow)] disabled:opacity-40"
-                  >
-                    <IntentIcon
-                      aria-hidden
-                      className="h-[17px] w-[17px] shrink-0 text-muted-foreground transition-colors duration-[var(--motion-fast)] group-hover:text-foreground group-focus-visible:text-foreground"
-                    />
-                    <StableIntentLabel>{example.title}</StableIntentLabel>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="shrink-0 px-3 pb-3 @min-[42rem]/harness:px-6 @min-[42rem]/harness:pb-5">
-        <div className="mx-auto w-full max-w-[46rem]">
-          <AgentChatComposer
-            config={launchConfig}
-            onConfigureProvider={goConfigureProvider}
-            configurationDisabled={launching}
-            hasWorkspaceTarget={!!credentialWorkspace}
-            value={value}
-            onChange={setValue}
-            onSubmit={() => void submit()}
-            placeholder={t(`${copyKey}.placeholder`)}
-            inputRef={textareaRef}
-            autoFocus
-            canSend={canSend}
-            pending={launching}
-            disabled={launching}
-            sendLabel={t('chatLanding.send')}
-            context={<>
-              <AgentLaunchSelectors
-                ref={launchSelectorsRef}
-                config={launchConfig}
-                onConfigureProvider={goConfigureProvider}
-                showAi={false}
-                menuPlacement="up"
-                toolbar
-              />
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<Button variant="ghost" size="sm" aria-label={`${t('chatLanding.uiMode')}: ${surface === 'webpi' ? 'GUI' : 'TUI'}`} disabled={launching} />}>
-                  <LayoutGrid size={14} aria-hidden />
-                  <span>{surface === 'webpi' ? 'GUI' : 'TUI'}</span><ChevronDown size={14} aria-hidden />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="start">
-                  <DropdownMenuRadioGroup value={surface} onValueChange={value => setUiMode(value as 'terminal' | 'webpi')}>
-                    <DropdownMenuRadioItem value="terminal" closeOnClick>TUI</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="webpi" disabled={!supportsGui} closeOnClick>GUI</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-            </>}
+          </>}
 
           />
 
@@ -504,9 +419,81 @@ export function HarnessLandingPage({
               </div>
             </ComposerNotice>
           )}
+      </>}
+    >
+      {listError !== null && (
+        <RefreshNotice
+          message={t('workspace.dataStale')}
+          actionLabel={t('common.retry')}
+          onAction={() => void refresh()}
+        />
+      )}
+      <header className="flex flex-col items-center text-center">
+        <img
+          src={aliceWave}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="oa-harness-hero-mark h-20 w-20 object-contain select-none sm:h-24 sm:w-24"
+        />
+        <h1 className="oa-harness-title mt-3 max-w-[38rem] text-balance text-[24px] font-semibold leading-[30px] tracking-[-0.018em] text-foreground @min-[42rem]/harness:text-[28px] @min-[42rem]/harness:leading-[34px]">
+          {t(`${copyKey}.heading`)}
+        </h1>
+      </header>
+
+      <div
+        data-testid="harness-landing-suggestions"
+        data-state={showStarterIntents ? 'visible' : 'hidden'}
+        className={showStarterIntents ? 'oa-harness-starters mt-7' : 'hidden'}
+        inert={!showStarterIntents}
+      >
+        <div className="flex h-7 items-center justify-between px-1">
+          <span className="text-[12px] font-medium text-muted-foreground">
+            {t(`${copyKey}.examplesLabel`)}
+          </span>
+          {mode === 'chat' && exampleGroups.length > 1 && (
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Button
+                    type="button"
+                    onClick={() => setExamplePage((page) => (page + 1) % exampleGroups.length)}
+                    disabled={launching}
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground"
+                    aria-label={t('chatLanding.moreExamples')}
+                  />
+                )}
+              >
+                <RefreshCw aria-hidden className="h-3.5 w-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>{t('chatLanding.moreExamples')}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        <div role="group" aria-label={t(`${copyKey}.examplesLabel`)}>
+          {examples.map((example) => {
+            const IntentIcon = WORKFLOW_ICONS[example.id] ?? SearchCheck
+            return (
+              <button
+                key={example.id}
+                type="button"
+                onClick={() => useExample(example.prompt)}
+                disabled={launching}
+                className="group flex min-h-11 w-full items-center gap-3 border-b border-border/70 px-1 text-left outline-none transition-[border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-border hover:text-foreground focus-visible:[box-shadow:var(--oa-focus-shadow)] disabled:opacity-40"
+              >
+                <IntentIcon
+                  aria-hidden
+                  className="h-[17px] w-[17px] shrink-0 text-muted-foreground transition-colors duration-[var(--motion-fast)] group-hover:text-foreground group-focus-visible:text-foreground"
+                />
+                <StableIntentLabel>{example.title}</StableIntentLabel>
+              </button>
+            )
+          })}
         </div>
       </div>
-    </div>
+    </ConversationLayout>
   )
 }
 
