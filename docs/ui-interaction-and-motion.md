@@ -646,3 +646,12 @@ uses the shared 250ms ease-out curve for the resizable outer panels, with a
 subtle content fade/translation. Pointer and keyboard resizing remain immediate;
 reduced-motion mode disables the transitions. Content width is held during the
 short disclosure to avoid repeatedly wrapping file and Studio content.
+
+### Session header and tablet work panels
+
+Running TUI Sessions expose GUI switching in their shared top bar whenever the
+runtime supports the Web surface; GUI Sessions expose the reverse TUI action.
+The Harness shell must not hide this action behind the work-panel menu.
+At 768–1279px, opening the right work panel collapses the left activity rail
+and keeps the conversation visible beside the panel. Only phone viewports
+below 768px replace the conversation with the work panel.

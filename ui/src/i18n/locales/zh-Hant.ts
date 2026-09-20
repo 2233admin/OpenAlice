@@ -2105,6 +2105,7 @@ export const zhHant: Resources = {
     apiDescription: '從外部觸發工作區自動化，並查看排程檔案格式。',
   },
   activityToast: {
+    session: '一個對話',
     agent: 'Agent',
     conversationRunning: '{{agent}} 正在處理另一個 Agent 的請求',
     conversationFailed: '{{agent}} 未能完成 Agent 請求',
