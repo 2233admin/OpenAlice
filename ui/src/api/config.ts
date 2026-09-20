@@ -7,6 +7,14 @@ export interface ModelDiscoveryInput {
   apiKey: string
 }
 
+export interface ProviderModelCatalog {
+  models: PresetModel[]
+  source: 'bundled' | 'snapshot'
+  fetchedAt: number | null
+  refreshing: boolean
+  error: string | null
+}
+
 export const configApi = {
   async load(): Promise<AppConfig> {
     const res = await fetch('/api/config')
@@ -43,12 +51,12 @@ export const configApi = {
     return res.json()
   },
 
-  async getCredentialModels(slug: string, agent?: string, signal?: AbortSignal, wireShape?: WireShape): Promise<PresetModel[]> {
+  async getCredentialModels(slug: string, agent?: string, signal?: AbortSignal, wireShape?: WireShape, refresh = false): Promise<ProviderModelCatalog> {
     const query = new URLSearchParams({ ...(agent ? { agent } : {}), ...(wireShape ? { wireShape } : {}) })
-    const res = await fetch(`/api/config/credentials/${encodeURIComponent(slug)}/models?${query}`, { signal })
+    const res = await fetch(`/api/config/credentials/${encodeURIComponent(slug)}/models?${query}`, { signal, method: refresh ? 'POST' : 'GET' })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Failed to load models')
-    return body.models
+    return body
   },
 
   async discoverModels(input: ModelDiscoveryInput, signal?: AbortSignal): Promise<PresetModel[]> {

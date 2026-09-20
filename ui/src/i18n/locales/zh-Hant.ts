@@ -11,6 +11,8 @@ import type { Resources } from './en'
  */
 export const zhHant: Resources = {
   modelCatalog: {
+    bundled: "正在使用內建模型建議。",
+    missing: "最新模型列表中沒有 {{model}}。已保留你的選擇，該模型的可用性可能已變更。",
     loading: "正在讀取此 AI 存取的模型清單…",
     failed: "讀取模型失敗，請重試；若服務商未提供模型清單 API，可手動輸入 ID。",
     empty: "未發現模型。請先為此帳戶設定模型提供商，再重新整理。",

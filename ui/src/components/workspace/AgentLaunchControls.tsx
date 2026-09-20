@@ -309,7 +309,7 @@ function AgentLaunchInferenceMenu({
               <span className="ml-auto max-w-[170px] truncate text-muted-foreground">{resolvedModel}</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-[300px] max-w-[calc(100vw-2rem)] border border-border/70 bg-secondary p-1.5 shadow-lg ring-0">
-              <ModelCatalogStatus catalog={config.modelCatalog} />
+              <ModelCatalogStatus catalog={config.modelCatalog} selectedModel={config.launchModel ?? config.defaultModel} />
               <DropdownMenuRadioGroup
                 className="max-h-64 overflow-y-auto"
                 value={modelValue}
@@ -395,7 +395,7 @@ function AgentLaunchInferenceMenu({
             ariaLabel={t('chatLanding.customModelId')}
             placeholder={t('modelCatalog.selectPlaceholder')}
           />
-          <ModelCatalogStatus catalog={config.modelCatalog} />
+          <ModelCatalogStatus catalog={config.modelCatalog} selectedModel={customModelDraft} />
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>
               {t('common.cancel')}

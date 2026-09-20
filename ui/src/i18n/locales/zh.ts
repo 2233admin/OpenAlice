@@ -3,6 +3,8 @@ import type { Resources } from './en'
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
   modelCatalog: {
+    bundled: "正在使用内置模型建议。",
+    missing: "最新模型列表中没有 {{model}}。已保留你的选择，该模型的可用性可能发生了变化。",
     loading: "正在读取此 AI 访问的模型列表…",
     failed: "读取模型失败，请重试；若服务商不提供模型列表 API，可手动输入 ID。",
     empty: "未发现模型。请先为此账户配置模型提供商，再刷新。",

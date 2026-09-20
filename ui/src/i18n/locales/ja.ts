@@ -3,6 +3,8 @@ import type { Resources } from './en'
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
   modelCatalog: {
+    bundled: "組み込みのモデル候補を表示しています。",
+    missing: "最新のモデル一覧に {{model}} がありません。選択は保持されていますが、利用可否が変わった可能性があります。",
     loading: "この AI アクセスのモデルを読み込み中…",
     failed: "モデルを取得できませんでした。再試行するか、一覧 API がない場合は ID を入力してください。",
     empty: "モデルがありません。このアカウントのプロバイダーを設定して更新してください。",

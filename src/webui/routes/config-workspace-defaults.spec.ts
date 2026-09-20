@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ProviderModelCatalogStore } from '../../ai-providers/model-catalog.js'
 /**
  * config routes — GET/PUT /workspace-credential-defaults (the per-agent
  * "inject my usual key on every new workspace" setting).
@@ -96,10 +100,14 @@ describe('generic config sections', () => {
   it('discovers saved credential models on its compatible wire and rejects unknown accounts and protocols', async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ data: [{ id: 'account-model' }] }))
     vi.stubGlobal('fetch', fetcher)
-    const routes = createConfigRoutes()
-    expect(await req(routes, 'GET', '/credentials/chat-1/models?agent=omp')).toEqual({
-      status: 200, body: { models: [{ id: 'account-model', label: 'account-model' }] },
+    const directory = await mkdtemp(join(tmpdir(), 'catalog-route-'))
+    const routes = createConfigRoutes({ modelCatalog: new ProviderModelCatalogStore({ directory }) })
+    const response = await req(routes, 'POST', '/credentials/chat-1/models?agent=omp')
+    expect(response).toMatchObject({
+      status: 200, body: { models: [{ id: 'account-model', label: 'account-model' }], source: 'snapshot', refreshing: false, error: null },
     })
+    expect((await req(routes, 'GET', '/credentials/chat-1/models?agent=omp')).body).toEqual(response.body)
+    await rm(directory, { recursive: true, force: true })
     expect(String(fetcher.mock.calls[0]![0])).toBe('https://gw/v1/models')
     expect(fetcher.mock.calls[0]![1].headers).toEqual({ Authorization: 'Bearer k' })
     expect((await req(routes, 'GET', '/credentials/missing/models')).status).toBe(404)
