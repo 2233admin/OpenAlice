@@ -64,8 +64,8 @@ export function windowsProxyServerToRules(raw: string | undefined): string {
     return [{ protocol, target }]
   })
 
-  const selected = protocolEntries.find((entry) => entry.protocol === 'http')
-    ?? protocolEntries.find((entry) => entry.protocol === 'https')
+  const selected = protocolEntries.find((entry) => entry.protocol === 'https')
+    ?? protocolEntries.find((entry) => entry.protocol === 'http')
   if (selected) {
     return (selected.protocol === 'https' ? 'HTTPS ' : 'PROXY ') + selected.target
   }

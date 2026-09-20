@@ -30,11 +30,11 @@ describe('Windows system proxy parsing', () => {
   it('normalizes single and per-protocol HTTP proxy forms while rejecting SOCKS-only forms', () => {
     expect(windowsProxyServerToRules('proxy.example:8080')).toBe('PROXY proxy.example:8080')
     expect(windowsProxyServerToRules('http=proxy.example:8080;https=secure.example:8443'))
-      .toBe('PROXY proxy.example:8080')
+      .toBe('HTTPS secure.example:8443')
     expect(windowsProxyServerToRules('https=https-proxy.example:8443')).toBe('HTTPS https-proxy.example:8443')
     expect(windowsProxyServerToRules('socks=127.0.0.1:1080')).toBe('')
     expect(windowsProxyServerToRules('http=http://proxy.example:8080;https=https://proxy.example:8443'))
-      .toBe('PROXY http://proxy.example:8080')
+      .toBe('HTTPS https://proxy.example:8443')
   })
 })
 

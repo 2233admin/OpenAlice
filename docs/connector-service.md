@@ -266,6 +266,10 @@ Guardian passes explicit `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and
 host system proxy through Chromium when no explicit environment value exists,
 on every supported desktop platform. Lower-case environment names are accepted
 and normalized for child processes.
+The development Guardian also maps Windows WinINet manual HTTP(S) proxy
+settings into the same child environment. PAC-only and SOCKS-only settings
+remain untouched; use explicit proxy environment variables when the system
+proxy cannot be resolved.
 
 Connector Service owns one shared proxy transport. It installs an Undici
 dispatcher for fetch/WebSocket SDKs and gives adapters an explicit Node agent
