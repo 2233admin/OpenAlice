@@ -475,7 +475,7 @@ export function CredentialModal({ mode, cred, presets, agents, initialPresetId, 
                   ariaLabel={t('aiProvider.credentialModal.defaultModel')}
                   suggestionsLabel={t('aiProvider.credentialModal.defaultModelHelp')}
                 />
-                <ModelCatalogStatus catalog={modelCatalog} />
+                <ModelCatalogStatus catalog={modelCatalog} selectedModel={model} />
               </Field>
 
               {!isDirect && <details className="rounded-lg border border-border bg-secondary/20 px-3 py-2">

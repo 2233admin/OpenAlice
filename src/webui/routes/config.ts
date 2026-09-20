@@ -27,6 +27,7 @@ import { triggerUTARestart } from '../../services/uta-supervisor/restart-trigger
 import { BUILTIN_PRESETS } from '../../ai-providers/presets.js'
 import type { WireShape } from '../../ai-providers/preset-catalog.js'
 import { resolveModelSemantics } from '../../ai-providers/model-semantics.js'
+import { providerModelCatalog, type ProviderModelCatalogStore } from '../../ai-providers/model-catalog.js'
 import { discoverModels, modelDiscoveryInput } from '../../ai-providers/model-discovery.js'
 import { resolveAnthropicAuthMode } from '../../core/credential-inference.js'
 import { probeByWireShape } from '../../workspaces/agent-probe.js'
@@ -40,6 +41,7 @@ import {
 interface ConfigRouteOpts {
   ctx?: EngineContext
   adapterRegistry?: AdapterRegistry
+  modelCatalog?: ProviderModelCatalogStore
 }
 
 export const ONBOARDING_TEST_CREDENTIAL = {
@@ -142,7 +144,7 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
     }
   })
 
-  app.get('/credentials/:slug/models', async (c) => {
+  app.on(['GET', 'POST'], '/credentials/:slug/models', async (c) => {
     const credential = (await readCredentials())[c.req.param('slug')]
     if (!credential) return c.json({ error: 'Credential not found' }, 404)
     const agent = c.req.query('agent')
@@ -159,7 +161,9 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
     const parsed = modelDiscoveryInput.safeParse({ wireShape: wire.shape, baseUrl: wire.baseUrl, apiKey: credential.apiKey })
     if (!parsed.success) return c.json({ error: 'A configured API key is required to load models' }, 400)
     try {
-      return c.json({ models: await discoverModels(parsed.data) })
+      return c.json(await (opts?.modelCatalog ?? providerModelCatalog).read({
+        slug: c.req.param('slug'), vendor: credential.vendor, input: parsed.data,
+      }, c.req.method === 'POST'))
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'Model discovery failed' }, 502)
     }

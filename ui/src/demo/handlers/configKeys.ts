@@ -222,8 +222,11 @@ function isValidDuration(value: string): boolean {
 }
 
 export const configKeysHandlers = [
-  http.get('/api/config/credentials/:slug/models', ({ params }) => HttpResponse.json({
-    models: demoCredentialPresets.find((preset) => String(params.slug).startsWith(preset.id.split('-')[0]!))?.models ?? demoCredentialPresets[1]!.models,
+  http.all('/api/config/credentials/:slug/models', ({ params }) => HttpResponse.json({
+    source: 'snapshot', fetchedAt: Date.now(), refreshing: false, error: null,
+    models: String(params.slug).startsWith('minimax-')
+      ? [{ id: 'MiniMax-M3', label: 'MiniMax M3' }]
+      : demoCredentialPresets.find((preset) => String(params.slug).startsWith(preset.id.split('-')[0]!))?.models ?? demoCredentialPresets[1]!.models,
   })),
   http.post('/api/config/credentials/models', async ({ request }) => {
     const body = await request.json() as { wireShape?: string }

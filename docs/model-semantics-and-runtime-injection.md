@@ -62,6 +62,30 @@ retyping the last model used with an account, but it does not make the model an
 intrinsic property of the credential and must never store a copied capability
 snapshot.
 
+### Provider model catalogs
+
+Saved API credentials use the Project-owned `ProviderModelCatalogStore` in
+`src/ai-providers/model-catalog.ts`. Successful lists are stored under
+`OPENALICE_HOME/data/model-catalog/providers/`. Reads immediately return the
+snapshot (or bundled suggestions when absent) and trigger one shared background
+refresh when the timestamp is 24 hours old. Explicit POST refreshes use the
+same endpoint. Failed refreshes preserve the list and timestamp, with a
+one-minute retry delay; successful empty lists remain empty. Incomplete or
+failed discovery is never committed.
+
+Cache identity covers the credential, vendor, endpoint, wire and key. Cache
+files contain only an internal identity digest, timestamp and model display
+fields; no key or raw provider response. Corrupt files are rebuilt. A successful
+refresh replaces membership rather than unioning with bundled suggestions;
+known model semantics are attached by the backend registry on read.
+
+The shared `useModelCatalog` hook follows an in-flight refresh without hiding
+existing options. Controls preserve current selections missing from the latest
+list and warn about the mismatch. Absence is not proof that inference is
+unavailable: catalog membership is advisory, never a launch gate. Refresh does
+not change `lastModel` or Session bindings. Draft discovery remains transient;
+native OMP discovery stays agent-owned and does not write provider snapshots.
+
 ### Model selection and semantics
 
 A selection answers **which model the Workspace should use**. The model

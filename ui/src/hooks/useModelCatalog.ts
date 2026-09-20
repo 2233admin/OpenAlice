@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { configApi, type ModelDiscoveryInput } from '../api/config'
 import type { PresetModel } from '../api'
 import { listNativeModels } from '../components/workspace/api'
@@ -9,32 +9,53 @@ interface Catalog {
   models: PresetModel[] | null
   error: string | null
   loading: boolean
+  source?: 'bundled' | 'snapshot'
+  fetchedAt?: number | null
 }
 
 /** Account-scoped discovery; late results cannot replace another account's list. */
 export function useModelCatalog(request: Request | null) {
   const key = JSON.stringify(request)
   const [revision, setRevision] = useState(0)
+  const handledRefresh = useRef(0)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const refresh = useCallback(() => setRevision((value) => value + 1), [])
   useEffect(() => {
     const input = JSON.parse(key) as Request | null
     if (!input) return
     const controller = new AbortController()
-    setCatalog({ key, models: null, error: null, loading: true })
-    const timer = window.setTimeout(async () => {
+    let timer: number
+    const manual = revision !== handledRefresh.current
+    handledRefresh.current = revision
+    setCatalog((old) => old?.key === key
+      ? { ...old, error: null, loading: true }
+      : { key, models: null, error: null, loading: true })
+    const read = async (force = false) => {
       try {
-        const models = 'slug' in input
-          ? await configApi.getCredentialModels(input.slug, input.agent, controller.signal, input.wireShape)
-          : 'native' in input
+        if ('slug' in input) {
+          const result = await configApi.getCredentialModels(input.slug, input.agent, controller.signal, input.wireShape, force)
+          if (!Array.isArray(result.models)) throw new Error('Invalid model list')
+          if (!controller.signal.aborted) {
+            setCatalog({ key, models: result.models, error: result.error, loading: result.refreshing, source: result.source, fetchedAt: result.fetchedAt })
+            // Poll only while the shared backend refresh is in flight. The GET
+            // serves local state; it never starts a second provider request.
+            if (result.refreshing) timer = window.setTimeout(() => { void read() }, 1000)
+          }
+        } else {
+          const models = 'native' in input
             ? await listNativeModels(input.native, input.workspaceId, controller.signal)
             : await configApi.discoverModels(input, controller.signal)
-        if (!Array.isArray(models)) throw new Error('Invalid model list')
-        if (!controller.signal.aborted) setCatalog({ key, models, error: null, loading: false })
+          if (!Array.isArray(models)) throw new Error('Invalid model list')
+          if (!controller.signal.aborted) setCatalog({ key, models, error: null, loading: false })
+        }
       } catch (error) {
-        if (!controller.signal.aborted) setCatalog({ key, models: null, error: error instanceof Error ? error.message : String(error), loading: false })
+        if (!controller.signal.aborted) setCatalog((old) => ({
+          ...(old?.key === key ? old : { key, models: null }),
+          error: error instanceof Error ? error.message : String(error), loading: false,
+        }))
       }
-    }, 'apiKey' in input ? 400 : 0)
+    }
+    timer = window.setTimeout(() => { void read(manual) }, 'apiKey' in input ? 400 : 0)
     return () => { window.clearTimeout(timer); controller.abort() }
   }, [key, revision])
   const current = request && catalog?.key === key ? catalog : null
@@ -43,6 +64,8 @@ export function useModelCatalog(request: Request | null) {
     models: current?.models ?? null,
     loading: request !== null && (current?.loading ?? true),
     error: current?.error ?? null,
+    source: current?.source,
+    fetchedAt: current?.fetchedAt,
     refresh,
   }
 }
