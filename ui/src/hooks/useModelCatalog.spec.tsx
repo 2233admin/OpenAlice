@@ -24,13 +24,13 @@ it('drops late responses when switching accounts', async () => {
 })
 
 it('loads the native catalog and retries a failed request, preserving an honest empty result', async () => {
-  vi.mocked(listNativeModels).mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce([])
+  vi.mocked(listNativeModels).mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce({ models: [], discoverySupported: true, source: 'snapshot', fetchedAt: 1, refreshing: false, error: null })
   const { result } = renderHook(() => useModelCatalog({ native: 'omp', workspaceId: 'workspace' }))
   await waitFor(() => expect(result.current.error).toBe('unavailable'))
   act(() => result.current.refresh())
   await waitFor(() => expect(result.current.models).toEqual([]))
   expect(result.current.error).toBeNull()
-  expect(listNativeModels).toHaveBeenCalledWith('omp', 'workspace', expect.any(AbortSignal))
+  expect(listNativeModels).toHaveBeenCalledWith('omp', 'workspace', expect.any(AbortSignal), expect.any(Boolean))
 })
 
 it('debounces draft credentials and keeps known model semantics without adding unavailable IDs', async () => {

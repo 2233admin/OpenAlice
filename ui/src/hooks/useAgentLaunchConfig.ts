@@ -677,8 +677,8 @@ export function useAgentLaunchConfig({
   const modelCatalog = useProviderModels({
     request: accessMode !== 'native' && credential && effectiveAgent
       ? { slug: credential.slug, agent: effectiveAgent }
-      : effectiveAgent === 'omp' && accessMode !== 'vault' && !effectiveCredential
-        ? { native: 'omp', ...(workspaceId ? { workspaceId } : {}) } : null,
+      : effectiveAgent && accessMode !== 'vault' && !effectiveCredential
+        ? { native: effectiveAgent, ...(workspaceId ? { workspaceId } : {}) } : null,
     fallback: runtimeModelOptions({
       agent: effectiveAgent,
       // Installation defaults and detected Workspace credentials are Vault-backed too.

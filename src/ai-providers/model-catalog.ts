@@ -50,7 +50,7 @@ export class ProviderModelCatalogStore {
     let entry = this.entries.get(slot)
     if (!entry || entry.identity !== identity) {
       const created: Entry = { identity, ready: Promise.resolve(), error: null }
-      created.ready = readFile(file, 'utf8').then((raw) => {
+      if (provider.persistCatalog) created.ready = readFile(file, 'utf8').then((raw) => {
         const parsed = snapshotSchema.safeParse(JSON.parse(raw))
         if (parsed.success && parsed.data.identity === identity) created.snapshot = parsed.data
       }).catch(() => { /* Missing/corrupt caches are rebuilt; never block startup. */ })
@@ -60,7 +60,7 @@ export class ProviderModelCatalogStore {
     await entry.ready
     const now = this.options.now ?? Date.now
     const age = entry.snapshot ? now() - entry.snapshot.fetchedAt : Infinity
-    const stale = age < 0 || age >= MODEL_CATALOG_TTL_MS
+    const stale = age < 0 || age >= provider.catalogTtlMs
     if (!entry.pending && (force || (stale && (entry.attemptedAt === undefined || now() - entry.attemptedAt >= RETRY_DELAY_MS)))) {
       const target = entry
       target.attemptedAt = now()
@@ -71,11 +71,13 @@ export class ProviderModelCatalogStore {
           const models = await provider.discoverModels!()
           const snapshot = snapshotSchema.parse({ version: 1, identity, fetchedAt: now(), models })
           if (this.entries.get(slot) !== target) return
-          await mkdir(directory, { recursive: true, mode: 0o700 })
-          temp = `${file}.${randomUUID()}.tmp`
-          await writeFile(temp, JSON.stringify(snapshot) + '\n', { mode: 0o600 })
-          if (this.entries.get(slot) !== target) return
-          await rename(temp, file)
+          if (provider.persistCatalog) {
+            await mkdir(directory, { recursive: true, mode: 0o700 })
+            temp = `${file}.${randomUUID()}.tmp`
+            await writeFile(temp, JSON.stringify(snapshot) + '\n', { mode: 0o600 })
+            if (this.entries.get(slot) !== target) return
+            await rename(temp, file)
+          }
           target.snapshot = snapshot
         } catch {
           // Provider failures can include credentials. Keep the last successful

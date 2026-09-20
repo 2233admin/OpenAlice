@@ -2130,3 +2130,16 @@ describe('Workspace manager surface routes', () => {
     });
   });
 });
+
+describe('native provider model directory', () => {
+  it('discovers through any adapter in the selected Workspace and returns model capabilities together', async () => {
+    const discoverModels = vi.fn(async () => [{ id: 'runtime-alias', label: 'Native', semantics: { reasoning: { efforts: ['high'] } } }]);
+    const { app } = build({ adapters: { fixture: { id: 'fixture', binary: 'fixture-missing', discoverModels } } });
+    const response = await app.request('/agents/fixture/models?workspaceId=ws-1', { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ discoverySupported: true, refreshing: false, models: [{ id: 'runtime-alias', semantics: { reasoning: { efforts: ['high'] } } }] });
+    expect(discoverModels).toHaveBeenCalledWith('/w');
+    expect((await app.request('/agents/missing/models')).status).toBe(404);
+    expect((await app.request('/agents/fixture/models?workspaceId=missing')).status).toBe(404);
+  });
+});

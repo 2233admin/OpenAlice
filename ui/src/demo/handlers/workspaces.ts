@@ -452,8 +452,9 @@ const demoHarnessConfigs = new Map<string, AliceHarnessConfig>()
 const demoHarnessCommands = { alice: ['rss', 'market', 'analysis', 'peer', 'inbox', 'issue', 'harness'], traderhub: ['equity', 'economy'], 'alice-uta': ['account', 'order'] }
 
 export const workspacesHandlers = [
-  http.get('/api/workspaces/agents/omp/models', () => HttpResponse.json({
-    models: demoCredentialPresets[1]!.models!.map((model) => ({ ...model, id: `openai/${model.id}` })),
+  http.all('/api/workspaces/agents/:agent/models', ({ params }) => HttpResponse.json({
+    models: demoCredentialPresets[params.agent === 'claude' ? 0 : 1]!.models!.map((model) => ({ ...model, id: ['omp', 'pi', 'opencode'].includes(String(params.agent)) ? `openai/${model.id}` : model.id })),
+    discoverySupported: true, source: 'snapshot', fetchedAt: Date.now(), refreshing: false, error: null,
   })),
   ...stickerHandlers,
   http.get('/api/workspaces/auto-quant/default-workspace', () => {

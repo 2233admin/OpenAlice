@@ -35,3 +35,17 @@ it('does not carry one credential model capabilities into another credential', a
   expect(result.current.reasoning).toBeUndefined()
   expect(result.current.loading).toBe(true)
 })
+
+it('keeps native model and effort together and drops late native results after switching to Vault', async () => {
+  const { listNativeModels } = await import('../components/workspace/api')
+  let finish!: (value: Awaited<ReturnType<typeof listNativeModels>>) => void
+  vi.mocked(listNativeModels).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+  vi.mocked(configApi.getCredentialModels).mockResolvedValue({ models: [{ id: 'same', label: 'Vault', semantics: { reasoning: { efforts: ['low'] } } }], source: 'snapshot', fetchedAt: 1, refreshing: false, error: null })
+  const { result, rerender } = renderHook(({ native }) => useProviderModels({ request: native ? { native: 'codex', workspaceId: 'w' } : { slug: 'account' }, model: 'same', fallback: [], agent: 'codex' }), { initialProps: { native: true } })
+  await waitFor(() => expect(listNativeModels).toHaveBeenCalled())
+  rerender({ native: false })
+  await waitFor(() => expect(result.current.effortOptions).toEqual(['low']))
+  await act(async () => finish({ models: [{ id: 'same', label: 'Native', semantics: { reasoning: { efforts: ['ultra'] } } }], source: 'snapshot', fetchedAt: 1, refreshing: false, error: null }))
+  expect(result.current.selectedModel?.label).toBe('Vault')
+  expect(result.current.effortOptions).toEqual(['low'])
+})

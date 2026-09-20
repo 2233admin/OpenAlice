@@ -11,7 +11,8 @@ import { prepareProjectWorkspaces, readProjectWorkspaceSetup } from '../../works
  */
 
 import { Hono, type Context } from 'hono';
-import { listOmpModels } from '../../workspaces/omp-models.js';
+import { NativeAIProvider } from '../../ai-providers/native-provider.js';
+import { providerModelCatalog } from '../../ai-providers/model-catalog.js';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
@@ -980,12 +981,14 @@ export function createWorkspaceRoutes(
     });
   });
 
-  app.get('/agents/omp/models', async (c) => {
+  app.on(['GET', 'POST'], '/agents/:agent/models', async (c) => {
     const workspaceId = c.req.query('workspaceId');
     const workspace = workspaceId ? svc.resolveRuntimeWorkspace(workspaceId) : undefined;
     if (workspaceId && !workspace) return c.json({ error: 'Workspace not found' }, 404);
     try {
-      return c.json({ models: await listOmpModels(workspace?.dir ?? process.cwd()) });
+      const adapter = svc.adapters.get(c.req.param('agent'));
+      if (!adapter || !isAgentRuntime(adapter)) return c.json({ error: 'Agent runtime not found' }, 404);
+      return c.json(await providerModelCatalog.read(new NativeAIProvider(adapter, workspace?.dir ?? process.cwd()), c.req.method === 'POST'));
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'Model discovery failed' }, 502);
     }

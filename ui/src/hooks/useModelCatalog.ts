@@ -3,7 +3,7 @@ import { configApi, type ModelDiscoveryInput } from '../api/config'
 import type { PresetModel } from '../api'
 import { listNativeModels } from '../components/workspace/api'
 
-type Request = { slug: string; agent?: string; wireShape?: ModelDiscoveryInput['wireShape'] } | { native: 'omp'; workspaceId?: string } | ModelDiscoveryInput
+type Request = { slug: string; agent?: string; wireShape?: ModelDiscoveryInput['wireShape'] } | { native: string; workspaceId?: string } | ModelDiscoveryInput
 interface Catalog {
   key: string
   models: PresetModel[] | null
@@ -33,8 +33,10 @@ export function useModelCatalog(request: Request | null) {
       : { key, models: null, error: null, loading: true })
     const read = async (force = false) => {
       try {
-        if ('slug' in input) {
-          const result = await configApi.getCredentialModels(input.slug, input.agent, controller.signal, input.wireShape, force)
+        if ('slug' in input || 'native' in input) {
+          const result = 'native' in input
+            ? await listNativeModels(input.native, input.workspaceId, controller.signal, force)
+            : await configApi.getCredentialModels(input.slug, input.agent, controller.signal, input.wireShape, force)
           if (!Array.isArray(result.models)) throw new Error('Invalid model list')
           if (!controller.signal.aborted) {
             setCatalog({ key, models: result.models, error: result.error, loading: result.refreshing, source: result.source, discoverySupported: result.discoverySupported, fetchedAt: result.fetchedAt })
@@ -43,9 +45,7 @@ export function useModelCatalog(request: Request | null) {
             if (result.refreshing) timer = window.setTimeout(() => { void read() }, 1000)
           }
         } else {
-          const result = 'native' in input
-            ? { models: await listNativeModels(input.native, input.workspaceId, controller.signal), discoverySupported: true }
-            : await configApi.discoverModels(input, controller.signal)
+          const result = await configApi.discoverModels(input, controller.signal)
           const { models, discoverySupported } = result
           if (!Array.isArray(models)) throw new Error('Invalid model list')
           if (!controller.signal.aborted) setCatalog({ key, models, error: null, loading: false, discoverySupported, ...(discoverySupported === false ? { source: 'bundled' } : {}) })

@@ -14,10 +14,9 @@ Model pickers discover IDs from the selected access source. Saved credentials
 use `GET /api/config/credentials/:slug/models?agent=…` with runtime compatibility
 validation; draft credentials use `POST /api/config/credentials/models`.
 OpenAI-compatible, Anthropic, and Google model-list APIs are read-only (no
-generation probe). Native Oh My Pi uses `omp models --json --no-extensions`
-in the selected Workspace and retains provider-qualified selectors.
-Only model IDs and labels leave discovery; known semantics still come from
-the shared registry. UI requests follow account changes, discard stale
+generation probe). Native access uses the selected runtime adapter in the selected Workspace.
+Both access sources return model IDs, labels and normalized reasoning/effort
+semantics together; native selectors and aliases remain intact. UI requests follow account changes, discard stale
 responses, and expose loading, empty, and retry states. Static suggestions
 and manual IDs remain a fallback when discovery is unavailable. An empty
 successful catalog is not replaced with guessed models.
@@ -64,7 +63,8 @@ snapshot.
 
 ### Provider model catalogs
 
-`AIProvider` in `src/ai-providers/provider.ts` is an immutable in-memory
+`CredentialAIProvider`, the Vault branch of `AIProvider` in
+`src/ai-providers/provider.ts`, is an immutable in-memory
 projection of one existing Credential record: one slug, key and configured
 endpoint map. `createAIProvider` selects the vendor implementation, such as
 `DeepSeekProvider`. Presets provide default suggestions and form values;
@@ -85,7 +85,7 @@ The route constructs the same provider abstraction for saved and draft
 credentials. Drafts may include their vendor and full configured wire map;
 legacy protocol-only requests use CustomProvider. `discoverySupported` lets
 the shared UI hook hide refresh for unsupported providers while preserving
-bundled suggestions and manual entry. Native OMP discovery remains runtime-owned.
+bundled suggestions and manual entry. Native discovery remains runtime-owned through `NativeAIProvider`.
 
 Saved API credentials use the Project-owned `ProviderModelCatalogStore` in
 `src/ai-providers/model-catalog.ts`. Successful lists are stored under
@@ -123,7 +123,53 @@ existing options. Controls preserve current selections missing from the latest
 list and warn about the mismatch. Absence is not proof that inference is
 unavailable: catalog membership is advisory, never a launch gate. Refresh does
 not change `lastModel` or Session bindings. Draft discovery remains transient;
-native OMP discovery stays agent-owned and does not write provider snapshots.
+native discovery stays runtime-owned and does not write provider snapshots.
+
+### Native AI providers
+
+`NativeAIProvider` projects the existing `credential.source: native` selection
+through the same `AIProvider` catalog boundary. It does not create a Vault
+record, read tokens, perform OAuth, or inject credentials. The child runtime
+owns login, token refresh, global/project configuration and custom providers.
+Session model/effort injection and persisted formats remain unchanged.
+
+Adapters optionally implement `discoverModels(cwd)`. The generic
+`GET /api/workspaces/agents/:agent/models` and POST refresh return the same
+catalog shape as saved credentials, consumed by `useProviderModels`. Unsupported
+adapters retain bundled/manual choices. Failed queries preserve the previous
+catalog and report an error; successful structured empty lists stay empty.
+
+Native catalogs reuse the catalog store with memory-only, one-minute snapshots,
+scoped by runtime and Workspace directory, invalidated by binary/environment
+identity. Login/configuration changes become visible on the next stale read or
+manual refresh; Alice does not claim to detect every runtime account change.
+Native discovery does not borrow API-vendor semantics for native aliases.
+Exact runtime suggestions can fill missing metadata, with live fields winning.
+
+Installed-runtime audit (2026-09-20):
+
+| Runtime | Read-only discovery | Capability data |
+| --- | --- | --- |
+| Codex | app-server initialize + paginated model/list; no thread creation | Per-model effort menu and default |
+| Claude Code | stream-json control initialize; no user message or persisted session | Effort menu, adaptive thinking, original aliases |
+| Oh My Pi | models --json | Provider-qualified selector, thinking tiers, reasoning and token limits |
+| Pi | ephemeral RPC get_available_models | Reasoning, token limits, thinkingLevelMap; null tiers excluded, extended tiers require mapping |
+| opencode | models --verbose | Provider-qualified ID, reasoning, token limits and recognized effort variants |
+| Cursor | models | Account model IDs/labels; effort encoded in native selectors stays intact |
+| Grok Build | models | IDs; known exact-model capabilities come from the existing runtime suggestions |
+| Antigravity | models | IDs/labels; known exact-model capabilities come from existing suggestions |
+
+Directory queries follow native startup configuration, including installed
+extensions/custom provider registrations, and never send an inference prompt.
+They use canonical binary detection, managed Pi's Node head where applicable,
+and Windows shim resolution. Children have a bounded lifetime/output size and
+are terminated after the query. Only allowlisted normalized model metadata
+leaves the process; raw errors, account data, headers and endpoints never reach
+the UI or catalog. Text-parser failures are errors, not successful empty lists.
+The directory describes what the runtime advertises, not a per-model inference
+permission guarantee. Unknown capability fields remain unknown; arbitrary
+opencode variants outside the shared effort vocabulary are not presented as
+standard effort levels.
 
 ### Model selection and semantics
 
