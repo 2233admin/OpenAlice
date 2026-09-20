@@ -19,3 +19,10 @@ it('does not treat an incomplete seed list or no selection as a mismatch', () =>
   rerender(<ModelCatalogStatus catalog={catalog} selectedModel="new" />)
   expect(screen.queryByText(/modelCatalog.missing/)).toBeNull()
 })
+
+it('keeps bundled suggestions without offering a refresh for an unsupported provider', () => {
+  render(<ModelCatalogStatus catalog={{ ...catalog, source: 'bundled', discoverySupported: false }} selectedModel="manual" />)
+  expect(screen.getByText('modelCatalog.bundled')).toBeTruthy()
+  expect(screen.queryByRole('button')).toBeNull()
+  expect(screen.queryByText(/modelCatalog.missing/)).toBeNull()
+})

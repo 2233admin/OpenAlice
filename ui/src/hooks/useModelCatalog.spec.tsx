@@ -34,7 +34,7 @@ it('loads the native catalog and retries a failed request, preserving an honest 
 })
 
 it('debounces draft credentials and keeps known model semantics without adding unavailable IDs', async () => {
-  vi.mocked(configApi.discoverModels).mockResolvedValue([{ id: 'private', label: 'Private' }])
+  vi.mocked(configApi.discoverModels).mockResolvedValue({ models: [{ id: 'private', label: 'Private' }] })
   const { result, rerender } = renderHook(({ apiKey }) => useModelCatalog({ wireShape: 'openai-chat', apiKey }), { initialProps: { apiKey: 'partial' } })
   rerender({ apiKey: 'complete' })
   await waitFor(() => expect(result.current.models?.[0]?.id).toBe('private'))
@@ -70,4 +70,12 @@ it('manual refresh retains the previous list if the request fails', async () => 
   await waitFor(() => expect(result.current.error).toBe('network failure'))
   expect(result.current.models?.[0]?.id).toBe('old')
   expect(configApi.getCredentialModels).toHaveBeenLastCalledWith('account', undefined, expect.any(AbortSignal), undefined, true)
+})
+
+
+it('exposes unsupported draft discovery as settled bundled suggestions', async () => {
+  vi.mocked(configApi.discoverModels).mockResolvedValue({ discoverySupported: false, models: [{ id: 'glm', label: 'GLM' }] })
+  const { result } = renderHook(() => useModelCatalog({ vendor: 'glm', wireShape: 'openai-chat', apiKey: 'fixture' }))
+  await waitFor(() => expect(result.current.discoverySupported).toBe(false))
+  expect(result.current).toMatchObject({ loading: false, error: null, source: 'bundled', models: [{ id: 'glm', label: 'GLM' }] })
 })

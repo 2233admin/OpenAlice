@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { createAIProvider } from '../../ai-providers/provider.js'
 import { Hono } from 'hono'
 import {
   loadConfig, writeConfigSection, validSections,
@@ -28,7 +30,7 @@ import { BUILTIN_PRESETS } from '../../ai-providers/presets.js'
 import type { WireShape } from '../../ai-providers/preset-catalog.js'
 import { resolveModelSemantics } from '../../ai-providers/model-semantics.js'
 import { providerModelCatalog, type ProviderModelCatalogStore } from '../../ai-providers/model-catalog.js'
-import { discoverModels, modelDiscoveryInput } from '../../ai-providers/model-discovery.js'
+import { modelDiscoveryInput } from '../../ai-providers/model-discovery.js'
 import { resolveAnthropicAuthMode } from '../../core/credential-inference.js'
 import { probeByWireShape } from '../../workspaces/agent-probe.js'
 import { createBuiltinAdapterRegistry } from '../../workspaces/adapters/index.js'
@@ -157,23 +159,25 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
       credentialSource: 'runtime-or-workspace',
       wirePreference: ['openai-chat', 'openai-responses', 'anthropic', 'google-generative-ai'],
     }, requestedShape as CredentialWireShape | undefined, credential.vendor)
+    const provider = createAIProvider(c.req.param('slug'), credential)
+    if (!wire && !agent && !requestedShape && !provider.discoverModels) return c.json(await (opts?.modelCatalog ?? providerModelCatalog).read(provider))
     if (!wire) return c.json({ error: 'This access does not expose a model API' }, 400)
     const parsed = modelDiscoveryInput.safeParse({ wireShape: wire.shape, baseUrl: wire.baseUrl, apiKey: credential.apiKey })
     if (!parsed.success) return c.json({ error: 'A configured API key is required to load models' }, 400)
     try {
-      return c.json(await (opts?.modelCatalog ?? providerModelCatalog).read({
-        slug: c.req.param('slug'), vendor: credential.vendor, input: parsed.data,
-      }, c.req.method === 'POST'))
+      return c.json(await (opts?.modelCatalog ?? providerModelCatalog).read(provider, c.req.method === 'POST'))
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'Model discovery failed' }, 502)
     }
   })
 
   app.post('/credentials/models', async (c) => {
-    const parsed = modelDiscoveryInput.safeParse(await c.req.json().catch(() => null))
+    const parsed = modelDiscoveryInput.extend({ vendor: credentialVendorEnum.optional(), wires: z.partialRecord(credentialWireShapeEnum, z.string().trim().max(2048)).optional() }).safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) return c.json({ error: 'A valid protocol, endpoint and API key are required' }, 400)
     try {
-      return c.json({ models: await discoverModels(parsed.data) })
+      const { vendor = 'custom', wireShape, baseUrl, apiKey, wires } = parsed.data
+      const provider = createAIProvider('draft', { vendor, authType: 'api-key', apiKey, wires: wires && Object.keys(wires).length ? wires : { [wireShape]: baseUrl ?? '' } })
+      return c.json({ discoverySupported: !!provider.discoverModels, models: provider.discoverModels ? (await provider.discoverModels()).map((model) => provider.describeModel(model)) : provider.models })
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'Model discovery failed' }, 502)
     }

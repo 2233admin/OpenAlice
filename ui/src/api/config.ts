@@ -2,12 +2,15 @@ import { headers } from './client'
 import type { AppConfig, Profile, Preset, PresetModel, Credential, SdkAdapterInfo, WireShape } from './types'
 
 export interface ModelDiscoveryInput {
+  vendor?: string
+  wires?: Partial<Record<WireShape, string>>
   wireShape: WireShape
   baseUrl?: string
   apiKey: string
 }
 
 export interface ProviderModelCatalog {
+  discoverySupported?: boolean
   models: PresetModel[]
   source: 'bundled' | 'snapshot'
   fetchedAt: number | null
@@ -59,11 +62,11 @@ export const configApi = {
     return body
   },
 
-  async discoverModels(input: ModelDiscoveryInput, signal?: AbortSignal): Promise<PresetModel[]> {
+  async discoverModels(input: ModelDiscoveryInput, signal?: AbortSignal): Promise<{ models: PresetModel[]; discoverySupported?: boolean }> {
     const res = await fetch('/api/config/credentials/models', { method: 'POST', headers, body: JSON.stringify(input), signal })
     const body = await res.json()
     if (!res.ok) throw new Error(body.error || 'Failed to load models')
-    return body.models
+    return body
   },
 
   async addCredential(input: { vendor: string; label?: string; wires: Partial<Record<WireShape, string>>; baseUrl?: string; apiKey: string; lastModel?: string }): Promise<{ slug: string; vendor: string }> {

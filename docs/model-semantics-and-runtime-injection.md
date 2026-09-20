@@ -11,8 +11,8 @@ Related guides: [[docs/project-structure.md]] and
 ## The Three-Layer Contract
 
 Model pickers discover IDs from the selected access source. Saved credentials
-use `GET /api/config/credentials/:slug/models?agent=…` with the runtime's wire
-preference; draft credentials use `POST /api/config/credentials/models`.
+use `GET /api/config/credentials/:slug/models?agent=…` with runtime compatibility
+validation; draft credentials use `POST /api/config/credentials/models`.
 OpenAI-compatible, Anthropic, and Google model-list APIs are read-only (no
 generation probe). Native Oh My Pi uses `omp models --json --no-extensions`
 in the selected Workspace and retains provider-qualified selectors.
@@ -63,6 +63,29 @@ intrinsic property of the credential and must never store a copied capability
 snapshot.
 
 ### Provider model catalogs
+
+`AIProvider` in `src/ai-providers/provider.ts` is an immutable in-memory
+projection of one existing Credential record: one slug, key and configured
+endpoint map. `createAIProvider` selects the vendor implementation, such as
+`DeepSeekProvider`. Presets provide default suggestions and form values;
+provider instances own model discovery, model descriptions, and catalog
+identity. Credential storage, IDs, Session bindings and runtime injection are
+unchanged; there is no second provider/account registry.
+
+Discovery is optional (`discoverModels` is absent when unsupported). GLM and
+Cursor currently use bundled suggestions and manual IDs; GLM directory support
+is not enabled without a confirmed API contract. Native subscriptions do not
+become API discovery accounts. Other implementations reuse protocol transports,
+selecting a directory from the account's configured wires independently of the
+runtime's inference preference. Custom endpoints retain best-effort protocol
+discovery. Failed supported discovery preserves cached data; it does not change
+the capability to unsupported. No balance API is introduced.
+
+The route constructs the same provider abstraction for saved and draft
+credentials. Drafts may include their vendor and full configured wire map;
+legacy protocol-only requests use CustomProvider. `discoverySupported` lets
+the shared UI hook hide refresh for unsupported providers while preserving
+bundled suggestions and manual entry. Native OMP discovery remains runtime-owned.
 
 Saved API credentials use the Project-owned `ProviderModelCatalogStore` in
 `src/ai-providers/model-catalog.ts`. Successful lists are stored under

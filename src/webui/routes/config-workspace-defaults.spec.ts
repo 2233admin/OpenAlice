@@ -116,6 +116,34 @@ describe('generic config sections', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('uses provider defaults for unsupported saved and draft discovery without network requests', async () => {
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+    credStore['glm-1'] = { vendor: 'glm', authType: 'api-key', apiKey: 'fixture', wires: { 'openai-chat': 'https://example.test/v1' } }
+    const routes = createConfigRoutes()
+    for (const method of ['GET', 'POST'] as const) {
+      const result = await req(routes, method, '/credentials/glm-1/models?agent=omp')
+      expect(result).toMatchObject({ status: 200, body: { discoverySupported: false, refreshing: false, source: 'bundled', error: null } })
+      expect(result.body!.models).toEqual(expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]))
+    }
+    const draft = await req(routes, 'POST', '/credentials/models', { vendor: 'glm', wireShape: 'openai-chat', apiKey: 'fixture' })
+    expect(draft).toMatchObject({ status: 200, body: { discoverySupported: false } })
+    expect(draft.body!.models).toEqual(expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]))
+    expect((await req(routes, 'GET', '/credentials/cursor-1/models')).body).toMatchObject({ discoverySupported: false })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('uses the provider directory for drafts even when the form primary wire is Anthropic', async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ data: [{ id: 'private' }] }))
+    vi.stubGlobal('fetch', fetcher)
+    const result = await req(createConfigRoutes(), 'POST', '/credentials/models', {
+      vendor: 'minimax', wireShape: 'anthropic', apiKey: 'fixture', baseUrl: 'https://example.test/anthropic',
+      wires: { anthropic: 'https://example.test/anthropic', 'openai-chat': 'https://example.test/v1' },
+    })
+    expect(result).toMatchObject({ status: 200, body: { discoverySupported: true, models: [{ id: 'private', label: 'private' }] } })
+    expect(String(fetcher.mock.calls[0]![0])).toBe('https://example.test/v1/models')
+  })
+
   it('rejects the retired global compaction policy', async () => {
     const routes = createConfigRoutes()
     const { status, body } = await req(routes, 'PUT', '/compaction', {

@@ -116,7 +116,7 @@ export function CredentialModal({ mode, cred, presets, agents, initialPresetId, 
     && primaryUrl === cred.wires?.[primaryShape] && (!apiKey.trim() || apiKey === cred.apiKey)
   const modelCatalog = useModelCatalog(!isDirect && primaryShape && (!isCustom || primaryUrl.trim()) && (!primaryUrl || validEndpoint(primaryUrl))
     ? storedAccess ? { slug: cred.slug, wireShape: primaryShape }
-      : apiKey.trim() ? { wireShape: primaryShape, baseUrl: primaryUrl, apiKey: apiKey.trim() } : null
+      : apiKey.trim() ? { vendor: preset ? VENDOR_BY_PRESET[preset.id] ?? 'custom' : 'custom', wires, wireShape: primaryShape, baseUrl: primaryUrl, apiKey: apiKey.trim() } : null
     : null)
   const models = catalogModelOptions(modelCatalog.models, preset ? presetModels(preset) : [])
   const compatibilityWires = isCustom ? { [customShape]: customUrl.trim() } : wires
