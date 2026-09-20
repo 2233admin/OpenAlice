@@ -123,6 +123,13 @@ WebSocket URLs and must explicitly permit the restricted OpenAlice iframe.
 
 ## Product interaction
 
+Harness initialization feedback is template-scoped UI runtime state, shared by
+setup pages and Quick Start. Switching pages does not cancel the backend
+creation request or lose its pending/error state; returning shows the running
+progress indicator or retained failure, and repeated clicks cannot start a
+second request. The indicator is indeterminate because creation exposes no
+percentage. This feedback survives route changes, not a full browser reload.
+
 AutoQuant and Prediction expose Studio beside New research after a default
 Workspace exists. Opening Studio starts idempotently and presents an announced
 starting state until readiness. Failure preserves bounded logs and offers
