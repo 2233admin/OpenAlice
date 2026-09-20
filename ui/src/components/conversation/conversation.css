@@ -194,3 +194,12 @@
   .conversation-activity > summary { gap: 6px; padding-inline: 8px; }
   .conversation-composer-hint { text-align: left; }
 }
+
+.oa-chat-launch-preview { animation: chat-launch-reveal 220ms var(--motion-ease-out) both; }
+@keyframes chat-launch-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oa-chat-launch-preview { animation: none; }
+}

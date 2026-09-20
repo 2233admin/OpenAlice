@@ -1,3 +1,5 @@
+import { getLaunchPreview, clearLaunchPreview } from '../conversation/launch-preview'
+import type { ConversationItem } from '../conversation/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   abortWebSession,
@@ -19,6 +21,7 @@ import { presentWebTranscript } from './web-presentation'
  * One mounted identity; WebSessionView keys this hook's owner by workspace/session.
  */
 export function useWebConversation(wsId: string, sessionId: string) {
+  const [launchPrompt] = useState(() => getLaunchPreview(wsId, sessionId))
   const [snapshot, setSnapshot] = useState<WebSessionSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const current = useRef<WebSessionSnapshot | null>(null)
@@ -26,6 +29,8 @@ export function useWebConversation(wsId: string, sessionId: string) {
   const generation = useRef(0)
   const restarting = useRef(false)
   const [reconfiguring, setReconfiguring] = useState(false)
+  useEffect(() => { if (snapshot) clearLaunchPreview(wsId, sessionId) }, [snapshot, wsId, sessionId])
+  useEffect(() => () => clearLaunchPreview(wsId, sessionId), [wsId, sessionId])
   const accept = useCallback((next: WebSessionSnapshot) => {
     if (!alive.current || (current.current && next.revision < current.current.revision)) return
     current.current = next
@@ -75,7 +80,7 @@ export function useWebConversation(wsId: string, sessionId: string) {
     error,
     reconfiguring,
     reconfigure,
-    items,
+    items: !snapshot && launchPrompt ? [{ kind: 'user', key: 'launch-preview', content: [{ kind: 'markdown', text: launchPrompt }] }] as ConversationItem[] : items,
     busy: isBusy(snapshot?.phase),
     requests: snapshot?.requests ?? [],
     refresh,

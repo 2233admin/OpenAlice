@@ -1516,6 +1516,7 @@ export const en = {
     resumeError: 'Could not resume this manager conversation.',
   },
   chatLanding: {
+    startingSession: 'Starting session…',
     uiMode: 'UI mode',
     heading: 'What should Alice work on?',
     subheading: 'Research, analysis, and trading workflows in the selected Workspace.',

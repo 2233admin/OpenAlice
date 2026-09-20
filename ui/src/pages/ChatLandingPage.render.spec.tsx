@@ -485,11 +485,11 @@ describe('ChatLandingPage workflow starters', () => {
     expect((screen.getByPlaceholderText('Describe the task, question, or decision…') as HTMLTextAreaElement).value)
       .toContain("Read this Workspace's files")
     expect(strip.dataset.state).toBe('hidden')
-    expect(strip.className).toContain('hidden')
+    expect(strip.getAttribute('aria-hidden')).toBe('true')
 
     fireEvent.change(screen.getByPlaceholderText('Describe the task, question, or decision…'), { target: { value: '' } })
     expect(strip.dataset.state).toBe('visible')
-    expect(strip.className).not.toContain('hidden')
+    expect(strip.getAttribute('aria-hidden')).toBe('false')
 
     const firstSetButton = screen.getByRole('button', { name: 'Show more workflows' })
     fireEvent.click(firstSetButton)
@@ -514,6 +514,23 @@ describe('ChatLandingPage keyboard submission', () => {
     await waitFor(() => expect(mocks.quickChat).toHaveBeenCalled())
     expect(mocks.quickChat.mock.calls[0]?.[8]).toBe('webpi')
     expect(mocks.quickChat.mock.calls[0]?.join(' ')).toContain("Read today's macro backdrop")
+  })
+
+  it('shows the submitted message during startup and restores the draft after failure', async () => {
+    let reject!: (error: Error) => void
+    mocks.quickChat.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    render(<ChatLandingPage spec={{ params: { targetWsId: 'chat-1' } }} />)
+    await screen.findByRole('button', { name: 'AI Provider, Model and reasoning' })
+    const composer = screen.getByPlaceholderText('Describe the task, question, or decision…') as HTMLTextAreaElement
+    fireEvent.change(composer, { target: { value: 'Keep this draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await screen.findByText('Starting session…')
+    expect(screen.getByText('Keep this draft')).toBeTruthy()
+    expect(composer.value).toBe('')
+    expect(composer.disabled).toBe(true)
+    await act(async () => reject(new Error('launch failed')))
+    expect(composer.value).toBe('Keep this draft')
+    expect(screen.queryByText('Starting session…')).toBeNull()
   })
 
   it('offers GUI for a capable runtime and passes the selected surface', async () => {
