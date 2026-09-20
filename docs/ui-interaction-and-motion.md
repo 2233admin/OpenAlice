@@ -263,7 +263,10 @@ sidebar, and use the shared reading renderer rather than a new Markdown stack.
 `components/conversation/` owns the adapter-neutral browser conversation view,
 content/activity rendering and `ChatComposer` input/actions. `AgentChatComposer`
 composes that primitive with the shared provider/model/effort selector for both
-Start and GUI; runtime and surface differences use the context slot. One compact
+Start and GUI. Start retains runtime/surface selection in its composer context
+tray. In an existing GUI Session, the fixed runtime icon/name lives in the top
+bar beside the TUI action; narrow screens show the icon with its accessible
+name and tooltip. The GUI composer has no runtime tray. One compact
 button shows the provider icon, model and effort, with submenus for each choice.
 The AI Provider submenu and native account option use the matching provider or
 runtime icon; the full provider name remains available in the button tooltip.
