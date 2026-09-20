@@ -1,5 +1,5 @@
-/** One provider is one immutable, credential-bound AI access source. */
-import { cachedProviderModel } from './model-catalog.js'
+/** A provider projects one AI access source: a Vault credential or native runtime. */
+import { cachedProviderModel, MODEL_CATALOG_TTL_MS } from './model-catalog.js'
 import { createHash } from 'node:crypto'
 import { credentialWires, type Credential, type CredentialWireShape } from '../core/config.js'
 import { discoverModels, type DiscoveredModel } from './model-discovery.js'
@@ -9,12 +9,24 @@ import { mergeModelSemantics, resolveModelSemantics } from './model-semantics.js
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
 export abstract class AIProvider {
-  readonly #credential: Credential
-  /** Absent means unsupported, rather than an empty or failed discovery. */
+  abstract readonly id: string
+  abstract get models(): ModelOption[]
+  abstract get catalogSlot(): string
+  abstract get catalogIdentity(): string
   get discoverModels(): (() => Promise<DiscoveredModel[]>) | undefined { return undefined }
+  get persistCatalog(): boolean { return true }
+  get catalogTtlMs(): number { return MODEL_CATALOG_TTL_MS }
+  describeModel(model: DiscoveredModel): ModelOption { return model }
+  resolveModel(model: string): ModelOption { return cachedProviderModel(this, model) }
+}
+
+/** Existing vault records keep their credential-bound provider projection. */
+export abstract class CredentialAIProvider extends AIProvider {
+  readonly #credential: Credential
   abstract readonly presetId: string
 
   constructor(readonly id: string, credential: Credential) {
+    super()
     this.#credential = structuredClone(credential)
   }
 
@@ -29,9 +41,6 @@ export abstract class AIProvider {
     return { ...model, ...(semantics ? { semantics } : {}) }
   }
 
-  /** Credential-scoped local model resolution shared by API and runtime consumers. */
-  resolveModel(model: string): ModelOption { return cachedProviderModel(this, model) }
-
   protected get apiKey() { return this.#credential.apiKey }
   protected get isApiKey() { return this.#credential.authType === 'api-key' }
   get catalogSlot(): string { return digest([this.id, null]) }
@@ -39,7 +48,7 @@ export abstract class AIProvider {
 }
 
 /** Shared transport mechanics; vendors choose which configured directory to use. */
-abstract class ModelAPIProvider extends AIProvider {
+abstract class ModelAPIProvider extends CredentialAIProvider {
   readonly #discover: (() => Promise<DiscoveredModel[]>) | undefined
   override get discoverModels() { return this.#discover }
   readonly #shape: CredentialWireShape | undefined
@@ -93,10 +102,10 @@ export class LongCatProvider extends ModelAPIProvider {
   constructor(id: string, credential: Credential) { super(id, credential, openaiWires) }
 }
 /** No model-directory contract: use bundled suggestions and manual model IDs. */
-export class GLMProvider extends AIProvider {
+export class GLMProvider extends CredentialAIProvider {
   readonly presetId = 'glm'
 }
-export class CursorProvider extends AIProvider {
+export class CursorProvider extends CredentialAIProvider {
   readonly presetId = 'cursor-dashboard'
 }
 export class CustomProvider extends ModelAPIProvider {
@@ -108,9 +117,9 @@ const providers = {
   anthropic: AnthropicProvider, openai: OpenAIProvider, google: GoogleProvider, xai: XAIProvider,
   deepseek: DeepSeekProvider, openrouter: OpenRouterProvider, minimax: MiniMaxProvider,
   kimi: KimiProvider, longcat: LongCatProvider, glm: GLMProvider, cursor: CursorProvider, custom: CustomProvider,
-} satisfies Record<Credential['vendor'], new (id: string, credential: Credential) => AIProvider>
+} satisfies Record<Credential['vendor'], new (id: string, credential: Credential) => CredentialAIProvider>
 
 /** Existing vault records remain the only persisted account identity. */
-export function createAIProvider(id: string, credential: Credential): AIProvider {
+export function createAIProvider(id: string, credential: Credential): CredentialAIProvider {
   return new providers[credential.vendor](id, credential)
 }

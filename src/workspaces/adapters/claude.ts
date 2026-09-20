@@ -1,3 +1,4 @@
+import { discoverNativeModels } from '../native-model-discovery.js';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
@@ -156,6 +157,7 @@ function projectKey(workspaceDir: string): string {
  * still does the placeholder-substitution at spawn-env-build time).
  */
 export const claudeAdapter: CliAdapter = {
+  discoverModels: (cwd) => discoverNativeModels('claude', 'claude', cwd),
   id: 'claude',
   displayName: 'Claude Code',
   binary: 'claude',
