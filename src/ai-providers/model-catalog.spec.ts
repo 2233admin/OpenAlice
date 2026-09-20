@@ -7,7 +7,7 @@ import { discoverModels } from './model-discovery.js'
 import type { CredentialVendor, CredentialWireShape } from '../core/config.js'
 vi.mock('./model-discovery.js', () => ({ discoverModels: vi.fn() }))
 const provider = (access: { slug: string; vendor: string; input: { wireShape: string; baseUrl?: string; apiKey: string } }) => createAIProvider(access.slug, { vendor: access.vendor as CredentialVendor, authType: 'api-key', apiKey: access.input.apiKey, wires: { [access.input.wireShape as CredentialWireShape]: access.input.baseUrl ?? '' } })
-import { MODEL_CATALOG_TTL_MS, ProviderModelCatalogStore } from './model-catalog.js'
+import { MODEL_CATALOG_TTL_MS, ProviderModelCatalogStore, cachedProviderModel } from './model-catalog.js'
 
 const access = { slug: 'test', vendor: 'openai', input: { wireShape: 'openai-chat', baseUrl: 'https://example.test/v1', apiKey: 'test-only-secret' } }
 const model = (id: string) => ({ id, label: id })
@@ -117,4 +117,17 @@ it('repairs corrupt caches, and stores neither secrets nor raw endpoint URLs', a
   expect((await store.read(provider(access))).source).toBe('bundled')
   await store.read(provider(access), true)
   expect(JSON.parse(await readFile(path, 'utf8')).models).toEqual([model('model')])
+})
+
+it('preserves discovered semantics across restart and shares them with local runtime resolution', async () => {
+  const upstream = { id: 'gpt-6-astra', label: 'Live', semantics: { contextWindow: 1234, reasoning: { supported: true, efforts: ['low' as const], interleaved: false } } }
+  vi.mocked(discoverModels).mockResolvedValue([upstream])
+  const account = provider(access)
+  const first = await new ProviderModelCatalogStore({ directory }).read(account, true)
+  const restarted = await new ProviderModelCatalogStore({ directory }).read(account)
+  expect(restarted.models).toEqual(first.models)
+  expect(restarted.models[0]?.semantics).toMatchObject({ contextWindow: 1234, reasoning: { mode: 'required', efforts: ['low'], interleaved: false } })
+  expect(cachedProviderModel(account, upstream.id, directory)).toEqual(first.models[0])
+  const changedKey = provider({ ...access, input: { ...access.input, apiKey: 'another-key' } })
+  expect(cachedProviderModel(changedKey, upstream.id, directory).semantics?.contextWindow).not.toBe(1234)
 })

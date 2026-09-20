@@ -97,12 +97,28 @@ one-minute retry delay; successful empty lists remain empty. Incomplete or
 failed discovery is never committed.
 
 Cache identity covers the credential, vendor, endpoint, wire and key. Cache
-files contain only an internal identity digest, timestamp and model display
-fields; no key or raw provider response. Corrupt files are rebuilt. A successful
+files contain an internal identity digest, timestamp, model display fields and
+validated model semantics; no key or raw provider response. Corrupt files are rebuilt. A successful
 refresh replaces membership rather than unioning with bundled suggestions;
-known model semantics are attached by the backend registry on read.
+each model carries its normalized upstream semantics. The provider merges missing
+fields from the bundled registry on read. Explicit false and empty effort lists
+are authoritative; incompatible fallback defaults are removed. Reasoning support
+can be known while its switching mode or effort levels remain unknown.
 
-The shared `useModelCatalog` hook follows an in-flight refresh without hiding
+`AIProvider.resolveModel(id)` is the shared credential-scoped local resolution
+boundary for runtime injection and metadata. It reads the same validated catalog
+snapshot without starting network I/O; absent caches use bundled facts. Stored
+credentials and Session selection formats are unchanged. Anthropic capability
+objects, Google thinking/token limits, and OpenRouter directory extensions are
+normalized by discovery before caching. Provider request parameters do not imply
+specific effort levels or whether reasoning can be disabled.
+
+The public `useProviderModels` hook returns the account-scoped models, selected
+model, semantics, reasoning and effort options as one result. Credential forms,
+launch controls and the native-config editor consume it rather than looking up
+efforts separately. Model-only changes do not refetch the directory; account
+changes discard the preceding account's capabilities immediately. Its internal
+`useModelCatalog` transport hook follows an in-flight refresh without hiding
 existing options. Controls preserve current selections missing from the latest
 list and warn about the mismatch. Absence is not proof that inference is
 unavailable: catalog membership is advisory, never a launch gate. Refresh does

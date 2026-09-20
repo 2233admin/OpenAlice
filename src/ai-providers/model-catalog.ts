@@ -1,4 +1,6 @@
 /** Project-owned provider catalogs. Reads never wait for provider I/O. */
+import { readFileSync } from 'node:fs'
+import { discoveredModelSchema } from './discovered-model.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -11,7 +13,7 @@ export const MODEL_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 const RETRY_DELAY_MS = 60_000
 const snapshotSchema = z.object({
   version: z.literal(1), identity: z.string(), fetchedAt: z.number().finite().nonnegative(),
-  models: z.array(z.object({ id: z.string().min(1).max(512), label: z.string() })),
+  models: z.array(discoveredModelSchema),
 })
 type Snapshot = z.infer<typeof snapshotSchema>
 export interface ProviderModelCatalog {
@@ -101,3 +103,15 @@ export class ProviderModelCatalogStore {
 }
 
 export const providerModelCatalog = new ProviderModelCatalogStore()
+
+/** Launch reads local facts only: no network or credential writes on this path. */
+export function cachedProviderModel(provider: AIProvider, model: string, directory = dataPath('model-catalog', 'providers')): ModelOption {
+  try {
+    const snapshot = snapshotSchema.parse(JSON.parse(readFileSync(join(directory, `${provider.catalogSlot}.json`), 'utf8')))
+    if (snapshot.identity === provider.catalogIdentity) {
+      const found = snapshot.models.find((entry) => entry.id === model)
+      if (found) return provider.describeModel(found)
+    }
+  } catch { /* Missing or corrupt optional cache falls back to bundled facts. */ }
+  return provider.describeModel({ id: model, label: model })
+}

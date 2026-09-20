@@ -1,3 +1,4 @@
+import { createAIProvider } from '../../ai-providers/provider.js'
 import { createWorkspaceContentRoutes } from './workspace-content.js';
 import { createStickerRoutes } from './stickers.js';
 import { prepareProjectWorkspaces, readProjectWorkspaceSetup } from '../../workspaces/project-workspace-setup.js';
@@ -869,7 +870,7 @@ export function createWorkspaceRoutes(
           baseUrl: cfg.baseUrl ?? undefined,
           wireShape: cfg.wireShape ?? undefined,
         });
-    const reasoningSemantics = resolveModelSemantics(vendor, cfg.model)?.reasoning;
+    const reasoningSemantics = (slug && cfg.model ? createAIProvider(slug, credentials[slug]!).resolveModel(cfg.model).semantics : resolveModelSemantics(vendor, cfg.model))?.reasoning;
     return {
       slug,
       model: cfg.model ?? null,
@@ -3060,9 +3061,9 @@ export function createWorkspaceRoutes(
       const list = entries.map(([slug, cred]) => {
         const resolvedModel = resolveInjectionModel(cred);
         const projected = adapter && resolvedModel
-          ? credentialToWorkspaceAiCred(cred, adapter, { model: resolvedModel })
+          ? credentialToWorkspaceAiCred(cred, adapter, { model: resolvedModel }, slug)
           : null;
-        const reasoningMode = resolveModelSemantics(cred.vendor, resolvedModel)?.reasoning?.mode;
+        const reasoningMode = resolvedModel ? createAIProvider(slug, cred).resolveModel(resolvedModel).semantics?.reasoning?.mode : undefined;
         return {
           slug,
           vendor: cred.vendor,
@@ -3258,6 +3259,7 @@ export function createWorkspaceRoutes(
         cfg,
         adapter.capabilities.aiProvider,
         vendor,
+        slug && cfg.model ? createAIProvider(slug, credentials[slug]!).resolveModel(cfg.model).semantics : undefined,
       );
       await adapter.writeAiConfig(meta.dir, projected);
       // Remember an explicit model choice on the originating vault credential

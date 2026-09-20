@@ -60,3 +60,9 @@ it('preserves legacy single-wire cache identity and honors its configured endpoi
   expect(provider.catalogIdentity).toBe(digest(['deepseek', 'openai-chat', 'https://example.test/v1', 'fixture-key']))
   expect(provider.wires).toEqual(key.wires)
 })
+
+it('keeps OpenRouter directory capabilities when only its Anthropic wire is configured', async () => {
+  const account = createAIProvider('router', { ...key, vendor: 'openrouter', wires: { anthropic: 'https://openrouter.ai/api' } })
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ data: [{ id: 'private', context_length: 1234, supported_parameters: ['reasoning'] }] })))
+  expect(await account.discoverModels!()).toEqual([{ id: 'private', label: 'private', semantics: { contextWindow: 1234, reasoning: { supported: true } } }])
+})

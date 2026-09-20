@@ -1,9 +1,10 @@
 /** One provider is one immutable, credential-bound AI access source. */
+import { cachedProviderModel } from './model-catalog.js'
 import { createHash } from 'node:crypto'
 import { credentialWires, type Credential, type CredentialWireShape } from '../core/config.js'
 import { discoverModels, type DiscoveredModel } from './model-discovery.js'
 import { PRESET_CATALOG, DEFAULT_MODEL_BY_VENDOR, type ModelOption } from './preset-catalog.js'
-import { resolveModelSemantics } from './model-semantics.js'
+import { mergeModelSemantics, resolveModelSemantics } from './model-semantics.js'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -24,9 +25,12 @@ export abstract class AIProvider {
   get defaultModel() { return DEFAULT_MODEL_BY_VENDOR[this.vendor] }
   get models(): ModelOption[] { return (this.preset?.models ?? []).map((model) => this.describeModel(model)) }
   describeModel(model: DiscoveredModel): ModelOption {
-    const semantics = resolveModelSemantics(this.vendor, model.id)
+    const semantics = mergeModelSemantics(resolveModelSemantics(this.vendor, model.id), model.semantics)
     return { ...model, ...(semantics ? { semantics } : {}) }
   }
+
+  /** Credential-scoped local model resolution shared by API and runtime consumers. */
+  resolveModel(model: string): ModelOption { return cachedProviderModel(this, model) }
 
   protected get apiKey() { return this.#credential.apiKey }
   protected get isApiKey() { return this.#credential.authType === 'api-key' }
@@ -39,12 +43,12 @@ abstract class ModelAPIProvider extends AIProvider {
   readonly #discover: (() => Promise<DiscoveredModel[]>) | undefined
   override get discoverModels() { return this.#discover }
   readonly #shape: CredentialWireShape | undefined
-  constructor(id: string, credential: Credential, preference: readonly CredentialWireShape[]) {
+  constructor(id: string, credential: Credential, preference: readonly CredentialWireShape[], semanticsProtocol?: 'anthropic' | 'google' | 'openai') {
     super(id, credential)
     this.#shape = preference.find((shape) => shape in this.wires)
     if (this.isApiKey && this.apiKey?.trim() && this.#shape) {
       const input = { wireShape: this.#shape, baseUrl: this.wires[this.#shape], apiKey: this.apiKey.trim() }
-      this.#discover = () => discoverModels(input)
+      this.#discover = () => discoverModels(input, semanticsProtocol)
     }
   }
   get catalogSlot() { return digest([this.id, this.#shape]) }
@@ -74,7 +78,7 @@ export class DeepSeekProvider extends ModelAPIProvider {
 }
 export class OpenRouterProvider extends ModelAPIProvider {
   readonly presetId = 'openrouter'
-  constructor(id: string, credential: Credential) { super(id, credential, openaiWires) }
+  constructor(id: string, credential: Credential) { super(id, credential, openaiWires, 'openai') }
 }
 export class MiniMaxProvider extends ModelAPIProvider {
   readonly presetId = 'minimax'
