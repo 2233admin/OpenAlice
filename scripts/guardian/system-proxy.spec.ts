@@ -39,6 +39,31 @@ describe('Windows system proxy parsing', () => {
 })
 
 describe('resolveGuardianProxyEnv', () => {
+  it('uses explicit app proxy before Windows registry discovery', async () => {
+    let calls = 0
+    const result = await resolveGuardianProxyEnv({
+      OPENALICE_PROXY_URL: 'https://app.example:8443',
+      NO_PROXY: 'internal.example',
+    }, {
+      platform: 'win32',
+      runCommand: async () => {
+        calls += 1
+        throw new Error('must not be called')
+      },
+    })
+
+    expect(calls).toBe(0)
+    expect(result).toEqual({
+      envPatch: {
+        HTTPS_PROXY: 'https://app.example:8443',
+        HTTP_PROXY: 'https://app.example:8443',
+        ALL_PROXY: 'https://app.example:8443',
+        NODE_USE_ENV_PROXY: '1',
+        NO_PROXY: 'internal.example,127.0.0.1,localhost,::1',
+      },
+    })
+  })
+
   it('keeps explicit standard proxy env authoritative and does not query Windows', async () => {
     let calls = 0
     const result = await resolveGuardianProxyEnv({
