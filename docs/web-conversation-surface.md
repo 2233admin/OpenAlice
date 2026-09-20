@@ -228,7 +228,8 @@ text growth only while the reader remains near the bottom.
 `AgentChatComposer` owns the common `ChatComposer` input/actions and the combined
 AI access/model/effort menu. Start supplies runtime and surface selection in the
 context slot and follows the sidebar Workspace target; it has no Workspace
-picker. GUI supplies a fixed runtime badge. Its `useWebSessionModelConfig` uses
+picker. GUI shows its fixed runtime identity in the top bar beside surface
+switching, without a composer context tray. Its `useWebSessionModelConfig` uses
 the existing pinned runtime draft and unified model catalog hook, never launch
 preferences. Selecting AI configuration restarts the same Session via `/web/open`.
 Sending and configuration are locked during restart; the mounted composer keeps

@@ -9,7 +9,7 @@ import { ConversationView } from '../conversation/ConversationView'
 import { ConversationRequestCard, type ConversationRequest } from '../conversation/ConversationRequestCard'
 import { WebSessionComposer } from './WebSessionComposer'
 import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
-import type { AgentInfo, SessionRecord, WebPermissionRequest, WebSessionPhase, WebSessionWire } from './api'
+import type { AgentInfo, SessionRecord, WebPermissionRequest, WebSessionPhase } from './api'
 import { useWebConversation } from './useWebConversation'
 import { summarizeToolInput } from './web-transcript'
 
@@ -59,7 +59,13 @@ function WebSession({ record, wsId, sessionId, agent, agents, label, headerActio
 
   return <>
     <ConversationView
-      header={<PageTopBar title={label ?? 'Conversation'} actions={headerActions}>
+      header={<PageTopBar title={label ?? 'Conversation'} actions={<>
+        <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" title={agentLabel} aria-label={agentLabel}>
+          <AgentRuntimeIcon agentId={agentId} className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">{agentLabel}</span>
+        </span>
+        {headerActions}
+      </>}>
         {(busy || !snapshot || snapshot.phase === 'failed') && <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           {(busy || !snapshot) && <LoaderCircle size={12} className="animate-spin" aria-hidden />}
           {phaseLabel}
@@ -73,10 +79,6 @@ function WebSession({ record, wsId, sessionId, agent, agents, label, headerActio
       ready={!!snapshot && snapshot.phase !== 'failed' && snapshot.phase !== 'starting' && !stopped && !session.reconfiguring && configurationReady}
       placeholder={`Message ${agentLabel}…`}
       empty={snapshot ? 'What should Alice work on next?' : 'Opening conversation…'}
-      context={<span className="inline-flex min-h-7 items-center gap-1.5 px-1.5 py-1 text-xs text-muted-foreground" title={snapshot ? wireDescription(snapshot.wire) : 'Web conversation surface'}>
-        <AgentRuntimeIcon agentId={agentId} className="h-[12px] w-[12px]" />
-        {agentLabel} <span className="opacity-60">· Web</span>
-      </span>}
       renderComposer={record && agents ? composer => <WebSessionComposer composer={composer} workspaceId={wsId} record={record} agents={agents}
         busy={busy || session.reconfiguring || !snapshot || snapshot.phase === 'starting'} reconfigure={session.reconfigure} onReadyChange={setConfigurationReady} /> : undefined}
       status={<>
@@ -125,15 +127,6 @@ function presentRequest(request: WebPermissionRequest): ConversationRequest {
 
 function describePhase(phase: WebSessionPhase): string {
   return phase === 'awaiting-input' ? 'waiting for you' : phase
-}
-
-function wireDescription(wire: WebSessionWire): string {
-  switch (wire) {
-    case 'pi-rpc': return 'Pi RPC over stdio'
-    case 'acp': return 'Agent Client Protocol over stdio'
-    case 'claude-stream-json': return 'Claude Code stream-json over stdio'
-    case 'codex-app-server': return 'Codex app-server over stdio'
-  }
 }
 
 function fallbackAgentLabel(agentId: string): string {
