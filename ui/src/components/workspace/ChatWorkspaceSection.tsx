@@ -74,9 +74,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
-import { SidebarChildRow, SidebarChildRowButton } from '../SidebarChildRow'
-import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
+import { RunningSessionGroup } from './RunningSessionGroup'
 import { useSessionBusyDialog } from './session-busy-store'
 import { Button } from '@/components/ui/button'
 import type { ChatDisplayMode } from './chat-display-mode'
@@ -401,25 +399,7 @@ export function ChatWorkspaceSection({
   const navigationSessions = (currentWorkspace ? rosterByWorkspace.get(currentWorkspace.id) ?? [] : []).filter(row => !row.headlessOccupying)
   const runningSessions = currentWorkspace ? runningWorkspaceSessions(currentWorkspace,
     sessionDirectories.directories.get(currentWorkspace.id) ?? null) : []
-  const runningGroup = runningSessions.length > 0 && <Collapsible>
-    <SidebarChildRow active={false}>
-      <CollapsibleTrigger render={<SidebarChildRowButton
-        className="group/running text-muted-foreground"
-        icon={<LoaderCircle size={14} aria-hidden className="animate-spin [animation-duration:2s] motion-reduce:animate-none" />}
-      />}>
-        <span className="min-w-0 flex-1">{t('workspace.sessionBusy.runningCount', { count: runningSessions.length })}</span>
-        <ChevronRight size={14} aria-hidden className="shrink-0 transition-transform group-data-[panel-open]/running:rotate-90 motion-reduce:transition-none" />
-      </CollapsibleTrigger>
-    </SidebarChildRow>
-    <CollapsibleContent>
-      {runningSessions.map(row => <SidebarChildRow key={row.resumeId} active={false}>
-        <SidebarChildRowButton onClick={() => showBusy(row)}
-          icon={<AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4" />}>
-          <span className="min-w-0 flex-1 truncate" title={row.title}>{row.title}</span>
-        </SidebarChildRowButton>
-      </SidebarChildRow>)}
-    </CollapsibleContent>
-  </Collapsible>
+  const runningGroup = <RunningSessionGroup sessions={runningSessions} onSelect={showBusy} />
   const visibleNavigationSessions = selectRecentSidebarWorkset(navigationSessions, isRosterRowActive, 4)
 
   return (
