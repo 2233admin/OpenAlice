@@ -38,6 +38,10 @@ const now = demoLocalDayAnchor()
 export const demoIssuesSnapshot: IssueSnapshot = {
   workspaces: [
     {
+      wsId: 'demo-chat-ws', tag: 'chat-may26', status: 'ok',
+      issues: [{ id: 'scan-open', title: 'Open issue scan', status: 'in_progress', priority: 'medium', assignee: '@resume-demo-headless-running', agent: 'claude' }],
+    },
+    {
       wsId: 'demo-ws-auto-quant',
       tag: 'auto-quant',
       status: 'ok',

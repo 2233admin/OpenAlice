@@ -1,5 +1,4 @@
 import { useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import type { ReactElement, ReactNode } from 'react';
 
 import type { AgentInfo, PausedSessionRuntimeUpdate, SessionRecord } from './api';
@@ -7,6 +6,7 @@ import { sessionCoworkerLabel } from './display';
 import { useHarnessWorkbenchContext } from '../harness/context';
 import { FilesPanel } from './FilesPanel';
 import { SessionActivation } from './SessionActivation';
+import { SessionBusyPanel } from './SessionBusyPanel';
 import { TerminalView } from './Terminal';
 import { WebSessionView } from './WebSessionView';
 import { useIsDesktop } from '../../live/use-is-desktop';
@@ -40,7 +40,6 @@ export interface WorkspaceViewProps {
 }
 
 export function WorkspaceView(props: WorkspaceViewProps): ReactElement {
-  const { t } = useTranslation();
   const connected = useRef(false);
   if (props.activeRecord?.state === 'running') connected.current = true;
   // Mount ONLY this tab's own pinned session. Each session is its own tab with
@@ -83,9 +82,7 @@ export function WorkspaceView(props: WorkspaceViewProps): ReactElement {
     <div className={viewClass}>
       <div className="workspace-terminal">
         {props.activeRecord?.state === 'running' && props.activeRecord.surface === 'headless' && (
-          <div role="alert" className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-            {t('workspace.interactiveOwnership.background')}
-          </div>
+          <SessionBusyPanel record={props.activeRecord} workspaceId={props.wsId} onRefresh={props.onSessionLost} />
         )}
         {showPausedCta && props.activeRecord && (
           <SessionActivation
