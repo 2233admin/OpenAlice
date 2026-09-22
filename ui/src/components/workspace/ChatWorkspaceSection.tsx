@@ -405,9 +405,10 @@ export function ChatWorkspaceSection({
     <SidebarChildRow active={false}>
       <CollapsibleTrigger render={<SidebarChildRowButton
         className="group/running text-muted-foreground"
-        icon={<ChevronRight size={14} aria-hidden className="transition-transform group-data-[panel-open]/running:rotate-90 motion-reduce:transition-none" />}
+        icon={<LoaderCircle size={14} aria-hidden className="animate-spin [animation-duration:2s] motion-reduce:animate-none" />}
       />}>
-        {t('workspace.sessionBusy.runningCount', { count: runningSessions.length })}
+        <span className="min-w-0 flex-1">{t('workspace.sessionBusy.runningCount', { count: runningSessions.length })}</span>
+        <ChevronRight size={14} aria-hidden className="shrink-0 transition-transform group-data-[panel-open]/running:rotate-90 motion-reduce:transition-none" />
       </CollapsibleTrigger>
     </SidebarChildRow>
     <CollapsibleContent>
