@@ -59,6 +59,18 @@ describe('resolveExchangeOverrides', () => {
     }
   })
 
+  it('maps exactly the ids that were vetted, so an unvetted alias cannot ride along', () => {
+    // The sibling set of every registered venue in the installed ccxt is closed:
+    // binance -> {binanceusdm, binancecoinm} (same account and endpoints) and
+    // {binanceus} (a separate entity); okx -> {okxus, myokx} (separate
+    // deployments); bybit -> {bybiteu}; bitget and hyperliquid have none. The
+    // first two inherit the same account and are mapped; every deployment that is
+    // a different entity is rejected in REJECTED_IDS. Asserting the EXACT key set
+    // is what makes this a vetted allowlist rather than a rule: without it, adding
+    // an unvetted alias leaves the entire surface green.
+    expect(Object.keys(exchangeIdAliases).sort()).toEqual(['binancecoinm', 'binanceusdm'])
+  })
+
   it('leaves canonical ids exactly as they were', () => {
     for (const id of Object.keys(exchangeOverrides)) {
       expect(resolveExchangeOverrides(id), id).toBe(exchangeOverrides[id])
