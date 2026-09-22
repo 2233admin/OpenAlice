@@ -44,7 +44,7 @@ import { fuzzyRankContracts } from '../fuzzy-rank.js'
 import {
   type CcxtExchangeOverrides,
   type CcxtSubAccountDef,
-  exchangeOverrides,
+  resolveExchangeOverrides,
   defaultFetchBalance,
   defaultFetchOrderById,
   defaultCancelOrderById,
@@ -243,7 +243,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     this.exchangeName = config.exchange
     this.keyless = config.keyless ?? false
     this.meta = { exchange: config.exchange }
-    this.overrides = exchangeOverrides[config.exchange] ?? {}
+    this.overrides = resolveExchangeOverrides(config.exchange)
     this.id = config.id ?? `${config.exchange}-main`
     this.label = config.label ?? `${config.exchange.charAt(0).toUpperCase() + config.exchange.slice(1)} ${config.sandbox ? 'Testnet' : 'Live'}`
 
