@@ -75,6 +75,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
+import { SidebarChildRow, SidebarChildRowButton } from '../SidebarChildRow'
 import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
 import { useSessionBusyDialog } from './session-busy-store'
 import { Button } from '@/components/ui/button'
@@ -401,16 +402,21 @@ export function ChatWorkspaceSection({
   const runningSessions = currentWorkspace ? runningWorkspaceSessions(currentWorkspace,
     sessionDirectories.directories.get(currentWorkspace.id) ?? null) : []
   const runningGroup = runningSessions.length > 0 && <Collapsible>
-    <CollapsibleTrigger className="oa-nav-row group flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-sidebar-accent">
-      <ChevronRight size={14} aria-hidden className="transition-transform group-data-[panel-open]:rotate-90 motion-reduce:transition-none" />
-      {t('workspace.sessionBusy.runningCount', { count: runningSessions.length })}
-    </CollapsibleTrigger>
+    <SidebarChildRow active={false}>
+      <CollapsibleTrigger render={<SidebarChildRowButton
+        className="group/running text-muted-foreground"
+        icon={<ChevronRight size={14} aria-hidden className="transition-transform group-data-[panel-open]/running:rotate-90 motion-reduce:transition-none" />}
+      />}>
+        {t('workspace.sessionBusy.runningCount', { count: runningSessions.length })}
+      </CollapsibleTrigger>
+    </SidebarChildRow>
     <CollapsibleContent>
-      {runningSessions.map(row => <button key={row.resumeId} type="button" onClick={() => showBusy(row)}
-        className="oa-nav-row flex min-h-9 w-full items-center gap-2 rounded-md py-1 pl-5 pr-2 text-left text-sm hover:bg-sidebar-accent">
-        <AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 truncate">{row.title}</span>
-      </button>)}
+      {runningSessions.map(row => <SidebarChildRow key={row.resumeId} active={false}>
+        <SidebarChildRowButton onClick={() => showBusy(row)}
+          icon={<AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4" />}>
+          <span className="min-w-0 flex-1 truncate" title={row.title}>{row.title}</span>
+        </SidebarChildRowButton>
+      </SidebarChildRow>)}
     </CollapsibleContent>
   </Collapsible>
   const visibleNavigationSessions = selectRecentSidebarWorkset(navigationSessions, isRosterRowActive, 4)
@@ -440,7 +446,7 @@ export function ChatWorkspaceSection({
                 ? navigate({ kind: 'harness-surface', params: { wsId: currentWorkspace.id, capability: 'studio', source: mode } })
                 : openLanding()} />
           )}
-          {mode !== 'chat' && runningGroup}
+          {runningGroup}
           {visibleNavigationSessions.map(row => (
             <HarnessSessionRow enterOnSelect key={`${row.workspaceId}:${row.resumeId}`} row={row} isActive={isRosterRowActive(row)}
               onSelect={() => activateRosterSession(row)} onPause={() => pauseRosterSession(row)}
@@ -453,7 +459,6 @@ export function ChatWorkspaceSection({
               {t('chat.viewAllConversations', { count: navigationSessions.length })}
             </button>
           )}
-          {mode === 'chat' && runningGroup}
         </HarnessNavigationGroup>
       ) : <>
       <div className="grid grid-cols-1 gap-1 px-1.5 pb-2 pt-2">
