@@ -1785,6 +1785,26 @@ describe('CcxtBroker — getFundingRateHistory', () => {
     expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)                // walked, not one page
   }))
 
+  // Two venue cadences, deliberately: the cadence is set by the venue, not by
+  // this file, so with exactly one fixture pinned a constant that happens to
+  // equal it (4h) is indistinguishable from a measurement. Pinning a second,
+  // different cadence is what makes any single hardcoded period fail one of these
+  // two fixtures — 8h fails both, 4h fails the hourly one, 1h fails the 4h one.
+  it('measures an hourly venue cadence as well, so no single constant fits both', atNow(async () => {
+    const acc = makeFundingAccount()
+    const venue = series(60, HOUR_MS)           // 60h of 1h periods
+    const fetch = serveVenue(venue, 5)          // page cap below the request
+    ;(acc as any).exchange.fetchFundingRateHistory = fetch
+
+    const history = await acc.getFundingRateHistory(contract(), { limit: 10 })
+
+    expect(history.rates).toEqual(venue.slice(-10).map(row => ({ timestamp: new Date(row.ts), fundingRate: row.rate })))
+    const stamps = history.rates.map(rate => rate.timestamp.getTime())
+    expect(new Set(stamps).size).toBe(10)                                    // no period answered twice
+    expect(stamps.slice(1).map((ts, i) => ts - stamps[i])).toEqual(Array(9).fill(HOUR_MS))
+    expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)                // walked, not one page
+  }))
+
   it('returns only the periods at/after start', atNow(async () => {
     const acc = makeFundingAccount()
     ;(acc as any).exchange.fetchFundingRateHistory = serveVenue(series(30))
