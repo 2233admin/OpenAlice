@@ -1317,7 +1317,7 @@ function HarnessSessionRow(props: {
       headlessOccupying={row.headlessOccupying}
       resumable={row.resumable}
       failed={row.failed}
-      canDelete={false}
+      canDelete={!row.headlessOccupying}
       onSelect={props.onSelect}
       onHeadlessBusy={props.onSelect}
       onPause={props.onPause}

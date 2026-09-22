@@ -1523,10 +1523,17 @@ export const workspacesHandlers = [
     return HttpResponse.json(true)
   }),
   http.get('/api/workspaces/:id/sessions/:sid/executions', ({ params }) => {
-    const exists = demoWorkspaces.some(workspace => workspace.id === String(params.id)
-      && workspace.sessions.some(session => session.id === String(params.sid)))
-      || (demoManagerSession.wsId === String(params.id) && demoManagerSession.id === String(params.sid))
-    return exists ? HttpResponse.json({ executions: [] }) : HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    const record = demoWorkspaces.find(workspace => workspace.id === String(params.id))?.sessions.find(session => session.id === String(params.sid))
+      ?? (demoManagerSession.wsId === String(params.id) && demoManagerSession.id === String(params.sid) ? demoManagerSession : undefined)
+    if (!record) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    const startedAt = Date.parse(record.createdAt)
+    return HttpResponse.json({ executions: [{
+      executionId: `demo-execution-${record.id}`, phase: record.state === 'running' ? 'running' : 'ended',
+      surface: record.surface ?? 'terminal', requestedAt: startedAt, startedAt,
+      ...(record.state === 'paused' ? { finishedAt: Date.parse(record.lastActiveAt), reason: 'user-pause' } : {}),
+      origin: { kind: 'user', entry: 'quick-start' },
+      configuration: { credentialSource: record.runtime?.credentialSource ?? 'native', model: record.runtime?.model, effort: record.runtime?.reasoningEffort },
+    }] })
   }),
   http.get('/api/workspaces/:id/sessions/:sid/diagnostics', () =>
     HttpResponse.json({ status: 'demo' }),

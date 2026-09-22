@@ -243,8 +243,8 @@ it('round-trips a Codex free-text question in demo mode', async () => {
   expect(JSON.stringify(result.body.snapshot.messages)).toContain('Project name: Alice research')
 })
 
-it('exposes an empty execution history for a known demo Session and rejects unknown identities', async () => {
+it('exposes a representative execution history for a known demo Session and rejects unknown identities', async () => {
   const path = `${baseUrl}/api/workspaces/${DEMO_CHAT_WORKSPACE_ID}/sessions`
-  expect(await (await fetch(`${path}/${DEMO_CHAT_SESSION_ID}/executions`)).json()).toEqual({ executions: [] })
+  expect(await (await fetch(`${path}/${DEMO_CHAT_SESSION_ID}/executions`)).json()).toMatchObject({ executions: [{ executionId: `demo-execution-${DEMO_CHAT_SESSION_ID}`, origin: { kind: 'user', entry: 'quick-start' } }] })
   expect((await fetch(`${path}/missing/executions`)).status).toBe(404)
 })
