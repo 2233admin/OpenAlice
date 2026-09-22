@@ -8,7 +8,7 @@ import type { UnifiedTradingAccount } from '../domain/trading/UnifiedTradingAcco
 import { searchTradeableContracts } from '../domain/trading/contract-search.js'
 import type { AssetClassHint } from '@traderalice/uta-protocol'
 import { executeOneShotOrder, type OrderEntryPhase } from '../domain/trading/order-entry.js'
-import { isPendingHashConflict } from '../domain/trading/git/TradingGit.js'
+import { isPendingHashConflict, isWriteOutcomeUnconfirmed } from '../domain/trading/git/TradingGit.js'
 import { projectOrderHistory, projectTradeHistory } from '../domain/trading/order-history.js'
 
 // ==================== Order entry schemas ====================
@@ -521,6 +521,22 @@ export function createTradingRoutes(ctx: UTAEngineContext) {
           error: err instanceof Error ? err.message : 'Pending commit changed',
           code: 'PENDING_HASH_CONFLICT',
         }, 409)
+      }
+      if (isWriteOutcomeUnconfirmed(err)) {
+        // The broker never answered. The commit IS in the log with the
+        // unsettled operations marked unconfirmed, so the caller is told to
+        // reconcile (`show <hash>`) instead of being handed the generic 500 —
+        // and never a 'rejected' verdict the exchange did not give.
+        return c.json({
+          error: err.message,
+          code: 'WRITE_OUTCOME_UNCONFIRMED',
+          hash: err.hash,
+          unconfirmed: err.unconfirmed,
+          // Whether the unconfirmed record reached disk. `false` means the caller
+          // must not treat it as recorded (and should escalate), even though the
+          // commit is in the in-memory log.
+          logPersisted: err.logPersisted,
+        }, 504)
       }
       return c.json({ error: String(err) }, 500)
     }

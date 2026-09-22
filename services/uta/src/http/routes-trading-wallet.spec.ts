@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTradingRoutes } from './routes-trading.js'
-import { PendingHashConflictError } from '../domain/trading/git/TradingGit.js'
+import { PendingHashConflictError, WriteOutcomeUnconfirmedError } from '../domain/trading/git/TradingGit.js'
 import type { UTAEngineContext } from '../types.js'
 
 function makeRoutes(uta: unknown) {
@@ -75,5 +75,40 @@ describe('wallet push/reject expected hash', () => {
     })
     expect(res.status).toBe(200)
     expect(push).toHaveBeenCalledWith('abc12345')
+  })
+
+  it('reports an indeterminate write distinctly instead of a generic failure', async () => {
+    const push = vi.fn(async () => {
+      throw new WriteOutcomeUnconfirmedError(
+        'Wallet write abc12345 did not confirm: 1 operation(s) did not settle within the 90000ms write bound — outcome indeterminate, reconcile against broker state',
+        {
+          hash: 'abc12345',
+          unconfirmed: [
+            { action: 'placeOrder' as const, success: false, status: 'unconfirmed' as const, error: 'no answer' },
+          ],
+          logPersisted: true,
+        },
+      )
+    })
+    const app = makeRoutes({
+      status: () => ({ pendingMessage: 'long AAPL', pendingHash: 'abc12345', staged: [{}] }),
+      push,
+    })
+    const res = await app.request('/uta/mock-uta/wallet/push', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedPendingHash: 'abc12345' }),
+    })
+
+    // Not 500 (unhandled) and not 409 PENDING_HASH_CONFLICT (which would invite a
+    // pointless retry): the caller is told the outcome is unknown, and given the
+    // commit hash to reconcile against.
+    expect(res.status).toBe(504)
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'WRITE_OUTCOME_UNCONFIRMED',
+      hash: 'abc12345',
+      logPersisted: true,
+      unconfirmed: [expect.objectContaining({ status: 'unconfirmed' })],
+    })
   })
 })
