@@ -88,9 +88,9 @@ export class WebSessionHost {
     return this.sessions.get(recordId)?.snapshot() ?? null
   }
 
-  async start(input: StartWebSessionInput): Promise<WebSessionSnapshot> {
+  async start(input: StartWebSessionInput, onCompletion?: (completion: Promise<{ reason: string; failed?: boolean }>) => void): Promise<WebSessionSnapshot> {
     const existing = this.sessions.get(input.recordId)
-    if (existing) return existing.snapshot()
+    if (existing) throw new Error('Session already owns a Web process')
     const factory = this.transports[input.wire]
     if (!factory) throw new Error(`no Web transport for wire ${String(input.wire)}`)
     const session = new LiveWebSession(
@@ -103,16 +103,17 @@ export class WebSessionHost {
           if (this.sessions.get(input.recordId) === session) this.sessions.delete(input.recordId)
           this.callbacks.onExit?.(input.recordId, reason)
         },
-        onNativeSessionId: (id) => this.callbacks.onNativeSessionId?.(input.recordId, id),
+        onNativeSessionId: (id) => { if (this.sessions.get(input.recordId) === session) this.callbacks.onNativeSessionId?.(input.recordId, id) },
       },
     )
     this.sessions.set(input.recordId, session)
+    onCompletion?.(session.completed)
     try {
       await session.start()
       return session.snapshot()
     } catch (error) {
-      this.sessions.delete(input.recordId)
-      await session.stop('startup failed').catch(() => undefined)
+      await session.stop('startup failed')
+      if (this.sessions.get(input.recordId) === session) this.sessions.delete(input.recordId)
       throw error
     }
   }
@@ -157,6 +158,8 @@ export class WebSessionHost {
 }
 
 class LiveWebSession {
+  private finishExecution!: (result: { reason: string; failed?: boolean }) => void
+  readonly completed = new Promise<{ reason: string; failed?: boolean }>(resolve => { this.finishExecution = resolve })
   private readonly state: WebSessionState
   private readonly channel: ChildJsonlChannel
   private readonly transport: WebSessionTransport
@@ -178,6 +181,7 @@ class LiveWebSession {
   ) {
     let lastNativeId: string | null = input.nativeSessionId ?? null
     this.state = new WebSessionState(() => {
+      this.input.onActivity?.(this.state.phase)
       if (this.state.nativeSessionId && this.state.nativeSessionId !== lastNativeId) {
         lastNativeId = this.state.nativeSessionId
         this.callbacks.onNativeSessionId(lastNativeId)
@@ -310,6 +314,7 @@ class LiveWebSession {
     this.state.clearRequests()
     this.state.bump()
     this.logger.info('web_session.exited', { code, signal, intentional: this.intentionalStop })
+    this.finishExecution({ reason: `child-exit:${code}:${signal ?? 'none'}`, failed: !this.intentionalStop && code !== 0 })
     this.callbacks.onExit({ code, signal, intentional: this.intentionalStop, startupFailed: !this.startupComplete })
   }
 }

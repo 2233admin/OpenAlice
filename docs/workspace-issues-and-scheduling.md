@@ -9,6 +9,11 @@ Related guides: [[docs/project-structure.md]] and
 live in [[docs/conversation-provenance.md]]. The agent-facing usage manual ships as
 `default/skills/self-scheduling/SKILL.md`.
 
+Issue, schedule, and Connector-triggered launches enter
+`WorkspaceService.executions.dispatch` with mandatory execution attribution.
+See [[docs/workspace-lifecycle.md]] for the canonical execution ledger and state
+authority; the Office occupancy stream below is a presentation journal.
+
 ## Runtime occupancy journal
 
 `workspaces/state/agent-runtime.jsonl` is an append-only projection of desk

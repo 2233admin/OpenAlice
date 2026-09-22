@@ -1,3 +1,4 @@
+import type { ExecutionOrigin } from '../session-execution-manager.js'
 import type { AgentConversationDispatch } from '../agent-conversation-log.js'
 import type { IssueCommentRequest } from '../dispatch-communication.js'
 /**
@@ -100,6 +101,7 @@ export interface ScheduleScannerDeps {
     meta: WorkspaceMeta,
     adapter: CliAdapter,
     prompt: string,
+    origin: ExecutionOrigin,
     timeoutMs?: number,
     /** Composite source of the dispatch. Execution may happen elsewhere. */
     trigger?: HeadlessTaskTrigger,
@@ -512,8 +514,15 @@ export class ScheduleScanner {
           ? { mode: 'exact', origin: { kind: 'session', workspaceId: executionWorkspace.id, resumeId, agent: adapter.id } }
           : { mode: 'reconstructed', workspaceId: executionWorkspace.id, reason: 'explicit-workspace' },
       } : undefined
+      const origin: ExecutionOrigin = {
+        kind: manual ? 'issue' : 'schedule',
+        entry: commentId ? 'issue-comment' : manual ? (retryOfTaskId ? 'issue-retry' : 'issue-manual') : 'issue-schedule',
+        workspaceId: issueWorkspace.id, issueId,
+        ...(trigger?.metadata ? { connectorId: trigger.metadata.connectorId } : {}),
+        ...(commentSource?.kind === 'session' ? { resumeId: commentSource.resumeId } : {}),
+      }
       const result = inquiry
-        ? await this.deps.dispatch(executionWorkspace, adapter, what, timeoutMs, undefined,
+        ? await this.deps.dispatch(executionWorkspace, adapter, what, origin, timeoutMs, undefined,
             resumeId, inquiry, selection, conversation, createdBy)
         : resumeId
         ? selection
@@ -521,6 +530,7 @@ export class ScheduleScanner {
               executionWorkspace,
               adapter,
               what,
+              origin,
               timeoutMs,
               trigger,
               resumeId,
@@ -531,6 +541,7 @@ export class ScheduleScanner {
               executionWorkspace,
               adapter,
               what,
+              origin,
               timeoutMs,
               trigger,
               resumeId,
@@ -540,6 +551,7 @@ export class ScheduleScanner {
               executionWorkspace,
               adapter,
               what,
+              origin,
               timeoutMs,
               trigger,
               undefined,
@@ -552,6 +564,7 @@ export class ScheduleScanner {
               executionWorkspace,
               adapter,
               what,
+              origin,
               timeoutMs,
               trigger,
               undefined,
