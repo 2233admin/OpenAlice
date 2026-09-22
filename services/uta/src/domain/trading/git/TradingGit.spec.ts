@@ -4,7 +4,7 @@ import { Contract, Order, OrderState } from '@traderalice/ibkr'
 import { PendingHashConflictError, TradingGit, WriteOutcomeUnconfirmedError } from './TradingGit.js'
 import type { TradingGitConfig } from './interfaces.js'
 import { classifyOperationFailure } from '../brokers/operation-failure-classification.js'
-import type { Operation, GitState } from './types.js'
+import type { Operation, GitState, GitExportState } from './types.js'
 import '../contract-ext.js'
 
 // ==================== Helpers ====================
@@ -1616,6 +1616,162 @@ describe('TradingGit', () => {
 
       expect(result.rejected).toHaveLength(1)
       expect(bounded.show(hash)?.results[0]).toMatchObject({ success: false, status: 'rejected' })
+    })
+
+    it('rehydrates an unconfirmed write and refuses the retry without dispatching again', async () => {
+      let dispatches = 0
+      const executeOperation = vi.fn((_op: Operation, _signal?: AbortSignal) => {
+        dispatches += 1
+        return Promise.reject(Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' }))
+      })
+      const config = () => makeConfig({
+        executeOperation,
+        classifyOperationError: classifyOperationFailure,
+        writeTimeoutMs: WRITE_BOUND_MS,
+      })
+      const bounded = new TradingGit(config())
+      bounded.add(buyOp())
+      const { hash } = bounded.commit('Buy AAPL')
+
+      const outcome = await withWatchdog(bounded.push(hash).then(() => null, (err: unknown) => err))
+      expect(outcome).toBeInstanceOf(WriteOutcomeUnconfirmedError)
+      expect(dispatches).toBe(1)
+
+      // Rehydrate the PERSISTED log: the pending triple is never persisted, so a
+      // restarted process has the unconfirmed commit and no pending commit.
+      const rehydrated = TradingGit.restore(bounded.exportState(), config())
+      expect(rehydrated.status()).toMatchObject({ pendingHash: null, pendingMessage: null, commitCount: 1 })
+      expect(rehydrated.show(hash)?.results[0]).toMatchObject({ success: false, status: 'unconfirmed' })
+
+      // The retry is refused and never reaches the broker: nothing between a
+      // client retry and a resubmit except what this checker consults.
+      await expect(rehydrated.push(hash)).rejects.toBeInstanceOf(PendingHashConflictError)
+      expect(dispatches).toBe(1)
+      expect(rehydrated.status().staged).toHaveLength(0)
+    })
+
+    it('reports logPersisted:false exactly when the record did not reach disk', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const persisted: GitExportState[] = []
+        let failing = false
+        const onCommit = vi.fn(async (state: GitExportState) => {
+          if (failing) throw new Error('disk full')
+          persisted.push(JSON.parse(JSON.stringify(state)) as GitExportState)
+        })
+        let healthy = true
+        let dispatches = 0
+        const executeOperation = vi.fn((_op: Operation, _signal?: AbortSignal) => {
+          dispatches += 1
+          return healthy ? Promise.resolve({ success: true, orderId: 'order-1' }) : new Promise<never>(() => {})
+        })
+        const bounded = new TradingGit(makeConfig({ executeOperation, onCommit, writeTimeoutMs: WRITE_BOUND_MS }))
+
+        // First write records normally, so one commit really is on disk.
+        bounded.add(buyOp('AAPL'))
+        const firstHash = bounded.commit('Buy AAPL').hash
+        await expect(bounded.push(firstHash)).resolves.toMatchObject({ operationCount: 1 })
+        expect(persisted).toHaveLength(1)
+
+        healthy = false
+        failing = true
+        bounded.add(buyOp('GOOG'))
+        const { hash } = bounded.commit('Buy GOOG')
+        const outcome = await withWatchdog(bounded.push(hash).then(() => null, (err: unknown) => err))
+
+        expect(outcome).toBeInstanceOf(WriteOutcomeUnconfirmedError)
+        expect((outcome as WriteOutcomeUnconfirmedError).logPersisted).toBe(false)
+        // …and that is the truth: the last thing actually written out does not
+        // contain this commit, while the in-memory log does.
+        expect(persisted).toHaveLength(1)
+        expect(persisted[0].commits.map((c) => c.hash)).not.toContain(hash)
+        expect(bounded.show(hash)).not.toBeNull()
+      } finally {
+        errorSpy.mockRestore()
+      }
+    })
+
+    it('keeps a carried-forward snapshot marked through a restore and never promotes it', async () => {
+      const staleState = makeGitState({ netLiquidation: '777777' })
+      const liveState = makeGitState({ netLiquidation: '888888' })
+      const persisted: GitExportState = {
+        head: 'aaaa1111',
+        commits: [
+          {
+            hash: 'aaaa1111', parentHash: null, message: 'unconfirmed write',
+            operations: [buyOp('AAPL')],
+            results: [{ action: 'placeOrder', success: false, status: 'unconfirmed', error: 'no answer' }],
+            stateAfter: staleState, stateAfterSource: 'last-known',
+            timestamp: new Date().toISOString(),
+          },
+          {
+            hash: 'bbbb2222', parentHash: 'aaaa1111', message: 'first write, no snapshot',
+            operations: [buyOp('GOOG')],
+            results: [{ action: 'placeOrder', success: false, status: 'unconfirmed', error: 'no answer' }],
+            stateAfterSource: 'unavailable',
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+      const getGitState = vi.fn(async () => liveState)
+      const bounded = TradingGit.restore(persisted, makeConfig({ getGitState, writeTimeoutMs: WRITE_BOUND_MS }))
+
+      // The marker survives rehydration for both shapes, and an absent snapshot
+      // stays absent — rehydration must not invent one.
+      const carried = bounded.show('aaaa1111')
+      expect(carried?.stateAfterSource).toBe('last-known')
+      expect(carried?.stateAfter).toEqual(staleState)
+      const noSnapshot = bounded.show('bbbb2222')
+      expect(noSnapshot?.stateAfterSource).toBe('unavailable')
+      expect(noSnapshot && 'stateAfter' in noSnapshot).toBe(false)
+
+      // Live state still comes from the broker: the next write records a FRESH
+      // snapshot with no marker, not the restored carried-forward state.
+      bounded.add(buyOp('MSFT'))
+      const { hash } = bounded.commit('Buy MSFT')
+      await expect(bounded.push(hash)).resolves.toMatchObject({ operationCount: 1 })
+
+      const fresh = bounded.show(hash)
+      expect(getGitState).toHaveBeenCalled()
+      expect(fresh?.stateAfter).toEqual(liveState)
+      expect(fresh?.stateAfterSource).toBeUndefined()
+    })
+
+    it.each([
+      ['ETIMEDOUT', Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' })],
+      ['ECONNRESET', Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })],
+    ])('records a settled %s transport rejection as unconfirmed and blocks the retry', async (_label, transportError) => {
+      let dispatches = 0
+      const executeOperation = vi.fn((_op: Operation, _signal?: AbortSignal) => {
+        dispatches += 1
+        // A promise that SETTLES with a transport error on the first call — not a
+        // hanging stub — then succeeds so the follow-up write can prove the lock
+        // is free (a client timeout firing dead is exactly this shape).
+        return dispatches === 1
+          ? Promise.reject(transportError)
+          : Promise.resolve({ success: true, orderId: 'order-2' })
+      })
+      const bounded = new TradingGit(makeConfig({
+        executeOperation,
+        classifyOperationError: classifyOperationFailure,
+        writeTimeoutMs: WRITE_BOUND_MS,
+      }))
+      bounded.add(buyOp())
+      const { hash } = bounded.commit('Buy AAPL')
+
+      const outcome = await withWatchdog(bounded.push(hash).then(() => null, (err: unknown) => err))
+
+      expect(outcome).toBeInstanceOf(WriteOutcomeUnconfirmedError)
+      expect(bounded.show(hash)?.results[0]).toMatchObject({ success: false, status: 'unconfirmed' })
+
+      // The lock is gone, and the retry cannot dispatch again.
+      bounded.add(buyOp('MSFT'))
+      const second = bounded.commit('Buy MSFT')
+      await expect(bounded.push(second.hash)).resolves.toMatchObject({ operationCount: 1 })
+      expect(dispatches).toBe(2)
+
+      await expect(bounded.push(hash)).rejects.toBeInstanceOf(PendingHashConflictError)
+      expect(dispatches).toBe(2)
     })
   })
 })

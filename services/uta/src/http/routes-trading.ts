@@ -6,9 +6,10 @@ import type { UTAEngineContext } from '../types.js'
 import { BrokerError } from '../domain/trading/brokers/types.js'
 import type { UnifiedTradingAccount } from '../domain/trading/UnifiedTradingAccount.js'
 import { searchTradeableContracts } from '../domain/trading/contract-search.js'
-import type { AssetClassHint } from '@traderalice/uta-protocol'
+import type { AssetClassHint, OperationResult } from '@traderalice/uta-protocol'
 import { executeOneShotOrder, type OrderEntryPhase } from '../domain/trading/order-entry.js'
 import { isPendingHashConflict, isWriteOutcomeUnconfirmed } from '../domain/trading/git/TradingGit.js'
+import { loadGitState } from '../domain/trading/git-persistence.js'
 import { projectOrderHistory, projectTradeHistory } from '../domain/trading/order-history.js'
 
 // ==================== Order entry schemas ====================
@@ -86,6 +87,58 @@ function readExpectedPendingHash(body: unknown): string | undefined {
   if (!body || typeof body !== 'object') return undefined
   const value = (body as { expectedPendingHash?: unknown }).expectedPendingHash
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+/** The answer a retry of an indeterminate wallet write gets: the same verdict
+ *  the original push reported, never a definite-sounding "nothing happened". */
+interface UnconfirmedWriteVerdict {
+  error: string
+  code: 'WRITE_OUTCOME_UNCONFIRMED'
+  hash: string
+  unconfirmed: OperationResult[]
+  logPersisted: boolean
+}
+
+/** Re-state the verdict of a wallet write whose commit is still in the log.
+ *
+ *  A write that ends without an answer records its commit with the unsettled
+ *  operations marked `unconfirmed` and clears the pending commit by design, so a
+ *  retry carrying that commit's hash can no longer be served by `push` — and
+ *  "Nothing to push" is the one answer it must never get: the order MAY be live.
+ *  The recorded commit is the source of truth, so the verdict is read back out of
+ *  the log (`show`) instead of being restated from state that no longer exists.
+ *
+ *  Anything else — an unknown hash, or a commit with no unsettled operation — returns
+ *  undefined and the caller keeps the ordinary conflict.
+ *
+ *  `logPersisted` is re-derived, not remembered: a commit carries no record of
+ *  whether its own persist step succeeded, so the durable log is read directly.
+ *  Its absence means the record must not be relied on past a restart.
+ */
+async function unconfirmedWriteVerdict(
+  accountId: string,
+  uta: UnifiedTradingAccount,
+  hash: string,
+): Promise<UnconfirmedWriteVerdict | undefined> {
+  const commit = uta.show(hash)
+  if (!commit) return undefined
+  const unconfirmed = commit.results.filter((result) => result.status === 'unconfirmed')
+  if (unconfirmed.length === 0) return undefined
+  // The probe decides one field, never the verdict: an unreadable durable log is
+  // no evidence that the record is durable, and must not replace the answer the
+  // caller came back for with a 500.
+  let logPersisted = false
+  try {
+    const durable = await loadGitState(accountId)
+    logPersisted = durable?.commits.some((entry) => entry.hash === hash) ?? false
+  } catch { /* unreadable durable log → not durable */ }
+  return {
+    error: `Wallet write ${hash} did not confirm: ${unconfirmed.length} operation(s) did not settle — outcome indeterminate, reconcile against broker state`,
+    code: 'WRITE_OUTCOME_UNCONFIRMED',
+    hash,
+    unconfirmed,
+    logPersisted,
+  }
 }
 
 /** Resolve account by :id param, return 404 if not found. */
@@ -503,10 +556,22 @@ export function createTradingRoutes(ctx: UTAEngineContext) {
   app.post('/uta/:id/wallet/push', async (c) => {
     const uta = ctx.utaManager.get(c.req.param('id'))
     if (!uta) return c.json({ error: 'Account not found' }, 404)
-    if (!uta.status().pendingMessage) return c.json({ error: 'Nothing to push' }, 400)
+    const body = await c.req.json().catch(() => ({}))
+    const expectedPendingHash = readExpectedPendingHash(body)
+    if (!uta.status().pendingMessage) {
+      // The genuinely empty wallet: nothing waiting and no hash to account for.
+      if (!expectedPendingHash) return c.json({ error: 'Nothing to push' }, 400)
+      // A supplied hash names a commit, and when the log holds it as a write whose
+      // operations never settled this is a retry of an indeterminate write: it
+      // re-learns that verdict, BEFORE any push is attempted — "Nothing to push"
+      // would tell the owner the opposite of what the log says (the order MAY be
+      // live), and a push attempt has nothing to add. Any other hash with nothing
+      // pending — unknown, or a commit that settled — is not an unknown outcome,
+      // and falls through to the ordinary conflict.
+      const retry = await unconfirmedWriteVerdict(c.req.param('id'), uta, expectedPendingHash)
+      if (retry) return c.json(retry, 504)
+    }
     try {
-      const body = await c.req.json().catch(() => ({}))
-      const expectedPendingHash = readExpectedPendingHash(body)
       if (!expectedPendingHash) {
         return c.json({
           error: 'expectedPendingHash is required',

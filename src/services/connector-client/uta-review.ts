@@ -172,14 +172,26 @@ async function fulfillUtaRequest(
       return fail('not_found')
     }
     const status = await uta.status()
-    if (!status.pendingMessage) {
+    // A push approval carries the hash of the commit the owner saw, and after a
+    // write whose outcome is unknown that pending commit is gone BY DESIGN — so a
+    // retry arrives with nothing waiting while its hash still names a write the
+    // owner has to reconcile. What such a hash means is the route's call (it
+    // re-states the indeterminate verdict and refuses every other hash as a
+    // conflict), so the push has to reach it: answering here would render the one
+    // outcome that may still be live as "nothing is waiting". A reject has no
+    // such retry meaning — the reject route refuses a missing commit outright.
+    if (!status.pendingMessage && request.action !== 'push') {
       return present(deps, request, await buildConnectorUtaReview(deps.utaManager, policy), {
         kind: 'error',
         utaId: request.utaId,
         message: 'Nothing is waiting for approval on that account.',
       })
     }
-    if (status.staged.length > MAX_CONNECTOR_UTA_OPERATIONS) {
+    // The operation count weighs the commit being approved against what the owner
+    // was shown. With nothing pending there is no such commit, and a separately
+    // staged batch is not what this action approves — it must not replace the
+    // reconcile notice.
+    if (status.pendingMessage && status.staged.length > MAX_CONNECTOR_UTA_OPERATIONS) {
       return present(deps, request, await buildConnectorUtaReview(deps.utaManager, policy), {
         kind: 'error',
         utaId: request.utaId,
