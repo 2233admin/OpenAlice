@@ -1522,6 +1522,12 @@ export const workspacesHandlers = [
     demoWebSessions.delete(webKey(wsId, sessionId))
     return HttpResponse.json(true)
   }),
+  http.get('/api/workspaces/:id/sessions/:sid/executions', ({ params }) => {
+    const exists = demoWorkspaces.some(workspace => workspace.id === String(params.id)
+      && workspace.sessions.some(session => session.id === String(params.sid)))
+      || (demoManagerSession.wsId === String(params.id) && demoManagerSession.id === String(params.sid))
+    return exists ? HttpResponse.json({ executions: [] }) : HttpResponse.json({ error: 'not_found' }, { status: 404 })
+  }),
   http.get('/api/workspaces/:id/sessions/:sid/diagnostics', () =>
     HttpResponse.json({ status: 'demo' }),
   ),

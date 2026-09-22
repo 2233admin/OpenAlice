@@ -28,7 +28,9 @@ collide.
 
 Workspace launcher state includes the private
 `workspaces/state/agent-conversations.jsonl` prompt/reply event stream and
-`workspaces/state/agent-runtime.jsonl` occupancy journal. Both move with the
+`workspaces/state/agent-runtime.jsonl` occupancy journal.
+`workspaces/state/session-executions.json` is the secret-free process lifecycle
+ledger (source, selection, PID, states, and exit reason). These move with the
 complete home and are not part of any Workspace repository. Treat the
 conversation stream as sensitive history when backing up or sharing a home;
 the occupancy journal has no prompt bodies.

@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { SessionExecutionManager, executionConfiguration, validateExecutionOrigin, type ExecutionOrigin, type ExecutionRequest } from './session-execution-manager.js';
+import type { PersistentSession } from './persistent-session.js';
 import { buildDispatchCommunication, dispatchReply } from './dispatch-communication.js';
 import { DispatchDelivery } from './dispatch-delivery.js';
 import { inboxFiles } from '@traderalice/connector-protocol'
@@ -359,7 +362,7 @@ export function launchEnvironmentDisclosure(
   return out;
 }
 import { ScrollbackStore } from './scrollback-store.js';
-import { SessionPool, type SessionFactoryContext } from './session-pool.js';
+import { SessionPool, type SessionFactoryContext, type SessionPoolView, type SessionView } from './session-pool.js';
 import {
   SessionRegistry,
   type SessionRecord,
@@ -433,9 +436,45 @@ export interface WorkspaceService {
   readonly templates: TemplateRegistry;
   readonly adapters: AdapterRegistry;
   readonly creator: WorkspaceCreator;
-  readonly pool: SessionPool;
+  readonly pool: SessionPoolView;
   /** Long-lived structured Agent processes presented in the browser (Web surface). */
-  readonly web: WebSessionHost;
+  readonly web: Omit<WebSessionHost, 'start' | 'stop' | 'stopAll'>;
+  readonly executions: {
+    terminal(wsId: string, context: SessionFactoryContext, origin: ExecutionOrigin): Promise<SessionView>;
+    web(meta: WorkspaceMeta, record: SessionRecord, origin: ExecutionOrigin, opts?: { appendSystemPrompt?: string; skills?: readonly string[]; approveProject?: boolean; runtimeSelection?: SessionRuntimeSelection }): Promise<WebSessionSnapshot>;
+    stop(resumeId: string, reason: string): Promise<boolean>;
+    dispatch(
+      meta: WorkspaceMeta,
+      adapter: CliAdapter,
+      prompt: string,
+      origin: ExecutionOrigin,
+      timeoutMs?: number,
+      /** Business source of the dispatch. Its Workspace may differ from `meta`
+       * when an Issue explicitly resumes a signed Session across Workspaces. */
+      trigger?: HeadlessTaskTrigger,
+      /** Continue this OpenAlice-owned conversation. Native runtime ids are
+       * resolved only inside the service. */
+      resumeId?: string,
+      /** Optional Inbox/Issue reverse link for a user-initiated inquiry. */
+      inquiry?: HeadlessTaskInquiry,
+      /** Optional selection. Fresh Sessions inherit Workspace defaults; exact resumes patch their own binding under the execution lock. */
+      selection?: SessionRuntimeSelection,
+      /** Cross-Agent message metadata for the independent conversation log. */
+      conversation?: AgentConversationDispatch,
+      /** Birth stamp when this dispatch allocates a new product Session. */
+      createdBy?: SessionCreatedBy,
+    ): Promise<{ taskId: string; resumeId: string }>;
+    probe(
+      meta: WorkspaceMeta,
+      adapter: CliAdapter,
+      resume: SessionFactoryContext['resume'],
+      prompt: string,
+      timeoutMs: number,
+      origin: ExecutionOrigin,
+    ): Promise<HeadlessProbeResult>;
+    list: SessionExecutionManager['list'];
+    wait(meta: WorkspaceMeta, adapter: CliAdapter, prompt: string, origin: ExecutionOrigin, timeoutMs?: number): Promise<HeadlessTaskResult>;
+  };
   /** Launcher-owned control plane. Not part of the business Workspace registry. */
   readonly managerWorkspace: WorkspaceMeta;
   /** Resolve a runtime target, including the special manager control plane. */
@@ -459,17 +498,6 @@ export interface WorkspaceService {
   resolveDefaultAgentId(meta: WorkspaceMeta): Promise<string | undefined>;
   resolveHeadlessDefaultAgentId(meta: WorkspaceMeta): Promise<string | undefined>;
   resolveAdapter(meta: WorkspaceMeta, agentId?: string): CliAdapter;
-  /** Open the same persisted Session through its runtime's structured protocol instead of a PTY. */
-  startWebSession(
-    meta: WorkspaceMeta,
-    record: SessionRecord,
-    opts?: {
-      appendSystemPrompt?: string;
-      skills?: readonly string[];
-      approveProject?: boolean;
-      runtimeSelection?: SessionRuntimeSelection;
-    },
-  ): Promise<WebSessionSnapshot>;
   /** Best-effort background reconciliation of native runtime Session titles. */
   refreshSessionTitles?(meta: WorkspaceMeta): Promise<void>;
   publicMeta(w: WorkspaceMeta): Promise<unknown>;
@@ -497,13 +525,6 @@ export interface WorkspaceService {
    * the SessionRegistry, never registers with the transcript watcher, never
    * affects state visible to other clients. Pure observation tool.
    */
-  runHeadlessProbe(
-    meta: WorkspaceMeta,
-    adapter: CliAdapter,
-    resume: SessionFactoryContext['resume'],
-    prompt: string,
-    timeoutMs: number,
-  ): Promise<HeadlessProbeResult>;
   /**
    * Dispatch a one-shot HEADLESS task: spawn the adapter's
    * `composeHeadlessCommand` (prompt placed) on a plain pipe, run to natural
@@ -512,12 +533,6 @@ export interface WorkspaceService {
    * spawn (same CLI injection), but is NOT pooled (one-shot, no respawn).
    * Throws if the adapter has no headless mode.
    */
-  runHeadlessTask(
-    meta: WorkspaceMeta,
-    adapter: CliAdapter,
-    prompt: string,
-    timeoutMs?: number,
-  ): Promise<HeadlessTaskResult>;
   /** Cached install/ready snapshot for global first-run runtime gating. */
   getAgentRuntimeReadiness(): AgentRuntimeReadinessSnapshot;
   /**
@@ -539,26 +554,6 @@ export interface WorkspaceService {
    * taskId immediately (the automation path). Throws `HeadlessCapacityError`
    * when the concurrency cap is hit.
    */
-  dispatchHeadlessTask(
-    meta: WorkspaceMeta,
-    adapter: CliAdapter,
-    prompt: string,
-    timeoutMs?: number,
-    /** Business source of the dispatch. Its Workspace may differ from `meta`
-     * when an Issue explicitly resumes a signed Session across Workspaces. */
-    trigger?: HeadlessTaskTrigger,
-    /** Continue this OpenAlice-owned conversation. Native runtime ids are
-     * resolved only inside the service. */
-    resumeId?: string,
-    /** Optional Inbox/Issue reverse link for a user-initiated inquiry. */
-    inquiry?: HeadlessTaskInquiry,
-    /** Optional selection. Fresh Sessions inherit Workspace defaults; exact resumes patch their own binding under the execution lock. */
-    selection?: SessionRuntimeSelection,
-    /** Cross-Agent message metadata for the independent conversation log. */
-    conversation?: AgentConversationDispatch,
-    /** Birth stamp when this dispatch allocates a new product Session. */
-    createdBy?: SessionCreatedBy,
-  ): Promise<{ taskId: string; resumeId: string }>;
   /** Read-only scheduling projection of every workspace's `.alice/issues/`
    *  directory (scheduled issues only) + each task's dispatch cursor and
    *  computed next-due. Powers GET /api/schedule. */
@@ -1046,6 +1041,23 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       return lifecycle !== 'purging' && lifecycle !== 'purged';
     },
   });
+  const executionManager = await SessionExecutionManager.open(
+    join(config.launcherRoot, 'state', 'session-executions.json'),
+    execution => sessionRegistry.projectExecution(execution),
+  );
+  await executionManager.recoverOrphans(sessionRegistry.listAll());
+  const probeExecutionRequest = (ws: WorkspaceMeta, adapter: CliAdapter, origin: ExecutionOrigin, runtime?: ResolvedSessionRuntimeBinding, resume?: SessionFactoryContext['resume']): ExecutionRequest => {
+    if (resume === 'last') throw new Error('A diagnostic probe must identify its exact Session');
+    const identity = resume ? resumeRegistry.list({ wsId: ws.id }).find(row => row.agent === adapter.id && row.agentSessionId === resume.sessionId) : undefined;
+    if (resume && !identity) throw new Error('Diagnostic resume is not owned by a product Session');
+    const record = identity ? sessionRegistry.findByResumeId(ws.id, identity.resumeId) : undefined;
+    const id = `probe-${randomUUID()}`;
+    return {
+      workspaceId: ws.id, resumeId: record?.resumeId ?? id, recordId: record?.id ?? id,
+      agent: adapter.id, surface: 'headless', intent: 'probe', origin,
+      configuration: executionConfiguration(runtime?.binding),
+    };
+  };
   const sessionTitleResolver = new NativeSessionTitleResolver({
     sessionRegistry,
     resumeRegistry,
@@ -1434,7 +1446,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       RUNTIME_READINESS_PROMPT,
     );
     if (!command) return null;
-    const result = await executeHeadlessTask({
+    const result = await executionManager.run(probeExecutionRequest(ws, adapter, { kind: 'system', entry: 'runtime-readiness' }, sessionRuntime), (ready, signal) => executeHeadlessTask({
+      abortSignal: signal,
+      onChildSpawned: child => ready(child.pid),
       command,
       cwd,
       env,
@@ -1453,7 +1467,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       ...(adapter.keepHeadlessDiagnosticLine
         ? { keepDiagnosticLine: adapter.keepHeadlessDiagnosticLine.bind(adapter) }
         : {}),
-    });
+    }), value => ({ reason: value.killed ? 'probe-timeout' : `child-exit:${value.exitCode}`, failed: headlessTaskStatus(value) !== 'done' }));
     return { result, source: effectiveSource };
   };
 
@@ -1628,6 +1642,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     resume: SessionFactoryContext['resume'],
     prompt: string,
     timeoutMs: number,
+    origin: ExecutionOrigin,
   ): Promise<HeadlessProbeResult> => {
     const operationLease = workspaceOperationGuard.acquire(ws.id, 'headless-probe');
     if (!operationLease) throw new Error(`workspace is busy with ${workspaceOperationGuard.current(ws.id)}`);
@@ -1668,7 +1683,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         undefined,
         sessionRuntime,
       );
-      return await runHeadlessProbe({
+      return await executionManager.run(probeExecutionRequest(ws, adapter, origin, sessionRuntime, resume), (ready, signal) => runHeadlessProbe({
+        abortSignal: signal,
         command,
         cwd,
         env,
@@ -1677,8 +1693,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         prompt,
         timeoutMs,
         logger: launcherLogger.child({ scope: 'probe', wsId: ws.id, agent: adapter.id }),
-        onSpawned: releaseStartLease,
-      });
+        onSpawned: pid => { ready(pid); releaseStartLease(); },
+      }), value => ({ reason: value.killed ? 'probe-timeout' : `child-exit:${value.exitCode}`, failed: !value.killed && value.exitCode !== 0 }));
     } finally {
       activityLease.release();
       releaseStartLease();
@@ -1689,11 +1705,12 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     ws: WorkspaceMeta,
     adapter: CliAdapter,
     prompt: string,
-    timeoutMs?: number,
+    timeoutMs: number | undefined,
     // Dispatch-path extras: a taskId keys the on-disk task log; onSessionId
     // fires when the adapter's stdout scanner captures the agent's own session
     // id (recorded WHILE running, so the panel can offer "open as session").
     opts: {
+      origin: ExecutionOrigin;
       taskId?: string;
       resumeId?: string;
       resume?: SessionFactoryContext['resume'];
@@ -1703,7 +1720,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       /** Record this supplied binding only after a fresh child actually spawns. */
       rememberRuntime?: boolean;
       onProgress?: (snapshot: HeadlessStructuredOutput) => void;
-    } = {},
+    },
   ): Promise<HeadlessTaskResult> => {
     const operationLease = workspaceOperationGuard.acquire(ws.id, 'headless-run');
     if (!operationLease) throw new Error(`workspace is busy with ${workspaceOperationGuard.current(ws.id)}`);
@@ -1739,6 +1756,12 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         });
         rememberRuntime = true;
       }
+      const product = await sessionCoordinator.ensure({
+        ...(opts.resumeId ? { resumeId: opts.resumeId } : {}),
+        wsId: ws.id, agent: adapter.id, namePrefix: adapter.namePrefix ?? adapter.id[0] ?? 's',
+        runtimeBinding: sessionRuntime.binding, surface: 'headless', fallbackTitle: prompt,
+      });
+      opts.resumeId = product.identity.resumeId;
       await prepareAgentRuntimeWorkspace(adapter, {
         wsId: ws.id,
         cwd: ws.dir,
@@ -1784,7 +1807,13 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         ...(opts.taskId ? { taskId: opts.taskId } : {}),
       });
       try {
-        return await executeHeadlessTask({
+        return await executionManager.run({
+          workspaceId: ws.id, resumeId: product.identity.resumeId, recordId: product.session.id,
+          agent: adapter.id, surface: 'headless', origin: opts.origin, taskId: opts.taskId,
+          intent: opts.resume ? 'resume' : 'fresh',
+          configuration: executionConfiguration(sessionRuntime.binding),
+        }, (ready, signal) => executeHeadlessTask({
+          abortSignal: signal,
           command,
           cwd,
           env,
@@ -1814,6 +1843,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
           onChildSpawned: (child) => {
             activityLease.attach(child);
+            ready(child.pid);
             if (rememberRuntime && existsSync(ws.dir)) {
               rememberRuntime = false;
               void rememberWorkspaceRuntimeBinding({
@@ -1832,7 +1862,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
             // reviews may proceed and explain this exact run as the blocker.
             releaseStartLease();
           },
-        });
+        }), value => ({ reason: value.killed ? 'timeout' : `child-exit:${value.exitCode}`, failed: headlessTaskStatus(value) !== 'done' }));
       } finally {
         activityLease.release();
       }
@@ -1845,13 +1875,14 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
    * ASYNC dispatch: record the task, spawn it in the background, return the
    * taskId immediately. The record fills in on exit. This is the automation
    * path (a trigger doesn't wait minutes for the run); the sync
-   * `runHeadlessTask` stays for the `wait:true` API mode + direct callers.
+   * `executions.wait` provides the synchronous return mode through the same manager.
    * Throws `HeadlessCapacityError` when too many tasks are already in flight.
    */
   const dispatchHeadlessTaskMethod = async (
     ws: WorkspaceMeta,
     adapter: CliAdapter,
     prompt: string,
+    origin: ExecutionOrigin,
     timeoutMs?: number,
     // Composite Issue source when dispatched by ScheduleScanner. Manual and
     // external runs leave it undefined.
@@ -1863,6 +1894,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     /** Birth stamp when this dispatch allocates a new product Session. */
     createdBy?: SessionCreatedBy,
   ): Promise<{ taskId: string; resumeId: string }> => {
+    origin = validateExecutionOrigin(origin);
     if (catalog.get(ws.id)?.lifecycle !== 'active') {
       throw new Error(`workspace is not active: ${ws.id}`);
     }
@@ -1907,12 +1939,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
             || headlessTasks.latestForResumeId(resumeId)?.status === 'running') {
             throw new HeadlessResumeError('busy', 'this conversation already has a running execution');
           }
-          const terminal = pool.get(productSession.id);
-          if (terminal) await terminal.disposeAndWait('background handoff');
-          await web.stop(productSession.id, 'background handoff');
-          await sessionRegistry.update(ws.id, productSession.id, {
-            state: 'paused', lastActiveAt: new Date().toISOString(),
-          });
+          await executionManager.stop(resumeId, 'background-handoff');
           await agentRuntimeLog.record('runtime.stopped', {
             workspaceId: ws.id, resumeId, agent: adapter.id,
             sessionRecordId: productSession.id,
@@ -1956,7 +1983,6 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       });
     }
     let rec: HeadlessTaskRecord;
-    let productSessionResumeId: string | undefined;
     let occupancySessionId: string | undefined;
     try {
       // ResumeRegistry remains the sole product-id allocator, while the
@@ -1969,12 +1995,10 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         namePrefix: adapter.namePrefix ?? adapter.id[0] ?? 's',
         runtimeBinding: sessionRuntime.binding,
         ...(!resumeId && createdBy ? { metadata: sessionMetadata(createdBy) } : {}),
-        state: 'running',
         surface: 'headless',
         fallbackTitle: prompt,
       });
       const identity = productSession.identity;
-      productSessionResumeId = identity.resumeId;
       occupancySessionId = productSession.session.id;
       if (catalog.get(ws.id)?.lifecycle !== 'active') {
         throw new Error(`workspace stopped accepting work during dispatch: ${ws.id}`);
@@ -2031,13 +2055,6 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         agent: adapter.id,
         latestTaskId: rec.taskId,
       });
-      await sessionCoordinator.transition({
-        wsId: ws.id,
-        resumeId: identity.resumeId,
-        state: 'running',
-        surface: 'headless',
-        sourceRunId: rec.taskId,
-      });
       if (conversation) {
         await agentConversationLog.recordDispatch({
           taskId: rec.taskId,
@@ -2060,18 +2077,6 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         cause: runtimeCauseFromDispatch(conversation, trigger),
       }, occupancyCauseSeq !== undefined ? { causedBy: occupancyCauseSeq } : undefined);
     } catch (err) {
-      if (productSessionResumeId) {
-        await sessionCoordinator.transition({
-          wsId: ws.id,
-          resumeId: productSessionResumeId,
-          state: 'paused',
-          surface: 'headless',
-        }).catch((transitionErr) => launcherLogger.warn('product_session.dispatch_rollback_failed', {
-          wsId: ws.id,
-          resumeId: productSessionResumeId,
-          err: transitionErr,
-        }));
-      }
       if (resumeId) activeResumeIds.delete(resumeId);
       throw err;
     }
@@ -2122,6 +2127,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // errors followed by a later assistant reply remain visible in Activity
     // without turning a recovered run into a false failure.
     void runHeadlessTaskMethod(ws, adapter, prompt, timeoutMs, {
+      origin,
       taskId: rec.taskId,
       resumeId: rec.resumeId,
       ...(nativeResume ? { resume: nativeResume } : {}),
@@ -2294,17 +2300,6 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       })
       .finally(async () => {
         await dispatchDelivery.finish(rec).catch(err => launcherLogger.warn('dispatch.delivery_finish_failed', { taskId: rec.taskId, err }));
-        await sessionCoordinator.transition({
-          wsId: ws.id,
-          resumeId: rec.resumeId,
-          state: 'paused',
-          surface: 'headless',
-        }).catch((err) => launcherLogger.warn('product_session.headless_pause_failed', {
-          wsId: ws.id,
-          resumeId: rec.resumeId,
-          taskId: rec.taskId,
-          err,
-        }));
         activeResumeIds.delete(rec.resumeId);
       });
     return { taskId: rec.taskId, resumeId: rec.resumeId };
@@ -2971,28 +2966,6 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
   const web = new WebSessionHost(
     launcherLogger.child({ scope: 'web-session-host' }),
     {
-      onExit: (recordId, reason) => {
-        // Intentional handoffs are followed by an explicit caller-owned state
-        // update (paused, terminal-running, or deleted). Letting this async
-        // callback also write `paused` would race a Web -> TUI switch.
-        // The opening route also owns rollback when the handshake fails.
-        // A second registry write here races its atomic-file replacement.
-        if (reason.intentional || reason.startupFailed) return;
-        const record = sessionRegistry.findById(recordId);
-        if (!record) return;
-        void sessionRegistry.update(record.wsId, record.id, {
-          state: 'paused',
-          lastActiveAt: new Date().toISOString(),
-        }).catch((err) => launcherLogger.warn('web_session.pause_update_failed', { recordId, err }));
-        void agentRuntimeLog.record('runtime.stopped', {
-          workspaceId: record.wsId,
-          resumeId: record.resumeId,
-          agent: record.agent,
-          sessionRecordId: record.id,
-          surface: 'webpi',
-          status: 'paused',
-        });
-      },
       onNativeSessionId: (recordId, nativeSessionId) => {
         // Runtimes that create sessions in-band (ACP, Codex, fresh omp/Claude)
         // announce their id after spawn; bind it exactly like PTY discovery so
@@ -3011,9 +2984,10 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     },
   );
 
-  const startWebSession = async (
+  const executeWebSession = async (
     meta: WorkspaceMeta,
     record: SessionRecord,
+    origin: ExecutionOrigin,
     opts: {
       appendSystemPrompt?: string;
       skills?: readonly string[];
@@ -3021,6 +2995,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       runtimeSelection?: SessionRuntimeSelection;
     } = {},
   ): Promise<WebSessionSnapshot> => {
+    origin = validateExecutionOrigin(origin);
     if (!claimResume(record.resumeId)) throw new HeadlessResumeError('busy', 'this conversation already has a running turn');
     const operationLease = workspaceOperationGuard.acquire(meta.id, 'web-session-start');
     if (!operationLease) {
@@ -3043,7 +3018,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       if (phase && !['idle', 'failed', 'stopped'].includes(phase)) {
         throw new HeadlessResumeError('busy', 'Wait for the current response before changing AI configuration');
       }
-      await web.stop(record.id, 'AI configuration changed');
+      await executionManager.stop(record.resumeId, 'AI configuration changed');
       await resumeRegistry.replaceRuntimeBinding({
         resumeId: record.resumeId, wsId: record.wsId, agent: record.agent,
         runtimeBinding: replacement.binding,
@@ -3113,39 +3088,70 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       spawnCwd: cwd,
       composedCommand: command,
     });
-    const terminal = pool.get(record.id);
-    if (terminal) await terminal.disposeAndWait('switch to Web');
-    const snapshot = await web.start({
-      recordId: record.id,
-      wsId: record.wsId,
-      resumeId: record.resumeId,
-      agent: record.agent,
-      wire: webCapability.wire,
-      command,
-      cwd,
-      env,
-      ...(nativeSessionId ? { nativeSessionId } : {}),
-      ...(sessionRuntime.binding.model ? { model: sessionRuntime.binding.model } : {}),
-      ...(sessionRuntime.binding.reasoningEffort ? { reasoningEffort: sessionRuntime.binding.reasoningEffort } : {}),
+    const existing = web.get(record.id);
+    if (existing) return existing;
+    await executionManager.stop(record.resumeId, 'switch to Web');
+    return await executionManager.start({
+      workspaceId: record.wsId, resumeId: record.resumeId, recordId: record.id,
+      agent: record.agent, surface: 'webpi', origin,
+      intent: opts.runtimeSelection ? 'reconfigure' : recordedNativeId ? 'resume' : 'fresh',
+      configuration: executionConfiguration(sessionRuntime.binding),
+    }, {
+      start: async report => {
+        let completed!: Promise<{ reason: string; failed?: boolean }>;
+        const snapshot = await web.start({
+          onActivity: phase => { void report(phase).catch(() => launcherLogger.error('session_execution.activity_failed', { recordId: record.id })); },
+          recordId: record.id,
+          wsId: record.wsId,
+          resumeId: record.resumeId,
+          agent: record.agent,
+          wire: webCapability.wire,
+          command,
+          cwd,
+          env,
+          ...(nativeSessionId ? { nativeSessionId } : {}),
+          ...(sessionRuntime.binding.model ? { model: sessionRuntime.binding.model } : {}),
+          ...(sessionRuntime.binding.reasoningEffort ? { reasoningEffort: sessionRuntime.binding.reasoningEffort } : {}),
+        }, completion => { completed = completion; });
+        return { value: snapshot, pid: snapshot.pid ?? undefined, completed };
+      },
+      stop: async reason => { await web.stop(record.id, reason); },
     });
-    await sessionRegistry.update(record.wsId, record.id, {
-      state: 'running',
-      surface: 'webpi',
-      lastActiveAt: new Date().toISOString(),
-    });
-    await agentRuntimeLog.record('runtime.started', {
-      workspaceId: record.wsId,
-      resumeId: record.resumeId,
-      agent: record.agent,
-      sessionRecordId: record.id,
-      surface: 'webpi',
-      cause: { kind: 'ui' },
-    });
-    return snapshot;
     } finally {
       activeResumeIds.delete(record.resumeId);
       operationLease.release();
     }
+  };
+
+  const executeTerminalSession = async (wsId: string, context: SessionFactoryContext, origin: ExecutionOrigin): Promise<PersistentSession> => {
+    origin = validateExecutionOrigin(origin);
+    const record = sessionRegistry.get(wsId, context.recordId);
+    if (!record) throw new Error('Session record is required before execution');
+    await executionManager.stop(record.resumeId, 'switch to terminal');
+    let child: PersistentSession | undefined;
+    return executionManager.start({
+      workspaceId: wsId, resumeId: record.resumeId, recordId: record.id,
+      agent: record.agent, surface: 'terminal', origin,
+      intent: context.resume ? 'resume' : 'fresh',
+      configuration: executionConfiguration(context.sessionRuntime?.binding),
+    }, {
+      start: async () => {
+        child = pool.spawn(wsId, context);
+        const earlyExit = await child.waitForFirstExit(800);
+        if (earlyExit) throw new Error(`agent exited during startup (code=${earlyExit.code})`);
+        return { value: child, pid: child.pid, completed: child.completed };
+      },
+      stop: async reason => { await child?.disposeAndWait(reason); },
+    });
+  };
+  const executions = {
+    wait: (meta: WorkspaceMeta, adapter: CliAdapter, prompt: string, origin: ExecutionOrigin, timeoutMs?: number) => runHeadlessTaskMethod(meta, adapter, prompt, timeoutMs, { origin }),
+    probe: runHeadlessProbeMethod,
+    dispatch: dispatchHeadlessTaskMethod,
+    terminal: executeTerminalSession,
+    web: executeWebSession,
+    stop: (resumeId: string, reason: string) => executionManager.stop(resumeId, reason),
+    list: (resumeId?: string) => executionManager.list(resumeId),
   };
 
   const workspaceRuntimeActivityMethod = (workspaceId: string): WorkspaceRuntimeActivity => {
@@ -3179,6 +3185,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     headlessTasks,
     pool,
     web,
+    executions,
     isWorkspaceHeadlessActive: (id) => headlessActivity.has(id),
     operationGuard: workspaceOperationGuard,
     cleanupWorkspaceState: async (_record, cwd) => {
@@ -3344,8 +3351,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     scheduleScanner.stop();
     stopInboxActivity?.();
     await harnessSurfaces.dispose();
-    pool.disposeAll('plugin shutdown');
-    await web.stopAll('plugin shutdown');
+    await executionManager.stopAll('plugin-shutdown');
     transcriptWatcher.disposeAll();
   };
 
@@ -3443,8 +3449,15 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     templates,
     adapters,
     creator,
-    pool,
-    web,
+    pool: {
+      get: pool.get.bind(pool), attachById: pool.attachById.bind(pool),
+      liveSessionsFor: pool.liveSessionsFor.bind(pool), liveSessionCount: pool.liveSessionCount.bind(pool),
+      size: pool.size.bind(pool), setTerminalViewAttributes: pool.setTerminalViewAttributes.bind(pool),
+    },
+    web: {
+      get: web.get.bind(web), has: web.has.bind(web), prompt: web.prompt.bind(web),
+      abort: web.abort.bind(web), respond: web.respond.bind(web),
+    },
     managerWorkspace,
     resolveRuntimeWorkspace,
     transcriptWatcher,
@@ -3455,7 +3468,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     resolveDefaultAgentId,
     resolveHeadlessDefaultAgentId,
     resolveAdapter,
-    startWebSession,
+    executions,
     refreshSessionTitles,
     publicMeta,
     detectAgents,
@@ -3463,9 +3476,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     beginAgentRuntimeReadinessProbe: beginAgentRuntimeReadinessProbeMethod,
     probeAgentRuntimeReadiness: probeAgentRuntimeReadinessMethod,
     computeSpawnPlan,
-    runHeadlessProbe: runHeadlessProbeMethod,
-    runHeadlessTask: runHeadlessTaskMethod,
-    dispatchHeadlessTask: dispatchHeadlessTaskMethod,
+
+
+
     scheduleSnapshot,
     issuesSnapshot,
     issueDetail,

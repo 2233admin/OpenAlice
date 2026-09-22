@@ -50,6 +50,7 @@ export interface HeadlessTaskArgs {
   readonly env: Readonly<Record<string, string>>;
   /** Optional watchdog: SIGTERM at `timeoutMs`, SIGKILL after a grace window. */
   readonly timeoutMs?: number;
+  readonly abortSignal?: AbortSignal;
   readonly logger: Logger;
   /**
    * Stream stdout/stderr to bounded operator logs (16MB per stream; the
@@ -446,6 +447,7 @@ export async function runHeadlessTask(args: HeadlessTaskArgs): Promise<HeadlessT
       { launchMode: resolved.mode },
     );
   }
+  args.abortSignal?.throwIfAborted();
   let child: ChildProcess;
   try {
     child = spawn(spawnFile, spawnArgs, {
@@ -525,7 +527,17 @@ export async function runHeadlessTask(args: HeadlessTaskArgs): Promise<HeadlessT
   }, timeoutMs + KILL_GRACE_MS);
   hardKill?.unref();
 
+  let abortKill: NodeJS.Timeout | undefined;
+  const abort = () => {
+    child.kill('SIGTERM');
+    abortKill = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS);
+    abortKill.unref();
+  };
+  args.abortSignal?.addEventListener('abort', abort, { once: true });
+  if (args.abortSignal?.aborted) abort();
   await closePromise;
+  args.abortSignal?.removeEventListener('abort', abort);
+  if (abortKill) clearTimeout(abortKill);
   if (softKill) clearTimeout(softKill);
   if (hardKill) clearTimeout(hardKill);
   scanner?.finish();

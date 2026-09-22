@@ -87,6 +87,50 @@ is not schedulable or resumable. It may carry `successorResumeId` for explicit
 handoff. OpenAlice never silently pretends a successor authored the
 predecessor's work.
 
+## Session execution authority
+
+`WorkspaceService.executions` is the only application entry point for starting
+or stopping a Session process. It exposes terminal, Web, asynchronous dispatch,
+synchronous wait, and diagnostic probe operations backed by
+`SessionExecutionManager`. HTTP, Electron IPC, conversation tools, Issues,
+schedules, Connector-driven work, offboarding, and shutdown share this boundary.
+The old service launch methods and coordinator state-transition method are
+removed. The exposed PTY/Web containers provide observation and transport, not
+process control. An architecture test guards this boundary.
+
+Every launch requires a concrete `origin` (caller kind and entry point, with
+Issue/Session/Connector identifiers where applicable), intent, surface, and
+secret-free credential/model/effort selection. Birth provenance remains
+immutable on the Session; execution provenance records each subsequent launch.
+
+`workspaces/state/session-executions.json` records a unique execution ID,
+requested/start/end timestamps, PID, optional task ID, phase, runtime activity,
+and termination reason. The phases are `starting -> running -> stopping ->
+ended`, with `failed` for startup or runtime failure. A natural exit can go
+directly from running to ended/failed. Web protocol activity additionally
+reports idle, working, awaiting-input, and other runtime states; TUI does not
+invent model activity from terminal bytes.
+
+The manager persists admission before spawning, excludes concurrent writers of
+one `resumeId`, waits for actual exit on stop/handoff, and rejects callbacks from
+an older execution. A shutdown closes admission and waits for startup/stop work.
+PTY exit ends its execution; there is no hidden automatic respawn. A new process
+requires another managed launch and receives another execution ID.
+
+Session roster `running/paused` is only a projection. Ordinary metadata updates
+cannot change it, and allocating a Session does not mark it running. At startup,
+the manager closes executions whose owner restarted and reconciles orphaned
+roster rows. A reconciliation record identifies the system recovery operation;
+it does not claim to know the original caller of an older unrecorded process.
+Existing roster and Session AI storage formats remain unchanged.
+
+Read execution history with
+`GET /api/workspaces/:id/sessions/:sid/executions`. It returns `{ executions }`
+for that Session; no keys, environment variables, prompts, or command lines are
+stored in this journal. A failed journal blocks new execution admission. A stop
+still terminates the process if writing its journal fails and reports the
+persistence failure to the caller.
+
 ## Offboarding Transaction
 
 Before moving a Workspace, Alice gathers:
