@@ -682,7 +682,9 @@ feedback, then hand over to the terminal normally.
 ### Background Session inspection
 
 Each current-Workspace Harness navigation group has a collapsed `n running`
-disclosure for background occupancy, below Studio (Chat: below conversations).
+disclosure for background occupancy, below Studio (Chat: directly below its heading, before conversations).
+The disclosure and its entries reuse the ordinary Session child-row primitives
+for matching height, inset, icon spacing, and text size.
 This projection includes headless-born and Issue-attached Sessions independently
 of ordinary conversation roster preferences, including hidden background workers;
 retired identities are excluded. Idle interactive processes do not count. Occupied rows are excluded
