@@ -1,4 +1,4 @@
-import { optionResearchSchema, orderBookSchema, type BrokerResearch } from '@traderalice/uta-protocol'
+import { optionResearchSchema, orderBookSchema, venueSpreadSchema, type BrokerResearch } from '@traderalice/uta-protocol'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
@@ -193,6 +193,23 @@ export function createTradingRoutes(ctx: UTAEngineContext) {
   app.get('/equity', async (c) => {
     const equity = await ctx.utaManager.getAggregatedEquity()
     return c.json(equity)
+  })
+
+  // ==================== Cross-venue spread ====================
+  // Read-only fan-out: one instrument, 2–8 venues, read concurrently.
+  // Per-leg failures degrade inside the manager, so anything that escapes is a
+  // refusal of THIS request (unusable aliceId set, fewer than two answering
+  // venues, mismatched pairing keys) — hence `permanent` errors are the
+  // caller's to fix (400), not a venue outage (503).
+  app.post('/venue-spread', async (c) => {
+    const parsed = venueSpreadSchema.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+    try {
+      return c.json(await ctx.utaManager.getVenueSpread(parsed.data.aliceIds))
+    } catch (err) {
+      const be = err instanceof BrokerError ? err : BrokerError.from(err)
+      return c.json({ error: be.message, code: be.code, transient: !be.permanent }, be.permanent ? 400 : 503)
+    }
   })
 
   // ==================== Tradeable contract search ====================
