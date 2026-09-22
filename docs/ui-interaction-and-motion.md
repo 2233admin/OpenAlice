@@ -677,3 +677,21 @@ prompt preview into useWebConversation until its first authoritative snapshot.
 It never persists or resends this preview. No artificial startup delay is added;
 the short message entrance honors reduced motion. TUI launches share the pending
 feedback, then hand over to the terminal normally.
+
+
+### Background Session inspection
+
+Each current-Workspace Harness navigation group has a collapsed `n running`
+disclosure for background occupancy, below Studio (Chat: below conversations).
+This projection includes headless-born and Issue-attached Sessions independently
+of ordinary conversation roster preferences, including hidden background workers;
+retired identities are excluded. Idle interactive processes do not count. Occupied rows are excluded
+from the recent interactive workset to avoid duplicate entries.
+
+Selecting a background row opens the shared transient Session dialog without
+changing the right-hand view, URL, or tab inventory. It shows task provenance,
+timing, refresh errors and diagnostic identifiers. Completion removes the row
+from the disclosure but leaves an open dialog available with an explicit Open
+conversation action. Existing background deep links surrender their Session tab
+and open the same dialog over the previous view (or Harness landing when no tab
+remains). Inspection never starts or takes over a runtime.

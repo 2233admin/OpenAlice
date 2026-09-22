@@ -6,7 +6,6 @@ import { sessionCoworkerLabel } from './display';
 import { useHarnessWorkbenchContext } from '../harness/context';
 import { FilesPanel } from './FilesPanel';
 import { SessionActivation } from './SessionActivation';
-import { SessionBusyPanel } from './SessionBusyPanel';
 import { TerminalView } from './Terminal';
 import { WebSessionView } from './WebSessionView';
 import { useIsDesktop } from '../../live/use-is-desktop';
@@ -81,14 +80,12 @@ export function WorkspaceView(props: WorkspaceViewProps): ReactElement {
   return (
     <div className={viewClass}>
       <div className="workspace-terminal">
-        {props.activeRecord?.state === 'running' && props.activeRecord.surface === 'headless' && (
-          <SessionBusyPanel record={props.activeRecord} workspaceId={props.wsId} onRefresh={props.onSessionLost} />
-        )}
         {showPausedCta && props.activeRecord && (
           <SessionActivation
             key={props.activeRecord.id}
             record={props.activeRecord}
             workspaceId={props.wsId}
+            source={props.source}
             enabled={props.visible !== false}
             automatic={!connected.current}
             onResume={() => props.onResume(props.activeRecord!.id)}

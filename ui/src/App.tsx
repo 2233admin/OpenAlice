@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { SessionBusyDialogHost } from './components/workspace/SessionBusyPanel'
 import { ActivityBar } from './components/ActivityBar'
 import { ActivityToasts } from './components/ActivityToasts'
 import { MobileContextBar } from './components/MobileContextBar'
@@ -67,6 +68,7 @@ export function App() {
   return (
     <WorkspacesProvider>
       <AppShell />
+      <SessionBusyDialogHost />
     </WorkspacesProvider>
   )
 }

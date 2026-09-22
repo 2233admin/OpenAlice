@@ -3217,6 +3217,11 @@ export const zhHant: Resources = {
     sessionOpening: '正在開啟會話…',
     sessionDisconnected: '互動連線已中斷。',
     sessionBusy: {
+      runningCount: "{{count}} 個執行中",
+      ended: "背景任務已結束",
+      endedDescription: "這個 Session 已不再被背景任務佔用，可以開啟對話繼續交流。",
+      open: "開啟對話",
+
       title: "這個 Session 正在背景工作",
       description: "背景任務正在佔用這個 Session，暫時無法進行互動式聊天。既有對話紀錄會保留。",
       next: "狀態會自動更新。任務結束後即可重新開啟 Session。重新整理只會檢查狀態，不會啟動另一個 Agent。",
