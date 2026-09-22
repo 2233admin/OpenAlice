@@ -1275,7 +1275,7 @@ export const workspacesHandlers = [
         runningHeadless.latestExecution = {
           taskId: 'demo-headless-running',
           status: 'running',
-          startedAt: Date.now() - 30_000,
+          startedAt: runningHeadless.createdAt,
           issueId: 'scan-open',
         }
       }
