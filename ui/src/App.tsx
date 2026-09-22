@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { SessionDetailsDialogHost } from './components/workspace/SessionDetailsDialog'
 import { SessionBusyDialogHost } from './components/workspace/SessionBusyPanel'
 import { ActivityBar } from './components/ActivityBar'
 import { ActivityToasts } from './components/ActivityToasts'
@@ -69,6 +70,7 @@ export function App() {
     <WorkspacesProvider>
       <AppShell />
       <SessionBusyDialogHost />
+      <SessionDetailsDialogHost />
     </WorkspacesProvider>
   )
 }

@@ -697,3 +697,14 @@ from the disclosure but leaves an open dialog available with an explicit Open
 conversation action. Existing background deep links surrender their Session tab
 and open the same dialog over the previous view (or Harness landing when no tab
 remains). Inspection never starts or takes over a runtime.
+
+
+Session row menus expose Details independently of activation and distinguish
+Archive (file for later) from Delete (dismiss from normal conversation lists).
+Delete uses the existing presence transition, stops an interactive runtime,
+and removes saved terminal scrollback; it does not erase Workspace files,
+retained provenance, or native CLI history. Background-owned rows do not expose
+this destructive action. Details reads the exact Session identity, current
+Issue assignments and execution history through one domain hook. Creation,
+last start, last end and last activity remain separate fields; unknown values
+and partial-fetch failures are explicit. Inspection does not launch a runtime.
