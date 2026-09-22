@@ -18,11 +18,39 @@ export const orderBookSchema = z.object({
 export type OptionResearchRequest = z.infer<typeof optionResearchSchema>
 export type OptionResearchFilters = Omit<OptionResearchRequest, 'aliceId'>
 
+/**
+ * Perpetual funding rates.
+ *
+ * A funding rate is the rate charged PER FUNDING PERIOD — not an annualized
+ * figure and not an amount. Annualizing it multiplies by the venue's cadence
+ * (8h on binance/okx/bybit today, and venues have moved pairs off it), so the
+ * caller derives that cadence from the data instead of assuming it. A positive
+ * rate follows the venue's long-pays-short convention for the period: longs
+ * pay shorts.
+ *
+ * Both reads are public market data — no entitlement and no credentials.
+ */
+export const fundingRateSchema = z.object({
+  aliceId: z.string().min(1),
+})
+export const fundingRateHistorySchema = z.object({
+  aliceId: z.string().min(1),
+  // Both 'Z' and offset ('+08:00') forms name the same instant and callers emit
+  // either; a bare date is not a time and is rejected.
+  start: z.string().datetime({ offset: true }).optional().describe("ISO 8601 lower bound; omitted reads the venue's most recent periods"),
+  limit: z.number().int().min(1).max(1000).optional().describe('Truncates to the MOST RECENT periods in the window, like every other limit in this protocol'),
+})
+export type FundingRateRequest = z.infer<typeof fundingRateSchema>
+export type FundingRateHistoryRequest = z.infer<typeof fundingRateHistorySchema>
+export type FundingRateHistoryParams = Omit<FundingRateHistoryRequest, 'aliceId'>
+
 /** Optional structural capabilities: old broker packs continue to load. */
 export interface BrokerResearch {
   getOptionContracts?(underlying: string, filters: OptionResearchFilters): Promise<Record<string, unknown>>
   getOptionChain?(underlying: string, filters: OptionResearchFilters): Promise<Record<string, unknown>>
   getOrderBook?(contract: Contract, limit?: number): Promise<unknown>
+  getFundingRate?(contract: Contract): Promise<unknown>
+  getFundingRateHistory?(contract: Contract, params: FundingRateHistoryParams): Promise<unknown>
 }
 
 // ==================== Cross-venue spread (read-only) ====================

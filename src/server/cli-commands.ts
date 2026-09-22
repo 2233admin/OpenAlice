@@ -236,6 +236,8 @@ const BASE_EXPORTS: Record<string, CliExport> = {
         'option-contracts': 'getOptionContracts',
         'option-chain': 'getOptionChain',
         'order-book': 'getOrderBook',
+        'funding-rate': 'getFundingRate',
+        'funding-rate-history': 'getFundingRateHistory',
         'venue-spread': 'getVenueSpread',
       },
       order: {
