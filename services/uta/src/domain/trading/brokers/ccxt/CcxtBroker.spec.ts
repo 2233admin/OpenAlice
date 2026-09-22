@@ -1683,13 +1683,16 @@ describe('CcxtBroker — getHistorical', () => {
 describe('CcxtBroker — getFundingRateHistory', () => {
   const HOUR_MS = 3_600_000
   const FUNDING_STEP_MS = 8 * HOUR_MS          // binance/okx/bybit cadence today
+  const FOUR_HOUR_MS = 4 * HOUR_MS             // not every venue settles on the 8h clock
   const NOW = Date.parse('2026-09-23T00:00:00Z')
 
   /** The settled periods a venue holds, oldest first, each with a distinct
-   *  rate so a wrong slice cannot pass by coincidence. */
-  function series(count: number): Array<{ ts: number; rate: number }> {
+   *  rate so a wrong slice cannot pass by coincidence. `stepMs` is the venue's
+   *  funding cadence: 8h on binance/okx/bybit today, but venue-set, and the
+   *  broker measures it off the venue rather than assuming it. */
+  function series(count: number, stepMs = FUNDING_STEP_MS): Array<{ ts: number; rate: number }> {
     return Array.from({ length: count }, (_, i) => ({
-      ts: NOW - FUNDING_STEP_MS * (count - i),
+      ts: NOW - stepMs * (count - i),
       rate: 0.0001 * (count - i),
     }))
   }
@@ -1751,7 +1754,7 @@ describe('CcxtBroker — getFundingRateHistory', () => {
 
   it('walks venue-capped pages until it holds the most recent periods', atNow(async () => {
     const acc = makeFundingAccount()
-    const venue = series(30)
+    const venue = series(30, FOUR_HOUR_MS)      // 5 days of 4h periods
     const fetch = serveVenue(venue, 2)          // page cap below the request
     ;(acc as any).exchange.fetchFundingRateHistory = fetch
 
@@ -1762,6 +1765,24 @@ describe('CcxtBroker — getFundingRateHistory', () => {
     expect(history.rates).toEqual(venue.slice(-4).map(row => ({ timestamp: new Date(row.ts), fundingRate: row.rate })))
     expect(new Set(history.rates.map(rate => rate.timestamp.getTime())).size).toBe(4)
     expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+  }))
+
+  // 4h venues exist. The trailing anchor is derived from the venue's own two
+  // newest periods; with a page cap below `limit` a wrong anchor surfaces as a
+  // hole in the returned window rather than as a merely shorter one.
+  it('measures a non-8h venue cadence instead of assuming the 8h default', atNow(async () => {
+    const acc = makeFundingAccount()
+    const venue = series(60, FOUR_HOUR_MS)      // 10 days of 4h periods
+    const fetch = serveVenue(venue, 5)          // page cap below the request
+    ;(acc as any).exchange.fetchFundingRateHistory = fetch
+
+    const history = await acc.getFundingRateHistory(contract(), { limit: 10 })
+
+    expect(history.rates).toEqual(venue.slice(-10).map(row => ({ timestamp: new Date(row.ts), fundingRate: row.rate })))
+    const stamps = history.rates.map(rate => rate.timestamp.getTime())
+    expect(new Set(stamps).size).toBe(10)                                    // no period answered twice
+    expect(stamps.slice(1).map((ts, i) => ts - stamps[i])).toEqual(Array(9).fill(FOUR_HOUR_MS))
+    expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)                // walked, not one page
   }))
 
   it('returns only the periods at/after start', atNow(async () => {
