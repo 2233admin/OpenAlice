@@ -49,6 +49,7 @@ import { SessionSettingsDialog } from './SessionSettingsDialog'
 import { workspaceDisplayName, workspaceDisplayTitle } from './display'
 import {
   flattenHarnessSessions,
+  runningWorkspaceSessions,
   joinWorkspaceHarnessSessions,
   type HarnessSession,
 } from './harness-sessions'
@@ -73,15 +74,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
+import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
+import { useSessionBusyDialog } from './session-busy-store'
 import { Button } from '@/components/ui/button'
 import type { ChatDisplayMode } from './chat-display-mode'
 import { SelectionIndicator } from '../SelectionIndicator'
@@ -188,7 +183,7 @@ export function ChatWorkspaceSection({
   const [recentWorkspaceId, setRecentWorkspaceId] = useState<string | null>(null)
   const [conversationBrowserOpen, setConversationBrowserOpen] = useState(false)
   const [conversationWorkspaceId, setConversationWorkspaceId] = useState<string | null>(null)
-  const [busySession, setBusySession] = useState<HarnessSession | null>(null)
+  const showBusy = (row: HarnessSession) => useSessionBusyDialog.getState().show({ record: { ...row.session, title: row.title }, workspaceId: row.workspaceId, source })
   const [pendingArchive, setPendingArchive] = useState<HarnessSession | null>(null)
   const [settingsTarget, setSettingsTarget] = useState<{
     workspaceId: string
@@ -258,7 +253,7 @@ export function ChatWorkspaceSection({
 
   const activateRosterSession = (row: HarnessSession): void => {
     if (row.headlessOccupying) {
-      setBusySession(row)
+      showBusy(row)
       return
     }
     rememberViewedWorkspace(row.workspaceId)
@@ -267,15 +262,6 @@ export function ChatWorkspaceSection({
       params: { wsId: row.workspaceId, sessionId: row.session.id, source },
     })
   }
-
-  useEffect(() => {
-    if (!busySession) return
-    const stillRunning = recentRoster.some((row) =>
-      row.workspaceId === busySession.workspaceId
-      && row.resumeId === busySession.resumeId
-      && row.headlessOccupying)
-    if (!stillRunning) setBusySession(null)
-  }, [busySession, recentRoster])
 
   const resumeRosterSession = async (row: HarnessSession): Promise<void> => {
     if (row.headlessOccupying || !row.resumable) return
@@ -411,7 +397,22 @@ export function ChatWorkspaceSection({
       onCreateWorkspace={() => setShowCreate(true)}
     />
   )
-  const navigationSessions = currentWorkspace ? rosterByWorkspace.get(currentWorkspace.id) ?? [] : []
+  const navigationSessions = (currentWorkspace ? rosterByWorkspace.get(currentWorkspace.id) ?? [] : []).filter(row => !row.headlessOccupying)
+  const runningSessions = currentWorkspace ? runningWorkspaceSessions(currentWorkspace,
+    sessionDirectories.directories.get(currentWorkspace.id) ?? null) : []
+  const runningGroup = runningSessions.length > 0 && <Collapsible>
+    <CollapsibleTrigger className="oa-nav-row group flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-sidebar-accent">
+      <ChevronRight size={14} aria-hidden className="transition-transform group-data-[panel-open]:rotate-90 motion-reduce:transition-none" />
+      {t('workspace.sessionBusy.runningCount', { count: runningSessions.length })}
+    </CollapsibleTrigger>
+    <CollapsibleContent>
+      {runningSessions.map(row => <button key={row.resumeId} type="button" onClick={() => showBusy(row)}
+        className="oa-nav-row flex min-h-9 w-full items-center gap-2 rounded-md py-1 pl-5 pr-2 text-left text-sm hover:bg-sidebar-accent">
+        <AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 truncate">{row.title}</span>
+      </button>)}
+    </CollapsibleContent>
+  </Collapsible>
   const visibleNavigationSessions = selectRecentSidebarWorkset(navigationSessions, isRosterRowActive, 4)
 
   return (
@@ -439,6 +440,7 @@ export function ChatWorkspaceSection({
                 ? navigate({ kind: 'harness-surface', params: { wsId: currentWorkspace.id, capability: 'studio', source: mode } })
                 : openLanding()} />
           )}
+          {mode !== 'chat' && runningGroup}
           {visibleNavigationSessions.map(row => (
             <HarnessSessionRow enterOnSelect key={`${row.workspaceId}:${row.resumeId}`} row={row} isActive={isRosterRowActive(row)}
               onSelect={() => activateRosterSession(row)} onPause={() => pauseRosterSession(row)}
@@ -451,6 +453,7 @@ export function ChatWorkspaceSection({
               {t('chat.viewAllConversations', { count: navigationSessions.length })}
             </button>
           )}
+          {mode === 'chat' && runningGroup}
         </HarnessNavigationGroup>
       ) : <>
       <div className="grid grid-cols-1 gap-1 px-1.5 pb-2 pt-2">
@@ -646,14 +649,6 @@ export function ChatWorkspaceSection({
         onSelectSession={(row) => {
           if (!row.headlessOccupying) setConversationBrowserOpen(false)
           activateRosterSession(row)
-        }}
-      />
-
-      <HeadlessSessionBusyDialog
-        row={busySession}
-        open={busySession !== null}
-        onOpenChange={(open) => {
-          if (!open) setBusySession(null)
         }}
       />
 
@@ -1346,60 +1341,6 @@ function HarnessSessionRow(props: {
       onRestore={props.onRestore}
       onSettings={props.onSettings}
     />
-  )
-}
-
-function HeadlessSessionBusyDialog(props: {
-  row: HarnessSession | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}): ReactElement {
-  const { t } = useTranslation()
-  const issueId = props.row?.issueId
-
-  return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="min-w-0 overflow-hidden sm:max-w-md">
-        <DialogHeader className="min-w-0">
-          <div className="flex min-w-0 max-w-full items-start gap-3 pr-7">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <LoaderCircle
-                size={18}
-                strokeWidth={2.25}
-                className="animate-spin motion-reduce:animate-none"
-                aria-hidden
-              />
-            </span>
-            <div className="min-w-0 space-y-1.5">
-              <DialogTitle>{t('chat.headlessBusyTitle')}</DialogTitle>
-              <DialogDescription>{t('chat.headlessBusyDescription')}</DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        {props.row && (
-          <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/70 bg-muted/35 px-3.5 py-3">
-            <p
-              className="line-clamp-2 min-w-0 max-w-full break-words text-sm font-medium leading-snug text-foreground [overflow-wrap:anywhere]"
-              title={props.row.title}
-            >
-              {props.row.title}
-            </p>
-            <p className="text-caption mt-1 text-muted-foreground">
-              {issueId
-                ? t('chat.headlessBusyIssue', { issue: issueId })
-                : t('chat.headlessBusyAgent', { agent: props.row.agent })}
-            </p>
-          </div>
-        )}
-
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>
-            {t('common.close')}
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 

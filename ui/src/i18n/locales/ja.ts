@@ -3210,6 +3210,11 @@ export const ja: Resources = {
     sessionOpening: 'セッションを開いています…',
     sessionDisconnected: '対話接続が切断されました。',
     sessionBusy: {
+      runningCount: "{{count}} 件実行中",
+      ended: "バックグラウンドのタスクが終了しました",
+      endedDescription: "バックグラウンドの占有が解除されました。会話を開けます。",
+      open: "会話を開く",
+
       title: "この Session はバックグラウンドで実行中です",
       description: "バックグラウンドのタスクがこの Session を使用しています。実行中は対話できませんが、会話履歴は保持されます。",
       next: "状態は自動更新されます。タスクの完了後に Session を再度開けます。更新操作は状態の確認だけを行い、新しい Agent は起動しません。",

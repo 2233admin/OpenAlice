@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import '../i18n'
 import type { Workspace } from '../components/workspace/api'
 import { HarnessWorkbenchContext } from '../components/harness/context'
+import { useSessionBusyDialog } from '../components/workspace/session-busy-store'
 import { WorkspacePage } from './WorkspacePage'
 
 const mocks = vi.hoisted(() => ({
   openOrFocus: vi.fn(),
+  closeMatching: vi.fn(),
   spawn: vi.fn(),
   openAgentConfig: vi.fn(),
   resumeSession: vi.fn(),
@@ -34,9 +36,10 @@ vi.mock('../contexts/workspaces-context', () => ({
 }))
 
 vi.mock('../tabs/store', () => ({
-  useWorkspace: (
-    selector: (state: { openOrFocus: typeof mocks.openOrFocus }) => unknown,
-  ) => selector({ openOrFocus: mocks.openOrFocus }),
+  useWorkspace: Object.assign((selector: (state: { openOrFocus: typeof mocks.openOrFocus }) => unknown) => selector({ openOrFocus: mocks.openOrFocus }), {
+    getState: () => ({ openOrFocus: mocks.openOrFocus, closeMatching: mocks.closeMatching,
+      tree: { kind: 'leaf', group: { activeTabId: null } }, tabs: {} }),
+  }),
 }))
 
 vi.mock('./ChatLandingPage', () => ({
@@ -215,4 +218,17 @@ it('offers GUI directly in the running TUI Harness header', () => {
   </HarnessWorkbenchContext.Provider>)
   fireEvent.click(screen.getByRole('button', { name: 'GUI' }))
   expect(mocks.openWebSession).toHaveBeenCalledWith('chat-1', 'pi-one', 'chat')
+})
+
+it('replaces a background deep link with transient inspection instead of retaining a Session tab', () => {
+  const record = { id: 'background', resumeId: 'resume-background', wsId: 'chat-1', agent: 'pi', name: 'p1', title: 'Research', state: 'running' as const, surface: 'headless' as const, pid: null, startedAt: 1, createdAt: '', lastActiveAt: '' }
+  mocks.workspaces = [workspace({ sessions: [record] })]
+  render(<WorkspacePage spec={{ kind: 'workspace', params: { wsId: 'chat-1', sessionId: 'background', source: 'chat' } }} visible />)
+  expect(useSessionBusyDialog.getState().target?.record.id).toBe('background')
+  const predicate = mocks.closeMatching.mock.calls[0]![0]
+  expect(predicate({ kind: 'workspace', params: { wsId: 'chat-1', sessionId: 'background' } })).toBe(true)
+  expect(predicate({ kind: 'workspace', params: { wsId: 'chat-1', sessionId: 'other' } })).toBe(false)
+  expect(mocks.openOrFocus).toHaveBeenCalledWith({ kind: 'chat-landing', params: { targetWsId: 'chat-1' } })
+  expect(mocks.resumeSession).not.toHaveBeenCalled()
+  useSessionBusyDialog.getState().close()
 })

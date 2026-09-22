@@ -3208,6 +3208,11 @@ export const zh: Resources = {
     sessionOpening: '正在打开会话…',
     sessionDisconnected: '交互连接已断开。',
     sessionBusy: {
+      runningCount: "{{count}} 个运行中",
+      ended: "后台任务已结束",
+      endedDescription: "这个 Session 已不再被后台任务占用，可以打开会话继续交流。",
+      open: "打开会话",
+
       title: "这个 Session 正在后台工作",
       description: "后台任务正在占用这个 Session，暂时无法进行交互式聊天。已有会话记录会保留。",
       next: "状态会自动更新。任务结束后即可重新打开 Session。刷新只会检查状态，不会启动另一个 Agent。",

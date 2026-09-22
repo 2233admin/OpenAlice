@@ -16,6 +16,7 @@
  * keeps running on the server. Use the sidebar's × to actually delete.
  */
 
+import { inspectOccupiedSession } from '../components/workspace/session-busy-store'
 import { useHarnessWorkbenchContext } from '../components/harness/context'
 import { useEffect } from 'react'
 import { ChevronDown, Unplug, Monitor, Settings } from 'lucide-react'
@@ -56,6 +57,10 @@ export function WorkspacePage({ spec, visible }: Props) {
     loading,
     error: loadError,
   } = useWorkspaceSessionData(wsId, sessionId)
+  useEffect(() => {
+    if (!visible || activeRecord?.state !== 'running' || activeRecord.surface !== 'headless') return
+    inspectOccupiedSession({ record: activeRecord, workspaceId: wsId, source })
+  }, [visible, activeRecord, wsId, sessionId, source])
   const effectiveDefaultAgent = workspace?.defaultAgent ?? ctx.defaultAgent
   const defaultAgentEnabled =
     effectiveDefaultAgent !== null &&

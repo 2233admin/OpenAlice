@@ -3241,6 +3241,11 @@ export const en = {
     sessionOpening: 'Opening Session…',
     sessionDisconnected: 'The interactive connection is disconnected.',
     sessionBusy: {
+      runningCount: "{{count}} running",
+      ended: "Background task finished",
+      endedDescription: "This Session is no longer occupied by a background task. You can open the conversation.",
+      open: "Open conversation",
+
       title: "This Session is working in the background",
       description: "A background task currently owns this Session. Interactive chat is unavailable while it runs; your conversation history is retained.",
       next: "Status updates automatically. When the task finishes, you can open this Session again. Refreshing checks status without starting another Agent.",
