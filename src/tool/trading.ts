@@ -513,7 +513,7 @@ If the result is an object with a \`degraded\` array, one or more accounts could
 
 A funding rate is the rate charged PER FUNDING PERIOD. It is NOT annualized and NOT an amount: it is a rate. Convert it into a holding cost with the period length you observe in getFundingRateHistory (commonly 8h, venue-set, and venues have changed it) — never by assuming 8h and never with a fixed annualization factor. A POSITIVE rate means LONGS PAY SHORTS for that period, so one period of a long position costs notional × rate.
 
-The fields a venue reports differ: the previous-period rate is optional, and venues that publish none return no previousFundingRate (do not read that absence as "unchanged"). Some venues answer this read from the SDK's own synthesis of nearby market data rather than from a native funding endpoint, so it is the venue's best published figure, not a settlement record — the settled series is what getFundingRateHistory reads.
+The fields a venue reports differ: the previous-period rate is optional, and venues that publish none return no previousFundingRate (do not read that absence as "unchanged"). Some venues answer this read from the SDK's own synthesis of nearby market data rather than from a native funding endpoint, so it is the venue's best published figure, not a settlement record — the settled series is what getFundingRateHistory reads. The timestamp is not always a venue time either: when a venue's funding read reaches us without one (OKX is one — the SDK parses no timestamp for that endpoint), we stamp OUR read time in its place, not a venue or settlement time.
 
 Read-only public market data; no credentials or entitlement required.`,
       inputSchema: fundingRateSchema,
