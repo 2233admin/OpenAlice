@@ -445,6 +445,18 @@ promotion; failure retains the old target. Success closes old WebSockets,
 increments a target generation, and reloads all tabs. Switching never stops
 the old Runtime.
 
+Electron can host the same relay in its main process. Its default integrated
+mode keeps `app://openalice`, the local Guardian-owned AliceProject, and native
+IPC. Settings can select a running local or SSH Project for separated mode:
+the relay verifies the candidate first, then Electron stops only its own local
+children, releases its local Project lock, and loads the relay's loopback UI.
+The separated renderer uses backend HTTP/WS and receives no backend-specific
+native bridge. Returning to integrated mode reacquires local ownership without
+takeover, starts local children, waits for Alice readiness, and only then loads
+`app://openalice`. The selection is scoped to this Electron process; a fresh
+launch starts in integrated mode. Neither switch stops a selected remote
+Runtime.
+
 When `--app-dir` is absent, managed remote requires the verified native Runtime
 installed with the matching CLI. No Git checkout, Node, Bun, Python, compiler,
 or package-manager mutation is part of that path. A target outside the
@@ -917,7 +929,7 @@ Runtime model.
 
 - add Runtime snapshot/events protocol;
 - add pairing/capability security;
-- support Electron remote selection and/or hosted Studio;
+- extend the implemented Electron remote selection to hosted Studio if needed;
 - consider relay/device enrollment only after direct SSH is operationally
   understood.
 

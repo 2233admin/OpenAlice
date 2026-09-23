@@ -24,7 +24,7 @@ if (import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:') {
   await import('./demo/recorder')
 }
 
-const relayStatus = window.openAlice ? null : await getRelayStatus()
+const relayStatus = window.openAlice?.runtime ? null : await getRelayStatus()
 if (relayStatus) clearDirectTunnelContextForRelay()
 initializeBackendConnection()
 if (relayStatus && !import.meta.env.VITE_DEMO_MODE) monitorRelayGeneration(relayStatus)

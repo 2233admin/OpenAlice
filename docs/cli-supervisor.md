@@ -74,8 +74,9 @@ when no Runtime is selected yet (`o` opens the connection screen). Web changes
 also update the TUI. `openalice relay` runs the same relay without the terminal
 presentation. It serves the local UI bundle and forwards backend HTTP/WS to
 one selected running Runtime. Detaching from the TUI closes its relay and SSH
-tunnel, not the selected Runtime. Direct `--remote` browser access and Electron
-integrated mode remain separate entry paths.
+tunnel, not the selected Runtime. Direct `--remote` browser access remains a
+separate entry path. Electron keeps its integrated IPC path and can switch its
+window to a main-process relay for a separated connection.
 
 | Command | Contract |
 |---|---|
