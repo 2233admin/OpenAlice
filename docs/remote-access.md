@@ -55,10 +55,12 @@ Vite proxy for the development backend port; a LAN client cannot assume that
 the backend's loopback-only listener is exposed alongside the UI.
 
 Settings → Backend connection presents the active Machine beside the
-AliceProject reported by its Runtime. With `openalice relay`, Change connection
-opens a Machine/Project selector backed by the local CLI. Direct Runtime and
-legacy `--remote` browser surfaces remain inspection-only. The relay serves its
-own local UI bundle, so remote-served JavaScript never gains SSH authority.
+AliceProject reported by its Runtime. In the normal `openalice` TUI, the Web GUI
+and TUI share one relay and one current target; either can change the connection
+and both observe the result. `openalice relay` offers the same Web GUI without
+the terminal presentation. Direct Runtime and legacy `--remote` browser
+surfaces remain inspection-only. The relay serves its own local UI bundle, so
+remote-served JavaScript never gains SSH authority.
 
 Native `server run/start` derives its content identity from the installed
 `release.json`, matching the interactive launcher. Readiness confirms pending

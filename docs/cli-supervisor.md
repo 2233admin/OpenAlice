@@ -67,11 +67,15 @@ Herdr-style remote profiles, and `--machine` re-enters an ordinary CLI command
 on the selected enabled profile. There is no separate public `ssh` or `remote`
 command.
 
-`relay` is the local Web GUI for Machine and AliceProject selection. It binds
-only `127.0.0.1`, serves the local UI bundle, and forwards backend HTTP/WS to
-one selected running Runtime. The connection selector in Settings operates the
-relay; direct Runtime browsers and Electron integrated mode are unchanged.
-Closing the relay terminates its SSH tunnel, not the selected Runtime.
+The normal TUI starts a local relay in the same CLI process. TUI selection and
+Settings → Backend connection operate one current Machine/AliceProject target;
+opening Web from the TUI uses that relay's stable loopback origin, including
+when no Runtime is selected yet (`o` opens the connection screen). Web changes
+also update the TUI. `openalice relay` runs the same relay without the terminal
+presentation. It serves the local UI bundle and forwards backend HTTP/WS to
+one selected running Runtime. Detaching from the TUI closes its relay and SSH
+tunnel, not the selected Runtime. Direct `--remote` browser access and Electron
+integrated mode remain separate entry paths.
 
 | Command | Contract |
 |---|---|
@@ -117,7 +121,7 @@ separate verified browser open after readiness.
 
 ## Default and Compatibility Surface
 
-- bare `openalice` enters the local Supervisor TUI;
+- bare `openalice` enters the local Supervisor TUI and starts its Web relay;
 - `openalice tui` is the explicit equivalent for tests and scripts;
 - `openalice start` retains the existing foreground, browser-oriented
   compatibility launcher and also selects the installed bundle by default;

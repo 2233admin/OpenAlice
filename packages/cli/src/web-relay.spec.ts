@@ -51,6 +51,28 @@ async function withHost(origin: string, path: string, host: string): Promise<{ s
 }
 
 describe('WebRelay', () => {
+  it('shares the selected target and disconnection events with a local presenter', async () => {
+    const a = await backend('a-id', 'A')
+    const relay = new WebRelay({ inspectLocal: async () => ({ machine: {
+      key: 'local', displayName: 'This computer', projects: [{
+        key: 'a', id: 'a-id', displayName: 'A', available: true,
+        runtime: { webEndpoint: `http://127.0.0.1:${a.port}` },
+      }],
+    } }) as never })
+    await relay.listen()
+    openedRelays.push(relay)
+    openedBackends.push(a.server)
+    const generations: number[] = []
+    const unsubscribe = relay.subscribe(() => generations.push(relay.status.generation))
+    await relay.connect('local', 'a')
+    expect(relay.activeSelection).toMatchObject({ machine: { key: 'local' }, project: { key: 'a' } })
+    relay.disconnect()
+    expect(relay.status.target).toBeNull()
+    expect(generations).toContain(1)
+    expect(generations).toContain(2)
+    unsubscribe()
+  })
+
   it('switches one local target after identity verification and refuses cross-origin mutation', async () => {
     const a = await backend('a-id', 'A')
     const b = await backend('b-id', 'B')
