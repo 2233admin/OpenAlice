@@ -20,6 +20,7 @@ const fleet = fleetRows > 0 ? fixtureFleet(fleetRows, remote) : undefined
 
 const exitCode = await runSupervisorTui({}, {
   env: process.env,
+  webRelay: null,
   resolveContext: () => resolveLaunchContext({
     cwd: process.cwd(),
     homeDir: '/fixture',

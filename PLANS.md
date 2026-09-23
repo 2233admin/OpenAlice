@@ -29,6 +29,8 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/shared-client-connection.md]] — Unifies CLI TUI and Web GUI behind one Machine/AliceProject connection controller, then reuses that boundary for Electron's integrated/separated switch.
+
 - [[plans/desktop-companion.md]] — Native Alice companion using supplied art,
   upstream press/drag/bubble motion and macOS/Windows acceptance.
 

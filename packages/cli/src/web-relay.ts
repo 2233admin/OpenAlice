@@ -16,6 +16,7 @@ type ActiveTarget = {
   project: string
   projectName: string
   endpoint: string
+  inventory: { machine: MachineInventory; project: MachineInventory['projects'][number] }
   abort?: AbortController
 }
 
@@ -35,6 +36,7 @@ export interface WebRelayOptions {
   inspectFleet?: typeof inspectMachineFleet
   inspectLocal?: typeof inspectLocalMachine
   inspectRegistered?: typeof inspectRegisteredMachine
+  readRegistry?: typeof readMachineRegistrySummary
   connect?: typeof connectSsh
   waitReady?: typeof waitForOpenAlice
 }
@@ -44,6 +46,7 @@ export class WebRelay {
   private generation = 0
   private switching = false
   private readonly subscribers = new Set<ServerResponse>()
+  private readonly listeners = new Set<() => void>()
   private readonly sockets = new Set<Duplex>()
   private readonly server = createServer((req, res) => void this.handle(req, res))
   private readonly options: WebRelayOptions
@@ -61,6 +64,19 @@ export class WebRelay {
       target: this.target && { machine: this.target.machine, machineName: this.target.machineName, project: this.target.project, projectName: this.target.projectName },
       switching: this.switching,
     }
+  }
+
+  get originUrl(): string { return this.origin }
+
+  /** Internal selection for local presenters; never serialized to the browser. */
+  get activeSelection() {
+    const target = this.target
+    return target && { ...target.inventory, endpoint: target.endpoint }
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   async listen(): Promise<string> {
@@ -90,6 +106,17 @@ export class WebRelay {
   private announce(): void {
     const message = `data: ${JSON.stringify(this.status)}\n\n`
     for (const response of this.subscribers) response.write(message)
+    for (const listener of this.listeners) listener()
+  }
+
+  disconnect(): void {
+    const previous = this.target
+    if (!previous) return
+    this.target = null
+    this.generation += 1
+    this.announce()
+    for (const socket of this.sockets) socket.destroy()
+    previous.abort?.abort()
   }
 
   async connect(machineKey: string, projectKey: string): Promise<void> {
@@ -109,7 +136,7 @@ export class WebRelay {
       let endpoint = `http://${LOOPBACK}:${port}`
       if (machineKey !== 'local') {
         if (!machine.capabilities.openTunnel || machine.connection !== 'online') throw new Error('This Machine cannot open an SSH tunnel.')
-        const registry = await readMachineRegistrySummary()
+        const registry = await (this.options.readRegistry ?? readMachineRegistrySummary)()
         const saved = registry.machines.find((entry) => entry.key === machineKey)
         if (!saved) throw new Error('The Machine was removed during selection.')
         requireMachineEnabled(saved)
@@ -153,7 +180,7 @@ export class WebRelay {
         if (identity.project?.id !== project.id) throw new Error('The Runtime answered for a different AliceProject; connection was not switched.')
       }
       const previous = this.target
-      this.target = { machine: machineKey, machineName: machine.displayName, project: projectKey, projectName: project.displayName, endpoint, abort: candidateAbort }
+      this.target = { machine: machineKey, machineName: machine.displayName, project: projectKey, projectName: project.displayName, endpoint, inventory: { machine, project }, abort: candidateAbort }
       this.generation += 1
       this.announce()
       for (const socket of this.sockets) socket.destroy()
@@ -168,15 +195,12 @@ export class WebRelay {
   }
 
   private dropTarget(): void {
-    this.target = null
-    this.generation += 1
-    this.announce()
-    for (const socket of this.sockets) socket.destroy()
+    this.disconnect()
   }
 
   private async inspectSelection(key: string): Promise<MachineInventory> {
     if (key === 'local') return (await (this.options.inspectLocal ?? inspectLocalMachine)()).machine
-    const registry = await readMachineRegistrySummary()
+    const registry = await (this.options.readRegistry ?? readMachineRegistrySummary)()
     const saved = registry.machines.find((entry) => entry.key === key)
     if (!saved) throw new Error(`Machine "${key}" is not registered.`)
     requireMachineEnabled(saved)
