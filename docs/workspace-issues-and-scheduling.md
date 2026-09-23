@@ -97,9 +97,9 @@ The filename stem is the stable issue id. Frontmatter:
   omitted, the Issue inherits that Agent's Workspace **headless** preference
   (fixed, then recent) rather than inspecting deprecated native-project export
   files.
-- `model` — optional native model id for this Issue's run. Omission inherits the
+- `model` — optional native model id for a fresh Session. Omission inherits the
   selected credential, Workspace, or native runtime model.
-- `effort` — optional one-run reasoning effort:
+- `effort` — optional reasoning effort for a fresh Session:
   `none | minimal | low | medium | high | xhigh | max`. The chosen runtime must
   expose that level; omission inherits its Workspace/native default.
 - `timeout` — optional scheduled-run and comment-reply watchdog: `15m | 30m | 45m | 60m`. Omission
@@ -145,7 +145,10 @@ because that Session owns its runtime conversation. `@new-then-resume` may use
 them for its first dispatch; after it becomes an exact Session owner, the claim
 rewrite removes the tuple. The Issue page may still replace the Session's
 credential, model, and effort (not the Agent runtime) after a successful first
-run; the next scheduled or comment-reply turn replays the updated binding.
+run; the next scheduled or comment-reply turn replays the updated binding. A
+valid edit to that Session's `.alice/sessions/<resumeId>.json` `ai` binding is
+also reconciled for a later launch. Do not treat the Issue-file restriction as
+a ban on changing an existing Session's model or effort.
 
 The 0.89.2-beta baseline has one ownership field and behavior-named scheduling
 tokens. `@workspace` remains a deprecated read alias for `@new-each-run`, and
