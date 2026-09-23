@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, LoaderCircle } from 'lucide-react'
+import { ChevronRight, Info, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SidebarChildRow, SidebarChildRowButton } from '../SidebarChildRow'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
+import { SidebarActionMenu } from './SidebarActionMenu'
 import type { HarnessSession } from './harness-sessions'
+import { useSessionDetailsDialog } from './session-details-store'
 
 function runningDuration(startedAt: number | undefined, now: number): string | null {
   if (!startedAt || !Number.isFinite(startedAt)) return null
@@ -47,13 +49,19 @@ export function RunningSessionGroup({ sessions, onSelect }: {
         {sessions.map(row => {
           const execution = row.directory?.latestExecution
           const elapsed = execution?.status === 'running' ? runningDuration(execution.startedAt, now) : null
-          return <SidebarChildRow key={row.resumeId} active={false} className={focusClass}>
+          return <SidebarChildRow key={row.resumeId} active={false} className={`${focusClass} oa-session-row`}>
             <SidebarChildRowButton onClick={() => onSelect(row)} aria-label={row.title}
               aria-description={elapsed ? `${t('workspace.sessionBusy.duration')} ${elapsed}` : undefined}
               icon={<AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4" />}>
               <span className="min-w-0 flex-1 truncate" title={row.title}>{row.title}</span>
-              {elapsed && <span aria-hidden className="shrink-0 tabular-nums text-xs text-muted-foreground">{elapsed}</span>}
+              {elapsed && <span aria-hidden className="oa-session-state-action shrink-0 tabular-nums text-xs text-muted-foreground">{elapsed}</span>}
             </SidebarChildRowButton>
+            <span className="oa-session-overflow-action flex shrink-0">
+              <SidebarActionMenu label={t('common.moreActions', { target: row.title })} items={[{
+                label: t('workspace.sessionDetails.title'), icon: <Info size={13} />,
+                onSelect: () => useSessionDetailsDialog.getState().show({ ...row.session, title: row.title }),
+              }]} />
+            </span>
           </SidebarChildRow>
         })}
       </div>
