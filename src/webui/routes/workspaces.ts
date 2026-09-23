@@ -1,3 +1,4 @@
+import { SessionAdmissionError } from '../../workspaces/session-admission.js';
 import type { ExecutionOrigin } from '../../workspaces/session-execution-manager.js';
 import { createAIProvider } from '../../ai-providers/provider.js'
 import { createWorkspaceContentRoutes } from './workspace-content.js';
@@ -1791,6 +1792,7 @@ export function createWorkspaceRoutes(
               : 'invalid_presence_transition';
         return c.json({ error, message: err.message }, err.code === 'not_found' ? 404 : 409);
       }
+      if (err instanceof SessionAdmissionError) return c.json({ error: err.code, message: err.message, blocks: err.blocks, retryAt: err.retryAt }, 409);
       if (err instanceof HeadlessResumeError) {
         return c.json(
           { error: `resume_${err.code}`, message: err.message },
@@ -2595,6 +2597,7 @@ export function createWorkspaceRoutes(
       );
       return c.json({ ok: true, snapshot, session: publicSession(record) });
     } catch (err) {
+      if (err instanceof SessionAdmissionError) return c.json({ error: err.code, message: err.message, blocks: err.blocks, retryAt: err.retryAt }, 409);
       if (err instanceof HeadlessResumeError) {
         return c.json({ error: 'resume_busy', message: err.message }, 409);
       }
@@ -2605,6 +2608,42 @@ export function createWorkspaceRoutes(
       launcherLogger.error('web_session.open_failed', { id, token, err });
       return c.json({ error: 'web_open_failed', message: (err as Error).message }, 500);
     }
+  });
+
+  // Session controls use roster identity and server-owned user attribution.
+  app.get('/:id/sessions/:sid/control', (c) => {
+    const record = svc.sessionRegistry.get(c.req.param('id'), c.req.param('sid'));
+    if (!record) return c.json({ error: 'not_found' }, 404);
+    return c.json({
+      execution: svc.executions.current(record.resumeId),
+      blocks: svc.executions.admission.blocks(record.resumeId),
+      cooldownSeconds: svc.executions.admission.cooldownSeconds,
+      serverNow: Date.now(),
+    });
+  });
+  app.post('/:id/sessions/:sid/interrupt', async (c) => {
+    const record = svc.sessionRegistry.get(c.req.param('id'), c.req.param('sid'));
+    if (!record) return c.json({ error: 'not_found' }, 404);
+    const body = z.object({ executionId: z.string().min(1) }).strict().safeParse(await safeJson(c).catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request', message: 'executionId is required' }, 400);
+    try {
+      const stopped = await svc.executions.interrupt(record.resumeId, body.data.executionId, { kind: 'user', entry: 'session-interrupt', workspaceId: record.wsId });
+      return c.json({ stopped });
+    } catch (error) { return c.json({ error: 'interrupt_failed', message: (error as Error).message }, 409); }
+  });
+  app.post('/:id/sessions/:sid/blocks/:blockId/release', async (c) => {
+    const record = svc.sessionRegistry.get(c.req.param('id'), c.req.param('sid'));
+    if (!record) return c.json({ error: 'not_found' }, 404);
+    try {
+      await svc.executions.admission.release(record.resumeId, c.req.param('blockId'), { kind: 'user', entry: 'session-block-release', workspaceId: record.wsId });
+      return c.json({ ok: true });
+    } catch (error) { return c.json({ error: 'release_failed', message: (error as Error).message }, 409); }
+  });
+  app.put('/session-controls/settings', async (c) => {
+    const body = z.object({ cooldownSeconds: z.number().int().min(10).max(86400) }).strict().safeParse(await safeJson(c).catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request', message: 'cooldownSeconds must be 10–86400' }, 400);
+    await svc.executions.admission.configure(body.data.cooldownSeconds, { kind: 'user', entry: 'session-control-settings' });
+    return c.json({ ok: true });
   });
 
   app.get('/:id/sessions/:sid/executions', (c) => {
@@ -2989,6 +3028,7 @@ export function createWorkspaceRoutes(
       if (err instanceof HeadlessCapacityError) {
         return c.json({ error: 'capacity', message: err.message }, 429);
       }
+      if (err instanceof SessionAdmissionError) return c.json({ error: err.code, message: err.message, blocks: err.blocks, retryAt: err.retryAt }, 409);
       if (err instanceof HeadlessResumeError) {
         return c.json(
           { error: `resume_${err.code}`, message: err.message },

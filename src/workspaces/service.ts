@@ -474,6 +474,9 @@ export interface WorkspaceService {
       origin: ExecutionOrigin,
     ): Promise<HeadlessProbeResult>;
     list: SessionExecutionManager['list'];
+    current: SessionExecutionManager['current'];
+    interrupt: SessionExecutionManager['interrupt'];
+    admission: SessionExecutionManager['admission'];
     takeovers: SessionExecutionManager['takeovers'];
     wait(meta: WorkspaceMeta, adapter: CliAdapter, prompt: string, origin: ExecutionOrigin, timeoutMs?: number): Promise<HeadlessTaskResult>;
   };
@@ -1469,7 +1472,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       ...(adapter.keepHeadlessDiagnosticLine
         ? { keepDiagnosticLine: adapter.keepHeadlessDiagnosticLine.bind(adapter) }
         : {}),
-    }), value => ({ reason: value.killed ? 'probe-timeout' : `child-exit:${value.exitCode}`, failed: headlessTaskStatus(value) !== 'done' }));
+    }), value => ({ reason: value.interruptionReason ?? (value.killed ? 'probe-timeout' : `child-exit:${value.exitCode}`), interrupted: !!value.interruptionReason, failed: headlessTaskStatus(value) !== 'done' }));
     return { result, source: effectiveSource };
   };
 
@@ -1696,7 +1699,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         timeoutMs,
         logger: launcherLogger.child({ scope: 'probe', wsId: ws.id, agent: adapter.id }),
         onSpawned: pid => { ready(pid); releaseStartLease(); },
-      }), value => ({ reason: value.killed ? 'probe-timeout' : `child-exit:${value.exitCode}`, failed: !value.killed && value.exitCode !== 0 }));
+      }), value => ({ reason: value.interruptionReason ?? (value.killed ? 'probe-timeout' : `child-exit:${value.exitCode}`), interrupted: !!value.interruptionReason, failed: !value.killed && value.exitCode !== 0 }));
     } finally {
       activityLease.release();
       releaseStartLease();
@@ -1864,7 +1867,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
             // reviews may proceed and explain this exact run as the blocker.
             releaseStartLease();
           },
-        }), value => ({ reason: value.killed ? 'timeout' : `child-exit:${value.exitCode}`, failed: headlessTaskStatus(value) !== 'done' }));
+        }), value => ({ reason: value.interruptionReason ?? (value.killed ? 'timeout' : `child-exit:${value.exitCode}`), interrupted: !!value.interruptionReason, failed: headlessTaskStatus(value) !== 'done' }));
       } finally {
         activityLease.release();
       }
@@ -2156,6 +2159,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           exitCode: r.exitCode,
           signal: r.signal,
           killed: r.killed,
+          interruptionReason: r.interruptionReason,
           ...(failure ? { error: failure } : {}),
           output: {
             hasAssistantReply: r.structured.assistantText !== null,
@@ -2253,16 +2257,20 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           return;
         }
         await Promise.all([turnJournal.flush(), progressPublisher.flush()]);
-        const message = err instanceof Error ? err.message : String(err);
+        if (executionManager.current(rec.resumeId)?.phase === 'stopping') return;
+        const interrupted = executionManager.list(rec.resumeId).find(run => run.taskId === rec.taskId)?.interruption;
+        const status = interrupted ? 'interrupted' as const : 'failed' as const;
+        const message = interrupted?.reason ?? (err instanceof Error ? err.message : String(err));
         await headlessTasks.complete(rec.taskId, {
-          status: 'failed',
+          status,
+          ...(interrupted ? { interruptionReason: interrupted.reason } : {}),
           finishedAt: Date.now(),
           error: message,
         });
         if (conversation) {
           await agentConversationLog.recordCompletion({
             taskId: rec.taskId,
-            status: 'failed',
+            status,
             finishedAt: rec.finishedAt ?? Date.now(),
             assistantText: null,
             error: message,
@@ -2275,12 +2283,12 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           ...(occupancySessionId ? { sessionRecordId: occupancySessionId } : {}),
           taskId: rec.taskId,
           surface: 'headless',
-          status: 'failed',
+          status,
           error: message,
         });
         await completeIssueCommentInquiry({
           task: rec,
-          status: 'failed',
+          status,
           error: message,
         });
         await observeHeadlessIssueChanges(rec, ws).catch((observeErr) =>
@@ -2303,6 +2311,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     const [ws, , , origin, , trigger, resumeId, inquiry] = args;
     let release = () => {};
     if (resumeId) {
+      executionManager.admission.assertAllowed(resumeId);
       await sessionRegistry.ensureLoaded(ws.id);
       const record = sessionRegistry.findByResumeId(ws.id, resumeId);
       if (record) {
@@ -2321,7 +2330,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         }
       }
     }
-    try { return await dispatchHeadlessTaskImpl(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], release); }
+    try { if (resumeId) executionManager.admission.assertAllowed(resumeId); return await dispatchHeadlessTaskImpl(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], release); }
     catch (error) { release(); throw error; }
   };
 
@@ -3016,6 +3025,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     } = {},
   ): Promise<WebSessionSnapshot> => {
     origin = validateExecutionOrigin(origin);
+    executionManager.admission.assertAllowed(record.resumeId);
     if (!claimResume(record.resumeId)) throw new HeadlessResumeError('busy', 'this conversation already has a running turn');
     const operationLease = workspaceOperationGuard.acquire(meta.id, 'web-session-start');
     if (!operationLease) {
@@ -3148,6 +3158,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     origin = validateExecutionOrigin(origin);
     const record = sessionRegistry.get(wsId, context.recordId);
     if (!record) throw new Error('Session record is required before execution');
+    executionManager.admission.assertAllowed(record.resumeId);
     if (executionManager.takeovers.isHandingOff(record.resumeId)) throw new HeadlessResumeError('busy', 'Session handoff is in progress');
     await executionManager.stop(record.resumeId, 'switch to terminal');
     let child: PersistentSession | undefined;
@@ -3174,6 +3185,20 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     web: executeWebSession,
     stop: (resumeId: string, reason: string) => executionManager.stop(resumeId, reason),
     list: (resumeId?: string) => executionManager.list(resumeId),
+    current: (resumeId: string) => executionManager.current(resumeId),
+    interrupt: async (resumeId: string, executionId: string, actor: ExecutionOrigin) => {
+      const stopped = await executionManager.interrupt(resumeId, executionId, actor);
+      const execution = executionManager.list(resumeId).find(row => row.executionId === executionId);
+      const task = execution?.taskId ? headlessTasks.get(execution.taskId) : undefined;
+      if (stopped && task?.status === 'running') {
+        await headlessTasks.complete(task.taskId, { status: 'interrupted', finishedAt: Date.now(),
+          interruptionReason: execution?.reason ?? 'interrupted', error: 'Session execution was interrupted.' });
+        await dispatchDelivery.finish(task, null);
+        await completeIssueCommentInquiry({ task, status: 'interrupted', error: task.error });
+      }
+      return stopped;
+    },
+    admission: executionManager.admission,
     takeovers: executionManager.takeovers,
   };
 

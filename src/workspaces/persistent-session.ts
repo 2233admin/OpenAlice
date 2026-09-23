@@ -437,7 +437,8 @@ export class PersistentSession {
 
   /** Await the current child before another execution may start. */
   async disposeAndWait(reason: string): Promise<void> {
-    if (this.disposed) return;
+    if (this.term.terminateTree) { await this.term.terminateTree(); this.dispose(reason); return; }
+    if (this.disposed && this.currentChildExited) return;
     if (this.currentChildExited) { this.dispose(reason); return; }
     const term = this.term;
     let exited = false;
@@ -450,7 +451,8 @@ export class PersistentSession {
       finally { if (timer) clearTimeout(timer); }
     };
     try {
-      this.dispose(reason);
+      if (this.disposed) term.kill('SIGKILL');
+      else this.dispose(reason);
       await wait(2_000);
       if (!exited) { term.kill('SIGKILL'); await wait(2_000); }
       if (!exited) throw new Error('Interactive process did not exit; background handoff was not started');

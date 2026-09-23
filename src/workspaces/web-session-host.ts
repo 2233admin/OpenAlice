@@ -1,3 +1,4 @@
+import { sessionProcessStop } from './session-process-stop.js'
 /**
  * Web conversation surface — one long-lived structured Agent process per
  * Session record, presented in the browser instead of a PTY.
@@ -45,6 +46,7 @@ export interface WebSessionProcess {
   once(event: 'error', listener: (error: Error) => void): this
   once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this
   on(event: 'error', listener: (error: Error) => void): this
+  terminateTree?(): Promise<void>
   kill(signal?: NodeJS.Signals): boolean
 }
 
@@ -100,7 +102,7 @@ export class WebSessionHost {
       this.logger.child({ scope: 'web-session', wsId: input.wsId, recordId: input.recordId, wire: input.wire }),
       {
         onExit: (reason) => {
-          if (this.sessions.get(input.recordId) === session) this.sessions.delete(input.recordId)
+          if (!reason.intentional && this.sessions.get(input.recordId) === session) this.sessions.delete(input.recordId)
           this.callbacks.onExit?.(input.recordId, reason)
         },
         onNativeSessionId: (id) => { if (this.sessions.get(input.recordId) === session) this.callbacks.onNativeSessionId?.(input.recordId, id) },
@@ -255,7 +257,7 @@ class LiveWebSession {
   }
 
   async stop(reason: string): Promise<void> {
-    if (this.exited) return
+    if (this.exited) { await this.child.terminateTree?.(); return }
     this.intentionalStop = true
     this.logger.info('web_session.stopping', { reason })
     try {
@@ -264,6 +266,7 @@ class LiveWebSession {
       this.logger.warn('web_session.dispose_failed', { error })
     }
     this.channel.close()
+    if (this.child.terminateTree) { await this.child.terminateTree(); return }
     this.child.kill('SIGTERM')
     await Promise.race([
       new Promise<void>((resolve) => this.child.once('exit', () => resolve())),
@@ -391,10 +394,11 @@ function defaultSpawnProcess(input: StartWebSessionInput): WebSessionProcess {
   const resolved = resolveLaunchCommand(input.command, { env: input.env, cwd: input.cwd })
   const [file, ...args] = resolved.argv
   if (!file) throw new Error('Web session command is empty')
-  return spawn(file, args, {
+  const child = spawn(file, args, {
     cwd: input.cwd,
     env: { ...input.env },
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   })
+  return Object.assign(child, { terminateTree: child.pid ? sessionProcessStop(child.pid, 2000) : async () => {} })
 }

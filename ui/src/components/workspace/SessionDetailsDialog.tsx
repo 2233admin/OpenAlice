@@ -1,3 +1,6 @@
+import { useRef } from 'react'
+import { useSessionControl } from '../../hooks/useSessionControl'
+import { SessionControlPanel } from './SessionControlPanel'
 import { useSessionDetailsDialog } from './session-details-store'
 import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog'
@@ -8,7 +11,9 @@ import { sessionCoworkerLabel } from './display'
 import type { SessionRecord } from './api'
 
 export function SessionDetailsDialog({ record, onClose }: { record: SessionRecord; onClose(): void }) {
+  const titleRef = useRef<HTMLHeadingElement>(null)
   const { t, i18n } = useTranslation()
+  const control = useSessionControl(record.wsId, record.id)
   const data = useSessionDetails(record.wsId, record.id, record.resumeId)
   const openOrFocus = useWorkspace(state => state.openOrFocus)
   const text = (key: 'title' | 'unknown' | 'state' | 'workspace' | 'runtime' | 'surface' | 'created' | 'started' | 'ended' | 'active' | 'provider' | 'credential' | 'model' | 'effort' | 'createdBy' | 'running' | 'issues' | 'none' | 'history' | 'noHistory' | 'partial' | 'source' | 'reason' | 'identifiers') => t(`workspace.sessionDetails.${key}`)
@@ -39,10 +44,11 @@ export function SessionDetailsDialog({ record, onClose }: { record: SessionRecor
   ]
   const boundIssues = data.issues?.workspaces.flatMap(ws => ws.issues.filter(issue => issue.assignee === `@${record.resumeId}`).map(issue => ({ wsId: ws.wsId, issue }))) ?? []
   return <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-    <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl" closeLabel={t('common.close')}>
-      <DialogHeader><DialogTitle>{text('title')}</DialogTitle><DialogDescription>{sessionCoworkerLabel(record)}</DialogDescription></DialogHeader>
+    <DialogContent initialFocus={titleRef} className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl" closeLabel={t('common.close')}>
+      <DialogHeader><DialogTitle ref={titleRef} tabIndex={-1} className="outline-none pr-6">{text('title')}</DialogTitle><DialogDescription>{sessionCoworkerLabel(record)}</DialogDescription></DialogHeader>
       {data.loading && <p role="status" className="text-sm text-muted-foreground">{t('common.loading')}</p>}
       {data.errors.length > 0 && <p role="alert" className="text-sm text-destructive">{text('partial')}</p>}
+      <SessionControlPanel control={control} />
       <dl className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-[10rem_minmax(0,1fr)]">
         {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 break-words">{value}</dd></div>)}
       </dl>

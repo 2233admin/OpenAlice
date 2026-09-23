@@ -680,6 +680,7 @@ export function SessionRow(props: SessionRowProps): ReactElement {
   const settingsLabel = t('workspace.sessionSettings.openFor', { title: display });
   const menuItems = [
     { label: t('workspace.sessionDetails.title'), icon: <Info size={13} />, onSelect: () => useSessionDetailsDialog.getState().show(s) },
+    ...(headlessOccupying ? [{ label: t('sessionControl.interrupt'), icon: <Square size={11} />, onSelect: () => useSessionDetailsDialog.getState().show(s) }] : []),
     ...(!headlessOccupying && !(props.enterOnSelect && isPaused) ? [isPaused ? {
       label: resumeLabel,
       ariaLabel: resumeLabel,
