@@ -5,6 +5,19 @@ import packageJson from '../../../../package.json'
 const currentVersion = packageJson.version
 
 export const devMiscHandlers = [
+  http.get('/api/alice-project', () =>
+    HttpResponse.json({
+      project: {
+        id: 'demo-alice-project',
+        key: 'demo',
+        displayName: 'Demo AliceProject',
+        home: '/demo/openalice',
+        appRoot: null,
+        product: 'trader',
+      },
+    }),
+  ),
+
   http.get('/api/version', () =>
     HttpResponse.json({
       current: currentVersion,

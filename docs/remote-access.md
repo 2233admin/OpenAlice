@@ -52,6 +52,13 @@ origin, including its forwarded port. Only loopback browser access bypasses the
 Vite proxy for the development backend port; a LAN client cannot assume that
 the backend's loopback-only listener is exposed alongside the UI.
 
+Settings → Backend connection presents the current client-owned Machine/SSH
+identity beside the AliceProject reported by the connected backend. It is an
+inspection surface: the Shell CLI still owns Machine discovery, tunnel lifetime,
+and connection switching. The Settings action explains that path until a local
+relay control channel exists; remote-served UI must not receive unrestricted
+local SSH authority.
+
 Native `server run/start` derives its content identity from the installed
 `release.json`, matching the interactive launcher. Readiness confirms pending
 activation only when the running identity matches the installed pointer.

@@ -23,6 +23,7 @@ import { ActivityBarSettingsPage } from '../pages/ActivityBarSettingsPage'
 import { PetSettingsPage } from '../pages/PetSettingsPage'
 import { WorkspaceInjectionPage } from '../pages/WorkspaceInjectionPage'
 import { BetaSettingsPage } from '../pages/BetaSettingsPage'
+import { BackendConnectionSettingsPage } from '../pages/BackendConnectionSettingsPage'
 import { AgentPermissionsPage } from '../pages/AgentPermissionsPage'
 import { AgentRuntimesSettingsPage } from '../pages/AgentRuntimesSettingsPage'
 import { AIProviderPage } from '../pages/AIProviderPage'
@@ -277,6 +278,7 @@ const settingsCategoryTitle: Record<
   trading: 'Trading',
   issues: 'Issues',
   harness: 'Harness',
+  'backend-connection': 'Backend connection',
   connectors: 'Connectors',
   mcp: 'MCP Server',
   'market-data': 'Market Data',
@@ -298,6 +300,7 @@ function SettingsRouter({ spec }: ViewProps<'settings'>) {
     case 'trading': return <TradingPage />
     case 'issues': return <IssueSettingsPage />
     case 'harness': return <HarnessSettingsPage />
+    case 'backend-connection': return <BackendConnectionSettingsPage />
     case 'connectors': return <ConnectorsPage />
     case 'mcp': return <MCPPage />
     case 'market-data': return <MarketDataPage />
