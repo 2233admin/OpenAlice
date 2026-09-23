@@ -685,6 +685,8 @@ Each current-Workspace Harness navigation group has a collapsed `n running`
 disclosure for background occupancy, below Studio (Chat: directly below its heading, before conversations).
 The disclosure and its entries reuse the ordinary Session child-row primitives
 for matching height, inset, icon spacing, and text size.
+When a running headless execution reports a start time, its child row shows a
+compact live elapsed time beside the title; unknown start times stay unlabeled.
 This projection includes headless-born and Issue-attached Sessions independently
 of ordinary conversation roster preferences, including hidden background workers;
 retired identities are excluded. Idle interactive processes do not count. Occupied rows are excluded

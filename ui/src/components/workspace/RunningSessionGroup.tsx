@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { ChevronRight, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SidebarChildRow, SidebarChildRowButton } from '../SidebarChildRow'
@@ -5,12 +6,28 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import { AgentRuntimeIcon } from '../../lib/agentRuntimeIcon'
 import type { HarnessSession } from './harness-sessions'
 
+function runningDuration(startedAt: number | undefined, now: number): string | null {
+  if (!startedAt || !Number.isFinite(startedAt)) return null
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000))
+  if (seconds >= 86_400) return `${Math.floor(seconds / 86_400)}d ${String(Math.floor((seconds % 86_400) / 3600)).padStart(2, '0')}h`
+  const minutes = Math.floor(seconds / 60)
+  const clock = `${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+  return minutes < 60 ? `${minutes}:${String(seconds % 60).padStart(2, '0')}` : `${Math.floor(minutes / 60)}:${clock}`
+}
+
 /** One operational group, with a visible parent/child relationship in every Harness. */
 export function RunningSessionGroup({ sessions, onSelect }: {
   sessions: readonly HarnessSession[]
   onSelect(session: HarnessSession): void
 }) {
   const { t } = useTranslation()
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (sessions.length === 0) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [sessions.length])
   if (sessions.length === 0) return null
   const label = t('workspace.sessionBusy.runningCount', { count: sessions.length })
   const focusClass = 'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring'
@@ -27,12 +44,18 @@ export function RunningSessionGroup({ sessions, onSelect }: {
     <CollapsibleContent>
       <div className="mb-1 ml-[22px] mr-1.5 max-h-[40dvh] overflow-y-auto overscroll-contain border-l border-sidebar-foreground/15 py-0.5 pl-1"
         role="group" aria-label={label}>
-        {sessions.map(row => <SidebarChildRow key={row.resumeId} active={false} className={focusClass}>
-          <SidebarChildRowButton onClick={() => onSelect(row)} aria-label={row.title}
-            icon={<AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4" />}>
-            <span className="min-w-0 flex-1 truncate" title={row.title}>{row.title}</span>
-          </SidebarChildRowButton>
-        </SidebarChildRow>)}
+        {sessions.map(row => {
+          const execution = row.directory?.latestExecution
+          const elapsed = execution?.status === 'running' ? runningDuration(execution.startedAt, now) : null
+          return <SidebarChildRow key={row.resumeId} active={false} className={focusClass}>
+            <SidebarChildRowButton onClick={() => onSelect(row)} aria-label={row.title}
+              aria-description={elapsed ? `${t('workspace.sessionBusy.duration')} ${elapsed}` : undefined}
+              icon={<AgentRuntimeIcon agentId={row.session.agent} className="h-4 w-4" />}>
+              <span className="min-w-0 flex-1 truncate" title={row.title}>{row.title}</span>
+              {elapsed && <span aria-hidden className="shrink-0 tabular-nums text-xs text-muted-foreground">{elapsed}</span>}
+            </SidebarChildRowButton>
+          </SidebarChildRow>
+        })}
       </div>
     </CollapsibleContent>
   </Collapsible>
