@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   getVersion: vi.fn(),
   checkVersion: vi.fn(),
   getAliceProject: vi.fn(),
-  getBackendConnection: vi.fn(),
   backendUnavailable: false,
   backendRecoveryGeneration: 0,
 }))
@@ -22,10 +21,6 @@ vi.mock('../../api', () => ({
       get: mocks.getAliceProject,
     },
   },
-}))
-
-vi.mock('../../auth/backendConnection', () => ({
-  getBackendConnection: mocks.getBackendConnection,
 }))
 
 vi.mock('../../auth/AuthContext', () => ({
@@ -69,7 +64,6 @@ beforeEach(() => {
   mocks.getVersion.mockResolvedValue(currentVersion)
   mocks.checkVersion.mockResolvedValue(currentVersion)
   mocks.getAliceProject.mockResolvedValue({ project: currentProject })
-  mocks.getBackendConnection.mockReturnValue({ kind: 'local', endpoint: '127.0.0.1:47331' })
 })
 
 afterEach(() => {
@@ -161,24 +155,6 @@ describe('AboutOpenAliceSection', () => {
     expect(screen.queryByText('Research AliceProject')).toBeNull()
     expect(await screen.findByText('Couldn’t check for updates.')).toBeTruthy()
     expect(await screen.findByText('AliceProject information is unavailable.')).toBeTruthy()
-  })
-
-  it('shows the healthy SSH route that owns this browser surface', async () => {
-    mocks.getBackendConnection.mockReturnValue({
-      kind: 'remote',
-      target: 'alice@example.com',
-      sshPort: 2222,
-      runtimePort: 47331,
-      localEndpoint: '127.0.0.1:40123',
-    })
-
-    render(<AboutOpenAliceSection />)
-
-    expect(await screen.findByRole('heading', { name: 'Backend connection' })).toBeTruthy()
-    expect(screen.getByText('Connected')).toBeTruthy()
-    expect(screen.getByText('alice@example.com:2222')).toBeTruthy()
-    expect(screen.getByText('127.0.0.1:40123')).toBeTruthy()
-    expect(screen.getByText('127.0.0.1:47331')).toBeTruthy()
   })
 
   it.each([

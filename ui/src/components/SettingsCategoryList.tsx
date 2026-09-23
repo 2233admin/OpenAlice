@@ -20,6 +20,7 @@ import {
   PanelsTopLeft,
   Plug,
   ScrollText,
+  Server,
   ShieldCheck,
   SlidersHorizontal,
   Wrench,
@@ -95,6 +96,7 @@ const CATEGORY_GROUPS = [
   {
     labelKey: 'settings.group.connections',
     items: [
+      { labelKey: 'settings.category.backendConnection', category: 'backend-connection', Icon: Server },
       { labelKey: 'settings.category.connectors', category: 'connectors', Icon: Plug },
       { labelKey: 'settings.category.mcpServer', category: 'mcp', Icon: Plug },
       { labelKey: 'settings.category.marketData', category: 'market-data', Icon: LineChart },
