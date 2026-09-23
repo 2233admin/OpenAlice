@@ -115,7 +115,7 @@ export function SessionDetailsDialog({ record, onClose }: { record: SessionRecor
       </div>
       <footer className="max-h-[45dvh] shrink-0 overflow-y-auto">
         <div className="border-t border-border px-5 py-2 sm:px-7"><Button variant="ghost" size="sm" disabled={data.loading} onClick={data.refresh}><RefreshCw size={15} aria-hidden />{t('workspace.sessionBusy.refresh')}</Button></div>
-        <SessionControlPanel control={control} compact />
+        <SessionControlPanel control={control} compact sessionName={sessionCoworkerLabel(record)} />
       </footer>
     </DialogContent>
   </Dialog>

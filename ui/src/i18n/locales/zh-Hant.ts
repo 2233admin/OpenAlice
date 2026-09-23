@@ -15,6 +15,8 @@ export const zhHant: Resources = {
     "stopping": "正在停止…",
     "retry": "重試停止",
     "interrupt": "中斷執行",
+    "confirmTitle": "中斷「{{session}}」？",
+    "confirmDescription": "這會停止目前的執行，並阻止新任務啟動 {{minutes}} 分鐘。對話紀錄會保留。",
     "explanation": "停止本次執行，並阻止新任務啟動 {{minutes}} 分鐘。對話紀錄會保留。",
     "unconfirmed": "尚未確認程序結束，Session 仍被佔用。",
     "cooldown": "暫時阻止啟動",
