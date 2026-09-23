@@ -47,7 +47,7 @@ export function parseRemoteArgs(argv) {
     remotePortExplicit: false,
     sshPort: null,
     identityFile: null,
-    openBrowser: true,
+    openBrowser: false,
     waitMs: 120_000,
     assumeYes: false,
     planOnly: false,
@@ -344,7 +344,7 @@ export async function connectRemote(options, dependencies = {}) {
     remotePort: runtimePort,
     sshPort: options.sshPort,
     identityFile: options.identityFile,
-    openBrowser: options.openBrowser,
+    openBrowser: false,
     waitMs: options.waitMs,
     onReady: async ({ localPort }) => {
       try {
@@ -1099,11 +1099,12 @@ export async function confirmRemotePlan(message, dependencies = {}) {
 
 export function formatRemoteHelp() {
   return `Usage:
-  openalice --remote <user@host> [options]
+  openalice --remote <user@host> --plan|--status|--stop [options]
 
-Plans and, after explicit consent, installs or reuses the matching OpenAlice
-Runtime on the SSH host. It then opens the normal loopback browser tunnel.
-Disconnecting closes only the tunnel; the remote Server keeps running.
+Read-only planning and explicit remote Runtime control. To connect the GUI,
+first run "openalice machine add <user@host> --label <name>" to probe and save
+the Machine, then run "openalice" and select a running AliceProject. The GUI
+is served from the local relay, never from a direct SSH tunnel.
 
 When --app-dir is omitted, a new Runtime uses the installed platform-native
 release. A healthy compatible Runtime already present in the SSH execution
@@ -1113,8 +1114,6 @@ to select a specific source-development Runtime.
 Options:
   --app-dir <path>        Advanced: explicit existing or new source checkout
   --home <path>           Absolute remote OPENALICE_HOME (default: ~/.openalice)
-  --local-port <port|auto> Local tunnel port (default: auto)
-  --remote-port <port>    Remote OpenAlice web port (default: 47331)
   --ssh-port <port>       SSH server port
   --identity <path>       Local SSH identity file
   --wait <seconds>        Server/tunnel readiness timeout, 1-600 (default: 120)
@@ -1123,7 +1122,6 @@ Options:
   --plan                  Print the read-only plan and exit
   -y, --yes               Approve install/update/start actions non-interactively
   --takeover              Explicitly replace the recorded remote Guardian owner
-  --no-open               Print the local URL without opening a browser
   -h, --help              Show this help
 
 --yes never implies --takeover. Stage 2 supports Linux and macOS SSH hosts.

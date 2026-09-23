@@ -30,7 +30,6 @@ import {
 } from './machine-registry.ts'
 import {
   inspectRuntime,
-  openRuntime,
   startRuntime,
   stopRuntime,
 } from './lifecycle.mjs'
@@ -430,7 +429,7 @@ export interface SupervisorTuiDependencies {
   inspect?: (options?: { homeRoot?: string; waitMs?: number }) => Promise<RuntimeSummary>
   start?: (options: Record<string, unknown>) => Promise<unknown>
   stop?: (options: Record<string, unknown>) => Promise<unknown>
-  open?: (options: Record<string, unknown>) => Promise<unknown>
+  openBrowser?: typeof openBrowser
   readLogs?: (options: Record<string, unknown>) => Promise<RuntimeLogs>
   diagnose?: (options: Record<string, unknown>) => Promise<DoctorReport>
   checkUpdate?: (channel: SupervisorUpdateChannel) => Promise<UpdateResult>
@@ -506,7 +505,6 @@ interface SupervisorServices {
   inspect: NonNullable<SupervisorTuiDependencies['inspect']>
   start: NonNullable<SupervisorTuiDependencies['start']>
   stop: NonNullable<SupervisorTuiDependencies['stop']>
-  open: NonNullable<SupervisorTuiDependencies['open']>
   readLogs: NonNullable<SupervisorTuiDependencies['readLogs']>
   diagnose: NonNullable<SupervisorTuiDependencies['diagnose']>
   checkUpdate: NonNullable<SupervisorTuiDependencies['checkUpdate']>
@@ -526,6 +524,7 @@ export async function runSupervisorTui(
 ): Promise<number> {
   const stdin = dependencies.stdin ?? process.stdin
   const stdout = dependencies.stdout ?? process.stdout
+  const openWebBrowser = dependencies.openBrowser ?? openBrowser
   const readInbox = dependencies.readInbox ?? readSupervisorInbox
   const setInboxRead = dependencies.setInboxRead ?? setSupervisorInboxRead
   if (!stdin.isTTY || !stdout.isTTY) {
@@ -962,18 +961,18 @@ export async function runSupervisorTui(
       void toggleInboxRead(entry.id)
     },
     onOpenInboxEntry: (entry) => {
-      const base = webRelay?.originUrl || activeTarget?.clientUrl || activeTarget?.endpoint
+      const base = webRelay?.originUrl
       if (!base) return
       const url = supervisorInboxWorkspaceUrl(base, entry.workspaceId)
-      void openBrowser(url).then(
+      void openWebBrowser(url).then(
         () => screen.update({ notice: `Opened Workspace ${entry.workspaceLabel ?? entry.workspaceId}.` }),
         (error: unknown) => screen.update({ diagnostic: safeError(error) }),
       )
     },
     onOpenActiveTarget: () => {
-      const url = webRelay?.originUrl || activeTarget?.clientUrl || activeTarget?.endpoint
+      const url = webRelay?.originUrl
       if (!url) return
-      void openBrowser(url).then(
+      void openWebBrowser(url).then(
         () => screen.update({ notice: 'Opened the OpenAlice Web GUI.' }),
         (error: unknown) => screen.update({ diagnostic: safeError(error) }),
       )
@@ -2064,12 +2063,11 @@ export async function runSupervisorTui(
         if (action === 'start-open') {
           screen.update({ notice: 'Runtime started.' })
           try {
-            if (webRelay) {
-              tuiConnectionRequest = true
-              try { await webRelay.connect('local', context.project) }
-              finally { tuiConnectionRequest = false }
-              await openBrowser(webRelay.originUrl)
-            } else await services.open({ homeRoot, waitMs: 2_000 })
+            if (!webRelay) throw new Error('The Web relay is unavailable.')
+            tuiConnectionRequest = true
+            try { await webRelay.connect('local', context.project) }
+            finally { tuiConnectionRequest = false }
+            await openWebBrowser(webRelay.originUrl)
             screen.update({
               notice: 'OpenAlice started and opened in your browser.',
             })
@@ -2080,8 +2078,8 @@ export async function runSupervisorTui(
           screen.update({ notice: 'Runtime started in the background.' })
         }
       } else if (action === 'open') {
-        if (webRelay) await openBrowser(webRelay.originUrl)
-        else await services.open({ homeRoot, waitMs: 2_000 })
+        if (!webRelay) throw new Error('The Web relay is unavailable.')
+        await openWebBrowser(webRelay.originUrl)
         screen.update({ notice: 'Opened the verified Web UI.' })
       } else if (action === 'stop') {
         await services.stop({ homeRoot, waitMs: 15_000 })
@@ -5751,9 +5749,6 @@ function createServices(
     stop: options.configRecovery
       ? refuseProjectAction
       : dependencies.stop ?? ((stopOptions) => stopRuntime(stopOptions, shared)),
-    open: options.configRecovery
-      ? refuseProjectAction
-      : dependencies.open ?? ((openOptions) => openRuntime(openOptions, shared)),
     readLogs: options.configRecovery
       ? refuseProjectAction
       : dependencies.readLogs ?? ((logOptions) => readRuntimeLogs(logOptions, shared)),
