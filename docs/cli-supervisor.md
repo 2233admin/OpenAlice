@@ -68,7 +68,7 @@ on the selected enabled profile. There is no separate public `ssh` or `remote`
 command.
 
 The normal TUI starts a local relay in the same CLI process. TUI selection and
-Settings → Backend connection operate one current Machine/AliceProject target;
+Settings → General → Where Alice is working operate one current Machine/AliceProject target;
 opening Web from the TUI uses that relay's stable loopback origin, including
 when no Runtime is selected yet (`o` opens the connection screen). Web changes
 also update the TUI. `openalice relay` runs the same relay without the terminal
