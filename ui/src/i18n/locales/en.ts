@@ -19,6 +19,7 @@ export const en = {
     "stopping": "Stopping…",
     "retry": "Retry stop",
     "interrupt": "Interrupt run",
+    "confirmAction": "Confirm interruption",
     "confirmTitle": "Interrupt {{session}}?",
     "confirmDescription": "This stops the current execution and blocks new starts for {{minutes}} minutes. Conversation history is kept.",
     "explanation": "Stops this execution and blocks new starts for {{minutes}} minutes. Conversation history is kept.",
