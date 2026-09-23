@@ -12,7 +12,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CloudOff, RefreshCw } from 'lucide-react'
 import { useAuth } from './AuthContext'
-import { getBackendConnection, type BackendConnection } from './backendConnection'
 import { LoginPage, NoTokenPage } from './LoginPage'
 import { Spinner } from '../components/StateViews'
 import { Button } from '../components/ui/button'
@@ -20,25 +19,15 @@ import { useWindowsChrome } from '../hooks/useWindowsChrome'
 import { useRelayConnection } from '../hooks/useRelayConnection'
 import { RelayConnectionChooser } from '../components/RelayConnectionChooser'
 
-function remoteTargetLabel(connection: Extract<BackendConnection, { kind: 'remote' }>): string {
-  return connection.sshPort === 22
-    ? connection.target
-    : `${connection.target}:${connection.sshPort}`
-}
-
 export function BackendUnavailableScreen({
   retry,
-  connection,
 }: {
   retry: () => Promise<void>
-  connection: BackendConnection
 }) {
   const { t } = useTranslation()
   const relay = useRelayConnection()
   const [chooserOpen, setChooserOpen] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
-  const remote = connection.kind === 'remote' ? connection : null
-  const target = remote ? remoteTargetLabel(remote) : ''
 
   useEffect(() => {
     dialogRef.current?.focus({ preventScroll: true })
@@ -63,14 +52,10 @@ export function BackendUnavailableScreen({
           {t('auth.backendUnavailableEyebrow')}
         </p>
         <h1 id="backend-unavailable-title" className="max-w-[560px] break-words text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
-          {remote
-            ? t('auth.backendUnavailableRemoteHeading', { target })
-            : t('auth.backendUnavailableHeading')}
+          {t('auth.backendUnavailableHeading')}
         </h1>
         <p id="backend-unavailable-description" className="mt-4 max-w-[560px] text-[14px] leading-6 text-muted-foreground sm:text-[15px]">
-          {remote
-            ? t('auth.backendUnavailableRemoteDescription')
-            : t('auth.backendUnavailableDescription')}
+          {t('auth.backendUnavailableDescription')}
         </p>
 
         <div className="oa-status-surface mt-7 rounded-lg border border-border bg-secondary/55 px-4 py-4 sm:px-5">
@@ -78,27 +63,13 @@ export function BackendUnavailableScreen({
             <Spinner size="sm" />
             <div className="min-w-0">
               <p className="break-words text-[13px] font-medium text-foreground">
-                {remote
-                  ? t('auth.reconnectingRemote', { target })
-                  : t('auth.reconnecting')}
+                {t('auth.reconnecting')}
               </p>
               <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
                 {t('auth.backendUnavailableImpact')}
               </p>
             </div>
           </div>
-          {remote && (
-            <dl className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-x-5 gap-y-2 border-t border-border/80 pt-4 text-[12px]">
-              <dt className="text-muted-foreground">{t('auth.connectionType')}</dt>
-              <dd className="truncate text-right font-medium text-foreground">{t('auth.sshTunnel')}</dd>
-              <dt className="text-muted-foreground">{t('auth.remoteTarget')}</dt>
-              <dd className="truncate text-right font-mono text-foreground" title={target}>{target}</dd>
-              <dt className="text-muted-foreground">{t('auth.localTunnelEndpoint')}</dt>
-              <dd className="truncate text-right font-mono text-foreground" title={remote.localEndpoint}>{remote.localEndpoint}</dd>
-              <dt className="text-muted-foreground">{t('auth.remoteRuntimeEndpoint')}</dt>
-              <dd className="truncate text-right font-mono text-foreground">127.0.0.1:{remote.runtimePort}</dd>
-            </dl>
-          )}
         </div>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -112,9 +83,7 @@ export function BackendUnavailableScreen({
           </Button>
           {relay.status && <Button type="button" variant="outline" onClick={() => setChooserOpen(true)}>{t('settings.backendConnection.change')}</Button>}
           <p className="max-w-[390px] break-words text-[11px] leading-5 text-muted-foreground">
-            {remote
-              ? t('auth.backendUnavailableRemoteHelp', { target: remote.target })
-              : t('auth.backendUnavailableHelp')}
+            {t('auth.backendUnavailableHelp')}
           </p>
         </div>
         <RelayConnectionChooser open={chooserOpen} onOpenChange={setChooserOpen} initialStatus={relay.status} />
@@ -126,7 +95,6 @@ export function BackendUnavailableScreen({
 export function AuthGate({ children }: { children: ReactNode }) {
   useWindowsChrome()
   const { state, backendUnavailable, refresh } = useAuth()
-  const connection = getBackendConnection()
 
   if (state === 'loading' && !backendUnavailable) {
     return (
@@ -153,7 +121,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       >
         {content}
       </div>
-      {backendUnavailable && <BackendUnavailableScreen retry={refresh} connection={connection} />}
+      {backendUnavailable && <BackendUnavailableScreen retry={refresh} />}
     </div>
   )
 }

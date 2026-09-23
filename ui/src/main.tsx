@@ -6,7 +6,7 @@ import { ToastProvider } from './components/Toast'
 import { TooltipProvider } from './components/ui/tooltip'
 import { AuthProvider } from './auth/AuthContext'
 import { AuthGate } from './auth/AuthGate'
-import { clearDirectTunnelContextForRelay, initializeBackendConnection } from './auth/backendConnection'
+import { initializeBackendConnection } from './auth/backendConnection'
 import { installBackendRequestObserver } from './auth/backendConnectivity'
 import { getRelayStatus, monitorRelayGeneration } from './hooks/useRelayConnection'
 import { RelaySetup } from './components/RelaySetup'
@@ -25,7 +25,6 @@ if (import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:') {
 }
 
 const relayStatus = window.openAlice?.runtime ? null : await getRelayStatus()
-if (relayStatus) clearDirectTunnelContextForRelay()
 initializeBackendConnection()
 if (relayStatus && !import.meta.env.VITE_DEMO_MODE) monitorRelayGeneration(relayStatus)
 
