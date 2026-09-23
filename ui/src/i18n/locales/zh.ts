@@ -2,6 +2,37 @@ import type { Resources } from './en'
 
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
+  takeover: {
+    "pending": "{{count}} 个接管请求",
+    "title": "后台任务请求使用此 Session",
+    "description": "你正在使用「{{session}}」。请选择何时交接。",
+    "handedOff": "Session 已交接",
+    "finished": "请求已处理",
+    "requestedBy": "请求来源",
+    "requestedAt": "请求时间",
+    "viewIssue": "查看 Issue",
+    "countdown": "无操作 {{seconds}} 秒后交接",
+    "queued": "等待前一个请求完成",
+    "terminal": "终端接管需要批准",
+    "working": "等待当前任务完成",
+    "terminalHelp": "无法确认终端的执行状态。批准后将停止终端进程，再启动后台任务。",
+    "idleHelp": "输入、发消息或操作此 Session 会重置倒计时。Agent 正在执行的任务完成后才会自动交接。",
+    "runningHelp": "后台任务正在使用此 Session。你的对话仍保留在这里。",
+    "doneHelp": "此请求已结束，无需继续批准。",
+    "keepUsing": "继续使用",
+    "approve": "交给后台",
+    "approved": "已批准 · 等待交接",
+    "timing": "自动交接时间",
+    "setting": "自动交接前的空闲时间",
+    "seconds": "秒",
+    "saved": "已保存",
+    "settingHelp": "10–3600 秒，默认 60 秒。对所有工作区的新请求生效；终端执行状态未知时始终需要批准。",
+    "occupied": "后台任务正在使用此 Session",
+    "reopen": "返回对话",
+    "complete": "后台任务已完成",
+    "purpose": "触发入口"
+},
+
   modelCatalog: {
     bundled: "正在使用内置模型建议。",
     missing: "最新模型列表中没有 {{model}}。已保留你的选择，该模型的可用性可能发生了变化。",

@@ -39,6 +39,33 @@ import type {
   WorkspaceRuntimePreference,
 } from '../../components/workspace/api'
 
+import type { TakeoverRequest } from '../../hooks/useSessionTakeovers'
+const demoTakeoverPreview = typeof location !== 'undefined' && new URLSearchParams(location.search).has('takeover')
+let demoTakeover: TakeoverRequest | null = null
+let demoTakeoverSeconds = 60
+let demoTakeoverStarted = 0
+function projectDemoTakeover(record: SessionRecord, state: SessionRecord['state'], surface: SessionRecord['surface']) {
+  const index = demoWorkspaces.findIndex(ws => ws.id === record.wsId)
+  const workspace = demoWorkspaces[index]
+  if (workspace) demoWorkspaces[index] = { ...workspace, sessions: workspace.sessions.map(row => row.id === record.id ? { ...row, state, surface } : row) }
+}
+function updateDemoTakeover() {
+  if (!demoTakeover) return
+  if (demoTakeover.state === 'pending' && (demoTakeover.decision === 'approved' || Date.now() >= demoTakeover.deadline)) {
+    const snapshot = findDemoWebSession(demoTakeover.workspaceId, demoTakeover.recordId)
+    if (snapshot && snapshot.phase !== 'idle') { demoTakeover.blocker = 'working'; return }
+    demoTakeover.state = 'running'; demoTakeoverStarted = Date.now()
+    const record = demoWorkspaces.find(ws => ws.id === demoTakeover!.workspaceId)?.sessions.find(row => row.id === demoTakeover!.recordId)
+    if (record) { demoResumedSessions.set(webKey(record.wsId, record.id), { ...record }); projectDemoTakeover(record, 'running', 'headless') }
+    demoTakeover.decision ??= 'idle-timeout'
+  }
+  if (demoTakeover.state === 'running' && Date.now() - demoTakeoverStarted >= 12000) {
+    demoTakeover.state = 'completed'
+    const record = demoWorkspaces.find(ws => ws.id === demoTakeover!.workspaceId)?.sessions.find(row => row.id === demoTakeover!.recordId)
+    if (record) projectDemoTakeover(record, 'paused', 'webpi')
+  }
+}
+
 const demoSessionPresence = new Map<string, 'active' | 'archived' | 'deleted'>()
 
 
@@ -92,6 +119,7 @@ let demoWebSessions = createSeededWebSessions()
 let demoWebRequestSequence = 0
 
 export function resetDemoWorkspaceWebState(): void {
+  demoTakeover = null; demoTakeoverSeconds = 60; demoTakeoverStarted = 0;
   demoReplyStreams.clear()
   demoSessionPresence.clear()
   demoManagerMessages = []
@@ -452,6 +480,34 @@ const demoHarnessConfigs = new Map<string, AliceHarnessConfig>()
 const demoHarnessCommands = { alice: ['rss', 'market', 'analysis', 'peer', 'inbox', 'issue', 'harness'], traderhub: ['equity', 'economy'], 'alice-uta': ['account', 'order'] }
 
 export const workspacesHandlers = [
+  http.get('/api/workspaces/session-takeovers', () => {
+    if (!demoTakeover && demoTakeoverPreview) {
+      demoTakeover = { id: 'demo-takeover', workspaceId: DEMO_CHAT_WORKSPACE_ID, recordId: 'demo-power-session', resumeId: demoWorkspaces.find(ws => ws.id === DEMO_CHAT_WORKSPACE_ID)?.sessions.find(row => row.id === 'demo-power-session')?.resumeId ?? 'demo-resume-power', sessionTitle: 'AI power: from demand to delivery',
+        origin: { kind: 'issue', entry: 'scheduled-issue', workspaceId: DEMO_CHAT_WORKSPACE_ID, issueId: 'scan-open' },
+        requestedAt: Date.now(), deadline: Date.now() + demoTakeoverSeconds * 1000, idleSeconds: demoTakeoverSeconds, state: 'pending' }
+    }
+    updateDemoTakeover()
+    return HttpResponse.json({ requests: demoTakeover ? [demoTakeover] : [], idleSeconds: demoTakeoverSeconds, serverNow: Date.now() })
+  }),
+  http.put('/api/workspaces/session-takeovers/settings', async ({ request }) => {
+    const body = await request.json() as { idleSeconds: number }
+    if (!Number.isInteger(body.idleSeconds) || body.idleSeconds < 10 || body.idleSeconds > 3600) return HttpResponse.json({ error: 'invalid_timeout' }, { status: 400 })
+    demoTakeoverSeconds = body.idleSeconds
+    return HttpResponse.json({ idleSeconds: demoTakeoverSeconds })
+  }),
+  http.post('/api/workspaces/session-takeovers/:requestId/decision', async ({ params, request }) => {
+    const body = await request.json() as { decision: string }
+    if (!['approve', 'reject'].includes(body.decision)) return HttpResponse.json({ error: 'invalid_decision' }, { status: 400 })
+    if (!demoTakeover || demoTakeover.id !== params.requestId || demoTakeover.state !== 'pending') return HttpResponse.json({ error: 'stale_request' }, { status: 409 })
+    demoTakeover.decision = body.decision === 'approve' ? 'approved' : 'rejected'
+    if (body.decision === 'reject') demoTakeover.state = 'rejected'
+    updateDemoTakeover()
+    return HttpResponse.json({ ok: true })
+  }),
+  http.post('/api/workspaces/:id/sessions/:sid/activity', ({ params }) => {
+    if (demoTakeover?.state === 'pending' && demoTakeover.recordId === params.sid && demoTakeover.decision !== 'approved') demoTakeover.deadline = Date.now() + demoTakeover.idleSeconds * 1000
+    return HttpResponse.json({ ok: true })
+  }),
   http.all('/api/workspaces/agents/:agent/models', ({ params }) => HttpResponse.json({
     models: demoCredentialPresets[params.agent === 'claude' ? 0 : 1]!.models!.map((model) => ({ ...model, id: ['omp', 'pi', 'opencode'].includes(String(params.agent)) ? `openai/${model.id}` : model.id })),
     discoverySupported: true, source: 'snapshot', fetchedAt: Date.now(), refreshing: false, error: null,
@@ -1255,6 +1311,11 @@ export const workspacesHandlers = [
             },
           }),
     }))
+    if (demoTakeover && demoTakeover.workspaceId === wsId && ['running', 'completed'].includes(demoTakeover.state)) {
+      const row = sessions.find(session => session.resumeId === demoTakeover!.resumeId)
+      if (row) row.latestExecution = { taskId: 'demo-takeover-run', status: demoTakeover.state === 'running' ? 'running' : 'done', startedAt: demoTakeoverStarted, issueId: demoTakeover.origin.issueId,
+        ...(demoTakeover.state === 'completed' ? { finishedAt: demoTakeoverStarted + 12000 } : {}) }
+    }
     if (wsId === DEMO_CHAT_WORKSPACE_ID) {
       const completedHeadless = sessions.find(
         (session) => session.resumeId === 'resume-demo-headless-colleague',

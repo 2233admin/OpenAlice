@@ -11,6 +11,7 @@ import { useSessionBusyDialog } from '../components/workspace/session-busy-store
 import { WorkspacePage } from './WorkspacePage'
 
 const mocks = vi.hoisted(() => ({
+  takeovers: null as any,
   openOrFocus: vi.fn(),
   closeMatching: vi.fn(),
   spawn: vi.fn(),
@@ -21,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   workspaceViewProps: vi.fn(),
   workspaces: [] as Workspace[],
 }))
+
+vi.mock('../hooks/useSessionTakeovers', () => ({ useSessionTakeovers: () => mocks.takeovers, awaitingTakeover: (row: any) => row.state === 'pending' }))
 
 vi.mock('../contexts/workspaces-context', () => ({
   useWorkspaces: () => ({
@@ -75,6 +78,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.takeovers = null
   mocks.workspaces = [workspace({ displayName: 'Optical Networking Follow-up' })]
 })
 
@@ -231,4 +235,24 @@ it('replaces a background deep link with transient inspection instead of retaini
   expect(mocks.openOrFocus).toHaveBeenCalledWith({ kind: 'chat-landing', params: { targetWsId: 'chat-1' } })
   expect(mocks.resumeSession).not.toHaveBeenCalled()
   useSessionBusyDialog.getState().close()
+})
+
+it('keeps an already-open GUI mounted read-only through takeover instead of closing its tab', () => {
+  const record = { id: 'pi-one', resumeId: 'native-one', wsId: 'chat-1', agent: 'pi', name: 'p1', title: 'Research', state: 'running' as const, surface: 'webpi' as const, pid: 1, startedAt: 1, createdAt: '', lastActiveAt: '' }
+  mocks.workspaces = [workspace({ sessions: [record] })]
+  mocks.takeovers = { requests: [], activity: vi.fn(), select: vi.fn() }
+  const props = { spec: { kind: 'workspace' as const, params: { wsId: 'chat-1', sessionId: 'pi-one', source: 'chat' as const } }, visible: true }
+  const view = render(<WorkspacePage {...props} />)
+  mocks.takeovers.requests = [{ id: 'takeover', workspaceId: 'chat-1', recordId: 'pi-one', state: 'running', origin: { issueId: 'scan' } }]
+  mocks.workspaces = [workspace({ sessions: [{ ...record, surface: 'headless' }] })]
+  view.rerender(<WorkspacePage {...props} />)
+  expect(mocks.workspaceViewProps.mock.lastCall?.[0]).toMatchObject({ readOnly: true, activeRecord: { surface: 'webpi' } })
+  expect(mocks.closeMatching).not.toHaveBeenCalled()
+  expect(mocks.resumeSession).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'TUI' })).toBeNull()
+  mocks.takeovers.requests[0].state = 'completed'
+  mocks.workspaces = [workspace({ sessions: [{ ...record, state: 'paused' }] })]
+  view.rerender(<WorkspacePage {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Return to conversation' }))
+  expect(mocks.openWebSession).toHaveBeenCalledWith('chat-1', 'pi-one', 'chat')
 })

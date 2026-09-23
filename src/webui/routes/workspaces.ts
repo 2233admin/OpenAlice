@@ -40,6 +40,7 @@ import { logger as launcherLogger } from '../../workspaces/logger.js';
 import { readWorkspaceMetadata, workspaceMetadataSchema, writeWorkspaceMetadata } from '../../workspaces/workspace-metadata.js';
 import {
   normalizeSessionTitle,
+  sessionDisplayTitle,
   sessionPreferredTitle,
   type SessionRecord,
 } from '../../workspaces/session-registry.js';
@@ -273,6 +274,31 @@ export function createWorkspaceRoutes(
   quickChatPreferences: QuickChatWorkspacePreferenceDeps = defaultQuickChatWorkspacePreferenceDeps,
 ): Hono {
   const app = new Hono();
+
+  app.get('/session-takeovers', (c) => c.json({
+    requests: svc.executions.takeovers.list().map(row => ({ ...row,
+      sessionTitle: (() => { const record = svc.sessionRegistry.get(row.workspaceId, row.recordId); return record ? sessionDisplayTitle(record) : row.recordId })(),
+    })), idleSeconds: svc.executions.takeovers.idleSeconds, serverNow: Date.now(),
+  }));
+  app.put('/session-takeovers/settings', async (c) => {
+    const body = await safeJson(c).catch(() => null) as { idleSeconds?: unknown } | null;
+    if (typeof body?.idleSeconds !== 'number' || !Number.isInteger(body.idleSeconds) || body.idleSeconds < 10 || body.idleSeconds > 3600) return c.json({ error: 'invalid_timeout' }, 400);
+    await svc.executions.takeovers.configure(body.idleSeconds);
+    return c.json({ idleSeconds: svc.executions.takeovers.idleSeconds });
+  });
+  app.post('/session-takeovers/:requestId/decision', async (c) => {
+    const body = await safeJson(c).catch(() => null) as { decision?: unknown } | null;
+    if (body?.decision !== 'approve' && body?.decision !== 'reject') return c.json({ error: 'invalid_decision' }, 400);
+    try { await svc.executions.takeovers.decide(c.req.param('requestId'), body.decision); return c.json({ ok: true }); }
+    catch (error) { return c.json({ error: 'takeover_decision_failed', message: String(error) }, 409); }
+  });
+  app.post('/:id/sessions/:sid/activity', (c) => {
+    const record = svc.sessionRegistry.get(c.req.param('id'), c.req.param('sid'));
+    if (!record) return c.json({ error: 'not_found' }, 404);
+    svc.executions.takeovers.activity(record.resumeId);
+    return c.json({ ok: true });
+  });
+
   app.route('/stickers', createStickerRoutes(svc));
   const headlessSessionInFlight = new Map<string, Promise<OpenHeadlessSessionResult>>();
   const readAutoQuantPreference = () =>
@@ -2602,13 +2628,14 @@ export function createWorkspaceRoutes(
   app.post('/:id/sessions/:sid/web/prompt', async (c) => {
     const ctx = webSessionContext(c);
     if (!ctx) return c.json({ error: 'not_found' }, 404);
-    if (svc.isResumeActive(ctx.record.resumeId)) return c.json({ error: 'resume_busy', message: 'Session configuration is changing; try again shortly' }, 409);
+    if (svc.executions.takeovers.isHandingOff(ctx.record.resumeId) || svc.isResumeActive(ctx.record.resumeId)) return c.json({ error: 'resume_busy', message: 'Session configuration is changing; try again shortly' }, 409);
     const body = await safeJson(c).catch(() => null);
     const message = body && typeof body === 'object' ? (body as Record<string, unknown>)['message'] : null;
     if (typeof message !== 'string' || !message.trim()) {
       return c.json({ error: 'bad_request', message: 'message is required' }, 400);
     }
     try {
+      svc.executions.takeovers.activity(ctx.record.resumeId);
       const snapshot = await svc.web.prompt(ctx.token, message);
       await svc.sessionRegistry.update(ctx.id, ctx.token, { lastActiveAt: new Date().toISOString() });
       return c.json({ ok: true, snapshot });

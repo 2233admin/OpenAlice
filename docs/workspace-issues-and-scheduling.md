@@ -582,3 +582,12 @@ an outbound transport address. Headless execution owns Connector terminal events
 so failures writing a reply comment cannot leave transport activity running.
 New comment recruits preserve their source through the scheduler. The immutable
 reply reference determines which comment receives progress and completion.
+
+## Waiting for interactive handoff
+
+A dispatch to an occupied interactive Session waits in the execution manager's
+approval queue. See [[docs/workspace-lifecycle.md]] for the single admission
+contract. Scanner timer ticks do not await those decisions: pending fires retain
+per-Issue exclusion while other Issues and later ticks continue. Markers advance
+only after dispatch is accepted; declining leaves the normal missed-occurrence
+policy in charge. Shutdown cancels admissions and drains pending fire bookkeeping.

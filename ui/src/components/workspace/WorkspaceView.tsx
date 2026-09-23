@@ -13,6 +13,7 @@ import { useWorkspaceSidePanels } from '../../live/workspace-side-panels';
 import type { WorkspaceSource } from '../../tabs/types';
 
 export interface WorkspaceViewProps {
+  readonly readOnly?: boolean;
   readonly wsId: string;
   readonly visible?: boolean;
   /** Pinned record id, or null = no session pinned (empty pane). */
@@ -103,6 +104,7 @@ export function WorkspaceView(props: WorkspaceViewProps): ReactElement {
                 {(s.surface ?? 'terminal') === 'webpi' ? (
                   <WebSessionView
                     record={s}
+                    readOnly={props.readOnly}
                     wsId={props.wsId}
                     sessionId={s.id}
                     agent={s.agent}

@@ -708,3 +708,22 @@ this destructive action. Details reads the exact Session identity, current
 Issue assignments and execution history through one domain hook. Creation,
 last start, last end and last activity remain separate fields; unknown values
 and partial-fetch failures are explicit. Inspection does not launch a runtime.
+
+### Session takeover requests
+
+A single domain provider polls takeover requests across Workspaces. New requests
+open the shared Dialog; the content topbar retains a small pending-count bubble
+when the Dialog is dismissed. The Dialog separates origin, entry point, time,
+server-derived idle countdown and the two explicit actions: keep using or hand
+over. Its timing disclosure and Harness Settings edit the same global interval.
+The countdown bar respects reduced motion; it is not a live-announced timer.
+Narrow screens use the same scrollable Dialog, with wrapping action buttons.
+Session-local keyboard, input, pointer and wheel interaction renew inactivity;
+interactions with takeover controls themselves do not renew it.
+
+Already-open GUI conversations retain their mounted transcript and draft while
+handed over. A lightweight status strip names the background source; input is
+read-only. Completion offers explicit return to conversation instead of an
+automatic process restart. A cold background deep link keeps the existing busy
+Dialog behavior. Demo `?takeover=preview` seeds an isolated, simulated request for
+the AI-power conversation, including approval, idle timeout and completion.

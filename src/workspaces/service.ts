@@ -1,3 +1,4 @@
+import { SessionTakeoverDeclinedError } from './session-takeover.js';
 import { randomUUID } from 'node:crypto';
 import { SessionExecutionManager, executionConfiguration, validateExecutionOrigin, type ExecutionOrigin, type ExecutionRequest } from './session-execution-manager.js';
 import type { PersistentSession } from './persistent-session.js';
@@ -225,7 +226,7 @@ export class HeadlessCapacityError extends Error {
 
 export class HeadlessResumeError extends Error {
   constructor(
-    public readonly code: 'not_found' | 'wrong_workspace' | 'wrong_agent' | 'not_ready' | 'retired' | 'deleted' | 'busy',
+    public readonly code: 'not_found' | 'wrong_workspace' | 'wrong_agent' | 'not_ready' | 'retired' | 'deleted' | 'busy' | 'takeover_declined',
     message: string,
   ) {
     super(message);
@@ -473,6 +474,7 @@ export interface WorkspaceService {
       origin: ExecutionOrigin,
     ): Promise<HeadlessProbeResult>;
     list: SessionExecutionManager['list'];
+    takeovers: SessionExecutionManager['takeovers'];
     wait(meta: WorkspaceMeta, adapter: CliAdapter, prompt: string, origin: ExecutionOrigin, timeoutMs?: number): Promise<HeadlessTaskResult>;
   };
   /** Launcher-owned control plane. Not part of the business Workspace registry. */
@@ -1878,7 +1880,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
    * `executions.wait` provides the synchronous return mode through the same manager.
    * Throws `HeadlessCapacityError` when too many tasks are already in flight.
    */
-  const dispatchHeadlessTaskMethod = async (
+  const dispatchHeadlessTaskImpl = async (
     ws: WorkspaceMeta,
     adapter: CliAdapter,
     prompt: string,
@@ -1893,6 +1895,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     conversation?: AgentConversationDispatch,
     /** Birth stamp when this dispatch allocates a new product Session. */
     createdBy?: SessionCreatedBy,
+    releaseTakeover: () => void = () => {},
   ): Promise<{ taskId: string; resumeId: string }> => {
     origin = validateExecutionOrigin(origin);
     if (catalog.get(ws.id)?.lifecycle !== 'active') {
@@ -1934,17 +1937,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       try {
         const productSession = sessionRegistry.findByResumeId(ws.id, resumeId);
         if (productSession?.state === 'running') {
-          const issueDispatch = trigger?.kind === 'issue' || inquiry?.subject.kind === 'issue';
-          if (!issueDispatch || productSession.surface === 'headless'
-            || headlessTasks.latestForResumeId(resumeId)?.status === 'running') {
-            throw new HeadlessResumeError('busy', 'this conversation already has a running execution');
-          }
-          await executionManager.stop(resumeId, 'background-handoff');
-          await agentRuntimeLog.record('runtime.stopped', {
-            workspaceId: ws.id, resumeId, agent: adapter.id,
-            sessionRecordId: productSession.id,
-            surface: productSession.surface ?? 'terminal', status: 'paused',
-          });
+          throw new HeadlessResumeError('busy', 'interactive execution must pass takeover admission');
         }
         nativeResume = { sessionId: identity.agentSessionId };
         parentTaskId = identity.latestTaskId ?? headlessTasks.latestForResumeId(resumeId)?.taskId;
@@ -2301,8 +2294,35 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       .finally(async () => {
         await dispatchDelivery.finish(rec).catch(err => launcherLogger.warn('dispatch.delivery_finish_failed', { taskId: rec.taskId, err }));
         activeResumeIds.delete(rec.resumeId);
+        releaseTakeover();
       });
     return { taskId: rec.taskId, resumeId: rec.resumeId };
+  };
+
+  const dispatchHeadlessTaskMethod: WorkspaceService['executions']['dispatch'] = async (...args) => {
+    const [ws, , , origin, , trigger, resumeId, inquiry] = args;
+    let release = () => {};
+    if (resumeId) {
+      await sessionRegistry.ensureLoaded(ws.id);
+      const record = sessionRegistry.findByResumeId(ws.id, resumeId);
+      if (record) {
+        const identity = resumeRegistry.get(resumeId);
+        if (!identity || identity.wsId !== ws.id || identity.agent !== args[1].id || identity.lifecycle === 'retired' || sessionPresence(identity) === 'deleted' || !identity.agentSessionId) {
+          throw new HeadlessResumeError('not_ready', 'Session is not eligible for background takeover');
+        }
+        if (!args[1].capabilities.headless || !args[1].composeHeadlessCommand) throw new Error('Runtime does not support background execution');
+        const source = trigger?.kind === 'issue' ? trigger : inquiry?.subject.kind === 'issue' ? inquiry.subject : undefined;
+        try { release = await executionManager.takeovers.acquire({ workspaceId: ws.id, recordId: record.id, resumeId },
+          validateExecutionOrigin({ ...origin, ...(source ? { workspaceId: source.workspaceId, issueId: source.issueId } : {}) }),
+          executionManager.takeovers.idleSeconds); }
+        catch (error) {
+          if (error instanceof SessionTakeoverDeclinedError) throw new HeadlessResumeError('takeover_declined', error.message);
+          throw error;
+        }
+      }
+    }
+    try { return await dispatchHeadlessTaskImpl(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], release); }
+    catch (error) { release(); throw error; }
   };
 
   // ── Workspace self-scheduling. Scan each workspace's own `.alice/issues/*.md`
@@ -3113,6 +3133,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           ...(sessionRuntime.binding.model ? { model: sessionRuntime.binding.model } : {}),
           ...(sessionRuntime.binding.reasoningEffort ? { reasoningEffort: sessionRuntime.binding.reasoningEffort } : {}),
         }, completion => { completed = completion; });
+        await report(snapshot.phase);
         return { value: snapshot, pid: snapshot.pid ?? undefined, completed };
       },
       stop: async reason => { await web.stop(record.id, reason); },
@@ -3127,6 +3148,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     origin = validateExecutionOrigin(origin);
     const record = sessionRegistry.get(wsId, context.recordId);
     if (!record) throw new Error('Session record is required before execution');
+    if (executionManager.takeovers.isHandingOff(record.resumeId)) throw new HeadlessResumeError('busy', 'Session handoff is in progress');
     await executionManager.stop(record.resumeId, 'switch to terminal');
     let child: PersistentSession | undefined;
     return executionManager.start({
@@ -3152,6 +3174,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     web: executeWebSession,
     stop: (resumeId: string, reason: string) => executionManager.stop(resumeId, reason),
     list: (resumeId?: string) => executionManager.list(resumeId),
+    takeovers: executionManager.takeovers,
   };
 
   const workspaceRuntimeActivityMethod = (workspaceId: string): WorkspaceRuntimeActivity => {
@@ -3352,6 +3375,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     stopInboxActivity?.();
     await harnessSurfaces.dispose();
     await executionManager.stopAll('plugin-shutdown');
+    await scheduleScanner.waitForDispatches();
     transcriptWatcher.disposeAll();
   };
 
@@ -3455,8 +3479,24 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       size: pool.size.bind(pool), setTerminalViewAttributes: pool.setTerminalViewAttributes.bind(pool),
     },
     web: {
-      get: web.get.bind(web), has: web.has.bind(web), prompt: web.prompt.bind(web),
-      abort: web.abort.bind(web), respond: web.respond.bind(web),
+      get: web.get.bind(web), has: web.has.bind(web),
+      prompt: async (recordId, message) => {
+        const snapshot = web.get(recordId);
+        if (snapshot) {
+          if (executionManager.takeovers.isHandingOff(snapshot.resumeId)) throw new HeadlessResumeError('busy', 'Session handoff is in progress');
+          executionManager.takeovers.activity(snapshot.resumeId);
+        }
+        return web.prompt(recordId, message);
+      },
+      abort: web.abort.bind(web),
+      respond: async (recordId, requestId, optionId, text) => {
+        const snapshot = web.get(recordId);
+        if (snapshot) {
+          if (executionManager.takeovers.isHandingOff(snapshot.resumeId)) throw new HeadlessResumeError('busy', 'Session handoff is in progress');
+          executionManager.takeovers.activity(snapshot.resumeId);
+        }
+        return web.respond(recordId, requestId, optionId, text);
+      },
     },
     managerWorkspace,
     resolveRuntimeWorkspace,

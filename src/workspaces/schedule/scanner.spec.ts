@@ -839,3 +839,23 @@ describe('comment owner handoff', () => {
     await comment
   })
 })
+
+it('keeps ticking and dispatching other Issues while one admission awaits approval', async () => {
+  const ws = await makeWs('approval', [
+    { id: 'a', title: 'Waiting', when: { kind: 'every', every: '1m' }, what: 'A' },
+    { id: 'b', title: 'Independent', when: { kind: 'every', every: '1m' }, what: 'B' },
+  ])
+  let approve!: (value: { taskId: string; resumeId: string }) => void
+  const gate = new Promise<{ taskId: string; resumeId: string }>(resolve => { approve = resolve })
+  const { scanner, dispatch, markers } = scannerFor([ws], {
+    dispatch: async (_ws, _adapter, _prompt, _origin, _timeout, trigger) => trigger?.kind === 'issue' && trigger.issueId === 'a' ? gate : { taskId: 'independent', resumeId: 'independent' },
+  })
+  await scanner.scan(false)
+  await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(markers.get(ws.id, 'b')).toBe(NOW))
+  await scanner.scan(false)
+  expect(dispatch).toHaveBeenCalledTimes(2)
+  approve({ taskId: 'approved', resumeId: 'approved' })
+  await scanner.waitForDispatches()
+  expect(markers.get(ws.id, 'a')).toBe(NOW)
+})

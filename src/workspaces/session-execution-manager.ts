@@ -1,3 +1,4 @@
+import { SessionTakeovers } from './session-takeover.js'
 import { z } from 'zod'
 import type { SessionRecord } from './session-registry.js'
 import type { SessionRuntimeBinding } from './cli-adapter.js'
@@ -71,6 +72,7 @@ const terminal = (phase: ExecutionPhase) => phase === 'ended' || phase === 'fail
 
 /** Sole admission and state authority for a product Session execution. */
 export class SessionExecutionManager {
+  takeovers!: SessionTakeovers
   private readonly records = new Map<string, ExecutionRecord>()
   private readonly active = new Map<string, { record: ExecutionRecord; stop: (reason: string) => Promise<void> }>()
   private readonly locks = new Map<string, Promise<void>>()
@@ -83,6 +85,7 @@ export class SessionExecutionManager {
 
   static async open(file: string, project: (record: ExecutionRecord) => Promise<void>) {
     const manager = new SessionExecutionManager(file, project)
+    manager.takeovers = await SessionTakeovers.open(`${file}.takeovers.json`, id => manager.active.get(id)?.record, (id, reason) => manager.stop(id, reason))
     let data: { version: number; records: ExecutionRecord[] }
     try { data = JSON.parse(await readFile(file, 'utf8')) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return manager }
@@ -128,6 +131,7 @@ export class SessionExecutionManager {
     request = requestSchema.parse(request)
     if (this.closing) throw new Error('Session execution manager is shutting down')
     if (this.fault) throw new Error('Session execution journal is unavailable', { cause: this.fault })
+    if (request.surface !== 'headless' && this.takeovers.isHandingOff(request.resumeId)) throw new Error('Session handoff is in progress')
     if (this.locks.has(request.resumeId) || this.active.has(request.resumeId)) throw new Error('Session execution is busy')
     const release = this.lock(request.resumeId)
     const record: ExecutionRecord = { ...structuredClone(request), executionId: randomUUID(), phase: 'starting', requestedAt: Date.now(), events: [] }
@@ -207,9 +211,11 @@ export class SessionExecutionManager {
 
   async stopAll(reason: string) {
     this.closing = true
+    const takeoverErrors: unknown[] = []
+    try { await this.takeovers.close() } catch (error) { takeoverErrors.push(error) }
     const results = await Promise.allSettled([...this.active.keys()].map(id => this.stop(id, reason)))
     await Promise.all(this.completions.values())
-    const errors = results.filter(row => row.status === 'rejected').map(row => (row as PromiseRejectedResult).reason)
+    const errors = [...takeoverErrors, ...results.filter(row => row.status === 'rejected').map(row => (row as PromiseRejectedResult).reason)]
     if (errors.length) throw new AggregateError(errors, 'Session shutdown failed')
   }
 

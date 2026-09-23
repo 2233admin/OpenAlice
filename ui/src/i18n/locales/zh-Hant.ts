@@ -10,6 +10,37 @@ import type { Resources } from './en'
  * Content is UI chrome only — no geographic or other non-technical terms.
  */
 export const zhHant: Resources = {
+  takeover: {
+    "pending": "{{count}} 個接管請求",
+    "title": "背景任務請求使用此 Session",
+    "description": "你正在使用「{{session}}」。請選擇何時交接。",
+    "handedOff": "Session 已交接",
+    "finished": "請求已處理",
+    "requestedBy": "請求來源",
+    "requestedAt": "請求時間",
+    "viewIssue": "查看 Issue",
+    "countdown": "無操作 {{seconds}} 秒後交接",
+    "queued": "等待前一個請求完成",
+    "terminal": "終端接管需要批准",
+    "working": "等待当前任務完成",
+    "terminalHelp": "無法確認終端的執行状態。批准后将停止終端程序，再啟動背景任務。",
+    "idleHelp": "輸入、傳送訊息或操作此 Session 会重設倒計時。Agent 正在執行的任務完成后才会自动交接。",
+    "runningHelp": "背景任務正在使用此 Session。你的对話仍保留在這裡。",
+    "doneHelp": "此請求已结束，無需繼續批准。",
+    "keepUsing": "繼續使用",
+    "approve": "交給背景",
+    "approved": "已批准 · 等待交接",
+    "timing": "自动交接時間",
+    "setting": "自动交接前的空閒時間",
+    "seconds": "秒",
+    "saved": "已保存",
+    "settingHelp": "10–3600 秒，預設 60 秒。對所有工作區的新請求生效；終端執行状態未知時始終需要批准。",
+    "occupied": "背景任務正在使用此 Session",
+    "reopen": "返回对話",
+    "complete": "背景任務已完成",
+    "purpose": "觸發入口"
+},
+
   modelCatalog: {
     bundled: "正在使用內建模型建議。",
     missing: "最新模型列表中沒有 {{model}}。已保留你的選擇，該模型的可用性可能已變更。",

@@ -1,3 +1,5 @@
+import { SessionTakeoverProvider } from './hooks/useSessionTakeovers'
+import { SessionTakeoverDialogHost } from './components/workspace/SessionTakeoverDialog'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SessionDetailsDialogHost } from './components/workspace/SessionDetailsDialog'
@@ -68,9 +70,12 @@ const FirstRunGuide = lazy(async () => {
 export function App() {
   return (
     <WorkspacesProvider>
+      <SessionTakeoverProvider>
       <AppShell />
+      <SessionTakeoverDialogHost />
       <SessionBusyDialogHost />
       <SessionDetailsDialogHost />
+      </SessionTakeoverProvider>
     </WorkspacesProvider>
   )
 }

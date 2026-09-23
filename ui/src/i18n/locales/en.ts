@@ -13,6 +13,37 @@
  */
 
 export const en = {
+  takeover: {
+    "pending": "Pending handoffs: {{count}}",
+    "title": "A background task needs this Session",
+    "description": "{{session}} is currently open for you. Choose when to hand it over.",
+    "handedOff": "Session handed over",
+    "finished": "Request resolved",
+    "requestedBy": "Requested by",
+    "requestedAt": "Requested at",
+    "viewIssue": "View Issue",
+    "countdown": "Hand over after {{seconds}}s of inactivity",
+    "queued": "Waiting for the earlier request",
+    "terminal": "Terminal approval required",
+    "working": "Waiting for the current task to finish",
+    "terminalHelp": "Terminal activity cannot be verified. Approving will stop the terminal process before the background task starts.",
+    "idleHelp": "Typing, sending, or interacting with this Session resets the countdown. An active Agent turn finishes before automatic handoff.",
+    "runningHelp": "The background task now owns this Session. Your conversation remains here.",
+    "doneHelp": "This request is no longer waiting for approval.",
+    "keepUsing": "Keep using Session",
+    "approve": "Hand over",
+    "approved": "Approved · waiting",
+    "timing": "Automatic handoff timing",
+    "setting": "Idle time before automatic handoff",
+    "seconds": "seconds",
+    "saved": "Saved",
+    "settingHelp": "10–3600 seconds, default 60. Applies to new requests across Workspaces. Unknown terminal activity always needs approval.",
+    "occupied": "Background task is using this Session",
+    "reopen": "Return to conversation",
+    "complete": "Background task finished",
+    "purpose": "Entry point"
+},
+
   modelCatalog: {
     bundled: "Using built-in model suggestions.",
     missing: "{{model}} is not in the latest model list. Your selection is kept; availability may have changed.",

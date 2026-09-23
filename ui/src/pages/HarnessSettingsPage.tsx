@@ -1,3 +1,4 @@
+import { SessionTakeoverSettings } from '../components/workspace/SessionTakeoverDialog'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,6 +38,7 @@ export function HarnessSettingsPage() {
         description={t('settings.harness.description')}
       />
       <SettingsScrollArea className="px-4 py-5 md:px-8">
+        <div className="mb-6"><SessionTakeoverSettings /></div>
         <div className="mx-auto max-w-[880px]">
           <ConfigSection
             title={t('settings.harness.shared')}
