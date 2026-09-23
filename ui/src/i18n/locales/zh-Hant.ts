@@ -10,6 +10,27 @@ import type { Resources } from './en'
  * Content is UI chrome only — no geographic or other non-technical terms.
  */
 export const zhHant: Resources = {
+  sessionControl: {
+    "title": "Session 控制",
+    "stopping": "正在停止…",
+    "retry": "重試停止",
+    "interrupt": "中斷執行",
+    "explanation": "停止本次執行，並阻止新任務啟動 {{minutes}} 分鐘。對話紀錄會保留。",
+    "unconfirmed": "尚未確認程序結束，Session 仍被佔用。",
+    "cooldown": "暫時阻止啟動",
+    "fault": "執行故障",
+    "cooldownDescription": "使用者中斷了這個 Session。冷卻期結束或手動解除後才能再次啟動。",
+    "faultDescription": "連續三次執行失敗。請檢查執行紀錄，再允許重新啟動。",
+    "until": "剩餘 {{seconds}} 秒 · 至 {{time}}",
+    "manual": "需要手動解除",
+    "release": "允許啟動",
+    "reason": "原因與來源",
+    "ready": "目前沒有執行任務或啟動阻擋。",
+    "settings": "中斷後的冷卻時間",
+    "seconds": "秒",
+    "settingsHint": "全域套用於後續中斷，不會縮短已存在的冷卻期。",
+    "blockedDescription": "啟動已被阻止。請等待冷卻期結束，或檢查原因後手動解除；解除不會自動啟動。"
+},
   takeover: {
     "pending": "{{count}} 個接管請求",
     "title": "背景任務請求使用此 Session",

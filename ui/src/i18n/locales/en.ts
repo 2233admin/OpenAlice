@@ -13,6 +13,27 @@
  */
 
 export const en = {
+  sessionControl: {
+    blockedDescription: 'New starts are blocked. Wait for the cooldown or review and release the block below. Releasing a block does not start a run.',
+    "title": "Session control",
+    "stopping": "Stopping…",
+    "retry": "Retry stop",
+    "interrupt": "Interrupt run",
+    "explanation": "Stops this execution and blocks new starts for {{minutes}} minutes. Conversation history is kept.",
+    "unconfirmed": "Exit is not confirmed. This Session remains occupied.",
+    "cooldown": "Starts temporarily blocked",
+    "fault": "Execution fault",
+    "cooldownDescription": "A user interrupted this Session. New work waits until the cooldown expires or you release it.",
+    "faultDescription": "Three consecutive runs failed. Review the execution history before allowing another run.",
+    "until": "{{seconds}}s remaining · until {{time}}",
+    "manual": "Requires explicit release",
+    "release": "Allow starts",
+    "reason": "Reason and source",
+    "ready": "No active execution or launch block.",
+    "settings": "Interruption cooldown",
+    "seconds": "Seconds",
+    "settingsHint": "Applies globally to future interruptions. Changing this does not shorten existing blocks."
+},
   takeover: {
     "pending": "Pending handoffs: {{count}}",
     "title": "A background task needs this Session",

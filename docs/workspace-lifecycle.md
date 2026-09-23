@@ -241,3 +241,48 @@ present when a desk was created or departed is not part of its durable identity.
 Do not reintroduce “delete the registry row and leave the folder in place.” It
 pollutes manager discovery, destroys restore metadata, and turns known retired
 coworkers into unexplained missing state.
+
+### Interruption and Session launch admission
+
+Scheduling offers work; `SessionExecutionManager` decides whether the Session can
+accept it. Its persistent admission sidecar (`session-executions.json.admission.json`)
+owns launch blocks. It never starts work, retries a task, or advances a schedule.
+Every managed start checks admission before spawning; takeover also checks before
+queuing and immediately before handoff. Approval cannot override a launch block.
+
+`interrupt(resumeId, executionId, actor)` is the emergency stop for any execution
+surface, including headless and stalled startup. The expected execution ID prevents
+a stale click from stopping a subsequent run. The manager records who interrupted,
+when, and why, cancels pending takeover offers, signals the process tree, escalates
+to forced termination, and records `interrupted` only after exit is confirmed.
+History and partial output survive. A failed stop retains `stopping`, occupancy,
+and `stopError`; another interrupt retries termination. Routine internal `stop`
+remains for orderly shutdown, surface replacement and handoff, without a user
+cooldown. GUI turn abort remains distinct from terminating the Session process.
+
+Admission blocks are independent of execution outcomes:
+
+- `user-cooldown`: an explicit user interruption blocks all new starts for
+  600 seconds by default. The global setting accepts 10–86400 seconds and applies
+  to future interruptions. Expiry merely restores eligibility.
+- `execution-fault`: three consecutive failed executions block starts until
+  explicit user release. Success resets the streak; interruption does not count
+  as a failure. Releasing the fault resets its streak.
+- Active execution and takeover ownership remain live manager constraints.
+  Releasing one persisted block cannot override other blocks or occupancy.
+
+Only user-attributed controls may release blocks or change cooldown policy. HTTP
+handlers supply that attribution themselves; client-provided actors are rejected
+for interruption. Release and interruption retain actor provenance. Admission
+refusals expose `session_blocked`, the current policy blocks, and `retryAt` only
+when all policy blocks have deadlines.
+
+The UI reads `GET /api/workspaces/:id/sessions/:sid/control` through
+`useSessionControl`. Busy and details dialogs share `SessionControlPanel`.
+`POST .../interrupt` requires `executionId`; `POST .../blocks/:blockId/release`
+releases only that block. `PUT /api/workspaces/session-controls/settings` changes
+`cooldownSeconds`. No release endpoint starts an execution.
+
+The sidecar is new optional state with an explicit version, created lazily; the
+execution journal adds optional interruption metadata and an `interrupted` phase.
+No existing Session identity/configuration file is rewritten or migrated.

@@ -48,10 +48,10 @@ export class SessionTakeovers {
   private writes = Promise.resolve()
   private fault?: Error
   private constructor(private readonly file: string, private readonly current: (id: string) => ExecutionRecord | undefined,
-    private readonly stop: (id: string, reason: string) => Promise<boolean>) {}
+    private readonly stop: (id: string, reason: string) => Promise<boolean>, private readonly admit: (id: string) => void = () => {}) {}
 
-  static async open(file: string, current: (id: string) => ExecutionRecord | undefined, stop: (id: string, reason: string) => Promise<boolean>) {
-    const value = new SessionTakeovers(file, current, stop)
+  static async open(file: string, current: (id: string) => ExecutionRecord | undefined, stop: (id: string, reason: string) => Promise<boolean>, admit: (id: string) => void = () => {}) {
+    const value = new SessionTakeovers(file, current, stop, admit)
     try {
       const data = journalSchema.parse(JSON.parse(await readFile(file, 'utf8')))
       value.idleSeconds = data.idleSeconds
@@ -91,6 +91,7 @@ export class SessionTakeovers {
     await this.tick()
   }
   async acquire(target: { workspaceId: string; recordId: string; resumeId: string }, origin: ExecutionOrigin, idleSeconds: number): Promise<() => void> {
+    this.admit(target.resumeId)
     if (this.closed || this.fault) throw new Error('Session takeover admission unavailable')
     if (origin.resumeId === target.resumeId) throw new Error('A Session cannot request its own takeover')
     if (this.entries.length >= 100) throw new Error('Session takeover queue is full')
@@ -107,6 +108,14 @@ export class SessionTakeovers {
     if (!this.timer) { this.timer = setInterval(() => { void this.tick() }, 250); this.timer.unref() }
     void this.tick()
     return result
+  }
+  cancel(resumeId: string) {
+    for (const e of this.entries.filter(e => e.row.resumeId === resumeId)) {
+      e.row.state = 'canceled'; e.row.decidedAt = Date.now()
+      e.reject(new Error('Session was interrupted; queued request canceled'))
+    }
+    this.entries = this.entries.filter(e => e.row.resumeId !== resumeId)
+    void this.persist().catch(error => { this.fault = error as Error })
   }
   async close() {
     this.closed = true
@@ -128,6 +137,10 @@ export class SessionTakeovers {
         if (seen.has(row.resumeId)) { row.blocker = 'queued'; continue }
         seen.add(row.resumeId)
         if (row.state === 'running' || row.state === 'handoff') continue
+        try { this.admit(row.resumeId) } catch (error) {
+          row.state = 'canceled'; row.decidedAt = Date.now(); e.reject(error as Error)
+          this.entries = this.entries.filter(other => other !== e); await this.persist(); continue
+        }
         const owner = this.current(row.resumeId)
         if (owner?.surface === 'headless' || (owner && owner.phase !== 'running')) { row.blocker = 'queued'; continue }
         if (owner && !e.approved && Date.now() < row.deadline) { row.state = 'pending'; row.blocker = owner.surface === 'terminal' ? 'terminal' : owner.activity !== 'idle' ? 'working' : undefined; continue }
@@ -151,7 +164,8 @@ export class SessionTakeovers {
     const row = e.row
     try {
       await this.persist()
-      if (this.closed) return
+      if (this.closed || !this.entries.includes(e)) return
+      this.admit(row.resumeId)
       // The journal write yields. A GUI turn may have started while the handoff
       // was being recorded, so inspect the live owner once more before stopping it.
       const owner = this.current(row.resumeId)
@@ -167,13 +181,14 @@ export class SessionTakeovers {
         return
       }
       if (owner) await this.stop(row.resumeId, `takeover:${row.id}:${row.decision}`)
-      if (this.closed) return
+      if (this.closed || !this.entries.includes(e)) return
+      this.admit(row.resumeId)
       row.state = 'running'; await this.persist()
       let released = false
       e.resolve(() => {
         if (released) return
         released = true
-        if (!this.closed) row.state = 'completed'
+        if (!this.closed && this.entries.includes(e)) row.state = 'completed'
         this.entries = this.entries.filter(item => item !== e)
         void this.persist().catch(() => {})
         void this.tick()

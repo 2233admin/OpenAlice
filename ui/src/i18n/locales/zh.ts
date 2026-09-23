@@ -2,6 +2,27 @@ import type { Resources } from './en'
 
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
+  sessionControl: {
+    blockedDescription: '启动已被阻止。请等待冷却期结束，或检查原因后手动解除；解除不会自动启动。',
+    "title": "Session 控制",
+    "stopping": "正在停止…",
+    "retry": "重试停止",
+    "interrupt": "打断运行",
+    "explanation": "停止本次运行，并阻止新任务启动 {{minutes}} 分钟。对话记录会保留。",
+    "unconfirmed": "尚未确认进程退出，Session 仍被占用。",
+    "cooldown": "暂时阻止启动",
+    "fault": "运行故障",
+    "cooldownDescription": "用户打断了这个 Session。冷却期结束或手动解除后才能再次启动。",
+    "faultDescription": "连续三次运行失败。请检查运行记录，再允许重新启动。",
+    "until": "剩余 {{seconds}} 秒 · 至 {{time}}",
+    "manual": "需要手动解除",
+    "release": "允许启动",
+    "reason": "原因与来源",
+    "ready": "当前没有运行任务或启动阻塞。",
+    "settings": "打断后的冷却时间",
+    "seconds": "秒",
+    "settingsHint": "全局应用于后续打断，不会缩短已存在的冷却期。"
+},
   takeover: {
     "pending": "{{count}} 个接管请求",
     "title": "后台任务请求使用此 Session",

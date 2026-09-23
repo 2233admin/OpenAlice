@@ -123,3 +123,16 @@ it('does not let a slow stop block another Session and still stops on journal sh
   expect(stop).toHaveBeenCalledTimes(2)
   close.mockRestore()
 })
+
+it('user interruption cancels queued offers and approval cannot bypass its cooldown', async () => {
+  const { manager } = await setup('terminal')
+  const pending = manager.takeovers.acquire(target, origin, 60)
+  const rejected = expect(pending).rejects.toThrow()
+  await vi.waitFor(() => expect(manager.takeovers.list()).toHaveLength(1))
+  const id = manager.takeovers.list()[0].id
+  await manager.interrupt('resume', manager.current('resume')!.executionId, request.origin)
+  await rejected
+  expect(manager.takeovers.list()[0].state).toBe('canceled')
+  await expect(manager.takeovers.decide(id, 'approve')).rejects.toThrow()
+  await expect(manager.takeovers.acquire(target, origin, 60)).rejects.toMatchObject({ code: 'session_blocked' })
+})

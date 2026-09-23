@@ -594,3 +594,12 @@ contract. Scanner timer ticks do not await those decisions: pending fires retain
 per-Issue exclusion while other Issues and later ticks continue. Markers advance
 only after dispatch is accepted; declining leaves the normal missed-occurrence
 policy in charge. Shutdown cancels admissions and drains pending fire bookkeeping.
+
+Session interruption does not add a scheduler retry engine. A Session admission
+refusal follows the existing missed-admission policy (including cron `catchUp`);
+the next ordinary scheduler offer rechecks the manager. User cooldown expiry
+does not replay canceled takeover requests. Fault blocks require explicit user
+release. An interrupted accepted run remains an interrupted attempt, retains
+partial output, fails pending delivery/inquiry completion, and cannot
+auto-complete a one-shot Issue. See
+[Session launch admission](workspace-lifecycle.md#interruption-and-session-launch-admission).

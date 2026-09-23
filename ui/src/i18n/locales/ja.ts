@@ -2,6 +2,27 @@ import type { Resources } from './en'
 
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
+  sessionControl: {
+    "title": "Session の制御",
+    "stopping": "停止中…",
+    "retry": "停止を再試行",
+    "interrupt": "実行を中断",
+    "explanation": "この実行を停止し、{{minutes}} 分間は新しい実行を拒否します。会話履歴は保持されます。",
+    "unconfirmed": "プロセスの終了を確認できません。Session は引き続き使用中です。",
+    "cooldown": "開始を一時的に停止",
+    "fault": "実行障害",
+    "cooldownDescription": "ユーザーが Session を中断しました。待機時間の終了または手動解除後に再開できます。",
+    "faultDescription": "実行が 3 回連続で失敗しました。履歴を確認してから開始を許可してください。",
+    "until": "残り {{seconds}} 秒 · {{time}} まで",
+    "manual": "手動解除が必要",
+    "release": "開始を許可",
+    "reason": "理由と操作元",
+    "ready": "実行中の処理や開始の制限はありません。",
+    "settings": "中断後の待機時間",
+    "seconds": "秒",
+    "settingsHint": "今後の中断に全体で適用されます。既存の待機時間は短縮されません。",
+    "blockedDescription": "新しい実行は制限されています。待機時間の終了を待つか、理由を確認して解除してください。解除しても自動では開始しません。"
+},
   takeover: {
     "pending": "接管リクエスト {{count}} 件",
     "title": "バックグラウンドタスクが Session を必要としています",

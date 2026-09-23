@@ -1,3 +1,4 @@
+import type { SessionBlock } from '../../hooks/useSessionControl'
 import stickerWave from '../fixtures/sticker-wave.json'
 import { demoChatWorkflowReply, demoChatWorkflowTitle } from '../fixtures/chat-workflows'
 import { stickerHandlers } from './stickers'
@@ -66,6 +67,11 @@ function updateDemoTakeover() {
   }
 }
 
+const demoSessionBlocks = new Map<string, SessionBlock[]>()
+let demoCooldownSeconds = 600
+if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('sessionFault')) {
+  demoSessionBlocks.set('demo-chat-headless-claude', [{ id: 'demo-fault', executionId: 'demo-failed-execution', kind: 'execution-fault', createdAt: Date.now(), actor: { kind: 'system', entry: 'session-failure-policy' }, reason: 'Three consecutive executions failed.' }])
+}
 const demoSessionPresence = new Map<string, 'active' | 'archived' | 'deleted'>()
 
 
@@ -119,6 +125,7 @@ let demoWebSessions = createSeededWebSessions()
 let demoWebRequestSequence = 0
 
 export function resetDemoWorkspaceWebState(): void {
+  demoSessionBlocks.clear(); demoCooldownSeconds = 600
   demoTakeover = null; demoTakeoverSeconds = 60; demoTakeoverStarted = 0;
   demoReplyStreams.clear()
   demoSessionPresence.clear()
@@ -1335,7 +1342,8 @@ export const workspacesHandlers = [
       if (runningHeadless) {
         runningHeadless.latestExecution = {
           taskId: 'demo-headless-running',
-          status: 'running',
+          status: runningHeadless.active ? 'running' : 'interrupted',
+          ...(!runningHeadless.active ? { finishedAt: Date.now() } : {}),
           startedAt: runningHeadless.createdAt,
           issueId: 'scan-open',
         }
@@ -1582,6 +1590,36 @@ export const workspacesHandlers = [
     }
     demoWebSessions.delete(webKey(wsId, sessionId))
     return HttpResponse.json(true)
+  }),
+  http.get('/api/workspaces/:id/sessions/:sid/control', ({ params }) => {
+    const record = demoWorkspaces.find(ws => ws.id === String(params.id))?.sessions.find(row => row.id === String(params.sid))
+    if (!record) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    return HttpResponse.json({ execution: record.state === 'running' ? {
+      executionId: `demo-execution-${record.id}`, phase: 'running', surface: record.surface, requestedAt: Date.parse(record.createdAt),
+      origin: { kind: 'issue', entry: 'scheduled-issue' }, configuration: { credentialSource: 'native' },
+    } : null, blocks: (demoSessionBlocks.get(record.id) ?? []).filter(row => !row.expiresAt || row.expiresAt > Date.now()), cooldownSeconds: demoCooldownSeconds, serverNow: Date.now() })
+  }),
+  http.post('/api/workspaces/:id/sessions/:sid/interrupt', async ({ params, request }) => {
+    const record = demoWorkspaces.find(ws => ws.id === String(params.id))?.sessions.find(row => row.id === String(params.sid))
+    const body = await request.json() as { executionId: string }
+    if (!record || body.executionId !== `demo-execution-${record.id}`) return HttpResponse.json({ message: 'Execution changed' }, { status: 409 })
+    if (record.state !== 'running') return HttpResponse.json({ stopped: false })
+    demoSessionBlocks.set(record.id, [...(demoSessionBlocks.get(record.id) ?? []), { id: `cooldown-${record.id}`, executionId: body.executionId, kind: 'user-cooldown', reason: 'User interrupted this Session', actor: { kind: 'user', entry: 'session-interrupt' }, createdAt: Date.now(), expiresAt: Date.now() + demoCooldownSeconds * 1000 }])
+    demoResumedSessions.set(webKey(record.wsId, record.id), { ...record, state: 'paused' })
+    projectDemoTakeover(record, 'paused', record.surface)
+    if (demoTakeover?.recordId === record.id) demoTakeover.state = 'canceled'
+    return HttpResponse.json({ stopped: true })
+  }),
+  http.post('/api/workspaces/:id/sessions/:sid/blocks/:blockId/release', ({ params }) => {
+    const id = String(params.sid)
+    demoSessionBlocks.set(id, (demoSessionBlocks.get(id) ?? []).filter(row => row.id !== String(params.blockId)))
+    return HttpResponse.json({ ok: true })
+  }),
+  http.put('/api/workspaces/session-controls/settings', async ({ request }) => {
+    const body = await request.json() as { cooldownSeconds: number }
+    if (!Number.isInteger(body.cooldownSeconds) || body.cooldownSeconds < 10 || body.cooldownSeconds > 86400) return HttpResponse.json({ message: 'Invalid cooldown' }, { status: 400 })
+    demoCooldownSeconds = body.cooldownSeconds
+    return HttpResponse.json({ ok: true })
   }),
   http.get('/api/workspaces/:id/sessions/:sid/executions', ({ params }) => {
     const record = demoWorkspaces.find(workspace => workspace.id === String(params.id))?.sessions.find(session => session.id === String(params.sid))

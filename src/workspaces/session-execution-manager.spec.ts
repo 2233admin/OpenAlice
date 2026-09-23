@@ -52,25 +52,49 @@ describe('Session execution authority', () => {
     const { manager, file } = await setup()
     await manager.start(request, { start: async () => ({ value: 1, completed: new Promise(() => {}) }), stop: async () => {} })
     const recovered = await SessionExecutionManager.open(file, async () => {})
-    expect(recovered.list()[0]).toMatchObject({ phase: 'ended', reason: 'owner-restarted', origin: request.origin })
+    expect(recovered.list()[0]).toMatchObject({ phase: 'interrupted', reason: 'owner-restarted', origin: request.origin })
     const again = await SessionExecutionManager.open(file, async () => {})
     expect(again.list()[0].events).toHaveLength(3)
   })
 })
 
-it('queues pause during startup and closes admission during shutdown', async () => {
+it('cancels stalled startup without waiting for readiness', async () => {
   const { manager } = await setup()
   const ready = deferred<{ value: number; completed: Promise<{ reason: string }> }>()
   const stop = vi.fn(async () => {})
-  const launch = manager.start(request, { start: () => ready.promise, stop })
-  const shutdown = manager.stopAll('shutdown')
-  await expect(manager.start({ ...request, resumeId: 'other' }, { start: vi.fn(), stop })).rejects.toThrow('shutting down')
-  expect(stop).not.toHaveBeenCalled()
+  const start = vi.fn(() => ready.promise)
+  const launch = manager.start(request, { start, stop })
+  const rejected = expect(launch).rejects.toThrow('interrupted')
+  await vi.waitFor(() => expect(start).toHaveBeenCalled())
+  const id = manager.current('resume')!.executionId
+  await manager.interrupt('resume', id, request.origin)
+  await rejected
+  expect(manager.list()[0]).toMatchObject({ phase: 'interrupted', reason: 'user-interrupted' })
+  expect(manager.admission.blocks('resume')).toHaveLength(1)
   ready.resolve({ value: 1, completed: new Promise(() => {}) })
-  await launch
-  await shutdown
-  expect(stop).toHaveBeenCalledWith('shutdown')
-  expect(manager.list()[0]).toMatchObject({ phase: 'ended', reason: 'shutdown' })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(stop).toHaveBeenCalledTimes(1)
+  expect(manager.current('resume')).toBeNull()
+})
+
+it('guards stale requests, shares duplicate stops, and retains occupancy on failed termination', async () => {
+  const { manager } = await setup()
+  const stop = vi.fn().mockRejectedValueOnce(new Error('still alive')).mockResolvedValue(undefined)
+  await manager.start(request, { start: async () => ({ value: null, completed: new Promise(() => {}) }), stop })
+  const id = manager.current('resume')!.executionId
+  await expect(manager.interrupt('resume', 'other', request.origin)).rejects.toThrow('not found')
+  await expect(manager.interrupt('resume', id, request.origin)).rejects.toThrow('still alive')
+  expect(manager.current('resume')).toMatchObject({ phase: 'stopping', stopError: 'Error: still alive' })
+  await Promise.all([manager.interrupt('resume', id, request.origin), manager.interrupt('resume', id, request.origin)])
+  expect(stop).toHaveBeenCalledTimes(2)
+  expect(manager.admission.blocks('resume')).toHaveLength(1)
+  expect(manager.list()[0].phase).toBe('interrupted')
+  await expect(manager.start(request, { start: vi.fn(), stop })).rejects.toMatchObject({ code: 'session_blocked' })
+  await manager.admission.release('resume', manager.admission.blocks('resume')[0].id, request.origin)
+  await manager.start(request, { start: async () => ({ value: null, completed: new Promise(() => {}) }), stop })
+  expect(await manager.interrupt('resume', id, request.origin)).toBe(false)
+  expect(manager.current('resume')?.executionId).not.toBe(id)
+  await manager.stopAll('test-cleanup')
 })
 
 it('requires attribution and rejects accidental secret-bearing request payloads before spawning', async () => {

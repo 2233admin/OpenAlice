@@ -1,3 +1,5 @@
+import { useSessionControl } from '../../hooks/useSessionControl'
+import { SessionControlPanel } from './SessionControlPanel'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock3, RefreshCw } from 'lucide-react'
@@ -17,6 +19,8 @@ function SessionBusyPanel({ record, workspaceId, onClose, onOpen }: {
   onOpen(): void
 }) {
   const { t, i18n } = useTranslation()
+  const control = useSessionControl(workspaceId, record.id)
+  const blocked = Boolean(control.data?.blocks.length)
   const { directory, loading, error, refresh } = useWorkspaceSessionDirectory(workspaceId)
   const openOrFocus = useWorkspace(s => s.openOrFocus)
   const [refreshing, setRefreshing] = useState(false)
@@ -39,8 +43,9 @@ function SessionBusyPanel({ record, workspaceId, onClose, onOpen }: {
       <div className="space-y-3">
         <Clock3 className="text-muted-foreground" size={28} aria-hidden />
         <DialogTitle aria-live="polite">{t(ended ? 'workspace.sessionBusy.ended' : 'workspace.sessionBusy.title')}</DialogTitle>
-        <DialogDescription>{t(ended ? 'workspace.sessionBusy.endedDescription' : 'workspace.sessionBusy.description')}</DialogDescription>
+        <DialogDescription>{t(blocked ? 'sessionControl.blockedDescription' : ended ? 'workspace.sessionBusy.endedDescription' : 'workspace.sessionBusy.description')}</DialogDescription>
       </div>
+      <SessionControlPanel control={control} />
       <dl className="divide-y divide-border border-y border-border text-sm">
         {rows.map(([label, value]) => <div key={label} className="grid gap-1 py-3 sm:grid-cols-[8rem_1fr] sm:gap-4">
           <dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 break-words">{value}</dd>
@@ -48,9 +53,9 @@ function SessionBusyPanel({ record, workspaceId, onClose, onOpen }: {
       </dl>
       {loading && <p role="status" className="text-sm text-muted-foreground">{t('workspace.sessionBusy.loading')}</p>}
       {error && <p role="alert" className="text-sm text-destructive">{t('workspace.sessionBusy.unavailable')}</p>}
-      <p className="text-sm leading-relaxed text-muted-foreground">{t(ended ? 'workspace.sessionBusy.endedDescription' : 'workspace.sessionBusy.next')}</p>
+      <p className="text-sm leading-relaxed text-muted-foreground">{t(blocked ? 'sessionControl.blockedDescription' : ended ? 'workspace.sessionBusy.endedDescription' : 'workspace.sessionBusy.next')}</p>
       <div className="flex flex-wrap gap-2">
-        {ended && <Button onClick={onOpen}>{t('workspace.sessionBusy.open')}</Button>}
+        {ended && !blocked && <Button onClick={onOpen}>{t('workspace.sessionBusy.open')}</Button>}
         {run?.issueId && <Button variant="outline" onClick={() => { onClose(); openOrFocus({ kind: 'issue-detail', params: { wsId: workspaceId, id: run.issueId! } }) }}>{t('workspace.sessionBusy.issue')}</Button>}
         <Button variant="outline" disabled={refreshing || loading} onClick={() => void check()}>
           <RefreshCw size={16} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />{t('workspace.sessionBusy.refresh')}
