@@ -6,23 +6,24 @@ import { Button } from '../ui/button'
 import { inputClass } from '../form'
 
 /** Shared by running-session and details dialogs; all state comes from one hook. */
-export function SessionControlPanel({ control }: { control: ReturnType<typeof useSessionControl> }) {
+export function SessionControlPanel({ control, compact = false }: { control: ReturnType<typeof useSessionControl>; compact?: boolean }) {
   const { t, i18n } = useTranslation()
   const [seconds, setSeconds] = useState('600')
   useEffect(() => { if (control.data) setSeconds(String(control.data.cooldownSeconds)) }, [control.data?.cooldownSeconds])
   const data = control.data
   const run = data?.execution
   const stopping = run?.phase === 'stopping'
-  return <section className="space-y-3 border-t border-border pt-4" aria-label={t('sessionControl.title')}>
+  return <section className={compact ? 'space-y-3 border-t border-border bg-muted/35 px-5 py-4 sm:px-7' : 'space-y-3 border-t border-border pt-4'} aria-label={t('sessionControl.title')}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h3 className="text-sm font-semibold">{t('sessionControl.title')}</h3>
+      <h3 className={compact ? 'sr-only' : 'text-sm font-semibold'}>{t('sessionControl.title')}</h3>
+      {compact && run && <p className="max-w-md flex-1 text-xs leading-relaxed text-muted-foreground">{t('sessionControl.explanation', { minutes: Math.round((data?.cooldownSeconds ?? 600) / 60 * 10) / 10 })}</p>}
       {run && <Button variant="destructive" size="sm" disabled={control.busy || (stopping && !run.stopError)}
-        onClick={() => void control.interrupt(run.executionId)}>
+        className={compact ? 'order-2 ml-auto' : undefined} onClick={() => void control.interrupt(run.executionId)}>
         {stopping && !run.stopError ? <LoaderCircle size={14} className="animate-spin motion-reduce:animate-none" /> : <Square size={14} />}
         {t(stopping && !run.stopError ? 'sessionControl.stopping' : run.stopError ? 'sessionControl.retry' : 'sessionControl.interrupt')}
       </Button>}
     </div>
-    {run && <p className="text-xs leading-relaxed text-muted-foreground">{t('sessionControl.explanation', { minutes: Math.round((data?.cooldownSeconds ?? 600) / 60 * 10) / 10 })}</p>}
+    {!compact && run && <p className="text-xs leading-relaxed text-muted-foreground">{t('sessionControl.explanation', { minutes: Math.round((data?.cooldownSeconds ?? 600) / 60 * 10) / 10 })}</p>}
     {run?.stopError && <p role="alert" className="text-sm text-destructive">{t('sessionControl.unconfirmed')} {run.stopError}</p>}
     {control.error && <p role="alert" className="break-words text-sm text-destructive">{control.error}</p>}
     {!data && !control.error && <p role="status" className="text-sm text-muted-foreground">{t('common.loading')}</p>}
