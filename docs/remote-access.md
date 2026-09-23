@@ -61,6 +61,12 @@ and both observe the result. `openalice relay` offers the same Web GUI without
 the terminal presentation. Direct Runtime and legacy `--remote` browser
 surfaces remain inspection-only. The relay serves its own local UI bundle, so
 remote-served JavaScript never gains SSH authority.
+The Switch location dialog opens immediately with the current target visible.
+Its machine and AliceProject lists hold their layout while the relay discovers
+the fleet; discovery has no fabricated percentage or staged progress because
+the relay returns one inventory. The body scrolls independently of the
+confirmation controls, and a selected running target is shown alongside the
+current target before switching.
 
 Native `server run/start` derives its content identity from the installed
 `release.json`, matching the interactive launcher. Readiness confirms pending
