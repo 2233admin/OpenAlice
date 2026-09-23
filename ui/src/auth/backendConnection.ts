@@ -145,7 +145,7 @@ export function initializeBackendConnection(): BackendConnection {
   if (currentConnection) return currentConnection
   currentConnection = bootstrapBackendConnection({
     href: window.location.href,
-    electron: window.openAlice !== undefined,
+    electron: window.openAlice?.runtime !== undefined,
     readStored: () => window.sessionStorage.getItem(REMOTE_CONTEXT_STORAGE_KEY),
     writeStored: (value) => window.sessionStorage.setItem(REMOTE_CONTEXT_STORAGE_KEY, value),
     replaceUrl: (url) => window.history.replaceState(window.history.state, '', url),

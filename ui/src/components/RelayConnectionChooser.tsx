@@ -53,11 +53,12 @@ export function RelayConnectionChooser({ open, onOpenChange, initialStatus }: {
             {!selectedMachine && <p className="px-2 py-4 text-sm text-muted-foreground">{t('settings.backendConnection.chooseMachine', 'Choose a Machine to see its Projects.')}</p>}
             {selectedMachine?.issue && <p className="flex gap-2 px-2 py-3 text-sm text-destructive"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />{selectedMachine.issue.message}</p>}
             {selectedMachine?.projects.map((project) => {
+              const integrated = project.key === '@electron-current' && !!window.openAlice?.runtime
               const running = project.available && !!project.runtime.webEndpoint
               return <button key={project.key} type="button" onClick={() => setProjectKey(project.key)} aria-pressed={project.key === projectKey}
                 className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-primary ${project.key === projectKey ? 'bg-secondary' : ''}`}>
-                <span className="block truncate text-sm font-medium">{project.displayName}</span>
-                <span className={`block text-xs ${running ? 'text-success' : 'text-muted-foreground'}`}>{running ? t('settings.backendConnection.running', 'Running') : t('settings.backendConnection.notRunning', 'Not running · start from CLI first')}</span>
+                <span className="block truncate text-sm font-medium">{integrated ? `${t('settings.backendConnection.thisElectronApp')} · ${project.displayName}` : project.displayName}</span>
+                <span className={`block text-xs ${running || integrated ? 'text-success' : 'text-muted-foreground'}`}>{integrated ? t('settings.backendConnection.currentIntegrated', 'Running in Electron') : running ? t('settings.backendConnection.running', 'Running') : t('settings.backendConnection.notRunning', 'Not running · start from CLI first')}</span>
               </button>
             })}
             {selectedMachine && !selectedMachine.projects.length && !selectedMachine.issue && <p className="px-2 py-4 text-sm text-muted-foreground">{t('settings.backendConnection.noProjects', 'No AliceProjects found on this Machine.')}</p>}

@@ -20,19 +20,25 @@ export function BackendConnectionSettingsPage() {
   const [chooserOpen, setChooserOpen] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
+  const [returningIntegrated, setReturningIntegrated] = useState(false)
+  const [switchError, setSwitchError] = useState<string | null>(null)
+  const desktopConnection = window.openAlice?.desktopConnection
+  const canChoose = Boolean(relay.status || desktopConnection || connection.kind === 'electron')
   const remote = connection.kind === 'remote' || (relay.status?.target?.machine !== undefined && relay.status.target.machine !== 'local')
   const electron = connection.kind === 'electron'
   const machine = relay.status?.target?.machineName ?? relay.status?.target?.machine ?? (connection.kind === 'remote' ? connection.target : t('settings.backendConnection.thisMachine'))
-  const description = relay.status
-    ? t('settings.backendConnection.relayDescription', 'Connected through the local CLI relay')
+  const description = electron
+    ? t('settings.backendConnection.electronRuntime')
+    : relay.status
+    ? desktopConnection && !electron
+      ? t('settings.backendConnection.electronRelayDescription', 'Connected through the Electron relay')
+      : t('settings.backendConnection.relayDescription', 'Connected through the local CLI relay')
     : connection.kind === 'remote'
     ? t('settings.backendConnection.sshTarget', {
         target: connection.target,
         port: connection.sshPort,
       })
-    : electron
-      ? t('settings.backendConnection.electronRuntime')
-      : t('settings.backendConnection.localEndpoint', { endpoint: connection.endpoint })
+    : t('settings.backendConnection.localEndpoint', { endpoint: connection.endpoint })
   const status = loading
     ? t('settings.backendConnection.checking')
     : project && !error
@@ -85,10 +91,22 @@ export function BackendConnectionSettingsPage() {
             </div>
 
             <footer className="flex flex-wrap items-center gap-2 border-t border-border/70 px-4 py-3">
-              {!electron && (
-                <Button type="button" size="sm" onClick={() => relay.status ? setChooserOpen(true) : setShowInstructions((value) => !value)} aria-expanded={relay.status ? chooserOpen : showInstructions} aria-controls={relay.status ? undefined : 'connection-change-instructions'}>
+              {(canChoose || connection.kind === 'remote') && (
+                <Button type="button" size="sm" onClick={() => canChoose ? setChooserOpen(true) : setShowInstructions((value) => !value)} aria-expanded={canChoose ? chooserOpen : showInstructions} aria-controls={canChoose ? undefined : 'connection-change-instructions'}>
                   {t('settings.backendConnection.change')}
                   {showInstructions ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
+                </Button>
+              )}
+              {desktopConnection && !electron && (
+                <Button type="button" variant="outline" size="sm" disabled={returningIntegrated} onClick={() => {
+                  setReturningIntegrated(true)
+                  setSwitchError(null)
+                  void desktopConnection.returnIntegrated().catch((cause: unknown) => {
+                    setSwitchError(cause instanceof Error ? cause.message : String(cause))
+                    setReturningIntegrated(false)
+                  })
+                }}>
+                  {returningIntegrated ? t('settings.backendConnection.checking') : t('settings.backendConnection.returnIntegrated', 'Use local integrated mode')}
                 </Button>
               )}
               <Button type="button" variant="ghost" size="sm" onClick={() => setShowDetails((value) => !value)} aria-expanded={showDetails} aria-controls="connection-details">
@@ -101,6 +119,7 @@ export function BackendConnectionSettingsPage() {
                 </Button>
               )}
             </footer>
+            {switchError && <p role="alert" className="border-t border-border/70 px-4 py-3 text-sm text-destructive">{switchError}</p>}
 
             {showInstructions && !electron && !relay.status && (
               <div id="connection-change-instructions" className="border-t border-border/70 bg-secondary/25 px-4 py-4 text-[12px] leading-relaxed">
@@ -111,8 +130,8 @@ export function BackendConnectionSettingsPage() {
             )}
             {showDetails && (
               <dl id="connection-details" className="grid gap-3 border-t border-border/70 bg-secondary/20 px-4 py-4 text-[12px] sm:grid-cols-2">
-                <Detail label={t('settings.backendConnection.transport')} value={relay.status ? 'Local CLI relay' : connection.kind === 'remote' ? 'SSH tunnel' : electron ? 'Electron IPC' : 'Loopback HTTP'} />
-                <Detail label={t('settings.backendConnection.clientEndpoint')} value={relay.status ? window.location.host : connection.kind === 'remote' ? connection.localEndpoint : electron ? 'app://openalice' : connection.endpoint} />
+                <Detail label={t('settings.backendConnection.transport')} value={electron ? 'Electron IPC' : relay.status ? desktopConnection ? 'Electron relay' : 'Local CLI relay' : connection.kind === 'remote' ? 'SSH tunnel' : 'Loopback HTTP'} />
+                <Detail label={t('settings.backendConnection.clientEndpoint')} value={electron ? 'app://openalice' : relay.status ? window.location.host : connection.kind === 'remote' ? connection.localEndpoint : connection.endpoint} />
                 {connection.kind === 'remote' && !relay.status && <Detail label={t('settings.backendConnection.remoteEndpoint')} value={`127.0.0.1:${connection.runtimePort}`} />}
                 {project && <Detail label={t('settings.backendConnection.projectId')} value={project.id} />}
               </dl>
@@ -122,7 +141,7 @@ export function BackendConnectionSettingsPage() {
 
           <p className="flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
             {remote ? <Cable className="mt-0.5 size-3.5 shrink-0" aria-hidden /> : electron ? <Server className="mt-0.5 size-3.5 shrink-0" aria-hidden /> : <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />}
-            {remote ? t('settings.backendConnection.remoteNote') : electron ? t('settings.backendConnection.electronNote') : t('settings.backendConnection.localNote')}
+            {remote ? t(desktopConnection ? 'settings.backendConnection.electronRemoteNote' : 'settings.backendConnection.remoteNote') : electron ? t('settings.backendConnection.electronNote') : t('settings.backendConnection.localNote')}
           </p>
         </div>
       </SettingsScrollArea>

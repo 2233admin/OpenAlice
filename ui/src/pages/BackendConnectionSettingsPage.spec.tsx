@@ -18,7 +18,7 @@ import { i18n } from '../i18n'
 import { BackendConnectionSettingsPage } from './BackendConnectionSettingsPage'
 
 beforeAll(async () => { await i18n.changeLanguage('en') })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); delete (window as { openAlice?: Window['openAlice'] }).openAlice })
 
 describe('BackendConnectionSettingsPage', () => {
   beforeAll(() => {
@@ -50,15 +50,28 @@ describe('BackendConnectionSettingsPage', () => {
     expect(screen.getByText('Change the connection in OpenAlice CLI')).toBeTruthy()
   })
 
-  it('shows the integrated Electron owner without implying a switch is available', () => {
+  it('shows the integrated Electron owner and offers a connection switch', () => {
+    Object.defineProperty(window, 'openAlice', { value: {
+      runtime: { info: vi.fn() },
+      desktopConnection: { status: vi.fn(), fleet: vi.fn(), connect: vi.fn(), returnIntegrated: vi.fn() },
+    }, configurable: true })
     mocks.getBackendConnection.mockReturnValue({ kind: 'electron' })
+    mocks.useRelayConnection.mockReturnValue({
+      status: { schemaVersion: 1, generation: 0, target: { machine: 'local', project: '@electron-current' }, switching: false },
+      fleet: [], loading: false, busy: false, error: null, refresh: vi.fn(), connect: vi.fn(),
+    })
     mocks.useAliceProject.mockReturnValue({
       project: null, loading: false, error: 'offline', refresh: vi.fn(),
     })
 
     render(<BackendConnectionSettingsPage />)
     expect(screen.getByText('Integrated mode')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Change connection' })).toBeNull()
+    expect(screen.getByText('Electron-managed local runtime')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Connection details' }))
+    expect(screen.getByText('Electron IPC')).toBeTruthy()
+    expect(screen.getByText('app://openalice')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Change connection' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByText('AliceProject information unavailable')).toBeTruthy()
   })
 })

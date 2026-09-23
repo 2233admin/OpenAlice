@@ -33,6 +33,7 @@ async function relayJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function useRelayConnection(initial: RelayStatus | null = null) {
+  const desktop = window.openAlice?.runtime ? window.openAlice.desktopConnection : undefined
   const [status, setStatus] = useState<RelayStatus | null>(initial)
   const [fleet, setFleet] = useState<RelayMachine[]>([])
   const [loading, setLoading] = useState(false)
@@ -44,40 +45,44 @@ export function useRelayConnection(initial: RelayStatus | null = null) {
     setError(null)
     try {
       const [nextStatus, inventory] = await Promise.all([
-        relayJson<RelayStatus>('status'),
-        relayJson<{ machines: RelayMachine[] }>('fleet'),
+        desktop ? desktop.status() : relayJson<RelayStatus>('status'),
+        desktop ? desktop.fleet() : relayJson<{ machines: RelayMachine[] }>('fleet'),
       ])
       setStatus(nextStatus)
       setFleet(inventory.machines)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally { setLoading(false) }
-  }, [])
+  }, [desktop])
 
   const connect = useCallback(async (machine: string, project: string) => {
     setBusy(true)
     setError(null)
     try {
-      const next = await relayJson<RelayStatus>('connect', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ machine, project }),
-      })
-      setStatus(next)
-      window.location.replace('/settings/backend-connection')
+      if (desktop) {
+        await desktop.connect(machine, project)
+      } else {
+        const next = await relayJson<RelayStatus>('connect', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ machine, project }),
+        })
+        setStatus(next)
+        window.location.replace('/settings/backend-connection')
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
       throw cause
     } finally { setBusy(false) }
-  }, [])
+  }, [desktop])
 
   useEffect(() => {
     let alive = true
-    void relayJson<RelayStatus>('status').then((next) => {
+    void (desktop ? desktop.status() : relayJson<RelayStatus>('status')).then((next) => {
       if (alive) setStatus(next)
     }).catch(() => undefined)
     return () => { alive = false }
-  }, [])
+  }, [desktop])
 
   return { status, fleet, loading, busy, error, refresh, connect }
 }
