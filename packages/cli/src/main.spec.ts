@@ -3,6 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { main } from './main.ts'
 
 describe('OpenAlice TypeScript application entry', () => {
+  it('routes the browser relay without starting a Runtime or opening the TUI', async () => {
+    const runRelay = vi.fn(async () => 0)
+    const runTui = vi.fn(async () => 0)
+    expect(await main(['relay', '--no-open'], { runRelay, runTui, standalone: true })).toBe(0)
+    expect(runRelay).toHaveBeenCalledWith(['--no-open'])
+    expect(runTui).not.toHaveBeenCalled()
+  })
   it('routes --machine local exec through the full dispatcher', async () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     try {

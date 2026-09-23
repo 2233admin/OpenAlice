@@ -130,6 +130,17 @@ export function bootstrapBackendConnection(environment: BootstrapEnvironment): B
 
 let currentConnection: BackendConnection | null = null
 
+/** A relay origin owns connection identity; an old direct-tunnel tab hint must
+ * never describe a newly bound Machine at the same loopback port. */
+export function clearDirectTunnelContextForRelay(): void {
+  try { window.sessionStorage.removeItem(REMOTE_CONTEXT_STORAGE_KEY) } catch { /* Ephemeral storage may be disabled. */ }
+  const url = new URL(window.location.href)
+  if (new URLSearchParams(url.hash.slice(1)).has(REMOTE_CONTEXT_MARKER)) {
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`)
+  }
+  currentConnection = null
+}
+
 export function initializeBackendConnection(): BackendConnection {
   if (currentConnection) return currentConnection
   currentConnection = bootstrapBackendConnection({

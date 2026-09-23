@@ -56,6 +56,12 @@ describe('OpenAlice SSH connector', () => {
     ])
   })
 
+  it('uses non-interactive SSH only for browser-driven discovery and switching', () => {
+    const options = parseSshConnectArgs(['host-alias'])
+    expect(buildSshArgs({ ...options, batchMode: true }, 40123)).toContain('BatchMode=yes')
+    expect(buildSshArgs(options, 40123)).not.toContain('BatchMode=yes')
+  })
+
   it('puts remote connection identity in a client-only URL fragment', () => {
     const clientUrl = buildRemoteClientUrl(
       'http://127.0.0.1:40123',

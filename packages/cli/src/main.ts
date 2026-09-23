@@ -7,6 +7,7 @@ import {
   type TuiLaunchFlags,
 } from './launch-context.ts'
 import { runSupervisorTui } from './supervisor-tui.ts'
+import { runWebRelay } from './web-relay.ts'
 
 export interface CliDependencies {
   standalone?: boolean
@@ -15,6 +16,7 @@ export interface CliDependencies {
   runTui?: (
     flags?: TuiLaunchFlags,
   ) => Promise<number>
+  runRelay?: (args: string[]) => Promise<number>
 }
 
 export async function main(
@@ -23,6 +25,7 @@ export async function main(
 ): Promise<number> {
   const [command, ...args] = argv
   if (command === 'exec') return runProjectCli(args)
+  if (command === 'relay') return (dependencies.runRelay ?? runWebRelay)(args)
   const setup = async () => {
     if (!(dependencies.standalone ?? isBunStandalone())) return 0
     return (dependencies.runSetup ?? ((setupArgs: string[]) => runDependencySetup(setupArgs, { quietReady: true })))(args.includes('--json') ? ['--json'] : [])

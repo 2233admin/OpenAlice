@@ -49,6 +49,7 @@ openalice status [options]
 openalice logs [options]
 openalice doctor [options]
 openalice open [options]
+openalice relay [--port <port>] [--no-open]
 openalice create alice-project [options]
 openalice project [list|use|copy-ai-creds|transfer] [options]
 ```
@@ -65,6 +66,12 @@ openalice --machine <id-or-label> <command> [options]
 Herdr-style remote profiles, and `--machine` re-enters an ordinary CLI command
 on the selected enabled profile. There is no separate public `ssh` or `remote`
 command.
+
+`relay` is the local Web GUI for Machine and AliceProject selection. It binds
+only `127.0.0.1`, serves the local UI bundle, and forwards backend HTTP/WS to
+one selected running Runtime. The connection selector in Settings operates the
+relay; direct Runtime browsers and Electron integrated mode are unchanged.
+Closing the relay terminates its SSH tunnel, not the selected Runtime.
 
 | Command | Contract |
 |---|---|

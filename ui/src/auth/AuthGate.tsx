@@ -8,7 +8,7 @@
  * cascade of 401-driven retries.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CloudOff, RefreshCw } from 'lucide-react'
 import { useAuth } from './AuthContext'
@@ -17,6 +17,8 @@ import { LoginPage, NoTokenPage } from './LoginPage'
 import { Spinner } from '../components/StateViews'
 import { Button } from '../components/ui/button'
 import { useWindowsChrome } from '../hooks/useWindowsChrome'
+import { useRelayConnection } from '../hooks/useRelayConnection'
+import { RelayConnectionChooser } from '../components/RelayConnectionChooser'
 
 function remoteTargetLabel(connection: Extract<BackendConnection, { kind: 'remote' }>): string {
   return connection.sshPort === 22
@@ -32,6 +34,8 @@ export function BackendUnavailableScreen({
   connection: BackendConnection
 }) {
   const { t } = useTranslation()
+  const relay = useRelayConnection()
+  const [chooserOpen, setChooserOpen] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const remote = connection.kind === 'remote' ? connection : null
   const target = remote ? remoteTargetLabel(remote) : ''
@@ -106,12 +110,14 @@ export function BackendUnavailableScreen({
             <RefreshCw aria-hidden className="h-4 w-4" />
             {t('auth.retryNow')}
           </Button>
+          {relay.status && <Button type="button" variant="outline" onClick={() => setChooserOpen(true)}>{t('settings.backendConnection.change')}</Button>}
           <p className="max-w-[390px] break-words text-[11px] leading-5 text-muted-foreground">
             {remote
               ? t('auth.backendUnavailableRemoteHelp', { target: remote.target })
               : t('auth.backendUnavailableHelp')}
           </p>
         </div>
+        <RelayConnectionChooser open={chooserOpen} onOpenChange={setChooserOpen} initialStatus={relay.status} />
       </section>
     </div>
   )
