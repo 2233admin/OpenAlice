@@ -46,7 +46,7 @@ import { probeFreePort } from './probe-port.js'
 import { relocateLegacyData } from './relocate-data.js'
 import { configureAutoUpdate } from './auto-update.js'
 import { BoundedTextTail, conciseDiagnosticTail, DesktopDiagnostics } from './desktop-diagnostics.js'
-import { fetchAliceWebRequest, handleOpenAliceIpcMessage, registerOpenAliceIpc } from './ipc.js'
+import { cancelOpenAliceWebRequests, fetchAliceWebRequest, handleOpenAliceIpcMessage, registerOpenAliceIpc } from './ipc.js'
 import { resolveManagedRuntimeEnv } from './managed-runtime.js'
 import { rememberDataHome, writeDataHomePreferences } from './data-home.js'
 import {
@@ -882,6 +882,7 @@ app.whenReady().then(async () => {
       }
     })
     child.once('exit', (code, signal) => {
+      cancelOpenAliceWebRequests('The local Alice process exited before its IPC request completed.')
       if (appQuitting || localRuntimeSuspended) return
       const message = `Alice exited unexpectedly code=${code} signal=${signal}`
       console.error(`[guardian] ${message}`)
@@ -1050,8 +1051,18 @@ app.whenReady().then(async () => {
     }
     return relayOpening
   }
+  const assertSwitchResources = (): void => {
+    const uiRoot = app.isPackaged
+      ? join(process.resourcesPath, 'runtime', 'ui', 'dist')
+      : join(repoRoot, 'ui', 'dist')
+    if (!existsSync(resolve(__dirname, 'preload.js')) || !existsSync(join(uiRoot, 'index.html'))) {
+      throw new Error('Desktop app files are unavailable. Restart from a complete, persistent OpenAlice installation before changing connections.')
+    }
+  }
   const fromMainWindow = (senderId: number): void => {
-    if (senderId !== win.webContents.id) throw new Error('Connection controls are only available in the main window.')
+    if (win.isDestroyed() || win.webContents.isDestroyed() || senderId !== win.webContents.id) {
+      throw new Error('Connection controls are only available in the main window.')
+    }
   }
   ipcMain.handle('openalice:desktop-connection:status', async (event) => {
     fromMainWindow(event.sender.id)
@@ -1098,8 +1109,16 @@ app.whenReady().then(async () => {
       // The old local Runtime remains fully owned until the remote candidate
       // has passed the relay's SSH, endpoint, and Project identity checks.
       await relay.connect(machine, project)
+      assertSwitchResources()
+      desktopDiagnostics?.write('guardian', 'remote target verified; loading relay window')
+      // Keep the local Runtime and its Guardian ownership intact until the
+      // replacement page has actually loaded. A failed navigation must not
+      // strand the user with neither a window nor a local backend.
+      await win.loadURL(`${relay.originUrl}/settings/backend-connection`)
+      desktopDiagnostics?.write('guardian', 'relay window loaded; retiring local runtime')
       localRuntimeSuspended = true
       flagWatchAbort.abort()
+      cancelOpenAliceWebRequests('The desktop window is changing its backend connection.')
       const children = [uta, connector, alice].filter((child): child is ChildProcess => child !== null && childIsRunning(child))
       await Promise.all(children.map((child) => stopChild(child, {
         graceMs: SIGTERM_GRACE_MS,
@@ -1108,15 +1127,23 @@ app.whenReady().then(async () => {
       uta = null
       connector = null
       alice = null
+      desktopDiagnostics?.write('guardian', 'local services stopped; releasing local ownership')
       await releaseGuardianRuntimeLock()
-      await win.loadURL(`${relay.originUrl}/settings/backend-connection`)
+      desktopDiagnostics?.write('guardian', 'local ownership released')
       console.log(`[guardian] desktop connection → separated ${machine}/${project}`)
       return relay.status
     } catch (error) {
       // Candidate failure leaves integrated ownership untouched. Once the
       // local Runtime has been retired, keep the verified relay target visible
       // even if loading its first page failed.
-      if (!localRuntimeSuspended) desktopRelay?.disconnect()
+      if (!localRuntimeSuspended) {
+        desktopRelay?.disconnect()
+        if (!win.isDestroyed() && !win.webContents.getURL().startsWith('app://')) {
+          await win.loadURL('app://openalice/settings/backend-connection').catch((loadError) => {
+            console.error('[guardian] could not restore integrated connection:', loadError)
+          })
+        }
+      }
       else if (desktopRelay && win.webContents.getURL().startsWith('app://')) {
         await win.loadURL(`${desktopRelay.originUrl}/settings/backend-connection`).catch((loadError) => {
           console.error('[guardian] could not show separated connection:', loadError)
