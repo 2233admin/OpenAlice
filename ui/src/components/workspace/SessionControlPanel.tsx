@@ -42,7 +42,7 @@ export function SessionControlPanel({ control }: { control: ReturnType<typeof us
       <summary className="cursor-pointer">{t('sessionControl.settings')}</summary>
       <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); void control.configure(Number(seconds)) }}>
         <label className="space-y-1">{t('sessionControl.seconds')}<input className={`${inputClass} w-28`} type="number" min={10} max={86400} required value={seconds} onChange={event => setSeconds(event.target.value)} /></label>
-        <Button size="sm" variant="outline" disabled={control.busy}>{t('common.save')}</Button>
+        <Button type="submit" size="sm" variant="outline" disabled={control.busy}>{t('common.save')}</Button>
       </form>
       <p className="mt-2">{t('sessionControl.settingsHint')}</p>
     </details>}
