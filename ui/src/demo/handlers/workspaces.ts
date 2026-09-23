@@ -48,7 +48,7 @@ let demoTakeoverStarted = 0
 function projectDemoTakeover(record: SessionRecord, state: SessionRecord['state'], surface: SessionRecord['surface']) {
   const index = demoWorkspaces.findIndex(ws => ws.id === record.wsId)
   const workspace = demoWorkspaces[index]
-  if (workspace) demoWorkspaces[index] = { ...workspace, sessions: workspace.sessions.map(row => row.id === record.id ? { ...row, state, surface } : row) }
+  if (workspace) demoWorkspaces[index] = { ...workspace, sessions: workspace.sessions.map(row => row.id === record.id ? { ...row, state, surface, lastActiveAt: new Date().toISOString() } : row) }
 }
 function updateDemoTakeover() {
   if (!demoTakeover) return
@@ -67,6 +67,7 @@ function updateDemoTakeover() {
   }
 }
 
+const demoInterruptedSessions = new Set<string>()
 const demoSessionBlocks = new Map<string, SessionBlock[]>()
 let demoCooldownSeconds = 600
 if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('sessionFault')) {
@@ -125,7 +126,7 @@ let demoWebSessions = createSeededWebSessions()
 let demoWebRequestSequence = 0
 
 export function resetDemoWorkspaceWebState(): void {
-  demoSessionBlocks.clear(); demoCooldownSeconds = 600
+  demoInterruptedSessions.clear(); demoSessionBlocks.clear(); demoCooldownSeconds = 600
   demoTakeover = null; demoTakeoverSeconds = 60; demoTakeoverStarted = 0;
   demoReplyStreams.clear()
   demoSessionPresence.clear()
@@ -1343,7 +1344,7 @@ export const workspacesHandlers = [
         runningHeadless.latestExecution = {
           taskId: 'demo-headless-running',
           status: runningHeadless.active ? 'running' : 'interrupted',
-          ...(!runningHeadless.active ? { finishedAt: Date.now() } : {}),
+          ...(!runningHeadless.active ? { finishedAt: runningHeadless.updatedAt } : {}),
           startedAt: runningHeadless.createdAt,
           issueId: 'scan-open',
         }
@@ -1605,7 +1606,8 @@ export const workspacesHandlers = [
     if (!record || body.executionId !== `demo-execution-${record.id}`) return HttpResponse.json({ message: 'Execution changed' }, { status: 409 })
     if (record.state !== 'running') return HttpResponse.json({ stopped: false })
     demoSessionBlocks.set(record.id, [...(demoSessionBlocks.get(record.id) ?? []), { id: `cooldown-${record.id}`, executionId: body.executionId, kind: 'user-cooldown', reason: 'User interrupted this Session', actor: { kind: 'user', entry: 'session-interrupt' }, createdAt: Date.now(), expiresAt: Date.now() + demoCooldownSeconds * 1000 }])
-    demoResumedSessions.set(webKey(record.wsId, record.id), { ...record, state: 'paused' })
+    if (!demoResumedSessions.has(webKey(record.wsId, record.id))) demoResumedSessions.set(webKey(record.wsId, record.id), { ...record })
+    demoInterruptedSessions.add(record.id)
     projectDemoTakeover(record, 'paused', record.surface)
     if (demoTakeover?.recordId === record.id) demoTakeover.state = 'canceled'
     return HttpResponse.json({ stopped: true })
@@ -1627,9 +1629,9 @@ export const workspacesHandlers = [
     if (!record) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
     const startedAt = Date.parse(record.createdAt)
     return HttpResponse.json({ executions: [{
-      executionId: `demo-execution-${record.id}`, phase: record.state === 'running' ? 'running' : 'ended',
+      executionId: `demo-execution-${record.id}`, phase: demoInterruptedSessions.has(record.id) ? 'interrupted' : record.state === 'running' ? 'running' : 'ended',
       surface: record.surface ?? 'terminal', requestedAt: startedAt, startedAt,
-      ...(record.state === 'paused' ? { finishedAt: Date.parse(record.lastActiveAt), reason: 'user-pause' } : {}),
+      ...(record.state === 'paused' ? { finishedAt: Date.parse(record.lastActiveAt), reason: demoInterruptedSessions.has(record.id) ? 'user-interrupted' : 'user-pause' } : {}),
       origin: { kind: 'user', entry: 'quick-start' },
       configuration: { credentialSource: record.runtime?.credentialSource ?? 'native', model: record.runtime?.model, effort: record.runtime?.reasoningEffort },
     }] })

@@ -222,6 +222,7 @@ export class SessionExecutionManager {
     if (terminal(record.phase)) return false
     if (this.active.get(resumeId)?.record !== record) throw new Error('Execution changed; refresh before interrupting')
     if (!record.interruption) record.interruption = { requestedAt: Date.now(), actor, reason: actor.kind === 'user' ? 'user-interrupted' : 'system-interrupted' }
+    record.reason = record.interruption.reason
     // Install the block before yielding, so queued/new starts cannot race the stop.
     const blocked = actor.kind === 'user' ? this.admission.cooldown(resumeId, executionId, actor) : Promise.resolve()
     this.takeovers.cancel(resumeId)

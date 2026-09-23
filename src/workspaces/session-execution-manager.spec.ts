@@ -140,3 +140,15 @@ it('records one-shot completion only after the real process has settled', async 
   expect(await running).toBe(0)
   expect(manager.list()[0]).toMatchObject({ phase: 'ended', pid: 123, taskId: 'task-1' })
 })
+
+it('keeps user attribution when interruption overtakes an orderly handoff stop', async () => {
+  const { manager } = await setup()
+  const exit = deferred<void>()
+  await manager.start(request, { start: async () => ({ value: null, completed: new Promise(() => {}) }), stop: () => exit.promise })
+  const executionId = manager.current('resume')!.executionId
+  const handoff = manager.stop('resume', 'takeover')
+  const interrupt = manager.interrupt('resume', executionId, request.origin)
+  exit.resolve()
+  await Promise.all([handoff, interrupt])
+  expect(manager.list()[0]).toMatchObject({ phase: 'interrupted', reason: 'user-interrupted', interruption: { actor: request.origin } })
+})

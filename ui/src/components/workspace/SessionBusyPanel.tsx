@@ -1,6 +1,6 @@
 import { useSessionControl } from '../../hooks/useSessionControl'
 import { SessionControlPanel } from './SessionControlPanel'
-import { useState } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock3, RefreshCw } from 'lucide-react'
 import { useWorkspaceSessionDirectory } from '../../hooks/useWorkspaceSessionDirectory'
@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/dia
 import { useSessionBusyDialog } from './session-busy-store'
 import { isHeadlessOccupying } from './harness-sessions'
 
-function SessionBusyPanel({ record, workspaceId, onClose, onOpen }: {
+function SessionBusyPanel({ record, workspaceId, onClose, onOpen, titleRef }: {
+  titleRef: RefObject<HTMLHeadingElement | null>
   record: SessionRecord
   workspaceId: string
   onClose(): void
@@ -42,7 +43,7 @@ function SessionBusyPanel({ record, workspaceId, onClose, onOpen }: {
   return <div className="min-w-0 space-y-5">
       <div className="space-y-3">
         <Clock3 className="text-muted-foreground" size={28} aria-hidden />
-        <DialogTitle aria-live="polite">{t(ended ? 'workspace.sessionBusy.ended' : 'workspace.sessionBusy.title')}</DialogTitle>
+        <DialogTitle ref={titleRef} tabIndex={-1} className="outline-none pr-6" aria-live="polite">{t(ended ? 'workspace.sessionBusy.ended' : 'workspace.sessionBusy.title')}</DialogTitle>
         <DialogDescription>{t(blocked ? 'sessionControl.blockedDescription' : ended ? 'workspace.sessionBusy.endedDescription' : 'workspace.sessionBusy.description')}</DialogDescription>
       </div>
       <SessionControlPanel control={control} />
@@ -71,13 +72,14 @@ function SessionBusyPanel({ record, workspaceId, onClose, onOpen }: {
 
 
 export function SessionBusyDialogHost() {
+  const titleRef = useRef<HTMLHeadingElement>(null)
   const { target, close } = useSessionBusyDialog()
   const openOrFocus = useWorkspace(s => s.openOrFocus)
   const { t } = useTranslation()
   return <Dialog open={target !== null} onOpenChange={open => { if (!open) close() }}>
-    <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg" closeLabel={t('common.close')}>
+    <DialogContent initialFocus={titleRef} className="max-h-[85dvh] overflow-y-auto sm:max-w-lg" closeLabel={t('common.close')}>
       {target && <SessionBusyPanel key={`${target.workspaceId}:${target.record.resumeId}`}
-        record={target.record} workspaceId={target.workspaceId} onClose={close}
+        titleRef={titleRef} record={target.record} workspaceId={target.workspaceId} onClose={close}
         onOpen={() => {
           close()
           openOrFocus({ kind: 'workspace', params: { wsId: target.workspaceId, sessionId: target.record.id, source: target.source } })

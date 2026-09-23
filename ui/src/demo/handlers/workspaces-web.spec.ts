@@ -257,6 +257,8 @@ it('demo interruption enters cooldown; releasing it does not restart the Session
   expect(stop.status).toBe(200)
   const blocked = await fetch(`${base}/control`).then(response => response.json())
   expect(blocked.execution).toBeNull()
+  const history = await fetch(`${base}/executions`).then(response => response.json())
+  expect(history.executions[0]).toMatchObject({ phase: 'interrupted', reason: 'user-interrupted' })
   expect(blocked.blocks[0].kind).toBe('user-cooldown')
   await postJson(`${base}/blocks/${blocked.blocks[0].id}/release`)
   expect(await fetch(`${base}/control`).then(response => response.json())).toMatchObject({ execution: null, blocks: [] })
