@@ -110,7 +110,7 @@ function SessionBusyPanel({ record, workspaceId, onClose, onOpen, titleRef }: {
           <RefreshCw size={15} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />{t('workspace.sessionBusy.refresh')}
         </Button>
       </div>
-      <SessionControlPanel control={control} compact />
+      <SessionControlPanel control={control} compact sessionName={sessionCoworkerLabel(record)} />
     </footer>
   </>
 }

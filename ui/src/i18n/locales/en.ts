@@ -19,6 +19,8 @@ export const en = {
     "stopping": "Stopping…",
     "retry": "Retry stop",
     "interrupt": "Interrupt run",
+    "confirmTitle": "Interrupt {{session}}?",
+    "confirmDescription": "This stops the current execution and blocks new starts for {{minutes}} minutes. Conversation history is kept.",
     "explanation": "Stops this execution and blocks new starts for {{minutes}} minutes. Conversation history is kept.",
     "unconfirmed": "Exit is not confirmed. This Session remains occupied.",
     "cooldown": "Starts temporarily blocked",
