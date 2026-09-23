@@ -185,6 +185,11 @@ try {
     throw new Error(`Aggregate Machine inventory did not include both AliceProjects: ${JSON.stringify(fleet)}`)
   }
 
+  console.log('[remote-ssh-smoke] switching the browser relay to the registered remote Project')
+  await verifyWebRelay(smokeEnv, inventoryProjects.find((project) => project.key === 'default').id)
+  const afterRelay = remoteJson(remoteTarget, smokeEnv, '"$HOME/.openalice/bin/openalice" server status --json')
+  if (afterRelay.class !== 'running') throw new Error('Closing the Web relay stopped the remote Runtime')
+
   console.log('[remote-ssh-smoke] checking reuse plan and reconnecting')
   const reusePlan = run(process.execPath, [
     cliEntry, '--remote', remoteTarget, '--plan', '--no-open',
@@ -360,6 +365,51 @@ try {
     console.log(`[remote-ssh-smoke] kept SSH fixture credentials ${scratch}`)
   } else if (scratch) {
     await rm(scratch, { recursive: true, force: true })
+  }
+}
+
+async function verifyWebRelay(env, expectedProjectId) {
+  const child = spawn(process.execPath, [cliEntry, 'relay', '--no-open'], {
+    cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  const origin = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Web relay did not start: ${output}`)), 30_000)
+    const read = (chunk) => {
+      output += String(chunk)
+      const match = output.match(/OpenAlice relay: (http:\/\/127\.0\.0\.1:\d+)/)
+      if (match) { clearTimeout(timeout); resolve(match[1]) }
+    }
+    child.stdout.on('data', read)
+    child.stderr.on('data', read)
+    child.once('exit', (code) => { clearTimeout(timeout); reject(new Error(`Web relay exited early (${code}): ${output}`)) })
+  })
+  try {
+    const shell = await fetch(origin)
+    if (!shell.ok || !(await shell.text()).includes('id="root"')) {
+      throw new Error('Web relay did not serve its trusted local UI bundle')
+    }
+    const inventory = await fetch(`${origin}/relay/v1/fleet`).then((response) => response.json())
+    if (!inventory.machines.some((machine) => machine.key === 'smoke-cloud' && machine.connection === 'online')) {
+      throw new Error('Web relay could not discover the registered SSH Machine')
+    }
+    const response = await fetch(`${origin}/relay/v1/connect`, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ machine: 'smoke-cloud', project: 'default' }),
+    })
+    if (!response.ok) throw new Error(`Web relay connection failed: ${response.status} ${await response.text()}`)
+    const status = await response.json()
+    if (status.target?.machine !== 'smoke-cloud' || status.target?.project !== 'default') {
+      throw new Error(`Web relay selected the wrong target: ${JSON.stringify(status)}`)
+    }
+    const identity = await fetch(`${origin}/api/alice-project`).then((reply) => reply.json())
+    if (identity.project?.id !== expectedProjectId) {
+      throw new Error(`Web relay forwarded the wrong AliceProject: ${JSON.stringify(identity)}`)
+    }
+  } finally {
+    child.kill('SIGTERM')
+    await new Promise((done) => { if (child.exitCode !== null || child.signalCode !== null) done(); else child.once('exit', done) })
   }
 }
 

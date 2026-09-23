@@ -3,10 +3,12 @@ import { Cable, ChevronDown, ChevronRight, CircleCheck, FolderKanban, Info, Moni
 import { useTranslation } from 'react-i18next'
 
 import { getBackendConnection } from '../auth/backendConnection'
+import { RelayConnectionChooser } from '../components/RelayConnectionChooser'
 import { Button } from '../components/ui/button'
 import { SettingsScrollArea } from '../components/form'
 import { PageHeader } from '../components/PageHeader'
 import { useAliceProject } from '../hooks/useAliceProject'
+import { useRelayConnection } from '../hooks/useRelayConnection'
 
 /** The current backend is the only source of AliceProject identity. SSH identity
  * belongs to the local client and must never be inferred from backend files. */
@@ -14,12 +16,16 @@ export function BackendConnectionSettingsPage() {
   const { t } = useTranslation()
   const connection = getBackendConnection()
   const { project, loading, error, refresh } = useAliceProject()
+  const relay = useRelayConnection()
+  const [chooserOpen, setChooserOpen] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
-  const remote = connection.kind === 'remote'
+  const remote = connection.kind === 'remote' || (relay.status?.target?.machine !== undefined && relay.status.target.machine !== 'local')
   const electron = connection.kind === 'electron'
-  const machine = remote ? connection.target : t('settings.backendConnection.thisMachine')
-  const description = remote
+  const machine = relay.status?.target?.machineName ?? relay.status?.target?.machine ?? (connection.kind === 'remote' ? connection.target : t('settings.backendConnection.thisMachine'))
+  const description = relay.status
+    ? t('settings.backendConnection.relayDescription', 'Connected through the local CLI relay')
+    : connection.kind === 'remote'
     ? t('settings.backendConnection.sshTarget', {
         target: connection.target,
         port: connection.sshPort,
@@ -80,7 +86,7 @@ export function BackendConnectionSettingsPage() {
 
             <footer className="flex flex-wrap items-center gap-2 border-t border-border/70 px-4 py-3">
               {!electron && (
-                <Button type="button" size="sm" onClick={() => setShowInstructions((value) => !value)} aria-expanded={showInstructions} aria-controls="connection-change-instructions">
+                <Button type="button" size="sm" onClick={() => relay.status ? setChooserOpen(true) : setShowInstructions((value) => !value)} aria-expanded={relay.status ? chooserOpen : showInstructions} aria-controls={relay.status ? undefined : 'connection-change-instructions'}>
                   {t('settings.backendConnection.change')}
                   {showInstructions ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
                 </Button>
@@ -96,7 +102,7 @@ export function BackendConnectionSettingsPage() {
               )}
             </footer>
 
-            {showInstructions && !electron && (
+            {showInstructions && !electron && !relay.status && (
               <div id="connection-change-instructions" className="border-t border-border/70 bg-secondary/25 px-4 py-4 text-[12px] leading-relaxed">
                 <p className="font-medium text-foreground">{t('settings.backendConnection.cliTitle')}</p>
                 <p className="mt-1 text-muted-foreground">{t('settings.backendConnection.cliDescription')}</p>
@@ -105,13 +111,14 @@ export function BackendConnectionSettingsPage() {
             )}
             {showDetails && (
               <dl id="connection-details" className="grid gap-3 border-t border-border/70 bg-secondary/20 px-4 py-4 text-[12px] sm:grid-cols-2">
-                <Detail label={t('settings.backendConnection.transport')} value={remote ? 'SSH tunnel' : electron ? 'Electron IPC' : 'Loopback HTTP'} />
-                <Detail label={t('settings.backendConnection.clientEndpoint')} value={remote ? connection.localEndpoint : electron ? 'app://openalice' : connection.endpoint} />
-                {remote && <Detail label={t('settings.backendConnection.remoteEndpoint')} value={`127.0.0.1:${connection.runtimePort}`} />}
+                <Detail label={t('settings.backendConnection.transport')} value={relay.status ? 'Local CLI relay' : connection.kind === 'remote' ? 'SSH tunnel' : electron ? 'Electron IPC' : 'Loopback HTTP'} />
+                <Detail label={t('settings.backendConnection.clientEndpoint')} value={relay.status ? window.location.host : connection.kind === 'remote' ? connection.localEndpoint : electron ? 'app://openalice' : connection.endpoint} />
+                {connection.kind === 'remote' && !relay.status && <Detail label={t('settings.backendConnection.remoteEndpoint')} value={`127.0.0.1:${connection.runtimePort}`} />}
                 {project && <Detail label={t('settings.backendConnection.projectId')} value={project.id} />}
               </dl>
             )}
           </section>
+          <RelayConnectionChooser open={chooserOpen} onOpenChange={setChooserOpen} initialStatus={relay.status} />
 
           <p className="flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
             {remote ? <Cable className="mt-0.5 size-3.5 shrink-0" aria-hidden /> : electron ? <Server className="mt-0.5 size-3.5 shrink-0" aria-hidden /> : <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />}

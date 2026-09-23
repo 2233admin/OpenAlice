@@ -71,6 +71,7 @@ export function buildSshArgs(options, localPort) {
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
   ]
+  if (options.batchMode) args.push('-o', 'BatchMode=yes')
   if (options.sshPort !== null) args.push('-p', String(options.sshPort))
   if (options.identityFile !== null) args.push('-i', options.identityFile)
   args.push(

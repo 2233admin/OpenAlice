@@ -6,13 +6,14 @@ import { ToastProvider } from './components/Toast'
 import { TooltipProvider } from './components/ui/tooltip'
 import { AuthProvider } from './auth/AuthContext'
 import { AuthGate } from './auth/AuthGate'
-import { initializeBackendConnection } from './auth/backendConnection'
+import { clearDirectTunnelContextForRelay, initializeBackendConnection } from './auth/backendConnection'
 import { installBackendRequestObserver } from './auth/backendConnectivity'
+import { getRelayStatus, monitorRelayGeneration } from './hooks/useRelayConnection'
+import { RelaySetup } from './components/RelaySetup'
 import './index.css'
 import './theme' // side-effect: resolve persisted mode + palette pair on <html>
 import './i18n' // side-effect: init react-i18next + seed locale before first render
 
-initializeBackendConnection()
 installBackendRequestObserver()
 
 if (import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:') {
@@ -23,9 +24,14 @@ if (import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:') {
   await import('./demo/recorder')
 }
 
+const relayStatus = window.openAlice ? null : await getRelayStatus()
+if (relayStatus) clearDirectTunnelContextForRelay()
+initializeBackendConnection()
+if (relayStatus && !import.meta.env.VITE_DEMO_MODE) monitorRelayGeneration(relayStatus)
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    {relayStatus && !relayStatus.target ? <RelaySetup status={relayStatus} /> : <BrowserRouter>
       <TooltipProvider delay={250} timeout={300}>
         <ToastProvider>
           <AuthProvider>
@@ -35,6 +41,6 @@ createRoot(document.getElementById('root')!).render(
           </AuthProvider>
         </ToastProvider>
       </TooltipProvider>
-    </BrowserRouter>
+    </BrowserRouter>}
   </StrictMode>,
 )

@@ -26,6 +26,8 @@ source checkout support retained only as an explicit development override:
   lifecycle and presentation over the same `cli-server` Guardian owner;
 - `openalice --remote <target>` probes, prepares, and attaches to a remote
   OpenAlice Runtime through the normal loopback SSH tunnel;
+- `openalice relay` serves the trusted local Web UI and lets that browser
+  inspect registered Machines and switch one active Machine/AliceProject;
 - `openalice server run|start|status|stop` provides a browserless
   foreground or detached Runtime lifecycle backed by Guardian's local control
   endpoint;
@@ -52,12 +54,11 @@ origin, including its forwarded port. Only loopback browser access bypasses the
 Vite proxy for the development backend port; a LAN client cannot assume that
 the backend's loopback-only listener is exposed alongside the UI.
 
-Settings → Backend connection presents the current client-owned Machine/SSH
-identity beside the AliceProject reported by the connected backend. It is an
-inspection surface: the Shell CLI still owns Machine discovery, tunnel lifetime,
-and connection switching. The Settings action explains that path until a local
-relay control channel exists; remote-served UI must not receive unrestricted
-local SSH authority.
+Settings → Backend connection presents the active Machine beside the
+AliceProject reported by its Runtime. With `openalice relay`, Change connection
+opens a Machine/Project selector backed by the local CLI. Direct Runtime and
+legacy `--remote` browser surfaces remain inspection-only. The relay serves its
+own local UI bundle, so remote-served JavaScript never gains SSH authority.
 
 Native `server run/start` derives its content identity from the installed
 `release.json`, matching the interactive launcher. Readiness confirms pending
@@ -430,6 +431,18 @@ refreshes Fleet state. Stop, restart, takeover, Setup, source, logs, Doctor,
 and configuration mutations remain unavailable for remote Fleet selections;
 offline or incompatible rows never receive guessed lifecycle actions.
 
+The browser relay is an alternate client presentation: `openalice relay`
+opens a stable loopback origin and selects a running local Project when one is
+available. If none is running, its connection screen can still discover
+Machines and Projects. Settings lists only registered SSH Machines and lets the
+user select a running Project. A stopped Project must first be started through
+CLI lifecycle controls. The relay itself does not start, stop, update, or take
+over a Runtime. One relay has one active target shared by all its tabs. A
+switch probes the candidate and verifies its AliceProject identity before
+promotion; failure retains the old target. Success closes old WebSockets,
+increments a target generation, and reloads all tabs. Switching never stops
+the old Runtime.
+
 When `--app-dir` is absent, managed remote requires the verified native Runtime
 installed with the matching CLI. No Git checkout, Node, Bun, Python, compiler,
 or package-manager mutation is part of that path. A target outside the
@@ -602,10 +615,10 @@ local browser
 ```
 
 Alice, the Workspace, Agent CLI, shell, provider calls, and tools run on the SSH
-host. The browser loads the normal OpenAlice bundle through the tunnel, so
-HTTP, authentication, and Workspace WebSockets stay on one local loopback
-origin. No public domain, hosted-cookie bridge, relay, or second frontend
-protocol is required.
+host. The direct `--remote` browser loads the normal OpenAlice bundle through
+the tunnel. `openalice relay` instead serves the local bundle and forwards
+backend HTTP and WebSocket traffic to its selected Runtime. Both remain on a
+loopback browser origin; neither exposes the Guardian control endpoint.
 
 `openalice --remote`:
 
@@ -644,6 +657,14 @@ is not sufficient authorization. The browser contract remains:
 - `OPENALICE_DISABLE_AUTH=1` is never a remote-access instruction;
 - operators exposing a deployment beyond loopback own its HTTPS,
   authentication, and network-access policy.
+
+The local relay additionally rejects non-exact Host and cross-origin mutation
+requests, strips browser forwarding headers, and namespaces backend cookies
+per Machine/Project. Its control routes accept registered keys rather than raw
+SSH destinations or commands. Backend API requests capture the active target
+at dispatch; they are never replayed against another target after a switch.
+Opaque `oa-surface-*.localhost` hosts are forwarded only to the selected
+Runtime's Surface Router; they never enter relay control or local UI routes.
 
 The future independent Studio cannot reuse “it arrived from loopback” as its
 identity. It needs an explicit pairing/capability flow with revocation,

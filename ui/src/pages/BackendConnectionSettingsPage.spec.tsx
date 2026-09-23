@@ -6,10 +6,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   getBackendConnection: vi.fn(),
   useAliceProject: vi.fn(),
+  useRelayConnection: vi.fn(),
 }))
 
 vi.mock('../auth/backendConnection', () => ({ getBackendConnection: mocks.getBackendConnection }))
 vi.mock('../hooks/useAliceProject', () => ({ useAliceProject: mocks.useAliceProject }))
+vi.mock('../hooks/useRelayConnection', () => ({ useRelayConnection: mocks.useRelayConnection }))
 
 import '../i18n'
 import { i18n } from '../i18n'
@@ -19,6 +21,12 @@ beforeAll(async () => { await i18n.changeLanguage('en') })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('BackendConnectionSettingsPage', () => {
+  beforeAll(() => {
+    mocks.useRelayConnection.mockReturnValue({
+      status: null, fleet: [], loading: false, busy: false, error: null,
+      refresh: vi.fn(), connect: vi.fn(),
+    })
+  })
   it('keeps client-owned SSH identity separate from the backend-owned AliceProject', () => {
     mocks.getBackendConnection.mockReturnValue({
       kind: 'remote', target: 'alice@studio.example.com', sshPort: 2222,
