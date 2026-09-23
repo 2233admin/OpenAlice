@@ -701,6 +701,13 @@ from the disclosure but leaves an open dialog available with an explicit Open
 conversation action. Existing background deep links surrender their Session tab
 and open the same dialog over the previous view (or Harness landing when no tab
 remains). Inspection never starts or takes over a runtime.
+The dialog leads with Session identity and current state, then elapsed time and
+provenance; a moving line signals activity without claiming a completion
+percentage. Metadata stays compact, diagnostic IDs stay behind a disclosure,
+and refresh/interruption controls remain visible in the footer. The right-click
+Details dialog uses the same identity, status and control hierarchy while its
+history and configuration scroll within the body. On narrow screens, metadata
+stacks and the status badge shortens so it does not displace the Session name.
 
 
 Session row menus expose Details independently of activation and distinguish

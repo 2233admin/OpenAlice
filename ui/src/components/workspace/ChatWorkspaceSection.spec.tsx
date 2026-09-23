@@ -851,6 +851,11 @@ describe('ChatWorkspaceSection actions', () => {
     </WorkspacesContext.Provider>)
     expect(screen.getByRole('dialog', { name: 'Background task finished' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '1 running' })).toBeNull()
+    entry.latestExecution.status = 'interrupted'
+    rendered.rerender(<WorkspacesContext.Provider value={workspaceContext(workspaces)}>
+      <ChatWorkspaceSection placement="navigation" /><SessionBusyDialogHost />
+    </WorkspacesContext.Provider>)
+    expect(screen.getByRole('dialog', { name: 'Background run interrupted' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open conversation' }))
     expect(openOrFocus).toHaveBeenCalledWith({ kind: 'workspace', params: {
       wsId: chatWorkspace.id, sessionId: session.id, source: 'chat',
@@ -930,14 +935,14 @@ describe('ChatWorkspaceSection actions', () => {
     expect(screen.getByRole('button', { name: 'Morning scan complete. Semis still lead.' })).toBeTruthy()
     const [runningTitle, runningPlay] = screen.getAllByRole('button', { name: 'Running · Scan Open' })
     fireEvent.click(runningTitle!)
-    expect(screen.getByRole('dialog', { name: 'This Session is working in the background' })).toBeTruthy()
-    expect(screen.getByText('Issue scan-open')).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'Working on Scan Open' })).toBeTruthy()
+    expect(screen.getAllByText('Issue scan-open')).toHaveLength(2)
     expect(openOrFocus).not.toHaveBeenCalled()
     expect(actions.resumeSession).not.toHaveBeenCalled()
     fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]!)
 
     fireEvent.click(runningPlay!)
-    expect(screen.getByRole('dialog', { name: 'This Session is working in the background' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'Working on Scan Open' })).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]!)
 
     fireEvent.click(within(runningSection).getByRole('button', { name: /Running in background/ }))
