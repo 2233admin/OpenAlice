@@ -245,10 +245,18 @@ it.each(['terminal', 'webpi'] as const)('hands %s ownership to an Issue turn and
     const ws = service!.registry.get('ws-1')!
     const trigger = { kind: 'issue' as const, workspaceId: ws.id, issueId: 'handoff' }
     const pending = service!.executions.dispatch(ws, adapter, 'Reply', { kind: 'issue', entry: 'test-issue' }, undefined, trigger, resumeId)
+    await vi.waitFor(() => expect(service!.executions.takeovers.list()).toHaveLength(1))
+    expect(stop).not.toHaveBeenCalled()
+    expect(service!.isResumeActive(resumeId)).toBe(false)
+    const approval = service!.executions.takeovers.decide(service!.executions.takeovers.list()[0].id, 'approve')
     await vi.waitFor(() => expect(stop).toHaveBeenCalled())
     expect(command).not.toHaveBeenCalled()
-    await expect(service!.executions.dispatch(ws, adapter, 'Duplicate', { kind: 'issue', entry: 'test-issue' }, undefined, trigger, resumeId))
-      .rejects.toMatchObject({ code: 'busy' })
+    const duplicate = service!.executions.dispatch(ws, adapter, 'Duplicate', { kind: 'issue', entry: 'test-issue' }, undefined, trigger, resumeId)
+    await vi.waitFor(() => expect(service!.executions.takeovers.list()).toHaveLength(2))
+    await service!.executions.takeovers.decide(service!.executions.takeovers.list()[1].id, 'reject')
+    await expect(duplicate).rejects.toThrow('declined')
+    release()
+    await approval
     release()
     const result = await pending
     await vi.waitFor(() => expect(service!.headlessTasks.get(result.taskId)?.status).toBe('done'), { timeout: 10000 })

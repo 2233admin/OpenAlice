@@ -142,6 +142,9 @@ export class ScheduleScanner {
   /** Close the tiny manual-retry vs schedule-tick race for one Issue. This is
    * only a dispatch-start lock, not a per-Workspace execution lock. */
   private readonly dispatchingIssues = new Set<string>()
+  private readonly pendingFires = new Map<string, Promise<void>>()
+
+  async waitForDispatches(): Promise<void> { await Promise.allSettled(this.pendingFires.values()) }
   /** Snapshot built as a side-effect of each scan; null until the first scan. */
   private lastSnapshot: ScheduleSnapshot | null = null
   private readonly now: () => number
@@ -245,7 +248,7 @@ export class ScheduleScanner {
     this.timer = null
     if (this.stopped) return
     try {
-      await this.scan()
+      await this.scan(false)
     } catch (err) {
       this.deps.logger.warn('schedule.scan_failed', { err })
     }
@@ -253,7 +256,7 @@ export class ScheduleScanner {
   }
 
   /** One full pass over all workspaces. Public for tests / a future "scan now". */
-  async scan(): Promise<void> {
+  async scan(waitForDispatch = true): Promise<void> {
     if (this.scanning) {
       this.deps.logger.info('schedule.scan_overlap_skipped', {})
       return
@@ -270,7 +273,7 @@ export class ScheduleScanner {
         ),
       )
       const workspaces = await Promise.all(
-        this.deps.registry.list().map((ws) => this.scanWorkspace(ws, nowMs, seen, extraDesks)),
+        this.deps.registry.list().map((ws) => this.scanWorkspace(ws, nowMs, seen, extraDesks, waitForDispatch)),
       )
       await this.deps.markers.prune(seen)
       this.lastSnapshot = { workspaces }
@@ -289,6 +292,7 @@ export class ScheduleScanner {
     nowMs: number,
     seen: Set<string>,
     extraDesks: ReadonlySet<string>,
+    waitForDispatch: boolean,
   ): Promise<ScheduleSnapshotWorkspace> {
     let res
     try {
@@ -319,8 +323,9 @@ export class ScheduleScanner {
       if (!when) continue
       if (isConnectorDeskIssue(issue) && extraDesks.has(`${ws.id}:${issue.id}`)) continue
       seen.add(this.deps.markers.key(ws.id, issue.id))
-      if (isFireable(issue) && this.isDue(ws.id, issue.id, when, nowMs)) {
-        await this.fire(
+      const fireKey = `${ws.id}:${issue.id}`
+      if (!this.pendingFires.has(fireKey) && isFireable(issue) && this.isDue(ws.id, issue.id, when, nowMs)) {
+        const firing = this.fire(
           ws,
           issue.id,
           when,
@@ -332,7 +337,10 @@ export class ScheduleScanner {
           issueTimeoutMs(issue.timeout),
           issue.connectorDesk,
           nowMs,
-        )
+        ).catch(err => this.deps.logger.warn('schedule.fire_failed', { wsId: ws.id, issueId: issue.id, err }))
+          .finally(() => { this.pendingFires.delete(fireKey) })
+        this.pendingFires.set(fireKey, firing)
+        if (waitForDispatch) await firing
       }
       // Read the marker AFTER any fire so last/next reflect a just-fired run.
       const last = this.deps.markers.get(ws.id, issue.id) ?? null

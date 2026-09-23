@@ -11,6 +11,7 @@ export function installExecutionFixture(service: any): any {
   })
   service.web ??= { has: vi.fn(() => false), get: vi.fn(() => null) }
   service.executions = {
+    takeovers: { list: vi.fn(() => []), idleSeconds: 60, configure: vi.fn(), decide: vi.fn(), activity: vi.fn(), isHandingOff: vi.fn(() => false) },
     terminal,
     web: service.executeWeb ?? vi.fn(),
     wait: service.executeWait ?? vi.fn(),

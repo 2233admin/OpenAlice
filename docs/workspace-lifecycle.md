@@ -131,6 +131,40 @@ stored in this journal. A failed journal blocks new execution admission. A stop
 still terminates the process if writing its journal fails and reports the
 persistence failure to the caller.
 
+## Interactive takeover
+
+Background dispatch to an existing Session enters the execution manager's FIFO
+takeover admission before acquiring the resume lock. Pending requests leave
+interactive input available. The manager records source, request and decision
+times, inactivity deadline and handoff state in
+`state/session-executions.json.takeovers.json`. This file also owns the global
+idle interval (60 seconds by default, configurable from 10 to 3600 seconds).
+Configuration changes apply to new requests. A restart cancels pending requests;
+it does not replay work from this diagnostic journal. The journal retains active
+requests plus the last 500 resolved requests; no prompt or credential is stored.
+
+User activity within the target Session resets its server-owned deadline.
+Approval and timeout both wait for an observed GUI `idle` phase. Working,
+compacting, retrying and awaiting-input phases cannot be interrupted by this
+mechanism. A terminal has no trustworthy activity signal: it requires explicit
+approval, which clearly states that its process will stop. Closing the request
+Dialog merely hides it; rejecting declines that caller without stopping the
+Session. A Session cannot request its own handoff.
+
+The head request reserves the identity before stopping the current process,
+waits for actual exit, and retains its reservation through background completion.
+Later requests queue; interactive starts and prompts cannot race the handoff.
+Different Sessions remain independent. Shutdown cancels waiting admissions before
+stopping managed processes. Failed persistence closes admission.
+
+`GET /api/workspaces/session-takeovers` projects requests and server time;
+`POST /api/workspaces/session-takeovers/:requestId/decision` accepts approve or
+reject; `PUT /api/workspaces/session-takeovers/settings` sets `idleSeconds`.
+Session-local `/activity` requests record interaction without starting a process.
+Pending dispatch callers wait for admission; they receive the ordinary task ID
+once work is admitted, or a concrete refusal/error. Scheduling cursors retain
+their existing dispatch success/failure semantics.
+
 ## Offboarding Transaction
 
 Before moving a Workspace, Alice gathers:

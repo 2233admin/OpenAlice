@@ -2,6 +2,37 @@ import type { Resources } from './en'
 
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
+  takeover: {
+    "pending": "接管リクエスト {{count}} 件",
+    "title": "バックグラウンドタスクが Session を必要としています",
+    "description": "「{{session}}」を使用中です。引き継ぐタイミングを選んでください。",
+    "handedOff": "Session を引き継ぎました",
+    "finished": "リクエスト完了",
+    "requestedBy": "リクエスト元",
+    "requestedAt": "リクエスト時刻",
+    "viewIssue": "Issue を表示",
+    "countdown": "操作がなければ {{seconds}} 秒後に引き継ぎ",
+    "queued": "前のリクエストを待機中",
+    "terminal": "ターミナルの承認が必要",
+    "working": "現在のタスクの完了を待機中",
+    "terminalHelp": "ターミナルの実行状態を確認できません。承認するとターミナルを停止し、バックグラウンドタスクを開始します。",
+    "idleHelp": "この Session への入力や操作でカウントダウンがリセットされます。実行中のタスクは完了してから引き継ぎます。",
+    "runningHelp": "バックグラウンドタスクが Session を使用しています。会話は保持されます。",
+    "doneHelp": "このリクエストの承認待ちは終了しました。",
+    "keepUsing": "使用を続ける",
+    "approve": "引き継ぐ",
+    "approved": "承認済み・待機中",
+    "timing": "自動引き継ぎの時間",
+    "setting": "自動引き継ぎまでの待機時間",
+    "seconds": "秒",
+    "saved": "保存済み",
+    "settingHelp": "10～3600 秒、既定は 60 秒。新しいリクエストに適用します。ターミナルの状態が不明な場合は承認が必要です。",
+    "occupied": "バックグラウンドタスクが使用中",
+    "reopen": "会話に戻る",
+    "complete": "バックグラウンドタスクが完了",
+    "purpose": "呼び出し元"
+},
+
   modelCatalog: {
     bundled: "組み込みのモデル候補を表示しています。",
     missing: "最新のモデル一覧に {{model}} がありません。選択は保持されていますが、利用可否が変わった可能性があります。",
