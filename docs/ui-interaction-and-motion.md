@@ -687,6 +687,8 @@ The disclosure and its entries reuse the ordinary Session child-row primitives
 for matching height, inset, icon spacing, and text size.
 When a running headless execution reports a start time, its child row shows a
 compact live elapsed time beside the title; unknown start times stay unlabeled.
+On hover or keyboard focus, the timer fades to reveal the standard Session
+overflow action, whose Details entry opens the shared inspection dialog.
 This projection includes headless-born and Issue-attached Sessions independently
 of ordinary conversation roster preferences, including hidden background workers;
 retired identities are excluded. Idle interactive processes do not count. Occupied rows are excluded
