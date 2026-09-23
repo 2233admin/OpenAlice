@@ -31,6 +31,7 @@ import {
   currentProcessStartedAt,
   resolveGuardianTradingMode,
   takeoverRequested,
+  proxyEnvFromRules,
   type GuardianTradingModePlan,
   type RuntimeProcessLock,
 } from '@traderalice/guardian-runtime'
@@ -46,7 +47,6 @@ import { configureAutoUpdate } from './auto-update.js'
 import { BoundedTextTail, conciseDiagnosticTail, DesktopDiagnostics } from './desktop-diagnostics.js'
 import { fetchAliceWebRequest, handleOpenAliceIpcMessage, registerOpenAliceIpc } from './ipc.js'
 import { resolveManagedRuntimeEnv } from './managed-runtime.js'
-import { proxyEnvFromRules } from './proxy-env.js'
 import { rememberDataHome, writeDataHomePreferences } from './data-home.js'
 import {
   chooseDataHomeDirectory,
