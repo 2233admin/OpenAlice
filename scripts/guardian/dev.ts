@@ -53,6 +53,7 @@ import {
   isBackendHotReloadEnabled,
 } from './dev-hot-reload.js'
 import { parseDevGuardianOptions } from './dev-options.js'
+import { buildGuardianChildEnv } from './system-proxy.js'
 
 let guardianRuntimeLock: RuntimeProcessLock | null = null
 let guardianControlServer: { endpoint: string; close: () => Promise<void> } | null = null
@@ -245,8 +246,7 @@ async function main(): Promise<void> {
     onStop: () => undefined,
   })
   console.log(`[guardian] Control  →  ${guardianControlServer.endpoint} (read-only)`)
-
-  const baseEnv = {
+  const baseEnvResolution = await buildGuardianChildEnv({
     ...process.env,
     ...aliceProjectEnvironment(aliceProject),
     NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --conditions=openalice-source`.trim(),
@@ -260,7 +260,11 @@ async function main(): Promise<void> {
     ...(managedToolchainPath ? { OPENALICE_MANAGED_TOOLCHAIN_PATH: managedToolchainPath } : {}),
     ...(takeover ? { OPENALICE_TAKEOVER: '1' } : {}),
     ...(projectProduct === 'nano' ? { OPENALICE_PROJECT_PRODUCT: 'nano', OPENALICE_UTA_DISABLED: '1' } : {}),
+  }, { platform: process.platform })
+  if (baseEnvResolution.diagnostic) {
+    console.warn(`[guardian] ${baseEnvResolution.diagnostic}`)
   }
+  const baseEnv = baseEnvResolution.env
 
   // ── UTA spec (re-used by Guardian for restart) ────────────
   const utaSpec: SpawnSpec = {

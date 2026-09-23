@@ -266,6 +266,23 @@ Guardian passes explicit `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and
 host system proxy through Chromium when no explicit environment value exists,
 on every supported desktop platform. Lower-case environment names are accepted
 and normalized for child processes.
+The development Guardian also maps Windows WinINet manual HTTP(S) proxy
+settings into the same child environment. PAC-only and SOCKS-only settings
+remain untouched; use explicit proxy environment variables when the system
+proxy cannot be resolved.
+
+For a domestic/headless server, set the explicit app fallback before starting
+Guardian, for example:
+
+`OPENALICE_PROXY_URL=http://127.0.0.1:7897 node scripts/guardian/prod.mjs`
+
+Standard `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` values, including their
+lower-case forms, remain authoritative over `OPENALICE_PROXY_URL`. The
+configured proxy service must already be running and reachable at that URL;
+Guardian only forwards the setting to UTA, Connector Service, and Alice and
+does not start or manage the proxy process.
+`OPENALICE_PROXY_URL` accepts only HTTP(S) URLs; malformed or SOCKS-only values
+are ignored rather than injected as child proxy settings.
 
 Connector Service owns one shared proxy transport. It installs an Undici
 dispatcher for fetch/WebSocket SDKs and gives adapters an explicit Node agent
