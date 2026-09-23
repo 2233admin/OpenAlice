@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Download, ExternalLink, FolderKanban, LoaderCircle, RefreshCw, Server } from 'lucide-react'
+import { CheckCircle2, Download, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { useAliceProject } from '../../hooks/useAliceProject'
 import { useVersionInfo } from '../../hooks/useVersionInfo'
 import { Button } from '../ui/button'
 import { ConfigSection } from '../form'
@@ -33,12 +32,6 @@ export function AboutOpenAliceSection() {
     error: versionError,
     check: checkVersion,
   } = useVersionInfo()
-  const {
-    project,
-    loading: projectLoading,
-    error: projectError,
-    refresh: refreshProject,
-  } = useAliceProject()
 
   useEffect(() => {
     let active = true
@@ -288,74 +281,7 @@ export function AboutOpenAliceSection() {
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-lg border border-border/70 bg-secondary/35" aria-labelledby="current-alice-project-title">
-          <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center text-muted-foreground">
-                <FolderKanban size={18} aria-hidden />
-              </div>
-              <div className="min-w-0">
-                <h4 id="current-alice-project-title" className="text-[13px] leading-[18px] font-semibold text-foreground">
-                  {t('settings.about.aliceProject.title')}
-                </h4>
-                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                  {t('settings.about.aliceProject.description')}
-                </p>
-              </div>
-            </div>
-            {!projectLoading && !projectError && project && (
-              <span className="inline-flex w-fit shrink-0 items-center rounded-full border border-success/25 bg-success/10 px-2 py-1 text-[10px] leading-[14px] font-medium text-success">
-                {t('settings.about.aliceProject.statusRunning')}
-              </span>
-            )}
-          </div>
-
-          {project ? (
-            <>
-              <div className="px-4 py-4">
-                <p className="truncate text-[14px] font-semibold text-foreground">{project.displayName}</p>
-                <p className="mt-0.5 font-mono text-[11px] leading-[15px] text-muted-foreground">{project.key}</p>
-                <dl className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2">
-                  <ProjectField label={t('settings.about.aliceProject.dataHome')} value={project.home} />
-                  <ProjectField label={t('settings.about.aliceProject.stableId')} value={project.id} />
-                  <ProjectField
-                    className="sm:col-span-2"
-                    label={t('settings.about.aliceProject.appRoot')}
-                    value={project.appRoot ?? t('settings.about.aliceProject.runtimeManaged')}
-                  />
-                </dl>
-              </div>
-              <div className="flex gap-2 border-t border-border/70 bg-background/30 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-                <Server size={14} className="mt-0.5 shrink-0" aria-hidden />
-                <p>{t('settings.about.aliceProject.browserNote')}</p>
-              </div>
-            </>
-          ) : (
-            <div className="px-4 py-5">
-              <p className="text-[12px] text-muted-foreground">
-                {projectLoading
-                  ? t('settings.about.aliceProject.loading')
-                  : t('settings.about.aliceProject.unavailable')}
-              </p>
-              {!projectLoading && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => void refreshProject()}>
-                  <RefreshCw aria-hidden />
-                  {t('settings.about.aliceProject.retry')}
-                </Button>
-              )}
-            </div>
-          )}
-        </section>
       </div>
     </ConfigSection>
-  )
-}
-
-function ProjectField({ className = '', label, value }: { className?: string; label: string; value: string }) {
-  return (
-    <div className={`min-h-12 min-w-0 border-t border-border/60 py-2.5 ${className}`}>
-      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-all font-mono text-[11px] leading-relaxed text-foreground">{value}</dd>
-    </div>
   )
 }

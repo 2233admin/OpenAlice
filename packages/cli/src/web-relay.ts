@@ -395,7 +395,7 @@ export async function runWebRelay(args: string[]): Promise<number> {
     ?? local?.projects.find((project) => project.runtime.webEndpoint)
   if (first) await relay.connect('local', first.key).catch((error: unknown) => process.stderr.write(`Local Runtime unavailable: ${String(error)}\n`))
   process.stdout.write(`OpenAlice relay: ${origin}\n`)
-  if (open) await openBrowser(`${origin}/settings/backend-connection`)
+  if (open) await openBrowser(`${origin}/settings`)
   await new Promise<void>((done) => {
     const stop = () => { process.off('SIGINT', stop); process.off('SIGTERM', stop); void relay.close().then(done) }
     process.once('SIGINT', stop)

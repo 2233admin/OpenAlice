@@ -1114,7 +1114,7 @@ app.whenReady().then(async () => {
       // Keep the local Runtime and its Guardian ownership intact until the
       // replacement page has actually loaded. A failed navigation must not
       // strand the user with neither a window nor a local backend.
-      await win.loadURL(`${relay.originUrl}/settings/backend-connection`)
+      await win.loadURL(`${relay.originUrl}/settings`)
       desktopDiagnostics?.write('guardian', 'relay window loaded; retiring local runtime')
       localRuntimeSuspended = true
       flagWatchAbort.abort()
@@ -1139,13 +1139,13 @@ app.whenReady().then(async () => {
       if (!localRuntimeSuspended) {
         desktopRelay?.disconnect()
         if (!win.isDestroyed() && !win.webContents.getURL().startsWith('app://')) {
-          await win.loadURL('app://openalice/settings/backend-connection').catch((loadError) => {
+          await win.loadURL('app://openalice/settings').catch((loadError) => {
             console.error('[guardian] could not restore integrated connection:', loadError)
           })
         }
       }
       else if (desktopRelay && win.webContents.getURL().startsWith('app://')) {
-        await win.loadURL(`${desktopRelay.originUrl}/settings/backend-connection`).catch((loadError) => {
+        await win.loadURL(`${desktopRelay.originUrl}/settings`).catch((loadError) => {
           console.error('[guardian] could not show separated connection:', loadError)
         })
       }
@@ -1177,7 +1177,7 @@ app.whenReady().then(async () => {
       alice = spawnAlice()
       await waitForAliceReady()
       aliceBecameReady = true
-      await win.loadURL('app://openalice/settings/backend-connection')
+      await win.loadURL('app://openalice/settings')
       localRuntimeSuspended = false
       flagWatchAbort = new AbortController()
       watchLocalFlags()
@@ -1195,7 +1195,7 @@ app.whenReady().then(async () => {
       alice = null
       await releaseGuardianRuntimeLock()
       if (desktopRelay && win.webContents.getURL().startsWith('app://')) {
-        await win.loadURL(`${desktopRelay.originUrl}/settings/backend-connection`).catch((loadError) => {
+        await win.loadURL(`${desktopRelay.originUrl}/settings`).catch((loadError) => {
           console.error('[guardian] could not restore separated connection:', loadError)
         })
       }

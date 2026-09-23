@@ -27,6 +27,7 @@ import {
 } from '../theme/styleProfiles'
 import { useEffectivePreferenceSlot } from '../theme/useEffectiveTheme'
 import { AboutOpenAliceSection } from '../components/settings/AboutOpenAliceSection'
+import { AliceLocationSection } from '../components/settings/AliceLocationSection'
 import { Button } from '../components/ui/button'
 import { getBackendConnection } from '../auth/backendConnection'
 import { useRelayConnection } from '../hooks/useRelayConnection'
@@ -846,7 +847,9 @@ function WorkspaceShellSection() {
 function SettingsSection() {
   return (
     <div className="mx-auto w-full max-w-[1100px]">
-      {/* Installation + current AliceProject identity */}
+      <AliceLocationSection />
+
+      {/* Installation and update ownership */}
       <AboutOpenAliceSection />
 
       {/* Language */}

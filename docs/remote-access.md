@@ -54,7 +54,7 @@ origin, including its forwarded port. Only loopback browser access bypasses the
 Vite proxy for the development backend port; a LAN client cannot assume that
 the backend's loopback-only listener is exposed alongside the UI.
 
-Settings → Backend connection presents the active Machine beside the
+Settings → General → Where Alice is working presents the active Machine beside the
 AliceProject reported by its Runtime. In the normal `openalice` TUI, the Web GUI
 and TUI share one relay and one current target; either can change the connection
 and both observe the result. `openalice relay` offers the same Web GUI without

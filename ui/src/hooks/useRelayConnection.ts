@@ -68,7 +68,7 @@ export function useRelayConnection(initial: RelayStatus | null = null) {
           body: JSON.stringify({ machine, project }),
         })
         setStatus(next)
-        window.location.replace('/settings/backend-connection')
+        window.location.replace('/settings')
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
