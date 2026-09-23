@@ -710,6 +710,9 @@ history and configuration scroll within the body. On narrow screens, metadata
 stacks and the status badge shortens so it does not displace the Session name.
 Interrupting from either dialog first confirms the target Session, immediate
 stop, retained conversation history, and configured restart cooldown.
+The shared control footer enters an inline confirmation state rather than
+opening a second dialog. Cancel or Escape returns focus to the interrupt action;
+the execution stays untouched until the explicit confirmation.
 
 
 Session row menus expose Details independently of activation and distinguish

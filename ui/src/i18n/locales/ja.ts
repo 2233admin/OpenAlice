@@ -7,6 +7,7 @@ export const ja: Resources = {
     "stopping": "停止中…",
     "retry": "停止を再試行",
     "interrupt": "実行を中断",
+    "confirmAction": "中断を確定",
     "confirmTitle": "{{session}} を中断しますか？",
     "confirmDescription": "現在の実行を停止し、新しい開始を {{minutes}} 分間ブロックします。会話履歴は保持されます。",
     "explanation": "この実行を停止し、{{minutes}} 分間は新しい実行を拒否します。会話履歴は保持されます。",

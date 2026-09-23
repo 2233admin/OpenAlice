@@ -8,6 +8,7 @@ export const zh: Resources = {
     "stopping": "正在停止…",
     "retry": "重试停止",
     "interrupt": "打断运行",
+    "confirmAction": "确认打断",
     "confirmTitle": "打断「{{session}}」？",
     "confirmDescription": "这会停止当前运行，并阻止新任务启动 {{minutes}} 分钟。对话记录会保留。",
     "explanation": "停止本次运行，并阻止新任务启动 {{minutes}} 分钟。对话记录会保留。",
