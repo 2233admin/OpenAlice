@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 
 const defaultTarget = { machine: 'local', machineName: 'This computer', project: 'demo', projectName: 'Demo AliceProject' }
 let target = readDemoTarget() ?? defaultTarget
@@ -29,7 +29,10 @@ const machines = [
 
 export const relayHandlers = [
   http.get('/relay/v1/status', () => HttpResponse.json({ schemaVersion: 1, generation, target, switching: false })),
-  http.get('/relay/v1/fleet', () => HttpResponse.json({ schemaVersion: 1, generatedAt: new Date().toISOString(), machines })),
+  http.get('/relay/v1/fleet', async () => {
+    await delay(900)
+    return HttpResponse.json({ schemaVersion: 1, generatedAt: new Date().toISOString(), machines })
+  }),
   http.post('/relay/v1/connect', async ({ request }) => {
     const input = await request.json() as { machine?: string; project?: string }
     const selected = machines.find((machine) => machine.key === input.machine)?.projects.find((project) => project.key === input.project)
