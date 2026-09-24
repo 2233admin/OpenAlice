@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -608,11 +609,15 @@ async function main() {
         await sleep(500)
         rmSync(smokeRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
       } catch (cleanupError) {
-        if (journeyCompleted) throw cleanupError
-        console.error(
-          `[desktop-upgrade] cleanup also failed for ${smokeRoot}: ` +
-          `${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
-        )
+        let remaining = []
+        try { remaining = readdirSync(smokeRoot).slice(0, 20) } catch { /* root may already be gone */ }
+        const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+        const message = `[desktop-upgrade] cleanup failed for ${smokeRoot}: ${detail}`
+        if (journeyCompleted) {
+          console.warn(`${message}; remaining entries: ${remaining.join(', ') || '<unavailable>'}`)
+        } else {
+          console.error(`${message}; remaining entries: ${remaining.join(', ') || '<unavailable>'}`)
+        }
       }
     }
   }
