@@ -854,6 +854,7 @@ export const en = {
       general: 'Overview',
       appearance: 'Skin',
       activityBar: 'Activity bar',
+      visibility: 'Visibility',
       aiProvider: 'AI Provider',
       agentRuntimes: 'Agent runtimes',
       agentPermissions: 'Mode',
@@ -1002,6 +1003,7 @@ export const en = {
       },
     },
     harness: {
+      releasesSection: 'Workspace template releases',
       title: 'Harness',
       description: 'Ask Alice, Auto Quant, and Auto Prediction are Workspace Harnesses: the desk is the task, and a coding agent does the work.',
       shared: 'Shared Harness behavior',
@@ -1010,7 +1012,7 @@ export const en = {
       showHeadlessBornDescription: 'Off by default. Sessions that started from an Issue or API turn and have never opened a TUI or Web conversation stay on the Issue page instead of the desk roster.',
       showIssueAttached: 'Show Issue-attached Sessions',
       showIssueAttachedDescription: 'Off by default. Enable this to add Sessions currently owned or occupied by ordinary Issues to the shared desk roster. Connector chat Sessions always stay hidden.',
-      showUnverifiedReleases: 'Show unverified Harness releases',
+      showUnverifiedReleases: 'Include unverified template releases',
       showUnverifiedReleasesDescription: 'Off by default. When enabled, OpenAlice also checks the upstream repository for its newest stable release. Those releases are clearly marked and still require a reviewed upgrade.',
       askAlice: 'Ask Alice',
       askAliceDescription: 'Chat Workspaces and their Session roster.',
@@ -1019,6 +1021,10 @@ export const en = {
       autoPrediction: 'Auto Prediction',
       autoPredictionDescription: 'Auto Prediction Workspaces, Sessions, and source releases.',
       usesSharedRoster: 'Uses the shared Harness behavior above. Harness-specific options can land in this section.',
+    },
+    visibility: {
+      description: 'Choose which Sessions appear in Workspace lists. This does not change who owns or runs them.',
+      sessions: 'Session visibility',
     },
     agent: {
       title: 'Agent',

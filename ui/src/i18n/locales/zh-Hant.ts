@@ -851,6 +851,7 @@ export const zhHant: Resources = {
       general: '概覽',
       appearance: '外觀樣式',
       activityBar: '側欄',
+      visibility: '可見性',
       aiProvider: 'AI 供應方',
       agentRuntimes: 'Agent 執行環境',
       agentPermissions: '模式',
@@ -999,6 +1000,7 @@ export const zhHant: Resources = {
       },
     },
     harness: {
+      releasesSection: 'Workspace 範本版本',
       title: 'Harness',
       description: 'Ask Alice、Auto Quant 與 Auto Prediction 都是 Workspace Harness：桌子就是任務，由 coding agent 在裡面做事。',
       shared: '共用 Harness 行為',
@@ -1007,7 +1009,7 @@ export const zhHant: Resources = {
       showHeadlessBornDescription: '預設關閉。從 Issue 或 API 跑起來、從未開過 TUI / Web 的 Session 留在 Issue 頁，不進桌子名冊。',
       showIssueAttached: '顯示掛靠 Issue 的 Session',
       showIssueAttachedDescription: '預設關閉。開啟後，普通 Issue 目前持有或佔用的 Session 會進入共享桌子名冊；Connector 聊天 Session 一律隱藏。',
-      showUnverifiedReleases: '顯示未經認證的 Harness 版本',
+      showUnverifiedReleases: '包含未經驗證的範本版本',
       showUnverifiedReleasesDescription: '預設關閉。開啟後 OpenAlice 也會檢查上游倉庫最新的穩定版本；這些版本會明確標記，且仍需審閱後升級。',
       askAlice: 'Ask Alice',
       askAliceDescription: '對話 Workspace 及其 Session 名冊。',
@@ -1016,6 +1018,10 @@ export const zhHant: Resources = {
       autoPrediction: 'Auto Prediction',
       autoPredictionDescription: 'Auto Prediction Workspace、Session 和原始碼版本。',
       usesSharedRoster: '沿用上面的共用 Harness 行為；專屬選項可以放在這一節。',
+    },
+    visibility: {
+      description: '設定哪些 Session 顯示在 Workspace 清單中；不會改變 Session 的歸屬或執行狀態。',
+      sessions: 'Session 可見性',
     },
     agent: {
       title: '智慧體',
