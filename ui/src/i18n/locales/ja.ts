@@ -867,6 +867,8 @@ export const ja: Resources = {
       autoPrediction: 'Auto Prediction を自動更新', autoPredictionDescription: '上流の最新安定版に追従し、マージが妨げられた場合は確認を待ちます。',
       client: 'このアプリ', backend: '接続中のバックエンド', available: 'v{{version}} を利用可能', currentOrManaged: '最新または外部管理',
       blocked: '確認が必要', failed: '確認に失敗', review: '{{name}} の更新を確認',
+      unsupported: 'このバックエンドは Workspace の更新管理にまだ対応していません。上にはバージョンが表示されます。バックエンドを更新すると Workspace の自動更新を利用できます。',
+      unavailable: '更新状態を取得できません',
     },
     machines: {
       title: 'マシン', description: 'Alice が作業できるマシンを確認・管理します。', saved: '保存済みマシン',

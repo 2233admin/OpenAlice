@@ -52,6 +52,10 @@ export function UpdateLifecycleSection() {
         </Button>
       </div>
 
+      {updates.updatesUnsupported && <p className="mt-4 rounded-md border border-border/70 bg-background/60 px-3 py-2 text-xs leading-5 text-muted-foreground" role="status">
+        {t('settings.updateLifecycle.unsupported')}
+      </p>}
+
       <div className="mt-4 divide-y divide-border/65 border-y border-border/65">
         {([
           ['autoCheckApp', 'appCheck', 'appCheckDescription'],
@@ -100,6 +104,7 @@ export function UpdateLifecycleSection() {
               : status?.phase === 'failed' ? t('settings.updateLifecycle.failed')
                 : available ? t('settings.updateLifecycle.available', { version: available.to })
                   : status?.phase === 'checking' ? t('settings.updateLifecycle.checking')
+                    : updates.updatesUnsupported ? t('settings.updateLifecycle.unavailable')
                     : t('settings.updateLifecycle.currentOrManaged')}</span>
             {attention && <Button type="button" size="icon" variant="ghost" aria-label={t('settings.updateLifecycle.review', { name: workspace.displayName || workspace.tag })}
               onClick={() => openAgentConfig(workspace.id, undefined, 'template')}><ArrowUpRight className="size-4" aria-hidden /></Button>}

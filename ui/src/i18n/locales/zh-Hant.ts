@@ -874,6 +874,8 @@ export const zhHant: Resources = {
       autoPrediction: '自動更新 Auto Prediction', autoPredictionDescription: '跟隨上游最新穩定版本；合併受阻時等待審閱。',
       client: '目前前端', backend: '已連線的後端', available: 'v{{version}} 可更新', currentOrManaged: '已是最新或由外部管理',
       blocked: '需要處理', failed: '檢查失敗', review: '查看 {{name}} 的更新',
+      unsupported: '目前後端尚未支援 Workspace 更新管理。上方仍會顯示後端版本；升級後端後可使用 Workspace 自動更新。',
+      unavailable: '更新狀態無法取得',
     },
     machines: {
       title: '機器', description: '探測和管理 Alice 可以工作的機器。', saved: '已儲存的機器',
