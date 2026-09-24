@@ -45,6 +45,10 @@ interface Window {
       connect(machine: string, project: string): Promise<unknown>
       returnIntegrated(): Promise<void>
     }
+    readonly desktopMachine?: {
+      plan(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string }): Promise<unknown>
+      apply(id: string): Promise<unknown>
+    }
     readonly companion?: {
       getSound(): Promise<PetSoundSettings>
       updateSound(settings: Partial<PetSoundSettings>): Promise<PetSoundSettings>

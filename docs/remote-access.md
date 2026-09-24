@@ -256,6 +256,12 @@ openalice --remote <target> --plan|--status|--stop [options]
 required native CLI/Runtime install or start, checks readiness, and only then
 registers the Machine. The relay can select a registered, enabled Machine and
 one of its running AliceProjects. It cannot select an arbitrary SSH address.
+Settings → General now offers the same Machine preparation from the local GUI:
+enter an SSH target and label, run a read-only probe, review the exact planned
+actions, then approve apply. Saved Machines can be re-probed for updates against
+the local CLI release. The relay rechecks the plan immediately before apply and
+rejects changed remote facts; a restarted Runtime can briefly disconnect an
+active connection. These are local relay controls, never AliceProject API calls.
 `--machine` routes CLI commands through a saved profile. `--remote` keeps
 read-only planning and explicit status/stop controls; its former one-off
 browser attach is retired.

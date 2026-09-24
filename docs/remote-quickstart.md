@@ -33,6 +33,11 @@ Host openalice-box
   IdentityFile ~/.ssh/id_ed25519
 ```
 
+Start `openalice`, open its Web GUI, then go to Settings → General → Machines.
+Choose **Add Machine**, enter `openalice-box` and `Cloud`, and probe the target.
+The preview lists the exact remote actions before you approve registration.
+You can also use the CLI:
+
 ```bash
 ssh openalice-box
 openalice --remote openalice-box --plan
@@ -44,7 +49,8 @@ required install/start actions, checks Runtime health, then saves the SSH
 profile. Use `--yes` only when you have already reviewed those actions. An
 arbitrary SSH address is not a GUI target until it has passed this registration.
 The matching native OpenAlice release is installed on the target when needed;
-Agent Runtime executables and SSH credentials remain user-owned.
+Agent Runtime executables and SSH credentials remain user-owned. An existing
+Machine can be probed and upgraded from the same Settings section.
 
 ## 3. Select the remote AliceProject
 

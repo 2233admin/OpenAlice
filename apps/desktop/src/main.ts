@@ -1096,6 +1096,16 @@ app.whenReady().then(async () => {
     }
     return fleet
   })
+  ipcMain.handle('openalice:desktop-machine:plan', async (event, input: unknown) => {
+    fromMainWindow(event.sender.id)
+    if (!input || typeof input !== 'object') throw new Error('Machine plan input is required.')
+    return (await ensureRelay()).planMachine(input as Parameters<WebRelay['planMachine']>[0])
+  })
+  ipcMain.handle('openalice:desktop-machine:apply', async (event, id: unknown) => {
+    fromMainWindow(event.sender.id)
+    if (typeof id !== 'string') throw new Error('A reviewed Machine plan is required.')
+    return (await ensureRelay()).applyMachine(id)
+  })
   ipcMain.handle('openalice:desktop-connection:connect', async (event, machine: unknown, project: unknown) => {
     fromMainWindow(event.sender.id)
     if (localRuntimeSuspended) throw new Error('Use the relay connection chooser while in separated mode.')

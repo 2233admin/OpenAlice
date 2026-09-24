@@ -15,11 +15,11 @@ function readDemoTarget(): typeof defaultTarget | null {
 
 const machines = [
   {
-    key: 'local', displayName: 'This computer', connection: 'local', issue: null,
+    key: 'local', displayName: 'This computer', connection: 'local', cliVersion: '0.94.1-beta', issue: null,
     projects: [{ key: 'demo', id: 'demo-alice-project', displayName: 'Demo AliceProject', available: true, runtime: { class: 'running', state: 'ready', webEndpoint: 'http://127.0.0.1:47331' } }],
   },
   {
-    key: 'studio', displayName: 'Studio Mac', connection: 'online', issue: null,
+    key: 'studio', displayName: 'Studio Mac', connection: 'online', sshTarget: 'alice@studio-mac.local', cliVersion: '0.93.1', issue: null,
     projects: [
       { key: 'research', id: 'demo-research', displayName: 'Research desk', available: true, runtime: { class: 'running', state: 'ready', webEndpoint: 'http://127.0.0.1:47332' } },
       { key: 'drafts', id: 'demo-drafts', displayName: 'Drafts', available: true, runtime: { class: 'absent', state: 'stopped', webEndpoint: null } },
@@ -41,6 +41,22 @@ export const relayHandlers = [
     try { window.sessionStorage.setItem('openalice.demo.relay-target', JSON.stringify(target)) } catch { /* Demo can run without storage. */ }
     generation += 1
     return HttpResponse.json({ schemaVersion: 1, generation, target, switching: false })
+  }),
+  http.post('/relay/v1/machines/plan', async ({ request }) => {
+    const input = await request.json() as { mode: 'add' | 'upgrade'; machineKey?: string; sshTarget?: string; label?: string }
+    await delay(700)
+    const machine = machines.find((entry) => entry.key === input.machineKey)
+    return HttpResponse.json({
+      id: 'demo-machine-plan', mode: input.mode,
+      machine: { key: machine?.key ?? null, label: machine?.displayName ?? input.label ?? 'Cloud Linux', sshTarget: machine?.sshTarget ?? input.sshTarget ?? 'alice@cloud.example.com' },
+      platform: 'macOS arm64', installedVersion: '0.93.1', targetVersion: '0.94.1',
+      runtime: 'running · cli-server', actions: ['update remote OpenAlice CLI', 'restart remote OpenAlice Server'], blocker: null, deferredUpdate: false,
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    })
+  }),
+  http.post('/relay/v1/machines/apply', async () => {
+    await delay(900)
+    return HttpResponse.json({ machineKey: 'studio' })
   }),
 ]
 

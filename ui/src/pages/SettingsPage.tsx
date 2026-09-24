@@ -28,6 +28,7 @@ import {
 import { useEffectivePreferenceSlot } from '../theme/useEffectiveTheme'
 import { AboutOpenAliceSection } from '../components/settings/AboutOpenAliceSection'
 import { AliceLocationSection } from '../components/settings/AliceLocationSection'
+import { MachineManagementSection } from '../components/settings/MachineManagementSection'
 import { Button } from '../components/ui/button'
 import { getBackendConnection } from '../auth/backendConnection'
 import { useRelayConnection } from '../hooks/useRelayConnection'
@@ -848,6 +849,7 @@ function SettingsSection() {
   return (
     <div className="mx-auto w-full max-w-[1100px]">
       <AliceLocationSection />
+      <MachineManagementSection />
 
       {/* Installation and update ownership */}
       <AboutOpenAliceSection />

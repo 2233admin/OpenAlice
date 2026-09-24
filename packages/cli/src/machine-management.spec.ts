@@ -1,0 +1,79 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import { MachineManagement } from './machine-management.ts'
+import type { MachineRegistrySummary } from './machine-registry.ts'
+
+const machine = { key: 'cloud', id: '0123456789abcdef0123456789abcdef', displayName: 'Cloud', sshTarget: 'alice@example.com', isDefault: false, enabled: true }
+const registry = (): MachineRegistrySummary => ({ defaultMachine: 'local', machines: [] })
+const remotePlan = () => ({
+  blocker: '', mutations: ['update remote OpenAlice CLI', 'restart remote OpenAlice Server'],
+  cliVersion: '0.93.1', cliPath: '/usr/bin/openalice', runtimeClass: 'running',
+  runtimeOwner: 'cli-server', platform: 'Linux x64', activationRoute: 'stop-start',
+  installSource: { cliVersion: '0.94.1' }, deferredCliUpdate: false,
+})
+
+describe('GUI Machine management', () => {
+  it('does not modify or register a Machine until its reviewed plan is applied', async () => {
+    const register = vi.fn(async () => machine)
+    const inspect = vi.fn(async () => ({ key: 'cloud', connection: 'online' }))
+    const connectRemote = vi.fn(async (options: { planOnly: boolean; batchMode: boolean }, deps: {
+      onPlan(plan: ReturnType<typeof remotePlan>): void
+      confirmPlan(): Promise<boolean>
+    }) => {
+      deps.onPlan(remotePlan())
+      if (!options.planOnly) expect(await deps.confirmPlan()).toBe(true)
+      return 0
+    })
+    const management = new MachineManagement({
+      readRegistry: async () => registry(),
+      connectRemote: connectRemote as never,
+      register: register as never,
+      inspect: inspect as never,
+    })
+    const preview = await management.plan({ mode: 'add', label: 'Cloud', sshTarget: 'alice@example.com' })
+    expect(preview.actions).toContain('restart remote OpenAlice Server')
+    expect(register).not.toHaveBeenCalled()
+    expect(connectRemote.mock.calls[0]?.[0]).toMatchObject({ planOnly: true, batchMode: true })
+    await expect(management.apply(preview.id)).resolves.toMatchObject({ machineKey: 'cloud' })
+    expect(connectRemote.mock.calls[1]?.[0]).toMatchObject({ planOnly: false, batchMode: true })
+    expect(register).toHaveBeenCalledOnce()
+    expect(inspect).toHaveBeenCalledWith(machine)
+    await expect(management.apply(preview.id)).rejects.toThrow('expired')
+  })
+
+  it('rejects a changed remote plan before any apply action or registry write', async () => {
+    let current = remotePlan()
+    const register = vi.fn(async () => machine)
+    const connectRemote = vi.fn(async (_options: unknown, deps: { onPlan(plan: ReturnType<typeof remotePlan>): void }) => {
+      deps.onPlan(current)
+      return 0
+    })
+    const management = new MachineManagement({ readRegistry: async () => registry(), connectRemote: connectRemote as never, register: register as never })
+    const preview = await management.plan({ mode: 'add', label: 'Cloud', sshTarget: 'alice@example.com' })
+    current = { ...remotePlan(), mutations: ['take over existing Runtime'] }
+    await expect(management.apply(preview.id)).rejects.toThrow('Remote state changed')
+    expect(register).not.toHaveBeenCalled()
+  })
+
+  it('uses the saved SSH profile for an upgrade without adding a second Machine', async () => {
+    const register = vi.fn()
+    const connectRemote = vi.fn(async (options: { destination: string; planOnly: boolean }, deps: {
+      onPlan(plan: ReturnType<typeof remotePlan>): void
+      confirmPlan(): Promise<boolean>
+    }) => {
+      expect(options.destination).toBe(machine.sshTarget)
+      deps.onPlan(remotePlan())
+      if (!options.planOnly) await deps.confirmPlan()
+      return 0
+    })
+    const management = new MachineManagement({
+      readRegistry: async () => ({ defaultMachine: 'local', machines: [machine] }),
+      connectRemote: connectRemote as never,
+      register: register as never,
+      inspect: async () => ({ key: 'cloud', connection: 'online' }) as never,
+    })
+    const preview = await management.plan({ mode: 'upgrade', machineKey: 'cloud' })
+    await management.apply(preview.id)
+    expect(register).not.toHaveBeenCalled()
+  })
+})
