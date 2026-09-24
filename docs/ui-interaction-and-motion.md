@@ -223,6 +223,11 @@ keeps the OpenAlice wordmark without a second portrait. Its trailing ellipsis
 appears on hover, keyboard focus, or while open; touch keeps it visible. The
 trigger highlights for interaction, not because a Settings or Connectors page
 is active. Settings remains an item inside this application menu.
+Settings and Developer use the same page-owned secondary navigator as Inbox
+and Market from 768px upward. At 768–959px, entering Settings temporarily
+collapses the activity rail so the category navigator and content fit together;
+manual expansion is allowed and leaving Settings restores the user's saved rail
+preference. Below 768px, the category navigator remains a drawer.
 
 Connectors is accessed from the bottom Your Alice menu, alongside Settings and
 above Appearance, not from the primary activity list or its layout editor.
