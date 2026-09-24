@@ -680,6 +680,7 @@ export const zhHant: Resources = {
   settings: {
     title: '設定',
     group: {
+      general: '一般',
       workspace: '工作區',
       agents: '智慧體',
       operations: '運行',
@@ -845,7 +846,7 @@ export const zhHant: Resources = {
       saveError: '無法儲存或驗證這個 bash.exe 路徑。',
     },
     category: {
-      general: '一般',
+      general: '概覽',
       appearance: '外觀',
       activityBar: '側欄',
       aiProvider: 'AI 供應方',

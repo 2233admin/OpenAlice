@@ -12,6 +12,7 @@ import {
   Compass,
   FlaskConical,
   Layers3,
+  LayoutDashboard,
   LineChart,
   ListChecks,
   Newspaper,
@@ -21,7 +22,6 @@ import {
   Plug,
   ScrollText,
   ShieldCheck,
-  SlidersHorizontal,
   Wrench,
 } from 'lucide-react'
 import { useAliceProject } from '../hooks/useAliceProject'
@@ -65,9 +65,9 @@ function writeDeveloperDisclosure(expanded: boolean): void {
 
 const CATEGORY_GROUPS = [
   {
-    labelKey: 'settings.group.workspace',
+    labelKey: 'settings.group.general',
     items: [
-      { labelKey: 'settings.category.general', category: 'general', Icon: SlidersHorizontal },
+      { labelKey: 'settings.category.general', category: 'general', Icon: LayoutDashboard },
       { labelKey: 'settings.category.appearance', category: 'appearance', Icon: Palette },
       { labelKey: 'pet.title', category: 'pet', Icon: Ghost },
       { labelKey: 'settings.category.activityBar', category: 'activity-bar', Icon: PanelLeft },

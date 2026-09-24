@@ -673,6 +673,7 @@ export const ja: Resources = {
   settings: {
     title: '設定',
     group: {
+      general: '一般',
       workspace: 'ワークスペース',
       agents: 'エージェント',
       operations: '運用',
@@ -838,7 +839,7 @@ export const ja: Resources = {
       saveError: 'bash.exe のパスを保存または検証できませんでした。',
     },
     category: {
-      general: '一般',
+      general: '概要',
       appearance: '外観',
       activityBar: 'アクティビティバー',
       aiProvider: 'AI プロバイダー',

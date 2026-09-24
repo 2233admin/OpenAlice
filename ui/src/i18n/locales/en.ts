@@ -683,6 +683,7 @@ export const en = {
   settings: {
     title: 'Settings',
     group: {
+      general: 'General',
       workspace: 'Workspace',
       agents: 'Agents',
       operations: 'Operations',
@@ -848,7 +849,7 @@ export const en = {
       saveError: 'Could not save or validate this bash.exe path.',
     },
     category: {
-      general: 'General',
+      general: 'Overview',
       appearance: 'Appearance',
       activityBar: 'Activity bar',
       aiProvider: 'AI Provider',
