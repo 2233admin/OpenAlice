@@ -43,12 +43,14 @@ export const relayHandlers = [
     return HttpResponse.json({ schemaVersion: 1, generation, target, switching: false })
   }),
   http.post('/relay/v1/machines/plan', async ({ request }) => {
-    const input = await request.json() as { mode: 'add' | 'upgrade'; machineKey?: string; sshTarget?: string; label?: string }
+    const input = await request.json() as { mode: 'add' | 'upgrade'; machineKey?: string; projectKey?: string; sshTarget?: string; label?: string }
     await delay(700)
     const machine = machines.find((entry) => entry.key === input.machineKey)
+    const project = machine?.projects.find((entry) => entry.key === input.projectKey)
     return HttpResponse.json({
       id: 'demo-machine-plan', mode: input.mode,
       machine: { key: machine?.key ?? null, label: machine?.displayName ?? input.label ?? 'Cloud Linux', sshTarget: machine?.sshTarget ?? input.sshTarget ?? 'alice@cloud.example.com' },
+      project: project ? { key: project.key, displayName: project.displayName } : null,
       platform: 'macOS arm64', installedVersion: '0.93.1', targetVersion: '0.94.1',
       runtime: 'running · cli-server', actions: ['update remote OpenAlice CLI', 'restart remote OpenAlice Server'], blocker: null, deferredUpdate: false,
       expiresAt: new Date(Date.now() + 300_000).toISOString(),

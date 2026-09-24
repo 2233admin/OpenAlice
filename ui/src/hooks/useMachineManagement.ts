@@ -6,6 +6,7 @@ export interface MachinePlan {
   id: string
   mode: 'add' | 'upgrade'
   machine: { key: string | null; label: string; sshTarget: string }
+  project: { key: string; displayName: string } | null
   platform: string
   installedVersion: string
   targetVersion: string
@@ -23,6 +24,7 @@ export type MachinePlanInput = {
   sshPort?: number
   identityFile?: string
   machineKey?: string
+  projectKey?: string
 }
 
 async function relayMutation<T>(path: string, input: unknown): Promise<T> {

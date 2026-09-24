@@ -13,8 +13,8 @@ import {
 } from './machine-registry.ts'
 
 type PlanMode = 'add' | 'upgrade'
-type PlanInput = { mode: PlanMode; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string }
-type ResolvedInput = { mode: PlanMode; profile: RegisterMachineProfileInput; machine?: RegisteredMachine }
+type PlanInput = { mode: PlanMode; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string; projectKey?: string }
+type ResolvedInput = { mode: PlanMode; profile: RegisterMachineProfileInput; machine?: RegisteredMachine; project?: { key: string; displayName: string; home: string } }
 type RemotePlan = {
   blocker: string
   mutations: string[]
@@ -32,6 +32,7 @@ export interface MachinePlanPreview {
   id: string
   mode: PlanMode
   machine: { key: string | null; label: string; sshTarget: string }
+  project: { key: string; displayName: string } | null
   platform: string
   installedVersion: string
   targetVersion: string
@@ -85,6 +86,7 @@ export class MachineManagement {
       id,
       mode: resolved.mode,
       machine: { key: resolved.machine?.key ?? null, label: resolved.profile.label, sshTarget: resolved.profile.sshTarget },
+      project: resolved.project ? { key: resolved.project.key, displayName: resolved.project.displayName } : null,
       platform: plan.platform,
       installedVersion: plan.cliVersion,
       targetVersion: plan.installSource.cliVersion,
@@ -105,7 +107,7 @@ export class MachineManagement {
     try {
       const current = await this.resolve({
         mode: saved.input.mode,
-        ...(saved.input.mode === 'add' ? saved.input.profile : { machineKey: saved.input.machine?.key }),
+        ...(saved.input.mode === 'add' ? saved.input.profile : { machineKey: saved.input.machine?.key, projectKey: saved.input.project?.key }),
       })
       if (JSON.stringify(current) !== JSON.stringify(saved.input)) {
         throw new Error('The Machine profile changed. Probe again before applying changes.')
@@ -139,7 +141,16 @@ export class MachineManagement {
       const machine = registry.machines.find((entry) => entry.key === input.machineKey)
       if (!machine) throw new Error('The selected Machine is no longer registered.')
       requireMachineEnabled(machine)
-      return { mode: 'upgrade', machine, profile: {
+      let project: ResolvedInput['project']
+      if (input.projectKey !== undefined) {
+        const inventory = await (this.options.inspect ?? inspectRegisteredMachine)(machine)
+        const selected = inventory.projects.find((entry) => entry.key === input.projectKey)
+        if (!selected || !selected.available || selected.runtime.class !== 'running') {
+          throw new Error('The selected AliceProject is no longer running on this Machine. Refresh and probe again.')
+        }
+        project = { key: selected.key, displayName: selected.displayName, home: selected.home }
+      }
+      return { mode: 'upgrade', machine, project, profile: {
         label: machine.displayName, sshTarget: machine.sshTarget,
         ...(machine.sshPort === undefined ? {} : { sshPort: machine.sshPort }),
         ...(machine.identityFile === undefined ? {} : { identityFile: machine.identityFile }),
@@ -161,6 +172,7 @@ export class MachineManagement {
     const argv = [input.profile.sshTarget, '--no-open']
     if (input.profile.sshPort !== undefined) argv.push('--ssh-port', String(input.profile.sshPort))
     if (input.profile.identityFile !== undefined) argv.push('--identity', input.profile.identityFile)
+    if (input.project) argv.push('--home', input.project.home)
     const options = parseRemoteArgs(argv)
     return { ...options, batchMode: true, planOnly }
   }

@@ -7,6 +7,7 @@
  * site so production builds (where it's undefined) don't ReferenceError.
  */
 declare const __OPENALICE_DEV_BACKEND_PORT__: number
+declare const __OPENALICE_UI_VERSION__: string
 
 interface ImportMetaEnv {
   readonly VITE_DEMO_MODE?: string
@@ -46,7 +47,7 @@ interface Window {
       returnIntegrated(): Promise<void>
     }
     readonly desktopMachine?: {
-      plan(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string }): Promise<unknown>
+      plan(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string; projectKey?: string }): Promise<unknown>
       apply(id: string): Promise<unknown>
     }
     readonly companion?: {

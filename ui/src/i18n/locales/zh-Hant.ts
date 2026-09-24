@@ -729,6 +729,10 @@ export const zhHant: Resources = {
     },
     about: {
       title: '關於 OpenAlice',
+      clientLabel: '目前用戶端',
+      backendLabel: '已連線後端',
+      backendRelayManaged: '可透過本機用戶端檢查此後端的 SSH 升級計畫。',
+      reviewBackendUpdate: '檢查後端升級',
       description: '查看目前安裝、執行環境、更新狀態，以及此處開啟的 AliceProject。',
       connection: {
         title: '後端連線',

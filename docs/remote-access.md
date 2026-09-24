@@ -259,7 +259,11 @@ one of its running AliceProjects. It cannot select an arbitrary SSH address.
 Settings → General now offers the same Machine preparation from the local GUI:
 enter an SSH target and label, run a read-only probe, review the exact planned
 actions, then approve apply. Saved Machines can be re-probed for updates against
-the local CLI release. The relay rechecks the plan immediately before apply and
+the local CLI release. Select a running AliceProject when reviewing an update so
+the plan targets that project's data home rather than the Machine's default
+home. About OpenAlice shows the client and connected backend versions separately
+and exposes the same review for the current remote AliceProject. The relay
+rechecks the plan immediately before apply and
 rejects changed remote facts; a restarted Runtime can briefly disconnect an
 active connection. These are local relay controls, never AliceProject API calls.
 `--machine` routes CLI commands through a saved profile. `--remote` keeps
@@ -356,8 +360,9 @@ opens a stable loopback origin and selects a running local Project when one is
 available. If none is running, its connection screen can still discover
 Machines and Projects. Settings lists only registered SSH Machines and lets the
 user select a running Project. A stopped Project must first be started through
-CLI lifecycle controls. The relay itself does not start, stop, update, or take
-over a Runtime. One relay has one active target shared by all its tabs. A
+CLI lifecycle controls. Selecting or switching Projects does not start, stop,
+update, or take over a Runtime; the separate, explicitly approved Machine
+update plan can restart one. One relay has one active target shared by all its tabs. A
 switch probes the candidate and verifies its AliceProject identity before
 promotion; failure retains the old target. Success closes old WebSockets,
 increments a target generation, and reloads all tabs. Switching never stops

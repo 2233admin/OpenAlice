@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   checkVersion: vi.fn(),
   backendUnavailable: false,
   backendRecoveryGeneration: 0,
+  relayTarget: null as { machine: string; machineName: string; project: string; projectName: string } | null,
 }))
 
 vi.mock('../../api', () => ({
@@ -23,6 +24,14 @@ vi.mock('../../auth/AuthContext', () => ({
   useBackendRecoverySignal: () => ({
     backendUnavailable: mocks.backendUnavailable,
     backendRecoveryGeneration: mocks.backendRecoveryGeneration,
+  }),
+}))
+
+vi.mock('../../hooks/useRelayConnection', () => ({
+  useRelayConnection: () => ({
+    status: { schemaVersion: 1, target: mocks.relayTarget },
+    fleet: [], loading: false, busy: false, error: null,
+    refresh: vi.fn(async () => undefined),
   }),
 }))
 
@@ -49,6 +58,7 @@ beforeAll(async () => {
 beforeEach(() => {
   mocks.backendUnavailable = false
   mocks.backendRecoveryGeneration = 0
+  mocks.relayTarget = null
   mocks.getVersion.mockResolvedValue(currentVersion)
   mocks.checkVersion.mockResolvedValue(currentVersion)
 })
@@ -57,9 +67,35 @@ afterEach(() => {
   cleanup()
   Reflect.deleteProperty(window, 'openAlice')
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('AboutOpenAliceSection', () => {
+  it('separates the client and connected backend versions and reviews that project\'s upgrade', async () => {
+    mocks.relayTarget = { machine: 'cloud', machineName: 'Cloud Linux', project: 'main-cloud', projectName: 'Main Cloud' }
+    mocks.getVersion.mockResolvedValue({ ...currentVersion, current: '0.93.1', channel: 'dev', updateAuthority: 'cli' })
+    const preview = {
+      id: 'plan-1', mode: 'upgrade', machine: { key: 'cloud', label: 'Cloud Linux', sshTarget: 'alice@cloud' },
+      project: { key: 'main-cloud', displayName: 'Main Cloud' }, platform: 'Linux x64',
+      installedVersion: '0.93.1', targetVersion: '0.94.1-beta', runtime: 'running · cli-server',
+      actions: ['update remote OpenAlice CLI', 'restart remote OpenAlice Server'], blocker: null,
+      deferredUpdate: false, expiresAt: '2026-09-24T10:00:00Z',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => preview }))
+    render(<AboutOpenAliceSection />)
+
+    const client = screen.getByText('This app').parentElement
+    expect(client?.textContent).not.toContain('v0.93.1')
+    expect(await screen.findByText('v0.93.1')).toBeTruthy()
+    expect(screen.getByText('Cloud Linux')).toBeTruthy()
+    expect(screen.getByText(/Main Cloud/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Review backend update' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/relay/v1/machines/plan', expect.objectContaining({
+      body: JSON.stringify({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'main-cloud' }),
+    })))
+    expect(await screen.findByText('0.93.1 → 0.94.1-beta')).toBeTruthy()
+  })
+
   it('shows the running version and performs a forced manual check', async () => {
     render(<AboutOpenAliceSection />)
 
