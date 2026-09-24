@@ -677,6 +677,7 @@ export const ja: Resources = {
       workspace: 'ワークスペース',
       agents: 'エージェント',
       operations: '運用',
+      data: 'データ',
       connections: '接続',
       developer: '開発者向け',
     },

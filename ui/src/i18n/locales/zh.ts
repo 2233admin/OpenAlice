@@ -675,6 +675,7 @@ export const zh: Resources = {
       workspace: '工作区',
       agents: '智能体',
       operations: '运行',
+      data: '数据',
       connections: '连接',
       developer: '开发者',
     },

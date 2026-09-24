@@ -687,6 +687,7 @@ export const en = {
       workspace: 'Workspace',
       agents: 'Agents',
       operations: 'Operations',
+      data: 'Data',
       connections: 'Connections',
       developer: 'Developer',
     },

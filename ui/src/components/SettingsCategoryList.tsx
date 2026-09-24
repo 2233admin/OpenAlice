@@ -80,6 +80,8 @@ const CATEGORY_GROUPS = [
       { labelKey: 'settings.category.aiProvider', category: 'ai-provider', Icon: Bot },
       { labelKey: 'settings.category.agentRuntimes', category: 'agent-runtimes', Icon: Cpu },
       { labelKey: 'settings.category.tools', category: 'tools', Icon: Wrench },
+      { labelKey: 'distribution.title', category: 'workspace-injection', Icon: Code2 },
+      { labelKey: 'settings.category.harness', category: 'harness', Icon: Layers3 },
     ],
   },
   {
@@ -87,9 +89,14 @@ const CATEGORY_GROUPS = [
     items: [
       { labelKey: 'settings.category.trading', category: 'trading', Icon: CandlestickChart },
       { labelKey: 'settings.category.issues', category: 'issues', Icon: ListChecks },
-      { labelKey: 'distribution.title', category: 'workspace-injection', Icon: Code2 },
-      { labelKey: 'settings.category.harness', category: 'harness', Icon: Layers3 },
       { labelKey: 'settings.category.beta', category: 'beta', Icon: FlaskConical },
+    ],
+  },
+  {
+    labelKey: 'settings.group.data',
+    items: [
+      { labelKey: 'settings.category.marketData', category: 'market-data', Icon: LineChart },
+      { labelKey: 'settings.category.newsSources', category: 'news-collector', Icon: Newspaper },
     ],
   },
   {
@@ -97,8 +104,6 @@ const CATEGORY_GROUPS = [
     items: [
       { labelKey: 'settings.category.connectors', category: 'connectors', Icon: Plug },
       { labelKey: 'settings.category.mcpServer', category: 'mcp', Icon: Plug },
-      { labelKey: 'settings.category.marketData', category: 'market-data', Icon: LineChart },
-      { labelKey: 'settings.category.newsSources', category: 'news-collector', Icon: Newspaper },
     ],
   },
 ] as const
