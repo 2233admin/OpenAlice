@@ -69,8 +69,15 @@ const CATEGORY_GROUPS = [
     items: [
       { labelKey: 'settings.category.general', category: 'general', Icon: LayoutDashboard },
       { labelKey: 'settings.category.agentPermissions', category: 'agent-permissions', Icon: Gauge },
-      { labelKey: 'settings.category.appearance', category: 'appearance', Icon: Palette },
       { labelKey: 'pet.title', category: 'pet', Icon: Ghost },
+      { labelKey: 'settings.category.issues', category: 'issues', Icon: ListChecks },
+      { labelKey: 'settings.category.beta', category: 'beta', Icon: FlaskConical },
+    ],
+  },
+  {
+    labelKey: 'settings.group.appearance',
+    items: [
+      { labelKey: 'settings.category.appearance', category: 'appearance', Icon: Palette },
       { labelKey: 'settings.category.activityBar', category: 'activity-bar', Icon: PanelLeft },
     ],
   },
@@ -85,11 +92,9 @@ const CATEGORY_GROUPS = [
     ],
   },
   {
-    labelKey: 'settings.group.operations',
+    labelKey: 'settings.group.trading',
     items: [
       { labelKey: 'settings.category.trading', category: 'trading', Icon: CandlestickChart },
-      { labelKey: 'settings.category.issues', category: 'issues', Icon: ListChecks },
-      { labelKey: 'settings.category.beta', category: 'beta', Icon: FlaskConical },
     ],
   },
   {

@@ -267,14 +267,14 @@ const settingsCategoryTitle: Record<
   string
 > = {
   general: 'Overview',
-  appearance: 'Appearance',
+  appearance: 'Skin',
   pet: 'Pet',
   'activity-bar': 'Activity bar',
   'ai-provider': 'AI Provider',
   'agent-runtimes': 'Agent runtimes',
   'agent-permissions': 'Mode',
   tools: 'Tools',
-  trading: 'Trading',
+  trading: 'Broker',
   issues: 'Issues',
   harness: 'Harness',
   connectors: 'Connectors',
