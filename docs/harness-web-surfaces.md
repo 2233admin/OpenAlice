@@ -108,8 +108,9 @@ arbitrary user target exists. The route is published after readiness and
 removed before termination. Generation checks make stale exits harmless.
 
 - Browser/server reuses Alice's loopback HTTP listener.
-- `pnpm dev` connects Studio to the Guardian-injected Alice backend port; Vite
-  owns no route table.
+- `pnpm dev` routes Studio through the local Web relay to its selected Runtime;
+  Vite owns no route table. `pnpm dev:no-relay` uses the Guardian-injected Alice
+  backend port directly for the older diagnostic path.
 - SSH browser uses the same Alice tunnel. The opaque Host header crosses it, so
   no second `ssh -L` is needed.
 - Electron keeps `app://openalice` for the product UI. Alice opens an ephemeral
