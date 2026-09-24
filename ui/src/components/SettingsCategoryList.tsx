@@ -68,7 +68,6 @@ const CATEGORY_GROUPS = [
     labelKey: 'settings.group.general',
     items: [
       { labelKey: 'settings.category.general', category: 'general', Icon: LayoutDashboard },
-      { labelKey: 'settings.category.agentPermissions', category: 'agent-permissions', Icon: Gauge },
       { labelKey: 'pet.title', category: 'pet', Icon: Ghost },
       { labelKey: 'settings.category.issues', category: 'issues', Icon: ListChecks },
       { labelKey: 'settings.category.beta', category: 'beta', Icon: FlaskConical },
@@ -94,6 +93,7 @@ const CATEGORY_GROUPS = [
   {
     labelKey: 'settings.group.trading',
     items: [
+      { labelKey: 'settings.category.agentPermissions', category: 'agent-permissions', Icon: Gauge },
       { labelKey: 'settings.category.trading', category: 'trading', Icon: CandlestickChart },
     ],
   },

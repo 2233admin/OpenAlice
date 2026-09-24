@@ -2721,7 +2721,7 @@ export const zh: Resources = {
   tradingReview: {
     description: '在将智能体暂存的券商写入推送到交易场所前进行审阅。',
     liteTitle: '精简模式下无法使用“交易即 Git”。',
-    liteDescription: '精简模式会保持 UTA 断开，因此 Alice 无法审阅券商写入提案。请在“设置 → 模式”中切换交易模式以连接 UTA。',
+    liteDescription: '精简模式会保持 UTA 断开，因此 Alice 无法审阅券商写入提案。请在“设置 → 交易 → 模式”中切换交易模式以连接 UTA。',
     noAccounts: '没有交易账户',
     noAccountsDescription: '请先在“设置 → 交易 → 券商”中连接券商账户，再审批暂存的券商写入。',
     pushFailed: '推送失败',
