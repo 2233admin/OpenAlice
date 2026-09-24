@@ -12,6 +12,9 @@ export interface RelayMachine {
   key: string
   displayName: string
   connection: string
+  sshTarget?: string | null
+  platform?: string | null
+  cliVersion?: string | null
   projects: RelayProject[]
   issue: { message: string } | null
 }

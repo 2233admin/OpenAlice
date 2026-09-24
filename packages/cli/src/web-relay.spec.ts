@@ -97,6 +97,8 @@ describe('WebRelay', () => {
     expect(await (await fetch(`${origin}/api/who`)).json()).toEqual({ label: 'B', cookie: null })
     const attack = await fetch(`${origin}/relay/v1/connect`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ machine: 'local', project: 'a' }) })
     expect(attack.status).toBe(403)
+    const machineAttack = await fetch(`${origin}/relay/v1/machines/apply`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ id: 'stolen-plan' }) })
+    expect(machineAttack.status).toBe(403)
     expect(relay.status.target).toMatchObject({ machine: 'local', project: 'b' })
   })
 

@@ -7,6 +7,7 @@ import { extname, join, resolve, sep } from 'node:path'
 
 import { isBunStandalone, resolveBunResourceRoot } from './bun-standalone.mjs'
 import { inspectMachineFleet, inspectRegisteredMachine, inspectLocalMachine, type MachineInventory } from './machine-inventory.ts'
+import { MachineManagement } from './machine-management.ts'
 import { readMachineRegistrySummary, requireMachineEnabled } from './machine-registry.ts'
 import { connectSsh, openBrowser, waitForOpenAlice } from './ssh-connect.mjs'
 
@@ -50,6 +51,7 @@ export class WebRelay {
   private readonly sockets = new Set<Duplex>()
   private readonly server = createServer((req, res) => void this.handle(req, res))
   private readonly options: WebRelayOptions
+  private readonly machines = new MachineManagement()
   private origin = ''
 
   constructor(options: WebRelayOptions = {}) {
@@ -67,6 +69,15 @@ export class WebRelay {
   }
 
   get originUrl(): string { return this.origin }
+
+  get machineOperationBusy(): boolean { return this.machines.busy }
+
+  planMachine(input: Parameters<MachineManagement['plan']>[0]) { return this.machines.plan(input) }
+
+  applyMachine(id: string) {
+    if (this.switching) throw new Error('Wait for the location switch to finish before applying a Machine plan.')
+    return this.machines.apply(id)
+  }
 
   /** Internal selection for local presenters; never serialized to the browser. */
   get activeSelection() {
@@ -120,6 +131,7 @@ export class WebRelay {
   }
 
   async connect(machineKey: string, projectKey: string): Promise<void> {
+    if (this.machines.busy) throw new Error('Wait for the Machine operation to finish before switching locations.')
     if (this.switching) throw new Error('Another connection switch is in progress.')
     this.switching = true
     this.announce()
@@ -239,6 +251,15 @@ export class WebRelay {
       if (url.pathname === '/relay/v1/status' && req.method === 'GET') return json(res, 200, this.status)
       if (url.pathname === '/relay/v1/fleet' && req.method === 'GET') {
         return json(res, 200, await (this.options.inspectFleet ?? inspectMachineFleet)())
+      }
+      if (url.pathname === '/relay/v1/machines/plan' && req.method === 'POST') {
+        const input = await readJsonBody(req) as Parameters<MachineManagement['plan']>[0]
+        return json(res, 200, await this.planMachine(input))
+      }
+      if (url.pathname === '/relay/v1/machines/apply' && req.method === 'POST') {
+        const input = await readJsonBody(req) as { id?: unknown }
+        if (typeof input.id !== 'string') return json(res, 400, { error: 'A reviewed Machine plan is required.' })
+        return json(res, 200, await this.applyMachine(input.id))
       }
       if (url.pathname === '/relay/v1/events' && req.method === 'GET') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })

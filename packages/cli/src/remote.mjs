@@ -160,6 +160,7 @@ export async function connectRemote(options, dependencies = {}) {
     installBaseUrl: dependencies.installBaseUrl ?? env['OPENALICE_REMOTE_TEST_INSTALL_BASE_URL'] ?? '',
     repositoryUrl,
   })
+  await dependencies.onPlan?.(plan)
   stdout.write(formatRemotePlan(plan))
 
   if (plan.blocker) throw new Error(plan.blocker)
