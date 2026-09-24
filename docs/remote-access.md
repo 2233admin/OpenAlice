@@ -161,6 +161,19 @@ rebuilds and verifies its SSH forward before marking the operation successful.
 The upgrade dialog remains visible during that planned outage; an unrelated
 backend outage still uses the normal reconnect screen.
 
+The relay status also reports `targetConnection` separately from the selected
+target. A selected target is not proof that its forwarded Runtime is reachable:
+an SSH process can keep listening locally while requests to the remote Runtime
+reset. A failed proxied request or SSH process exit starts one relay-owned reconnection attempt for
+all browser tabs. The relay rebuilds and verifies the forward, then increments
+its target generation so clients retire stale sockets and caches. Failed
+attempts back off and retry; `/relay/v1/reconnect` lets the GUI request an
+immediate attempt without changing the selected Machine or AliceProject.
+The GUI connection lifecycle probes the relay independently of Alice's auth
+heartbeat and shows separate recovery guidance for local relay loss, a selected
+location that is reconnecting or unavailable, and a local Runtime outage.
+Fleet discovery is not part of the heartbeat, because it may require SSH.
+
 ## AliceProject Transfer
 
 The first transfer direction is local AliceProject to a registered SSH
