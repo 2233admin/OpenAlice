@@ -12,6 +12,7 @@ import { displayNameForUTA } from '../../lib/uta-account-filter'
 import { Dialog } from './Dialog'
 import { AccountReadinessBadge, BrokerSupportGate } from './BrokerPackGate'
 import { SchemaFormFields } from './SchemaFormFields'
+import { UTADataSourceRow } from './UTADataSourceRow'
 
 /**
  * UTA configuration dialog — edits credentials, guards, enabled state.
@@ -152,16 +153,11 @@ export function EditUTADialog({ uta, preset, health, readiness, policy, installi
               onChange={(v) => setDraft(d => ({ ...d, readOnly: v }))}
             />
           </div>
-          <div className="mb-3 flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
-            <div className="min-w-0">
-              <div className="text-[12px] font-medium text-foreground">Use as data source</div>
-              <div className="text-[11px] text-muted-foreground leading-relaxed">
-                Include this UTA in K-line and contract discovery.
-              </div>
-            </div>
-            <Toggle
+          <div className="mb-3">
+            <UTADataSourceRow
+              name="Use as data source"
               ariaLabel="Use as data source"
-              size="sm"
+              description="Include this UTA in K-line and contract discovery. Saved with the account changes below."
               checked={draft.asVendor !== false}
               onChange={(v) => setDraft(d => ({ ...d, asVendor: v }))}
             />
