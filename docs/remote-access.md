@@ -155,6 +155,10 @@ The relay owns a single active Machine operation. Its
 restart, and verification stages to the GUI; Electron reads the same relay
 state through IPC. A running operation blocks location switching, and its
 final failure is retained so the dialog can show the installer error.
+When an upgrade restarts the currently selected remote Runtime, the relay
+rebuilds and verifies its SSH forward before marking the operation successful.
+The upgrade dialog remains visible during that planned outage; an unrelated
+backend outage still uses the normal reconnect screen.
 
 ## AliceProject Transfer
 

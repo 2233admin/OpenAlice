@@ -18,6 +18,7 @@ import { Button } from '../components/ui/button'
 import { useWindowsChrome } from '../hooks/useWindowsChrome'
 import { useRelayConnection } from '../hooks/useRelayConnection'
 import { RelayConnectionChooser } from '../components/RelayConnectionChooser'
+import { BackendOutageOverlayContext } from './BackendOutageOverlayContext'
 
 export function BackendUnavailableScreen({
   retry,
@@ -95,6 +96,8 @@ export function BackendUnavailableScreen({
 export function AuthGate({ children }: { children: ReactNode }) {
   useWindowsChrome()
   const { state, backendUnavailable, refresh } = useAuth()
+  const [upgradeDialogActive, setUpgradeDialogActive] = useState(false)
+  const showBackendOutage = backendUnavailable && !upgradeDialogActive
 
   if (state === 'loading' && !backendUnavailable) {
     return (
@@ -113,15 +116,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
         : null
 
   return (
+    <BackendOutageOverlayContext.Provider value={setUpgradeDialogActive}>
     <div className="relative h-full min-h-0">
       <div
-        aria-hidden={backendUnavailable ? true : undefined}
-        inert={backendUnavailable ? true : undefined}
+        aria-hidden={showBackendOutage ? true : undefined}
+        inert={showBackendOutage ? true : undefined}
         className="h-full min-h-0"
       >
         {content}
       </div>
-      {backendUnavailable && <BackendUnavailableScreen retry={refresh} />}
+      {showBackendOutage && <BackendUnavailableScreen retry={refresh} />}
     </div>
+    </BackendOutageOverlayContext.Provider>
   )
 }

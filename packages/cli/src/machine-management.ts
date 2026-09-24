@@ -110,7 +110,10 @@ export class MachineManagement {
     }
   }
 
-  async apply(id: string): Promise<{ machineKey: string; inventory: Awaited<ReturnType<typeof inspectRegisteredMachine>> }> {
+  async apply(
+    id: string,
+    afterApply?: (result: { machineKey: string; inventory: Awaited<ReturnType<typeof inspectRegisteredMachine>> }) => Promise<void>,
+  ): Promise<{ machineKey: string; inventory: Awaited<ReturnType<typeof inspectRegisteredMachine>> }> {
     if (this.applying) throw new Error('Another Machine operation is in progress.')
     const saved = this.plans.get(id)
     if (!saved || saved.expiresAt < Date.now()) throw new Error('This Machine plan expired. Probe again before applying changes.')
@@ -146,6 +149,7 @@ export class MachineManagement {
         ? await (this.options.register ?? registerMachineProfile)(current.profile)
         : current.machine!
       const inventory = await (this.options.inspect ?? inspectRegisteredMachine)(machine)
+      await afterApply?.({ machineKey: machine.key, inventory })
       if (this.operation) this.operation = { ...this.operation, phase: 'succeeded', stage: 'verifying' }
       return { machineKey: machine.key, inventory }
     } catch (error) {

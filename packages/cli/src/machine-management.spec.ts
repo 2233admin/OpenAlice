@@ -64,6 +64,30 @@ describe('GUI Machine management', () => {
     await expect(management.apply(preview.id)).rejects.toThrow('expired')
   })
 
+  it('keeps an operation running until the presentation transport is restored', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const callbackEntered = new Promise<void>((resolve) => { entered = resolve })
+    const management = new MachineManagement({
+      readRegistry: async () => registry(),
+      connectRemote: (async (_options: unknown, deps: { onPlan(plan: ReturnType<typeof remotePlan>): void }) => {
+        deps.onPlan(remotePlan())
+        return 0
+      }) as never,
+      register: async () => machine,
+      inspect: async () => ({ key: 'cloud', connection: 'online' }) as never,
+    })
+    const preview = await management.plan({ mode: 'add', label: 'Cloud', sshTarget: 'alice@example.com' })
+    const applying = management.apply(preview.id, async () => { entered(); await gate })
+    await callbackEntered
+    expect(management.currentOperation?.phase).toBe('running')
+    expect(management.busy).toBe(true)
+    release()
+    await applying
+    expect(management.currentOperation?.phase).toBe('succeeded')
+  })
+
   it('rejects a changed remote plan before any apply action or registry write', async () => {
     let current = remotePlan()
     const register = vi.fn(async () => machine)
