@@ -34,6 +34,8 @@ export interface UpdateLifecycle {
   workspaceStates: WorkspaceUpdateState[]
   checking: boolean
   error: string | null
+  versionError: string | null
+  updatesUnsupported: boolean
   availableCount: number
   refresh(): Promise<void>
   savePreferences(next: UpdatePreferences): Promise<void>
@@ -59,9 +61,16 @@ function newerRelease(latest: string | null | undefined, current: string): boole
 
 async function getUpdates(): Promise<UpdateResponse> {
   const response = await fetch('/api/updates')
+  // Pre-update-lifecycle Runtimes serve their SPA for unknown /api routes.
+  // That fallback is HTTP 200 text/html, so response.ok alone is insufficient.
+  if (response.status === 404 || response.status === 405 || response.headers?.get('content-type')?.includes('text/html')) {
+    throw new UnsupportedUpdatesError()
+  }
   if (!response.ok) throw new Error(`Update status failed: HTTP ${response.status}`)
   return response.json() as Promise<UpdateResponse>
 }
+
+class UnsupportedUpdatesError extends Error {}
 
 export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const { workspaces, refresh: refreshWorkspaces } = useWorkspaces()
@@ -72,18 +81,29 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const [workspaceStates, setWorkspaceStates] = useState<WorkspaceUpdateState[]>([])
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [versionError, setVersionError] = useState<string | null>(null)
+  const [updatesUnsupported, setUpdatesUnsupported] = useState(false)
+  const updatesSupported = useRef<boolean | null>(null)
   const nativeAutoChecked = useRef(false)
   const observedWorkspaceUpdates = useRef(new Set<string>())
 
   const load = useCallback(async (force = false) => {
     if (backendUnavailable) return
     if (force) setChecking(true)
+    let snapshot: UpdateResponse | null = null
     try {
-      const response = force
+      // Once an older Runtime is identified, avoid POSTing a check endpoint it
+      // cannot implement. GET remains a cheap capability probe after upgrades.
+      const response = force && updatesSupported.current !== false
         ? await fetch('/api/updates/check', { method: 'POST' })
         : null
+      if (response && (response.status === 404 || response.status === 405 || response.headers?.get('content-type')?.includes('text/html'))) {
+        throw new UnsupportedUpdatesError()
+      }
       if (response && !response.ok) throw new Error(`Update check failed: HTTP ${response.status}`)
-      const snapshot = response ? await response.json() as UpdateResponse : await getUpdates()
+      snapshot = response ? await response.json() as UpdateResponse : await getUpdates()
+      updatesSupported.current = true
+      setUpdatesUnsupported(false)
       setPreferences(snapshot.preferences)
       setWorkspaceStates(snapshot.workspaces)
       let refreshedWorkspace = false
@@ -95,23 +115,28 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
         refreshedWorkspace = true
       }
       if (refreshedWorkspace) void refreshWorkspaces().catch(() => undefined)
-      {
-        const next = force ? await api.version.check() : snapshot.preferences.autoCheckApp ? await api.version.get() : await api.version.current()
-        setVersionInfo(next)
-        if (force) await window.openAlice?.updater?.checkForUpdates().catch(() => undefined)
-        else if (!nativeAutoChecked.current && window.openAlice?.updater) {
-          if (snapshot.preferences.autoCheckApp) {
-            nativeAutoChecked.current = true
-            void window.openAlice.updater.checkForUpdates().catch(() => undefined)
-          }
-        }
-      }
       setError(null)
     } catch (cause) {
+      const unsupported = cause instanceof UnsupportedUpdatesError
+      updatesSupported.current = unsupported ? false : updatesSupported.current
+      setUpdatesUnsupported(unsupported)
       setPreferences(null)
-      setVersionInfo(null)
       setWorkspaceStates([])
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(unsupported ? null : cause instanceof Error ? cause.message : String(cause))
+    }
+    // Version identity is independent of the newer Workspace update API.
+    // Keep it visible when an older remote Runtime cannot serve /api/updates.
+    try {
+      const next = force ? await api.version.check() : snapshot?.preferences.autoCheckApp === false ? await api.version.current() : await api.version.get()
+      setVersionInfo(next)
+      setVersionError(null)
+      if (force) await window.openAlice?.updater?.checkForUpdates().catch(() => undefined)
+      else if (!nativeAutoChecked.current && window.openAlice?.updater && snapshot?.preferences.autoCheckApp !== false) {
+        nativeAutoChecked.current = true
+        void window.openAlice.updater.checkForUpdates().catch(() => undefined)
+      }
+    } catch (cause) {
+      setVersionError(cause instanceof Error ? cause.message : String(cause))
     }
     finally { if (force) setChecking(false) }
   }, [backendUnavailable, refreshWorkspaces])
@@ -121,6 +146,9 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       setPreferences(null)
       setVersionInfo(null)
       setWorkspaceStates([])
+      setVersionError(null)
+      setUpdatesUnsupported(false)
+      updatesSupported.current = null
       return
     }
     let active = true
@@ -185,9 +213,9 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   }, [nativeStatus, preferences, versionInfo, workspaceStates, workspaces])
 
   const value = useMemo<UpdateLifecycle>(() => ({
-    preferences, versionInfo, nativeStatus, workspaceStates, checking, error, availableCount,
+    preferences, versionInfo, nativeStatus, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount,
     refresh: () => load(true), savePreferences,
-  }), [preferences, versionInfo, nativeStatus, workspaceStates, checking, error, availableCount, load, savePreferences])
+  }), [preferences, versionInfo, nativeStatus, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, load, savePreferences])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 

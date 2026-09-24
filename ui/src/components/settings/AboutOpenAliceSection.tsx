@@ -19,7 +19,7 @@ export function AboutOpenAliceSection() {
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
-  const { versionInfo, nativeStatus, error: versionError, checking, refresh: refreshUpdates } = useUpdateLifecycle()
+  const { versionInfo, nativeStatus, versionError, checking, refresh: refreshUpdates } = useUpdateLifecycle()
   const machines = useMachineManagement()
   useEffect(() => { if (machines.operation?.mode === 'upgrade' && machines.operation.phase === 'running' && shouldRestoreUpgradeDialog('about')) setUpgradeOpen(true) }, [machines.operation?.id, machines.operation?.phase, machines.operation?.mode])
   const target = machines.status?.target

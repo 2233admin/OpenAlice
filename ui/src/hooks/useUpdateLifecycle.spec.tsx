@@ -87,6 +87,22 @@ it('exposes status loading failures without inventing an update', async () => {
   expect(result.current.availableCount).toBe(0)
 })
 
+it('keeps version identity when an older backend serves HTML for the updates API', async () => {
+  const fetchMock = vi.fn(async (input: string) => input === '/api/updates/activate'
+    ? { ok: true }
+    : { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }), json: async () => { throw new SyntaxError('HTML is not JSON') } })
+  vi.stubGlobal('fetch', fetchMock)
+  const { result } = renderHook(useUpdateLifecycle, { wrapper })
+  await waitFor(() => expect(result.current.versionInfo?.current).toBe(version.current))
+  expect(result.current.updatesUnsupported).toBe(true)
+  expect(result.current.error).toBeNull()
+  expect(result.current.versionError).toBeNull()
+  expect(result.current.preferences).toBeNull()
+  await result.current.refresh()
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/updates/check', { method: 'POST' })
+  expect(mocks.checkVersion).toHaveBeenCalledOnce()
+})
+
 it('drops the previous backend identity while disconnected and loads the recovered backend', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
   const { result, rerender } = renderHook(useUpdateLifecycle, { wrapper })

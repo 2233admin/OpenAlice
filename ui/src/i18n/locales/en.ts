@@ -877,6 +877,8 @@ export const en = {
       autoPrediction: 'Auto-update Auto Prediction', autoPredictionDescription: 'Follow its newest stable upstream release. A blocked merge waits for review.',
       client: 'This app', backend: 'Connected backend', available: 'v{{version}} available', currentOrManaged: 'Current or managed externally',
       blocked: 'Needs review', failed: 'Check failed', review: 'Review {{name}} update',
+      unsupported: 'This backend does not provide Workspace update controls yet. Its version is still available above; update the backend to enable automatic Workspace updates.',
+      unavailable: 'Update status unavailable',
     },
     machines: {
       title: 'Machines', description: 'Inspect and manage the computers where Alice can work.', saved: 'Saved Machines',

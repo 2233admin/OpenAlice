@@ -865,6 +865,8 @@ export const zh: Resources = {
       autoPrediction: '自动更新 Auto Prediction', autoPredictionDescription: '跟随上游最新稳定版本；合并受阻时等待审阅。',
       client: '当前前端', backend: '已连接的后端', available: 'v{{version}} 可更新', currentOrManaged: '已是最新或由外部管理',
       blocked: '需要处理', failed: '检查失败', review: '查看 {{name}} 的更新',
+      unsupported: '当前后端尚不支持 Workspace 更新管理。上方仍会显示后端版本；升级后端后可使用 Workspace 自动更新。',
+      unavailable: '更新状态不可用',
     },
     machines: {
       title: '机器', description: '探测和管理 Alice 可以工作的机器。', saved: '已保存的机器',

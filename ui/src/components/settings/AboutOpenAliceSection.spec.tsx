@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../hooks/useUpdateLifecycle', () => ({
   useUpdateLifecycle: () => ({ versionInfo: mocks.versionInfo, nativeStatus: mocks.nativeStatus,
-    error: mocks.versionError, checking: false, refresh: vi.fn(async () => undefined) }),
+    versionError: mocks.versionError, checking: false, refresh: vi.fn(async () => undefined) }),
 }))
 
 vi.mock('../../hooks/useRelayConnection', () => ({
