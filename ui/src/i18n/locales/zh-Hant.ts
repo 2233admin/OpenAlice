@@ -684,6 +684,7 @@ export const zhHant: Resources = {
       workspace: '工作區',
       agents: '智慧體',
       operations: '運行',
+      data: '資料',
       connections: '連接',
       developer: '開發者',
     },
