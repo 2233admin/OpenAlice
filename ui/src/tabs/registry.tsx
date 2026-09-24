@@ -266,7 +266,7 @@ const settingsCategoryTitle: Record<
   Extract<ViewSpec, { kind: 'settings' }>['params']['category'],
   string
 > = {
-  general: 'Settings',
+  general: 'Overview',
   appearance: 'Appearance',
   pet: 'Pet',
   'activity-bar': 'Activity bar',

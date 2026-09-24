@@ -671,6 +671,7 @@ export const zh: Resources = {
   settings: {
     title: '设置',
     group: {
+      general: '通用',
       workspace: '工作区',
       agents: '智能体',
       operations: '运行',
@@ -836,7 +837,7 @@ export const zh: Resources = {
       saveError: '无法保存或验证这个 bash.exe 路径。',
     },
     category: {
-      general: '通用',
+      general: '概览',
       appearance: '外观',
       activityBar: '侧栏',
       aiProvider: 'AI 提供方',
