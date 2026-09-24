@@ -732,6 +732,10 @@ export const en = {
     },
     about: {
       title: 'About OpenAlice',
+      clientLabel: 'This app',
+      backendLabel: 'Connected backend',
+      backendRelayManaged: 'Use this local client to review an SSH upgrade plan for the connected backend.',
+      reviewBackendUpdate: 'Review backend update',
       description: 'Installation, runtime, update status, and the AliceProject currently open here.',
       connection: {
         title: 'Backend connection',

@@ -720,6 +720,10 @@ export const zh: Resources = {
     },
     about: {
       title: '关于 OpenAlice',
+      clientLabel: '当前客户端',
+      backendLabel: '已连接后端',
+      backendRelayManaged: '可通过本地客户端检查此后端的 SSH 升级计划。',
+      reviewBackendUpdate: '检查后端升级',
       description: '查看当前安装、运行环境、更新状态，以及此处打开的 AliceProject。',
       connection: {
         title: '后端连接',

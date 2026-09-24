@@ -722,6 +722,10 @@ export const ja: Resources = {
     },
     about: {
       title: 'OpenAlice について',
+      clientLabel: 'このアプリ',
+      backendLabel: '接続中のバックエンド',
+      backendRelayManaged: 'ローカルクライアントから、このバックエンドの SSH 更新計画を確認できます。',
+      reviewBackendUpdate: 'バックエンドの更新を確認',
       description: 'インストール、実行環境、更新状況、現在開いている AliceProject を確認します。',
       connection: {
         title: 'バックエンド接続',

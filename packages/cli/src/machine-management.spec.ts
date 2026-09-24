@@ -76,4 +76,29 @@ describe('GUI Machine management', () => {
     await management.apply(preview.id)
     expect(register).not.toHaveBeenCalled()
   })
+
+  it('targets the selected running AliceProject home and rejects a changed project before applying', async () => {
+    let home = '/srv/alice/main-cloud'
+    const inspect = vi.fn(async () => ({
+      projects: [{ key: 'main-cloud', displayName: 'Main Cloud', home, available: true, runtime: { class: 'running' } }],
+    }))
+    const connectRemote = vi.fn(async (options: { remoteHome: string }, deps: { onPlan(plan: ReturnType<typeof remotePlan>): void }) => {
+      expect(options.remoteHome).toBe('/srv/alice/main-cloud')
+      deps.onPlan(remotePlan())
+      return 0
+    })
+    const management = new MachineManagement({
+      readRegistry: async () => ({ defaultMachine: 'local', machines: [machine] }),
+      inspect: inspect as never,
+      connectRemote: connectRemote as never,
+    })
+    const preview = await management.plan({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'main-cloud' })
+    expect(preview.project?.displayName).toBe('Main Cloud')
+    await management.apply(preview.id)
+    expect(connectRemote).toHaveBeenCalledTimes(2)
+    const nextPreview = await management.plan({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'main-cloud' })
+    home = '/srv/alice/moved'
+    await expect(management.apply(nextPreview.id)).rejects.toThrow('profile changed')
+    expect(connectRemote).toHaveBeenCalledTimes(3)
+  })
 })

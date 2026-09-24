@@ -15,6 +15,7 @@ export interface RelayMachine {
   sshTarget?: string | null
   platform?: string | null
   cliVersion?: string | null
+  defaultProject?: string | null
   projects: RelayProject[]
   issue: { message: string } | null
 }

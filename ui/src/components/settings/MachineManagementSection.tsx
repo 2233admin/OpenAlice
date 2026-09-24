@@ -2,38 +2,10 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, ChevronDown, LoaderCircle, Monitor, Plus, RefreshCw, Server, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { useMachineManagement, type MachinePlan } from '../../hooks/useMachineManagement'
+import { useMachineManagement } from '../../hooks/useMachineManagement'
 import { Button } from '../ui/button'
 import { ConfigSection, inputClass } from '../form'
-
-function PlanReview({ plan, busy, onApply }: { plan: MachinePlan; busy: boolean; onApply: () => void }) {
-  const { t } = useTranslation()
-  const upgrade = plan.mode === 'upgrade'
-  return <div className="mt-4 min-w-0 rounded-lg border border-border bg-background/70 p-3 sm:p-4" aria-live="polite">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-[13px] font-semibold">{t('settings.machines.review', 'Review Machine plan')}</p>
-        <p className="mt-1 break-all text-[12px] text-muted-foreground">{plan.machine.label} · {plan.machine.sshTarget} · {plan.platform}</p>
-      </div>
-      <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-        {plan.installedVersion} → {plan.targetVersion}
-      </span>
-    </div>
-    <dl className="mt-3 grid gap-2 text-[12px] sm:grid-cols-2">
-      <div><dt className="text-muted-foreground">{t('settings.machines.runtime', 'Runtime')}</dt><dd className="mt-0.5">{plan.runtime}</dd></div>
-      <div><dt className="text-muted-foreground">{t('settings.machines.plannedActions', 'Planned actions')}</dt><dd className="mt-0.5">{plan.actions.length ? plan.actions.join(' · ') : t('settings.machines.noChanges', 'No remote changes')}</dd></div>
-    </dl>
-    {plan.blocker ? <p role="alert" className="mt-3 flex gap-2 rounded-md bg-destructive/10 p-2.5 text-[12px] text-destructive"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />{plan.blocker}</p>
-      : plan.deferredUpdate ? <p className="mt-3 text-[12px] text-muted-foreground">{t('settings.machines.deferred', 'This Runtime can be reused, but its update cannot be activated safely.')}</p>
-        : plan.actions.some((action) => /restart|stop|take over|replace/i.test(action)) ? <p className="mt-3 text-[12px] text-muted-foreground">{t('settings.machines.restartNotice', 'Running sessions may disconnect while the remote Runtime restarts.')}</p> : null}
-    {!plan.blocker && (plan.mode === 'add' || plan.actions.length > 0) && <div className="mt-4 flex justify-end">
-      <Button type="button" size="sm" disabled={busy} onClick={onApply} className="min-h-9">
-        {busy && <LoaderCircle className="mr-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden />}
-        {busy ? t('settings.machines.applying', 'Applying and verifying…') : upgrade ? t('settings.machines.approveUpgrade', 'Approve update') : t('settings.machines.approveAdd', 'Approve and add Machine')}
-      </Button>
-    </div>}
-  </div>
-}
+import { MachinePlanReview } from './MachinePlanReview'
 
 /** Inline Machine management for the local relay and Electron's main process. */
 export function MachineManagementSection() {
@@ -44,6 +16,7 @@ export function MachineManagementSection() {
   const [label, setLabel] = useState('')
   const [sshPort, setSshPort] = useState('')
   const [identityFile, setIdentityFile] = useState('')
+  const [upgradeProjects, setUpgradeProjects] = useState<Record<string, string>>({})
 
   useEffect(() => { void manager.refresh() }, [manager.refresh])
   if (!manager.status && !window.openAlice?.desktopConnection) return null
@@ -87,7 +60,7 @@ export function MachineManagementSection() {
           <span role="status" className="text-[12px] text-muted-foreground">{manager.probing ? t('settings.machines.probing', 'Checking SSH and remote Runtime…') : t('settings.machines.sshNote', 'Uses this computer’s OpenSSH configuration.')}</span>
           <Button type="button" size="sm" disabled={busy || !sshTarget.trim() || !label.trim() || Boolean(sshPort.trim() && (!Number.isInteger(Number(sshPort)) || Number(sshPort) < 1 || Number(sshPort) > 65535))} onClick={probeAdd} className="min-h-9 shrink-0">{manager.probing && <LoaderCircle className="mr-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden />}{t('settings.machines.probe', 'Probe Machine')}</Button>
         </div>
-        {manager.plan?.mode === 'add' && <PlanReview plan={manager.plan} busy={manager.applying} onApply={apply} />}
+        {manager.plan?.mode === 'add' && <MachinePlanReview plan={manager.plan} busy={manager.applying} onApply={apply} />}
       </div>}
 
       <div className="min-h-[4rem] divide-y divide-border/70" aria-busy={manager.loading}>
@@ -96,6 +69,11 @@ export function MachineManagementSection() {
           const open = expanded === machine.key
           const online = machine.connection === 'online' || machine.connection === 'local'
           const current = manager.status?.target?.machine === machine.key
+          const runningProjects = machine.projects.filter((project) => project.available && project.runtime.class === 'running')
+          const selectedProject = runningProjects.find((project) => project.key === upgradeProjects[machine.key])
+            ?? runningProjects.find((project) => current && project.key === manager.status?.target?.project)
+            ?? runningProjects.find((project) => project.key === machine.defaultProject)
+            ?? runningProjects[0]
           return <div key={machine.key} className="min-w-0">
             <button type="button" disabled={local || manager.applying} onClick={() => show(machine.key)} aria-expanded={local ? undefined : open} className="flex min-h-[4.25rem] w-full min-w-0 items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-secondary/50 focus-visible:outline-none focus-visible:[box-shadow:var(--oa-focus-shadow)] disabled:cursor-default sm:px-4">
               {local ? <Monitor className="size-4 shrink-0 text-muted-foreground" aria-hidden /> : <Server className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
@@ -106,10 +84,10 @@ export function MachineManagementSection() {
             {open && !local && <div className="border-t border-border/70 bg-secondary/20 px-3 py-4 sm:px-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 text-[12px]"><p className="font-medium">{t('settings.machines.health', 'Health & installation')}</p><p className="flex justify-between gap-2"><span className="text-muted-foreground">SSH</span><span>{machine.connection}</span></p><p className="flex justify-between gap-2"><span className="text-muted-foreground">OpenAlice CLI</span><span>{machine.cliVersion ?? '—'}</span></p><p className="flex justify-between gap-2"><span className="text-muted-foreground">AliceProjects</span><span>{machine.projects.length}</span></p></div>
-                <div className="flex min-w-0 flex-col justify-between gap-3"><div><p className="text-[12px] font-medium">{t('settings.machines.update', 'Check for update')}</p><p className="mt-1 text-[12px] text-muted-foreground">{t('settings.machines.updateDescription', 'Compare this Machine with the local OpenAlice release and review a safe plan.')}</p></div><Button type="button" variant="outline" size="sm" disabled={busy} className="min-h-9 self-start" onClick={() => void manager.probe({ mode: 'upgrade', machineKey: machine.key }).catch(() => undefined)}>{manager.probing ? <LoaderCircle className="mr-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <RefreshCw className="mr-2 size-4" aria-hidden />}{t('settings.machines.checkUpdate', 'Probe and review')}</Button></div>
+                <div className="flex min-w-0 flex-col justify-between gap-3"><div><p className="text-[12px] font-medium">{t('settings.machines.update', 'Check for update')}</p><p className="mt-1 text-[12px] text-muted-foreground">{t('settings.machines.updateDescription', 'Compare this Machine with the local OpenAlice release and review a safe plan.')}</p>{runningProjects.length > 0 && <label className="mt-2 block text-[12px] text-muted-foreground">AliceProject<select className={`${inputClass} mt-1`} value={selectedProject?.key ?? ''} onChange={(event) => { setUpgradeProjects((value) => ({ ...value, [machine.key]: event.target.value })); manager.clearPlan() }}>{runningProjects.map((project) => <option key={project.key} value={project.key}>{project.displayName}</option>)}</select></label>}</div><Button type="button" variant="outline" size="sm" disabled={busy} className="min-h-9 self-start" onClick={() => void manager.probe({ mode: 'upgrade', machineKey: machine.key, ...(selectedProject ? { projectKey: selectedProject.key } : {}) }).catch(() => undefined)}>{manager.probing ? <LoaderCircle className="mr-2 size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <RefreshCw className="mr-2 size-4" aria-hidden />}{t('settings.machines.checkUpdate', 'Probe and review')}</Button></div>
               </div>
               {machine.issue && <p role="status" className="mt-3 text-[12px] text-muted-foreground">{machine.issue.message}</p>}
-              {manager.plan?.mode === 'upgrade' && manager.plan.machine.key === machine.key && <PlanReview plan={manager.plan} busy={manager.applying} onApply={apply} />}
+              {manager.plan?.mode === 'upgrade' && manager.plan.machine.key === machine.key && <MachinePlanReview plan={manager.plan} busy={manager.applying} onApply={apply} />}
             </div>}
           </div>
         })}
