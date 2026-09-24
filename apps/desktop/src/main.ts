@@ -1106,6 +1106,10 @@ app.whenReady().then(async () => {
     if (typeof id !== 'string') throw new Error('A reviewed Machine plan is required.')
     return (await ensureRelay()).applyMachine(id)
   })
+  ipcMain.handle('openalice:desktop-machine:operation', async (event) => {
+    fromMainWindow(event.sender.id)
+    return (await ensureRelay()).machineOperation
+  })
   ipcMain.handle('openalice:desktop-connection:connect', async (event, machine: unknown, project: unknown) => {
     fromMainWindow(event.sender.id)
     if (localRuntimeSuspended) throw new Error('Use the relay connection chooser while in separated mode.')

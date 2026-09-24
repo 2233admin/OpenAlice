@@ -135,6 +135,7 @@ const api = {
   desktopMachine: {
     plan: (input: unknown) => ipcRenderer.invoke('openalice:desktop-machine:plan', input),
     apply: (id: string) => ipcRenderer.invoke('openalice:desktop-machine:apply', id),
+    operation: () => ipcRenderer.invoke('openalice:desktop-machine:operation'),
   },
   companion: {
     getSound: () => ipcRenderer.invoke('openalice:companion:sound:get'),

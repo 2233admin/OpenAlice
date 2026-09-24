@@ -137,7 +137,10 @@ protocol is deferred until the local/server boundary is stable.
    CLI's recorded installer source and logical release identity. Stable, beta,
    and pinned installs may use different target archives for different
    operating systems or architectures; each host verifies its own archive
-   checksum and content identity. Dev additionally requires the invoking CLI to
+   checksum and content identity. A source checkout without installed metadata
+   selects the exact beta release when its CLI version is a beta; the read-only
+   plan blocks contradictory channel/version metadata before any SSH write.
+   Dev additionally requires the invoking CLI to
    match the latest completed dev manifest and selects the remote target from
    that same manifest. Bootstrap does not carry a second SSH-only installer,
    upload Runtime bytes through SSH, install Node/build tools, clone a checkout,
@@ -146,6 +149,12 @@ protocol is deferred until the local/server boundary is stable.
 10. Shared Runtime facts use presentation-neutral names and versioned schemas.
     Browser layout, Electron chrome, modal state, and other client UI state do
     not become server truth.
+
+The relay owns a single active Machine operation. Its
+`/relay/v1/machines/operation` snapshot reports the actual check, install,
+restart, and verification stages to the GUI; Electron reads the same relay
+state through IPC. A running operation blocks location switching, and its
+final failure is retained so the dialog can show the installer error.
 
 ## AliceProject Transfer
 

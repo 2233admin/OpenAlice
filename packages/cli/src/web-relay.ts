@@ -71,6 +71,7 @@ export class WebRelay {
   get originUrl(): string { return this.origin }
 
   get machineOperationBusy(): boolean { return this.machines.busy }
+  get machineOperation() { return this.machines.currentOperation }
 
   planMachine(input: Parameters<MachineManagement['plan']>[0]) { return this.machines.plan(input) }
 
@@ -255,6 +256,9 @@ export class WebRelay {
       if (url.pathname === '/relay/v1/machines/plan' && req.method === 'POST') {
         const input = await readJsonBody(req) as Parameters<MachineManagement['plan']>[0]
         return json(res, 200, await this.planMachine(input))
+      }
+      if (url.pathname === '/relay/v1/machines/operation' && req.method === 'GET') {
+        return json(res, 200, this.machineOperation)
       }
       if (url.pathname === '/relay/v1/machines/apply' && req.method === 'POST') {
         const input = await readJsonBody(req) as { id?: unknown }
