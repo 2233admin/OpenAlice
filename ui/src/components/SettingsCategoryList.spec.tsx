@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SettingsCategoryList } from './SettingsCategoryList'
@@ -65,6 +65,20 @@ afterEach(() => {
 })
 
 describe('SettingsCategoryList', () => {
+  it('places Mode directly after Overview in General, outside Agents', () => {
+    render(<SettingsCategoryList />)
+
+    const general = screen.getByText('settings.group.general').parentElement?.parentElement
+    const agents = screen.getByText('settings.group.agents').parentElement?.parentElement
+    expect(general).not.toBeNull()
+    expect(agents).not.toBeNull()
+    expect(within(general!).getAllByRole('button').slice(0, 2).map((button) => button.textContent)).toEqual([
+      'settings.category.general',
+      'settings.category.agentPermissions',
+    ])
+    expect(within(agents!).queryByRole('button', { name: 'settings.category.agentPermissions' })).toBeNull()
+  })
+
   it('owns the vertical scroll region for long settings navigation', () => {
     render(<SettingsCategoryList />)
 

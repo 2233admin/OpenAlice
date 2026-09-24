@@ -854,7 +854,7 @@ export const en = {
       activityBar: 'Activity bar',
       aiProvider: 'AI Provider',
       agentRuntimes: 'Agent runtimes',
-      agentPermissions: 'Agent Permissions',
+      agentPermissions: 'Mode',
       tools: 'Tools',
       trading: 'Trading',
       issues: 'Issues',
@@ -1030,9 +1030,9 @@ export const en = {
       allowAiTradingConfirmCta: 'Enable auto-trading',
     },
     agentPermissions: {
-      title: 'Agent Permissions',
-      loadErrorTitle: 'Couldn’t load Agent Permissions',
-      loadErrorDescription: 'OpenAlice could not read the current configuration. Your permissions have not been changed.',
+      title: 'Mode',
+      loadErrorTitle: 'Couldn’t load mode settings',
+      loadErrorDescription: 'OpenAlice could not read the current configuration. No settings were changed.',
       mode: {
         title: 'Trading mode',
         description: 'Global broker capability for Alice and workspace agents.',
@@ -1976,7 +1976,7 @@ export const en = {
     shortcuts: {
       title: 'Shortcuts',
       aiProvider: 'AI Provider',
-      agentPermissions: 'Agent Permissions',
+      agentPermissions: 'Mode',
       tradingSettings: 'Trading Settings',
       askAlice: 'Ask Alice',
     },
@@ -2747,12 +2747,12 @@ export const en = {
   },
   tradingModeGate: {
     liteMode: 'Lite mode',
-    openPermissions: 'Open Agent Permissions',
+    openPermissions: 'Open Mode settings',
   },
   tradingReview: {
     description: 'Review broker writes staged by agents before they are pushed to the venue.',
     liteTitle: 'Trading as Git is unavailable in Lite mode.',
-    liteDescription: 'Lite mode keeps UTA disconnected, so Alice cannot review broker write proposals. Change the trading mode in Agent Permissions to connect UTA.',
+    liteDescription: 'Lite mode keeps UTA disconnected, so Alice cannot review broker write proposals. Change the trading mode in Settings → Mode to connect UTA.',
     noAccounts: 'No trading accounts',
     noAccountsDescription: 'Connect a broker account in Settings → Trading before approving staged broker writes.',
     pushFailed: 'Push failed',

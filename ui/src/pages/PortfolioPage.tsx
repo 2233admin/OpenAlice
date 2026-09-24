@@ -302,7 +302,7 @@ export function PortfolioPage() {
             {!tradingModeLoading && tradingMode === 'lite' ? (
               <TradingModeGate
                 title="Portfolio is unavailable in Lite mode."
-                description="Lite mode keeps UTA disconnected, so there are no broker accounts, positions, or equity snapshots to show. Change the trading mode in Agent Permissions to connect UTA."
+                description="Lite mode keeps UTA disconnected, so there are no broker accounts, positions, or equity snapshots to show. Change the trading mode in Settings → Mode to connect UTA."
               />
             ) : <>
             {refreshError && (

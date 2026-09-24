@@ -4,6 +4,7 @@ import {
   Activity,
   Bot,
   Ghost,
+  Gauge,
   Camera,
   Cpu,
   CandlestickChart,
@@ -21,7 +22,6 @@ import {
   PanelsTopLeft,
   Plug,
   ScrollText,
-  ShieldCheck,
   Wrench,
 } from 'lucide-react'
 import { useAliceProject } from '../hooks/useAliceProject'
@@ -68,6 +68,7 @@ const CATEGORY_GROUPS = [
     labelKey: 'settings.group.general',
     items: [
       { labelKey: 'settings.category.general', category: 'general', Icon: LayoutDashboard },
+      { labelKey: 'settings.category.agentPermissions', category: 'agent-permissions', Icon: Gauge },
       { labelKey: 'settings.category.appearance', category: 'appearance', Icon: Palette },
       { labelKey: 'pet.title', category: 'pet', Icon: Ghost },
       { labelKey: 'settings.category.activityBar', category: 'activity-bar', Icon: PanelLeft },
@@ -78,7 +79,6 @@ const CATEGORY_GROUPS = [
     items: [
       { labelKey: 'settings.category.aiProvider', category: 'ai-provider', Icon: Bot },
       { labelKey: 'settings.category.agentRuntimes', category: 'agent-runtimes', Icon: Cpu },
-      { labelKey: 'settings.category.agentPermissions', category: 'agent-permissions', Icon: ShieldCheck },
       { labelKey: 'settings.category.tools', category: 'tools', Icon: Wrench },
     ],
   },

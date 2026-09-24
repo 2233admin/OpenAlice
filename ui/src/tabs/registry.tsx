@@ -272,7 +272,7 @@ const settingsCategoryTitle: Record<
   'activity-bar': 'Activity bar',
   'ai-provider': 'AI Provider',
   'agent-runtimes': 'Agent runtimes',
-  'agent-permissions': 'Agent Permissions',
+  'agent-permissions': 'Mode',
   tools: 'Tools',
   trading: 'Trading',
   issues: 'Issues',
