@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
-import { parseOmpModels } from './omp-models.js'
+import { parseNativeModels } from './native-model-discovery.js'
+const parseOmpModels = (stdout: string) => parseNativeModels('omp', JSON.parse(stdout).models)
 
 it('keeps native provider-qualified selectors and projects only display fields', () => {
   expect(parseOmpModels(JSON.stringify({ models: [

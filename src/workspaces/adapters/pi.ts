@@ -1,3 +1,4 @@
+import { discoverNativeModels } from '../native-model-discovery.js';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -233,6 +234,7 @@ function piHeadlessApproveArgs(env: Readonly<Record<string, string | undefined>>
  * transcriptDiscovery stays 'none'.
  */
 export const piAdapter: CliAdapter = {
+  discoverModels: (cwd) => discoverNativeModels('pi', 'pi', cwd),
   id: 'pi',
   displayName: 'Pi',
   binary: 'pi',
