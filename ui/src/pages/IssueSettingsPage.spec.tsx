@@ -22,6 +22,10 @@ vi.mock('../contexts/workspaces-context', () => ({
   }),
 }))
 
+vi.mock('../components/workspace/SessionTakeoverDialog', () => ({
+  SessionTakeoverSettings: () => <div>Idle time before automatic handoff</div>,
+}))
+
 afterEach(() => {
   vi.clearAllMocks()
   cleanup()

@@ -12,7 +12,6 @@ import {
   Code2,
   Compass,
   FlaskConical,
-  Layers3,
   LayoutDashboard,
   LineChart,
   ListChecks,
@@ -22,6 +21,7 @@ import {
   PanelsTopLeft,
   Plug,
   ScrollText,
+  Eye,
   Wrench,
 } from 'lucide-react'
 import { useAliceProject } from '../hooks/useAliceProject'
@@ -78,6 +78,7 @@ const CATEGORY_GROUPS = [
     items: [
       { labelKey: 'settings.category.appearance', category: 'appearance', Icon: Palette },
       { labelKey: 'settings.category.activityBar', category: 'activity-bar', Icon: PanelLeft },
+      { labelKey: 'settings.category.visibility', category: 'visibility', Icon: Eye },
     ],
   },
   {
@@ -87,7 +88,6 @@ const CATEGORY_GROUPS = [
       { labelKey: 'settings.category.agentRuntimes', category: 'agent-runtimes', Icon: Cpu },
       { labelKey: 'settings.category.tools', category: 'tools', Icon: Wrench },
       { labelKey: 'distribution.title', category: 'workspace-injection', Icon: Code2 },
-      { labelKey: 'settings.category.harness', category: 'harness', Icon: Layers3 },
     ],
   },
   {

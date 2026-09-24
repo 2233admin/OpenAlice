@@ -8,7 +8,7 @@ import { PortfolioPage } from '../pages/PortfolioPage'
 import { TradingAsGitPage } from '../pages/TradingAsGitPage'
 import { IssuePage } from '../pages/IssuePage'
 import { IssueSettingsPage } from '../pages/IssueSettingsPage'
-import { HarnessSettingsPage } from '../pages/HarnessSettingsPage'
+import { SessionVisibilitySettingsPage } from '../pages/SessionVisibilitySettingsPage'
 import { IssueDetailPage } from '../pages/IssueDetailPage'
 import { TrackedIssueDetailPage } from '../pages/TrackedIssueDetailPage'
 import { OfficePage } from '../pages/OfficePage'
@@ -276,7 +276,7 @@ const settingsCategoryTitle: Record<
   tools: 'Tools',
   trading: 'Broker',
   issues: 'Issues',
-  harness: 'Harness',
+  visibility: 'Visibility',
   connectors: 'Connectors',
   mcp: 'MCP Server',
   'market-data': 'Market Data',
@@ -297,7 +297,7 @@ function SettingsRouter({ spec }: ViewProps<'settings'>) {
     case 'tools': return <ToolsSettingsPage />
     case 'trading': return <TradingPage />
     case 'issues': return <IssueSettingsPage />
-    case 'harness': return <HarnessSettingsPage />
+    case 'visibility': return <SessionVisibilitySettingsPage />
     case 'connectors': return <ConnectorsPage />
     case 'mcp': return <MCPPage />
     case 'market-data': return <MarketDataPage />

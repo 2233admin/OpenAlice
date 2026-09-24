@@ -842,6 +842,7 @@ export const zh: Resources = {
       general: '概览',
       appearance: '皮肤',
       activityBar: '侧栏',
+      visibility: '可见性',
       aiProvider: 'AI 提供方',
       agentRuntimes: 'Agent 运行时',
       agentPermissions: '模式',
@@ -990,6 +991,7 @@ export const zh: Resources = {
       },
     },
     harness: {
+      releasesSection: 'Workspace 模板版本',
       title: 'Harness',
       description: 'Ask Alice、Auto Quant 和 Auto Prediction 都是 Workspace Harness：桌子就是任务，由 coding agent 在里面干活。',
       shared: '共用 Harness 行为',
@@ -998,7 +1000,7 @@ export const zh: Resources = {
       showHeadlessBornDescription: '默认关闭。从 Issue 或 API 跑起来、从未打开过 TUI / Web 的 Session 留在 Issue 页，不进桌子名册。',
       showIssueAttached: '显示挂靠 Issue 的 Session',
       showIssueAttachedDescription: '默认关闭。开启后，普通 Issue 当前持有或占用的 Session 会进入共享桌子名册；Connector 聊天 Session 始终隐藏。',
-      showUnverifiedReleases: '显示未经认证的 Harness 版本',
+      showUnverifiedReleases: '包含未经验证的模板版本',
       showUnverifiedReleasesDescription: '默认关闭。开启后 OpenAlice 也会检查上游仓库最新的稳定版本；这些版本会明确标记，且仍需审阅后升级。',
       askAlice: 'Ask Alice',
       askAliceDescription: '对话 Workspace 及其 Session 名册。',
@@ -1007,6 +1009,10 @@ export const zh: Resources = {
       autoPrediction: 'Auto Prediction',
       autoPredictionDescription: 'Auto Prediction Workspace、Session 和源码版本。',
       usesSharedRoster: '沿用上面的共用 Harness 行为；专属选项可以放在这一节。',
+    },
+    visibility: {
+      description: '设置哪些 Session 出现在 Workspace 列表中；不会改变 Session 的归属或运行状态。',
+      sessions: 'Session 可见性',
     },
     agent: {
       title: '智能体',

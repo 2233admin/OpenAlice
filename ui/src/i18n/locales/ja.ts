@@ -844,6 +844,7 @@ export const ja: Resources = {
       general: '概要',
       appearance: 'スキン',
       activityBar: 'アクティビティバー',
+      visibility: '表示',
       aiProvider: 'AI プロバイダー',
       agentRuntimes: 'Agent ランタイム',
       agentPermissions: 'モード',
@@ -992,6 +993,7 @@ export const ja: Resources = {
       },
     },
     harness: {
+      releasesSection: 'Workspace テンプレートのリリース',
       title: 'Harness',
       description: 'Ask Alice、Auto Quant、Auto Prediction は Workspace Harness です。デスクがタスクで、コーディングエージェントがその中で仕事をします。',
       shared: '共有 Harness 動作',
@@ -1000,7 +1002,7 @@ export const ja: Resources = {
       showHeadlessBornDescription: '既定はオフです。Issue や API から始まり、TUI / Web を一度も開いていない Session は Issue ページに残り、デスク名簿には出しません。',
       showIssueAttached: 'Issue に紐づく Session を表示',
       showIssueAttachedDescription: '既定はオフです。有効にすると、通常の Issue が現在所有または使用している Session を共有デスク名簿に追加します。Connector チャットの Session は常に非表示です。',
-      showUnverifiedReleases: '未検証の Harness リリースを表示',
+      showUnverifiedReleases: '未検証のテンプレートリリースを含める',
       showUnverifiedReleasesDescription: '既定はオフです。有効にすると、上流リポジトリの最新安定版も確認します。未検証であることを明示し、適用前のレビューも必要です。',
       askAlice: 'Ask Alice',
       askAliceDescription: 'チャット Workspace とその Session 名簿。',
@@ -1009,6 +1011,10 @@ export const ja: Resources = {
       autoPrediction: 'Auto Prediction',
       autoPredictionDescription: 'Auto Prediction Workspace、Session、ソースリリース。',
       usesSharedRoster: '上の共有 Harness 動作を使います。固有の設定はこの節に追加できます。',
+    },
+    visibility: {
+      description: 'Workspace の一覧に表示する Session を選びます。所有者や実行状態は変わりません。',
+      sessions: 'Session の表示',
     },
     agent: {
       title: 'エージェント',
