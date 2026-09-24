@@ -844,7 +844,7 @@ export const ja: Resources = {
       activityBar: 'アクティビティバー',
       aiProvider: 'AI プロバイダー',
       agentRuntimes: 'Agent ランタイム',
-      agentPermissions: 'エージェント権限',
+      agentPermissions: 'モード',
       tools: 'ツール',
       trading: '取引',
       issues: 'イシュー',
@@ -1020,9 +1020,9 @@ export const ja: Resources = {
       allowAiTradingConfirmCta: '自動取引を有効化',
     },
     agentPermissions: {
-      title: 'エージェント権限',
-      loadErrorTitle: 'エージェント権限を読み込めませんでした',
-      loadErrorDescription: 'OpenAlice は現在の設定を読み取れませんでした。権限は変更されていません。',
+      title: 'モード',
+      loadErrorTitle: 'モード設定を読み込めませんでした',
+      loadErrorDescription: 'OpenAlice は現在の設定を読み取れませんでした。設定は変更されていません。',
       mode: {
         title: '取引モード',
         description: 'Alice とワークスペースエージェントのグローバルなブローカー権限。',
@@ -1945,7 +1945,7 @@ export const ja: Resources = {
     shortcuts: {
       title: 'ショートカット',
       aiProvider: 'AI プロバイダー',
-      agentPermissions: 'エージェント権限',
+      agentPermissions: 'モード',
       tradingSettings: '取引設定',
       askAlice: 'Alice に質問',
     },
@@ -2716,12 +2716,12 @@ export const ja: Resources = {
   },
   tradingModeGate: {
     liteMode: 'Lite モード',
-    openPermissions: 'Agent 権限を開く',
+    openPermissions: 'モード設定を開く',
   },
   tradingReview: {
     description: 'エージェントがステージしたブローカー書き込みを、取引先へプッシュする前に確認します。',
     liteTitle: 'Lite モードでは Trading as Git を利用できません。',
-    liteDescription: 'Lite モードでは UTA が切断されたままになるため、Alice はブローカー書き込みの提案を確認できません。Agent 権限で取引モードを変更して UTA に接続してください。',
+    liteDescription: 'Lite モードでは UTA が切断されたままになるため、Alice はブローカー書き込みの提案を確認できません。「設定 → モード」で取引モードを変更して UTA に接続してください。',
     noAccounts: '取引口座がありません',
     noAccountsDescription: 'ステージ済みのブローカー書き込みを承認する前に、「設定 → 取引」でブローカー口座を接続してください。',
     pushFailed: 'プッシュに失敗しました',

@@ -842,7 +842,7 @@ export const zh: Resources = {
       activityBar: '侧栏',
       aiProvider: 'AI 提供方',
       agentRuntimes: 'Agent 运行时',
-      agentPermissions: '智能体权限',
+      agentPermissions: '模式',
       tools: '工具',
       trading: '交易',
       issues: '议题',
@@ -1018,9 +1018,9 @@ export const zh: Resources = {
       allowAiTradingConfirmCta: '开启自动交易',
     },
     agentPermissions: {
-      title: '智能体权限',
-      loadErrorTitle: '无法加载智能体权限',
-      loadErrorDescription: 'OpenAlice 无法读取当前配置。你的权限没有发生变化。',
+      title: '模式',
+      loadErrorTitle: '无法加载模式设置',
+      loadErrorDescription: 'OpenAlice 无法读取当前配置。设置未发生变化。',
       mode: {
         title: '交易模式',
         description: 'Alice 和工作区智能体的全局券商能力。',
@@ -1943,7 +1943,7 @@ export const zh: Resources = {
     shortcuts: {
       title: '快捷入口',
       aiProvider: 'AI 提供方',
-      agentPermissions: 'Agent 权限',
+      agentPermissions: '模式',
       tradingSettings: '交易设置',
       askAlice: '问 Alice',
     },
@@ -2714,12 +2714,12 @@ export const zh: Resources = {
   },
   tradingModeGate: {
     liteMode: '精简模式',
-    openPermissions: '打开智能体权限',
+    openPermissions: '打开模式设置',
   },
   tradingReview: {
     description: '在将智能体暂存的券商写入推送到交易场所前进行审阅。',
     liteTitle: '精简模式下无法使用“交易即 Git”。',
-    liteDescription: '精简模式会保持 UTA 断开，因此 Alice 无法审阅券商写入提案。请在“智能体权限”中切换交易模式以连接 UTA。',
+    liteDescription: '精简模式会保持 UTA 断开，因此 Alice 无法审阅券商写入提案。请在“设置 → 模式”中切换交易模式以连接 UTA。',
     noAccounts: '没有交易账户',
     noAccountsDescription: '请先在“设置 → 交易”中连接券商账户，再审批暂存的券商写入。',
     pushFailed: '推送失败',
