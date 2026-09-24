@@ -15,10 +15,10 @@ import { SchemaFormFields } from './SchemaFormFields'
 
 /**
  * UTA configuration dialog — edits credentials, guards, enabled state.
- * Mounted from Settings → Trading (primary CRUD entry) and from the UTA
+ * Mounted from Settings → Trading → Broker (primary CRUD entry) and from the UTA
  * detail page in Portfolio (sibling Edit button).
  *
- * When opened from Settings → Trading, the parent passes `onViewInPortfolio`
+ * When opened from Settings → Trading → Broker, the parent passes `onViewInPortfolio`
  * to render a header link that switches the user over to the Portfolio
  * drill-in for this account. When opened from inside Portfolio's detail
  * page, that prop is omitted (the user is already in that context).

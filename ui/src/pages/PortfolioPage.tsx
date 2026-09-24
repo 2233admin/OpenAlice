@@ -471,7 +471,7 @@ function NoAccountsEmpty() {
         onClick={goToTradingSettings}
         size="sm"
       >
-        Add broker in Settings → Trading
+        Add broker in Settings → Trading → Broker
       </Button>
     </div>
   )
