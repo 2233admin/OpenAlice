@@ -40,6 +40,7 @@ export interface WebRelayOptions {
   readRegistry?: typeof readMachineRegistrySummary
   connect?: typeof connectSsh
   waitReady?: typeof waitForOpenAlice
+  machineManagement?: MachineManagement
 }
 
 export class WebRelay {
@@ -51,11 +52,12 @@ export class WebRelay {
   private readonly sockets = new Set<Duplex>()
   private readonly server = createServer((req, res) => void this.handle(req, res))
   private readonly options: WebRelayOptions
-  private readonly machines = new MachineManagement()
+  private readonly machines: MachineManagement
   private origin = ''
 
   constructor(options: WebRelayOptions = {}) {
     this.options = options
+    this.machines = options.machineManagement ?? new MachineManagement()
     this.server.on('upgrade', (req, socket, head) => this.upgrade(req, socket, head))
   }
 
@@ -75,9 +77,26 @@ export class WebRelay {
 
   planMachine(input: Parameters<MachineManagement['plan']>[0]) { return this.machines.plan(input) }
 
-  applyMachine(id: string) {
+  async applyMachine(id: string) {
     if (this.switching) throw new Error('Wait for the location switch to finish before applying a Machine plan.')
-    return this.machines.apply(id)
+    const selected = this.target
+    return this.machines.apply(id, async ({ machineKey }) => {
+      if (!selected || this.target !== selected || selected.machine !== machineKey) return
+      // A remote restart can leave an SSH forward accepting local connections
+      // without forwarding them. Rebuild and verify the active transport before
+      // reporting the operation complete to the browser.
+      let lastError: unknown
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await this.connectTarget(selected.machine, selected.project, true)
+          return
+        } catch (error) {
+          lastError = error
+        }
+      }
+      if (this.target === selected) this.disconnect()
+      throw new Error(`The backend updated, but this relay could not reconnect: ${lastError instanceof Error ? lastError.message : String(lastError)}`)
+    })
   }
 
   /** Internal selection for local presenters; never serialized to the browser. */
@@ -132,7 +151,11 @@ export class WebRelay {
   }
 
   async connect(machineKey: string, projectKey: string): Promise<void> {
-    if (this.machines.busy) throw new Error('Wait for the Machine operation to finish before switching locations.')
+    return this.connectTarget(machineKey, projectKey, false)
+  }
+
+  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean): Promise<void> {
+    if (this.machines.busy && !duringMachineOperation) throw new Error('Wait for the Machine operation to finish before switching locations.')
     if (this.switching) throw new Error('Another connection switch is in progress.')
     this.switching = true
     this.announce()

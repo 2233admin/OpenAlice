@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { WebSocket, WebSocketServer } from 'ws'
 
 import { WebRelay } from './web-relay.ts'
+import type { MachineManagement } from './machine-management.ts'
 
 const openedRelays: WebRelay[] = []
 const openedBackends: Server[] = []
@@ -51,6 +52,55 @@ async function withHost(origin: string, path: string, host: string): Promise<{ s
 }
 
 describe('WebRelay', () => {
+  it('rebuilds the selected SSH forward before a backend upgrade reports success', async () => {
+    const before = await backend('cloud-id', 'before')
+    const after = await backend('cloud-id', 'after')
+    openedBackends.push(before.server, after.server)
+    let forwardPort = before.port
+    let busy = false
+    let oldForwardClosed = false
+    const machineManagement = {
+      get busy() { return busy },
+      get currentOperation() { return null },
+      async apply(_id: string, afterApply: (result: { machineKey: string; inventory: unknown }) => Promise<void>) {
+        busy = true
+        forwardPort = after.port
+        try {
+          await afterApply({ machineKey: 'cloud', inventory: {} })
+          return { machineKey: 'cloud', inventory: {} }
+        } finally { busy = false }
+      },
+    } as unknown as MachineManagement
+    const relay = new WebRelay({
+      machineManagement,
+      readRegistry: async () => ({ defaultMachine: 'local', machines: [{ key: 'cloud', sshTarget: 'cloud-host', enabled: true }] }) as never,
+      inspectRegistered: async () => ({
+        key: 'cloud', displayName: 'Cloud', connection: 'online', capabilities: { openTunnel: true },
+        projects: [{ key: 'main', id: 'cloud-id', displayName: 'Main', available: true, runtime: { webEndpoint: 'http://127.0.0.1:47331' } }],
+      }) as never,
+      connect: (async (options: { signal: AbortSignal; onReady: (value: { localUrl: string }) => void }) => {
+        const port = forwardPort
+        options.onReady({ localUrl: `http://127.0.0.1:${port}` })
+        await new Promise<void>((resolve) => options.signal.addEventListener('abort', () => {
+          if (port === before.port) oldForwardClosed = true
+          resolve()
+        }, { once: true }))
+        return 0
+      }) as never,
+      waitReady: async () => undefined,
+    })
+    const origin = await relay.listen()
+    openedRelays.push(relay)
+    await relay.connect('cloud', 'main')
+    expect(await (await fetch(`${origin}/api/who`)).json()).toMatchObject({ label: 'before' })
+
+    await relay.applyMachine('reviewed-plan')
+
+    expect(relay.status.generation).toBe(2)
+    expect(oldForwardClosed).toBe(true)
+    expect(await (await fetch(`${origin}/api/who`)).json()).toMatchObject({ label: 'after' })
+  })
+
   it('shares the selected target and disconnection events with a local presenter', async () => {
     const a = await backend('a-id', 'A')
     const relay = new WebRelay({ inspectLocal: async () => ({ machine: {

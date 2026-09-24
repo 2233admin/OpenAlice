@@ -4,6 +4,7 @@ import { AlertCircle, Check, LoaderCircle, Server } from 'lucide-react'
 import type { MachineOperation, MachinePlan } from '../../hooks/useMachineManagement'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
+import { useHideBackendOutageOverlay } from '../../auth/BackendOutageOverlayContext'
 
 const stages = [
   { key: 'checking', label: 'Check' },
@@ -32,6 +33,7 @@ export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClo
   const [approvedPlanId, setApprovedPlanId] = useState<string | null>(null)
   const current = operation?.mode === 'upgrade' && (operation.phase === 'running' || (operation.planId === approvedPlanId && (!plan || plan.id === approvedPlanId))) ? operation : null
   const working = busy || current?.phase === 'running'
+  useHideBackendOutageOverlay(open && working)
   const progress = current?.phase === 'running' || current?.phase === 'failed' || current?.phase === 'succeeded' || (approvedPlanId !== null && (busy || (Boolean(error) && (!plan || plan.id === approvedPlanId))))
   const step = current ? stageIndex(current.stage) : 0
   const failure = current?.phase === 'failed' ? current.error : error
