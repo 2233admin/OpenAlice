@@ -2723,7 +2723,7 @@ export const ja: Resources = {
   tradingReview: {
     description: 'エージェントがステージしたブローカー書き込みを、取引先へプッシュする前に確認します。',
     liteTitle: 'Lite モードでは Trading as Git を利用できません。',
-    liteDescription: 'Lite モードでは UTA が切断されたままになるため、Alice はブローカー書き込みの提案を確認できません。「設定 → モード」で取引モードを変更して UTA に接続してください。',
+    liteDescription: 'Lite モードでは UTA が切断されたままになるため、Alice はブローカー書き込みの提案を確認できません。「設定 → 取引 → モード」で取引モードを変更して UTA に接続してください。',
     noAccounts: '取引口座がありません',
     noAccountsDescription: 'ステージ済みのブローカー書き込みを承認する前に、「設定 → 取引 → ブローカー」でブローカー口座を接続してください。',
     pushFailed: 'プッシュに失敗しました',

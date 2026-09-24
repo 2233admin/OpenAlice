@@ -65,18 +65,18 @@ afterEach(() => {
 })
 
 describe('SettingsCategoryList', () => {
-  it('places Mode directly after Overview in General, outside Agents', () => {
+  it('places Mode before Broker in Trading, outside General', () => {
     render(<SettingsCategoryList />)
 
     const general = screen.getByText('settings.group.general').parentElement?.parentElement
-    const agents = screen.getByText('settings.group.agents').parentElement?.parentElement
+    const trading = screen.getByText('settings.group.trading').parentElement?.parentElement
     expect(general).not.toBeNull()
-    expect(agents).not.toBeNull()
-    expect(within(general!).getAllByRole('button').slice(0, 2).map((button) => button.textContent)).toEqual([
-      'settings.category.general',
+    expect(trading).not.toBeNull()
+    expect(within(trading!).getAllByRole('button').map((button) => button.textContent)).toEqual([
       'settings.category.agentPermissions',
+      'settings.category.trading',
     ])
-    expect(within(agents!).queryByRole('button', { name: 'settings.category.agentPermissions' })).toBeNull()
+    expect(within(general!).queryByRole('button', { name: 'settings.category.agentPermissions' })).toBeNull()
   })
 
   it('owns the vertical scroll region for long settings navigation', () => {

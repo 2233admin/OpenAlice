@@ -2730,7 +2730,7 @@ export const zhHant: Resources = {
   tradingReview: {
     description: '在將 Agent 暫存的券商寫入推送至交易場所前進行審閱。',
     liteTitle: '精簡模式下無法使用「交易即 Git」。',
-    liteDescription: '精簡模式會讓 UTA 保持中斷，因此 Alice 無法審閱券商寫入提案。請在「設定 → 模式」中切換交易模式以連接 UTA。',
+    liteDescription: '精簡模式會讓 UTA 保持中斷，因此 Alice 無法審閱券商寫入提案。請在「設定 → 交易 → 模式」中切換交易模式以連接 UTA。',
     noAccounts: '沒有交易帳戶',
     noAccountsDescription: '請先在「設定 → 交易 → 券商」中連接券商帳戶，再審批暫存的券商寫入。',
     pushFailed: '推送失敗',

@@ -2754,7 +2754,7 @@ export const en = {
   tradingReview: {
     description: 'Review broker writes staged by agents before they are pushed to the venue.',
     liteTitle: 'Trading as Git is unavailable in Lite mode.',
-    liteDescription: 'Lite mode keeps UTA disconnected, so Alice cannot review broker write proposals. Change the trading mode in Settings → Mode to connect UTA.',
+    liteDescription: 'Lite mode keeps UTA disconnected, so Alice cannot review broker write proposals. Change the trading mode in Settings → Trading → Mode to connect UTA.',
     noAccounts: 'No trading accounts',
     noAccountsDescription: 'Connect a broker account in Settings → Trading → Broker before approving staged broker writes.',
     pushFailed: 'Push failed',
