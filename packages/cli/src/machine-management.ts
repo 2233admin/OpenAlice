@@ -43,6 +43,16 @@ export interface MachinePlanPreview {
   expiresAt: string
 }
 
+export interface MachineOperation {
+  id: string
+  planId: string
+  mode: PlanMode
+  phase: 'running' | 'succeeded' | 'failed'
+  stage: 'checking' | 'installing' | 'verifying-install' | 'preparing-source' | 'restarting' | 'verifying'
+  startedAt: string
+  error: string | null
+}
+
 const NULL_OUTPUT = { write: (_chunk: string): void => undefined }
 const PLAN_TTL_MS = 5 * 60_000
 
@@ -56,11 +66,13 @@ export interface MachineManagementOptions {
 export class MachineManagement {
   private readonly plans = new Map<string, { input: ResolvedInput; fingerprint: string; expiresAt: number }>()
   private applying = false
+  private operation: MachineOperation | null = null
   private readonly options: MachineManagementOptions
 
   constructor(options: MachineManagementOptions = {}) { this.options = options }
 
   get busy(): boolean { return this.applying }
+  get currentOperation(): MachineOperation | null { return this.operation && { ...this.operation } }
 
   async plan(input: PlanInput): Promise<MachinePlanPreview> {
     if (this.applying) throw new Error('Wait for the current Machine operation to finish.')
@@ -104,6 +116,7 @@ export class MachineManagement {
     if (!saved || saved.expiresAt < Date.now()) throw new Error('This Machine plan expired. Probe again before applying changes.')
     this.plans.delete(id)
     this.applying = true
+    this.operation = { id: randomUUID(), planId: id, mode: saved.input.mode, phase: 'running', stage: 'checking', startedAt: new Date().toISOString(), error: null }
     try {
       const current = await this.resolve({
         mode: saved.input.mode,
@@ -116,6 +129,9 @@ export class MachineManagement {
       await (this.options.connectRemote ?? connectRemote)(this.remoteOptions(current, false), {
         stdout: NULL_OUTPUT,
         connectTunnel: async () => 0,
+        onProgress: (stage: MachineOperation['stage']) => {
+          if (this.operation) this.operation = { ...this.operation, stage }
+        },
         onPlan: (plan: RemotePlan) => {
           if (JSON.stringify(plan) !== saved.fingerprint) {
             throw new Error('Remote state changed since the probe. Review a fresh plan before applying changes.')
@@ -129,7 +145,12 @@ export class MachineManagement {
       const machine = current.mode === 'add'
         ? await (this.options.register ?? registerMachineProfile)(current.profile)
         : current.machine!
-      return { machineKey: machine.key, inventory: await (this.options.inspect ?? inspectRegisteredMachine)(machine) }
+      const inventory = await (this.options.inspect ?? inspectRegisteredMachine)(machine)
+      if (this.operation) this.operation = { ...this.operation, phase: 'succeeded', stage: 'verifying' }
+      return { machineKey: machine.key, inventory }
+    } catch (error) {
+      if (this.operation) this.operation = { ...this.operation, phase: 'failed', error: error instanceof Error ? error.message : String(error) }
+      throw error
     } finally {
       this.applying = false
     }

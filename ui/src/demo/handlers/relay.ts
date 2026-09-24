@@ -3,6 +3,7 @@ import { delay, http, HttpResponse } from 'msw'
 const defaultTarget = { machine: 'local', machineName: 'This computer', project: 'demo', projectName: 'Demo AliceProject' }
 let target = readDemoTarget() ?? defaultTarget
 let generation = 0
+let demoOperation: { id: string; planId: string; mode: 'upgrade'; phase: 'running' | 'succeeded'; stage: 'checking' | 'installing' | 'restarting' | 'verifying'; startedAt: string; error: null } | null = null
 
 function readDemoTarget(): typeof defaultTarget | null {
   if (typeof window === 'undefined') return null
@@ -56,8 +57,15 @@ export const relayHandlers = [
       expiresAt: new Date(Date.now() + 300_000).toISOString(),
     })
   }),
+  http.get('/relay/v1/machines/operation', () => HttpResponse.json(demoOperation)),
   http.post('/relay/v1/machines/apply', async () => {
+    demoOperation = { id: 'demo-upgrade', planId: 'demo-machine-plan', mode: 'upgrade', phase: 'running', stage: 'checking', startedAt: new Date().toISOString(), error: null }
+    for (const stage of ['installing', 'restarting', 'verifying'] as const) {
+      await delay(900)
+      demoOperation = { ...demoOperation, stage }
+    }
     await delay(900)
+    demoOperation = { ...demoOperation, phase: 'succeeded' }
     return HttpResponse.json({ machineKey: 'studio' })
   }),
 ]

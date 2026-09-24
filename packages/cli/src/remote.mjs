@@ -9,6 +9,7 @@ import {
   DEFAULT_INSTALL_SOURCE,
   formatInstallSelector,
   installedContentIdentity,
+  installSourceChannelVersionError,
   installSourceUpdateChannel,
   installSourcesMatch,
   parseInstallSource,
@@ -178,6 +179,7 @@ export async function connectRemote(options, dependencies = {}) {
 
   const runRemote = dependencies.runRemote ?? runSshCommand
   if (plan.runInstaller) {
+    dependencies.onProgress?.('installing')
     const expectedRemainingMutations = remainingMutationsAfterInstall(plan)
     stdout.write(`Installing the native OpenAlice CLI Runtime on ${options.destination} with the normal installer...\n`)
     let installerError = null
@@ -193,6 +195,7 @@ export async function connectRemote(options, dependencies = {}) {
       stdout.write('The SSH action ended unexpectedly; checking whether the remote install completed...\n')
     }
     try {
+      dependencies.onProgress?.('verifying-install')
       remote = await probe(connectionOptions, dependencies)
     } catch (probeError) {
       throw installerError ?? probeError
@@ -212,6 +215,7 @@ export async function connectRemote(options, dependencies = {}) {
       throw new Error('The remote OpenAlice CLI install completed, but it does not match the invoking local CLI')
     }
     if (plan.restartServer) {
+      dependencies.onProgress?.('restarting')
       remote = await stopNativeRuntimeAfterUpdate(
         connectionOptions,
         plan.restartOwner,
@@ -245,6 +249,7 @@ export async function connectRemote(options, dependencies = {}) {
   }
 
   if (plan.cloneSource) {
+    dependencies.onProgress?.('preparing-source')
     const expectedRemainingMutations = remainingMutationsAfterClone(plan)
     stdout.write(`Preparing the managed OpenAlice source on ${options.destination}...\n`)
     let cloneError = null
@@ -298,6 +303,7 @@ export async function connectRemote(options, dependencies = {}) {
   }
 
   if (plan.startServer) {
+    dependencies.onProgress?.('restarting')
     stdout.write(`${options.takeover ? 'Replacing' : 'Starting'} OpenAlice Server on ${options.destination}...\n`)
     let startError = null
     try {
@@ -324,6 +330,7 @@ export async function connectRemote(options, dependencies = {}) {
   if (!isRemoteRuntimeAttachable(remote.status)) {
     throw new Error(`Remote OpenAlice Server is not ready after apply (${remote.status?.class ?? 'no status'})`)
   }
+  dependencies.onProgress?.('verifying')
   if ((plan.nativeRuntimeExpected || remoteRuntimeMustMatchPlan(connectionOptions, remote))
     && !runningRuntimeMatchesPlan(connectionOptions, remote)) {
     throw new Error(formatRunningRuntimeMismatch(connectionOptions, remote))
@@ -469,7 +476,7 @@ export function createRemotePlan(options, remote, install = {}) {
   const installBaseUrl = install.installBaseUrl ?? ''
   const repositoryUrl = install.repositoryUrl ?? DEFAULT_REPOSITORY_URL
   const mutations = []
-  let blocker = devBlocker || expectedTargetBlocker
+  let blocker = devBlocker || expectedTargetBlocker || installSourceChannelVersionError(installSource) || ''
   let cloneSource = false
   let startServer = false
   let restartServer = false
@@ -937,6 +944,8 @@ export function buildRemoteServerStopCommand(options, cliPath) {
 
 export function buildRemoteInstallCommand(installSource, installBaseUrl = '', expectedTarget = null) {
   const source = requireInstallSource(installSource)
+  const sourceError = installSourceChannelVersionError(source)
+  if (sourceError) throw new Error(sourceError)
   const target = normalizeExpectedRemoteTarget(expectedTarget)
   const updateChannel = installSourceUpdateChannel(source)
   if (expectedTarget !== null && expectedTarget !== undefined && !target) {

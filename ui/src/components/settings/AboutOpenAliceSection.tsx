@@ -6,7 +6,8 @@ import { useMachineManagement } from '../../hooks/useMachineManagement'
 import { useVersionInfo } from '../../hooks/useVersionInfo'
 import { Button } from '../ui/button'
 import { ConfigSection } from '../form'
-import { MachinePlanReview } from './MachinePlanReview'
+import { MachineUpgradeDialog } from './MachineUpgradeDialog'
+import { claimUpgradeDialog, shouldRestoreUpgradeDialog } from './upgrade-dialog-owner'
 
 type RuntimeMode = 'browser' | 'electron-dev' | 'electron-packaged'
 type NativeUpdaterStatus =
@@ -26,8 +27,10 @@ export function AboutOpenAliceSection() {
   const [checking, setChecking] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const { info: versionInfo, error: versionError, check: checkVersion } = useVersionInfo()
   const machines = useMachineManagement()
+  useEffect(() => { if (machines.operation?.mode === 'upgrade' && machines.operation.phase === 'running' && shouldRestoreUpgradeDialog('about')) setUpgradeOpen(true) }, [machines.operation?.id, machines.operation?.phase, machines.operation?.mode])
   const target = machines.status?.target
   const remote = Boolean(target && target.machine !== 'local')
   const updater = window.openAlice?.updater
@@ -126,7 +129,7 @@ export function AboutOpenAliceSection() {
 
   const probeBackend = () => {
     if (!target || target.machine === 'local') return
-    void machines.probe({ mode: 'upgrade', machineKey: target.machine, projectKey: target.project }).catch(() => undefined)
+    void machines.probe({ mode: 'upgrade', machineKey: target.machine, projectKey: target.project }).then(() => { claimUpgradeDialog('about'); setUpgradeOpen(true) }).catch(() => undefined)
   }
   const applyBackend = () => {
     void machines.apply().then(() => checkVersion()).catch(() => undefined)
@@ -183,7 +186,7 @@ export function AboutOpenAliceSection() {
           {remote && <Button type="button" size="sm" className="min-h-10 sm:min-h-8" disabled={machines.probing || machines.applying} onClick={probeBackend}><RefreshCw className={`size-3.5 ${machines.probing ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden />{machines.probing ? t('settings.machines.probing') : t('settings.about.reviewBackendUpdate')}</Button>}
           {!remote && !updater && webUpdateCheckOwned && <Button type="button" size="sm" className="min-h-10 sm:min-h-8" disabled={checking} onClick={() => void checkForUpdates()}><RefreshCw className={`size-3.5 ${checking ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden />{checking ? t('settings.about.checking') : t('settings.about.check')}</Button>}
         </div>
-        {machines.plan?.mode === 'upgrade' && target?.machine === machines.plan.machine.key && target.project === machines.plan.project?.key && <MachinePlanReview plan={machines.plan} busy={machines.applying} onApply={applyBackend} />}
+        <MachineUpgradeDialog open={upgradeOpen} plan={machines.plan?.mode === 'upgrade' ? machines.plan : null} operation={machines.operation} busy={machines.applying} error={machines.operationError} onClose={() => { setUpgradeOpen(false); machines.clearPlan() }} onApply={applyBackend} onRetry={probeBackend} />
         {machines.operationError && <p role="alert" className="mt-2 text-[12px] text-destructive">{machines.operationError}</p>}
       </div>
     </div>

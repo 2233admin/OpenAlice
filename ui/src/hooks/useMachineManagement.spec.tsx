@@ -20,8 +20,11 @@ describe('useMachineManagement', () => {
   })
 
   it('keeps the read-only preview until the explicit apply and refreshes the fleet afterward', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => preview } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ machineKey: 'cloud' }) } as Response)
+    vi.mocked(fetch).mockImplementation(async (path) => {
+      if (path === '/relay/v1/machines/operation') return { ok: true, json: async () => null } as Response
+      if (path === '/relay/v1/machines/plan') return { ok: true, json: async () => preview } as Response
+      return { ok: true, json: async () => ({ machineKey: 'cloud' }) } as Response
+    })
     const { result } = renderHook(() => useMachineManagement())
     await act(async () => { await result.current.probe({ mode: 'upgrade', machineKey: 'cloud' }) })
     expect(result.current.plan?.id).toBe('plan-1')
@@ -34,7 +37,9 @@ describe('useMachineManagement', () => {
   })
 
   it('exposes a probe error without retaining an older approval', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({ error: 'SSH host is unreachable' }) } as Response)
+    vi.mocked(fetch).mockImplementation(async (path) => path === '/relay/v1/machines/operation'
+      ? { ok: true, json: async () => null } as Response
+      : { ok: false, status: 502, json: async () => ({ error: 'SSH host is unreachable' }) } as Response)
     const { result } = renderHook(() => useMachineManagement())
     await act(async () => { await expect(result.current.probe({ mode: 'add', label: 'Cloud', sshTarget: 'alice@example.com' })).rejects.toThrow('SSH host is unreachable') })
     expect(result.current.probing).toBe(false)

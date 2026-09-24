@@ -13,6 +13,29 @@ const remotePlan = () => ({
 })
 
 describe('GUI Machine management', () => {
+  it('keeps a running operation visible, then records the real failure for the UI', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const connectRemote = vi.fn(async (options: { planOnly: boolean }, deps: { onPlan(plan: ReturnType<typeof remotePlan>): void; onProgress?(stage: string): void }) => {
+      deps.onPlan(remotePlan())
+      if (!options.planOnly) {
+        deps.onProgress?.('installing')
+        await gate
+        throw new Error('Remote install failed after SSH disconnected')
+      }
+      return 0
+    })
+    const management = new MachineManagement({ readRegistry: async () => registry(), connectRemote: connectRemote as never })
+    const plan = await management.plan({ mode: 'add', label: 'Cloud', sshTarget: 'alice@example.com' })
+    const applying = management.apply(plan.id)
+    await vi.waitFor(() => expect(management.currentOperation?.stage).toBe('installing'))
+    expect(management.busy).toBe(true)
+    await expect(management.plan({ mode: 'add', label: 'Other', sshTarget: 'other@example.com' })).rejects.toThrow('Wait')
+    release()
+    await expect(applying).rejects.toThrow('Remote install failed')
+    expect(management.currentOperation).toMatchObject({ phase: 'failed', stage: 'installing', error: 'Remote install failed after SSH disconnected' })
+    expect(management.busy).toBe(false)
+  })
   it('does not modify or register a Machine until its reviewed plan is applied', async () => {
     const register = vi.fn(async () => machine)
     const inspect = vi.fn(async () => ({ key: 'cloud', connection: 'online' }))

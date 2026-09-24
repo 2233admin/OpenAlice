@@ -12,6 +12,7 @@ export declare class WebRelay {
   connect(machine: string, project: string): Promise<void>
   planMachine(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string }): Promise<unknown>
   applyMachine(id: string): Promise<unknown>
+  readonly machineOperation: unknown
   disconnect(): void
   close(): Promise<void>
 }
