@@ -49,6 +49,11 @@ export class WebRelay {
   private target: ActiveTarget | null = null
   private generation = 0
   private switching = false
+  private targetConnection: 'healthy' | 'reconnecting' | 'unavailable' = 'healthy'
+  private recovery: Promise<void> | null = null
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null
+  private recoveryAttempts = 0
+  private closing = false
   private readonly subscribers = new Set<ServerResponse>()
   private readonly listeners = new Set<() => void>()
   private readonly sockets = new Set<Duplex>()
@@ -74,6 +79,7 @@ export class WebRelay {
       generation: this.generation,
       target: this.target && { machine: this.target.machine, machineName: this.target.machineName, project: this.target.project, projectName: this.target.projectName },
       switching: this.switching,
+      targetConnection: this.target ? this.targetConnection : null,
     }
   }
 
@@ -132,6 +138,8 @@ export class WebRelay {
   }
 
   async close(): Promise<void> {
+    this.closing = true
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
     this.target?.abort?.abort()
     for (const socket of this.sockets) socket.destroy()
     for (const response of this.subscribers) response.end()
@@ -158,6 +166,10 @@ export class WebRelay {
     const previous = this.target
     if (!previous) return
     this.target = null
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
+    this.recoveryTimer = null
+    this.recoveryAttempts = 0
+    this.targetConnection = 'healthy'
     this.generation += 1
     this.announce()
     for (const socket of this.sockets) socket.destroy()
@@ -168,7 +180,7 @@ export class WebRelay {
     return this.connectTarget(machineKey, projectKey, false)
   }
 
-  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean): Promise<void> {
+  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget): Promise<void> {
     if (this.machines.busy && !duringMachineOperation) throw new Error('Wait for the Machine operation to finish before switching locations.')
     if (this.switching) throw new Error('Another connection switch is in progress.')
     this.switching = true
@@ -207,10 +219,10 @@ export class WebRelay {
             onReady: ({ localUrl }: { localUrl: string }) => { ready = true; done(localUrl) },
           }, { stdout: { write: () => undefined } }).then(() => {
             if (!ready) reject(new Error('SSH tunnel closed before connection.'))
-            else if (this.target?.abort === controller) this.dropTarget()
+            else if (this.target?.abort === controller) void this.recoverTarget(this.target)
           }, (error: unknown) => {
             if (!ready) reject(error)
-            else if (this.target?.abort === controller) this.dropTarget()
+            else if (this.target?.abort === controller) void this.recoverTarget(this.target)
           })
         })
       }
@@ -229,8 +241,13 @@ export class WebRelay {
         const identity = await identityResponse.json() as { project?: { id?: string } }
         if (identity.project?.id !== project.id) throw new Error('The Runtime answered for a different AliceProject; connection was not switched.')
       }
+      if (this.closing || (expectedTarget && this.target !== expectedTarget)) throw new Error('The selected location changed during recovery.')
       const previous = this.target
       this.target = { machine: machineKey, machineName: machine.displayName, project: projectKey, projectName: project.displayName, endpoint, inventory: { machine, project }, abort: candidateAbort }
+      this.targetConnection = 'healthy'
+      this.recoveryAttempts = 0
+      if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
+      this.recoveryTimer = null
       this.generation += 1
       this.announce()
       for (const socket of this.sockets) socket.destroy()
@@ -244,8 +261,34 @@ export class WebRelay {
     }
   }
 
-  private dropTarget(): void {
-    this.disconnect()
+  /** A listening SSH forward can survive while every forwarded request resets.
+   * Rebuild it once per outage, on the relay rather than in every browser tab. */
+  private recoverTarget(target: ActiveTarget, force = false): Promise<void> {
+    if (this.closing || this.target !== target || target.machine === 'local' || this.machines.busy) return Promise.resolve()
+    if (this.recovery) return this.recovery
+    if (this.recoveryTimer && !force) return Promise.resolve()
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
+    this.recoveryTimer = null
+    this.targetConnection = 'reconnecting'
+    this.announce()
+    const recovery = (async () => {
+      try {
+        await this.connectTarget(target.machine, target.project, false, target)
+      } catch {
+        if (this.target !== target) return
+        this.targetConnection = 'unavailable'
+        this.announce()
+        const delay = Math.min(30_000, 2_000 * 2 ** Math.min(this.recoveryAttempts++, 4))
+        this.recoveryTimer = setTimeout(() => {
+          this.recoveryTimer = null
+          void this.recoverTarget(target)
+        }, delay)
+        this.recoveryTimer.unref?.()
+      }
+    })()
+    this.recovery = recovery
+    void recovery.finally(() => { if (this.recovery === recovery) this.recovery = null })
+    return this.recovery
   }
 
   private async inspectSelection(key: string): Promise<MachineInventory> {
@@ -287,6 +330,13 @@ export class WebRelay {
       if (!this.validRequest(req, mutation)) return json(res, 403, { error: 'Relay origin rejected.' })
       res.setHeader('cache-control', 'no-store')
       if (url.pathname === '/relay/v1/status' && req.method === 'GET') return json(res, 200, this.status)
+      if (url.pathname === '/relay/v1/reconnect' && req.method === 'POST') {
+        if (!this.target) return json(res, 503, { error: 'No AliceProject is selected.' })
+        if (this.machines.busy) return json(res, 409, { error: 'Wait for the Machine operation to finish.' })
+        if (this.target.machine === 'local') await this.connectTarget(this.target.machine, this.target.project, false)
+        else await this.recoverTarget(this.target, true)
+        return json(res, 200, this.status)
+      }
       if (url.pathname === '/relay/v1/fleet' && req.method === 'GET') {
         return json(res, 200, await (this.options.inspectFleet ?? inspectMachineFleet)())
       }
@@ -343,7 +393,16 @@ export class WebRelay {
       res.writeHead(response.statusCode ?? 502, responseHeaders)
       response.pipe(res)
     })
-    upstream.on('error', (error) => { if (!res.headersSent) json(res, 502, { error: error.message }); else res.destroy(error) })
+    // The auth heartbeat is intentionally cheap. A half-open forward may
+    // accept the TCP connection without ever returning headers, so bound this
+    // one route and let the normal proxy error path rebuild the transport.
+    if (req.url?.startsWith('/api/auth/status')) {
+      upstream.setTimeout(4_000, () => upstream.destroy(new Error('Backend heartbeat timed out')))
+    }
+    upstream.on('error', (error) => {
+      if (this.target === target && this.generation === generation) void this.recoverTarget(target)
+      if (!res.headersSent) json(res, 502, { error: error.message }); else res.destroy(error)
+    })
     req.pipe(upstream)
   }
 

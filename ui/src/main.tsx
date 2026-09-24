@@ -34,7 +34,7 @@ createRoot(document.getElementById('root')!).render(
       <TooltipProvider delay={250} timeout={300}>
         <ToastProvider>
           <AuthProvider>
-            <AuthGate>
+            <AuthGate initialRelayStatus={relayStatus} relayExpected={!import.meta.env.VITE_DEMO_MODE && !window.openAlice?.runtime && (import.meta.env.VITE_OPENALICE_DEV_RELAY === '1' || !import.meta.env.DEV || !!window.openAlice?.desktopConnection)}>
               <App />
             </AuthGate>
           </AuthProvider>

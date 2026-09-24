@@ -1,5 +1,5 @@
 import { createServer, request as httpRequest, type Server } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket, WebSocketServer } from 'ws'
 
 import { WebRelay } from './web-relay.ts'
@@ -138,6 +138,69 @@ describe('WebRelay', () => {
     expect(await (await fetch(`${origin}/api/who`)).json()).toMatchObject({ label: 'after' })
   })
 
+  it('rebuilds a stale SSH forward after proxied requests fail while the remote Runtime is healthy', async () => {
+    const before = await backend('cloud-id', 'stale forward')
+    const after = await backend('cloud-id', 'healthy forward')
+    openedBackends.push(after.server)
+    let attempts = 0
+    const relay = new WebRelay({
+      readRegistry: async () => ({ defaultMachine: 'local', machines: [{ key: 'cloud', sshTarget: 'cloud-host', enabled: true }] }) as never,
+      inspectRegistered: async () => ({
+        key: 'cloud', displayName: 'Cloud', connection: 'online', capabilities: { openTunnel: true },
+        projects: [{ key: 'main', id: 'cloud-id', displayName: 'Main', available: true, runtime: { webEndpoint: 'http://127.0.0.1:47331' } }],
+      }) as never,
+      connect: (async (options: { signal: AbortSignal; onReady: (value: { localUrl: string }) => void }) => {
+        const port = ++attempts === 1 ? before.port : after.port
+        options.onReady({ localUrl: `http://127.0.0.1:${port}` })
+        await new Promise<void>((resolve) => options.signal.addEventListener('abort', () => resolve(), { once: true }))
+        return 0
+      }) as never,
+      waitReady: async () => undefined,
+    })
+    const origin = await relay.listen()
+    openedRelays.push(relay)
+    await relay.connect('cloud', 'main')
+    await new Promise<void>((done) => before.server.close(() => done()))
+
+    expect((await fetch(`${origin}/api/who`)).status).toBe(502)
+    await vi.waitFor(() => expect(relay.status.generation).toBe(2))
+    expect(relay.status.targetConnection).toBe('healthy')
+    expect(await (await fetch(`${origin}/api/who`)).json()).toMatchObject({ label: 'healthy forward' })
+  })
+
+  it('keeps the selected location and reconnects when its SSH process exits', async () => {
+    const runtime = await backend('cloud-id', 'healthy')
+    openedBackends.push(runtime.server)
+    let attempts = 0
+    let exitFirstTunnel: (() => void) | null = null
+    const relay = new WebRelay({
+      readRegistry: async () => ({ defaultMachine: 'local', machines: [{ key: 'cloud', sshTarget: 'cloud-host', enabled: true }] }) as never,
+      inspectRegistered: async () => ({
+        key: 'cloud', displayName: 'Cloud', connection: 'online', capabilities: { openTunnel: true },
+        projects: [{ key: 'main', id: 'cloud-id', displayName: 'Main', available: true, runtime: { webEndpoint: 'http://127.0.0.1:47331' } }],
+      }) as never,
+      connect: (async (options: { signal: AbortSignal; onReady: (value: { localUrl: string }) => void }) => {
+        const first = ++attempts === 1
+        options.onReady({ localUrl: `http://127.0.0.1:${runtime.port}` })
+        await new Promise<void>((resolve) => {
+          if (first) exitFirstTunnel = resolve
+          options.signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        return 0
+      }) as never,
+      waitReady: async () => undefined,
+    })
+    await relay.listen()
+    openedRelays.push(relay)
+    await relay.connect('cloud', 'main')
+    expect(exitFirstTunnel).toBeTypeOf('function')
+    exitFirstTunnel!()
+
+    await vi.waitFor(() => expect(relay.status.generation).toBe(2))
+    expect(relay.status.target).toMatchObject({ machine: 'cloud', project: 'main' })
+    expect(relay.status.targetConnection).toBe('healthy')
+  })
+
   it('shares the selected target and disconnection events with a local presenter', async () => {
     const a = await backend('a-id', 'A')
     const relay = new WebRelay({ inspectLocal: async () => ({ machine: {
@@ -184,6 +247,8 @@ describe('WebRelay', () => {
     expect(await (await fetch(`${origin}/api/who`)).json()).toEqual({ label: 'B', cookie: null })
     const attack = await fetch(`${origin}/relay/v1/connect`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ machine: 'local', project: 'a' }) })
     expect(attack.status).toBe(403)
+    const reconnectAttack = await fetch(`${origin}/relay/v1/reconnect`, { method: 'POST', headers: { origin: 'https://evil.example' } })
+    expect(reconnectAttack.status).toBe(403)
     const machineAttack = await fetch(`${origin}/relay/v1/machines/apply`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ id: 'stolen-plan' }) })
     expect(machineAttack.status).toBe(403)
     expect(relay.status.target).toMatchObject({ machine: 'local', project: 'b' })
