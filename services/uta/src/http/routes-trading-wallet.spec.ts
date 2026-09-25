@@ -307,4 +307,3 @@ describe('wallet push retry after an indeterminate write', () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 })
-
