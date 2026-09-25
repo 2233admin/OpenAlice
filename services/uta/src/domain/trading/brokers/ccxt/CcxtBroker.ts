@@ -696,6 +696,9 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       const requestedQty = changes.totalQuantity != null && !changes.totalQuantity.equals(UNSET_DECIMAL)
         ? changes.totalQuantity.toNumber()
         : original.amount
+      if (typeof requestedQty !== 'number') {
+        return { success: false, error: `Cannot amend order ${orderId}: missing quantity` }
+      }
       const qty = this.exchangeName === 'okx' && original.filled != null && original.filled > 0
         ? requestedQty + original.filled
         : requestedQty

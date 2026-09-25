@@ -7,6 +7,7 @@
  * passed it through, leaving `contractToCcxt` unable to resolve.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { asSchema } from 'ai'
 
 // Mock ccxt BEFORE importing CcxtBroker (mirrors CcxtBroker.spec.ts).
 vi.mock('ccxt', () => {
@@ -143,10 +144,11 @@ describe('createCcxtProviderTools — getOrderBook', () => {
     const tools = createCcxtProviderTools(mgr)
     const brokerSpy = vi.spyOn(broker, 'getOrderBook')
 
-    expect(() => tools.getOrderBook.inputSchema.parse({
+    const validation = await asSchema(tools.getOrderBook.inputSchema).validate?.({
       aliceId: 'bybit-main|BTC/USDT:USDT',
       limit: 5001,
-    })).toThrow()
+    })
+    expect(validation?.success).toBe(false)
     expect(brokerSpy).not.toHaveBeenCalled()
   })
 })
