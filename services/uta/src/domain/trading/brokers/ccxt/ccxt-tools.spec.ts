@@ -124,6 +124,31 @@ describe('createCcxtProviderTools — getOrderBook', () => {
     })
     expect(result.error).toMatch(/No CCXT account available/)
   })
+
+  it('accepts order-book limit 400 and forwards it to broker.getOrderBook', async () => {
+    const tools = createCcxtProviderTools(mgr)
+    const brokerSpy = vi.spyOn(broker, 'getOrderBook')
+
+    const result = await (tools.getOrderBook.execute as Function)({
+      aliceId: 'bybit-main|BTC/USDT:USDT',
+      limit: 400,
+    })
+
+    expect(brokerSpy).toHaveBeenCalledTimes(1)
+    expect(brokerSpy.mock.calls[0][1]).toBe(400)
+    expect(result.source).toBe('bybit-main')
+  })
+
+  it('rejects order-book limit 5001 before calling broker.getOrderBook', async () => {
+    const tools = createCcxtProviderTools(mgr)
+    const brokerSpy = vi.spyOn(broker, 'getOrderBook')
+
+    expect(() => tools.getOrderBook.inputSchema.parse({
+      aliceId: 'bybit-main|BTC/USDT:USDT',
+      limit: 5001,
+    })).toThrow()
+    expect(brokerSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe('createCcxtProviderTools — getFundingRate', () => {
