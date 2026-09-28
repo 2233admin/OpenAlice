@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "katana": {
+      "command": "python",
+      "args": ["<KATANA_RUNTIME_ROOT>/scripts/bridge/mcp.py"]
+    }
+  }
+}

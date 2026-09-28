@@ -1,0 +1,9 @@
+{
+  "displayName": "Katana Desk",
+  "groupOrder": 40,
+  "description": "Read-only research desk wired to the katana kernel through a stdio MCP server (desk positions, pending acks, digest, market environment, deep scans, data health, lab registry). Agents never place orders, edit receipt issues, or write the book/lake.",
+  "defaultAgents": ["claude", "codex"],
+  "injectTools": true,
+  "injectInstructions": false,
+  "bundledSkills": []
+}
