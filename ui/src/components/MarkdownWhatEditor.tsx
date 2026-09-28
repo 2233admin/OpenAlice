@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from '@tiptap/markdown'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
 import { useTranslation } from 'react-i18next'
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
@@ -43,6 +45,8 @@ export function MarkdownWhatEditor({ value, onSave, ariaLabel, placeholder }: Ma
     StarterKit.configure({
       link: { openOnClick: false, autolink: true, linkOnPaste: true },
     }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
     Markdown.configure({ markedOptions: { breaks: true, gfm: true } }),
   ], [])
 

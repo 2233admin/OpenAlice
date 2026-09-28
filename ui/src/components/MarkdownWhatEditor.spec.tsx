@@ -90,4 +90,27 @@ describe('MarkdownWhatEditor', () => {
       expect(editor?.getAttribute('data-placeholder')).toBe('Describe the next check-in…')
     })
   })
+
+  it('renders task-list checkboxes and serializes a toggle back to Markdown', async () => {
+    const onSave = vi.fn(async () => true)
+    const { container } = render(
+      <MarkdownWhatEditor value={'- [ ] a\n- [x] b'} onSave={onSave} />,
+    )
+
+    const checkboxes = await waitFor(() => {
+      const inputs = container.querySelectorAll('li[data-checked] input[type="checkbox"]')
+      expect(inputs.length).toBe(2)
+      return Array.from(inputs) as HTMLInputElement[]
+    })
+
+    expect(checkboxes[0].checked).toBe(false)
+    expect(checkboxes[1].checked).toBe(true)
+
+    fireEvent.click(checkboxes[0])
+
+    await waitFor(
+      () => expect(onSave).toHaveBeenCalledWith('- [x] a\n- [x] b'),
+      { timeout: 2_000 },
+    )
+  })
 })

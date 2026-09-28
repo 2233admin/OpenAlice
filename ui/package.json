@@ -14,6 +14,8 @@
     "@base-ui/react": "^1.6.0",
     "@chenglou/pretext": "0.0.8",
     "@lobehub/icons-static-svg": "1.94.0",
+    "@tiptap/extension-task-item": "3.27.3",
+    "@tiptap/extension-task-list": "3.27.3",
     "@tiptap/markdown": "3.27.3",
     "@tiptap/react": "3.27.3",
     "@tiptap/starter-kit": "3.27.3",
