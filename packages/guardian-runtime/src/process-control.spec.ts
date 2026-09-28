@@ -2,7 +2,13 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { linuxProcessStartedAt, readProcessStartedAt, normalizeProcessExitCode, terminateProcessTree } from './process-control.js'
+import {
+  defaultProcessController,
+  linuxProcessStartedAt,
+  normalizeProcessExitCode,
+  readProcessStartedAt,
+  terminateProcessTree,
+} from './process-control.js'
 
 const cleanupPids = new Set<number>()
 
@@ -57,6 +63,20 @@ describe('terminateProcessTree', () => {
     expect(isAlive(childPid)).toBe(false)
     cleanupPids.delete(wrapper.pid)
     cleanupPids.delete(childPid)
+  })
+})
+
+describe('Windows process signaling', () => {
+  it.skipIf(process.platform !== 'win32')('force-kills a process when graceful taskkill is rejected', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' })
+    await once(child, 'spawn')
+    if (!child.pid) throw new Error('child did not start')
+    cleanupPids.add(child.pid)
+
+    await defaultProcessController.signalTree(child.pid, 'SIGTERM')
+
+    expect(isAlive(child.pid)).toBe(false)
+    cleanupPids.delete(child.pid)
   })
 })
 
