@@ -55,6 +55,7 @@ off the Alice host.
 - Polish frontend design — chat input, sidebar, card system
 - Round 2 polish — shared components, transitions, table hover
 - Round 3 polish — toast system, send spinner, mobile fixes
+- Upgrade shared UI primitives to Base UI 1.8.0 and shadcn 4.21.0 without changing the existing React type contract.
 
 ### 🐛 Bug Fixes
 
