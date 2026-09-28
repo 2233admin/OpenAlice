@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, LoaderCircle, Square } from 'lucide-react'
-import { Textarea } from '../ui/textarea'
-import { Button } from '../ui/button'
-import { ComposerShell } from './ComposerShell'
+import { ConversationLayout } from './ConversationLayout'
+import { ChatComposer, type ChatComposerProps } from './ChatComposer'
 import { ConversationTranscriptItem } from './ConversationTranscript'
 import type { ConversationItem } from './types'
 import './conversation.css'
 
 export interface ConversationViewProps {
+  readonly header?: ReactNode
+  readonly renderComposer?: (props: ChatComposerProps) => ReactNode
   readonly fileHrefs?: Record<string, string>
   readonly onFileReference?: (path: string) => void
   readonly items: readonly ConversationItem[]
@@ -34,6 +34,10 @@ export function isConversationNearBottom(metrics: Pick<HTMLElement, 'scrollTop' 
 
 /** No runtime protocol, polling or workspace knowledge belongs in this view. */
 export function ConversationView(props: ConversationViewProps) {
+  const initialItems = useRef<Map<string, ConversationItem> | null>(null)
+  if (!initialItems.current && props.items.length) initialItems.current = new Map(props.items.map(item => [item.key, item]))
+  const [stopped, setStopped] = useState(false)
+  useEffect(() => { if (!props.busy) setStopped(false) }, [props.busy])
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -53,6 +57,15 @@ export function ConversationView(props: ConversationViewProps) {
   useEffect(() => {
     if (followingRef.current) scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'auto' })
   }, [props.revision, props.items.length])
+
+  useEffect(() => {
+    if (!scroller.current || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (followingRef.current) scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'auto' })
+    })
+    for (const child of scroller.current.children) observer.observe(child)
+    return () => observer.disconnect()
+  }, [props.items.length])
 
   async function submit() {
     const message = draft.trim()
@@ -77,36 +90,40 @@ export function ConversationView(props: ConversationViewProps) {
     pendingRef.current = true
     setPending(true)
     setActionError(null)
+    setStopped(true)
     try { await props.stop() }
     catch (error) { if (mounted.current) setActionError(error instanceof Error ? error.message : String(error)) }
     finally { pendingRef.current = false; if (mounted.current) setPending(false) }
   }
 
   const error = actionError ?? props.error
-  return <div className="conversation-shell">
-    <div ref={scroller} className="conversation-messages" onScroll={(event) => {
+  return <ConversationLayout
+    header={props.header}
+    scrollRef={scroller}
+    onScroll={(event) => {
       followingRef.current = isConversationNearBottom(event.currentTarget)
       setFollowing(followingRef.current)
-    }}>
+    }}
+    composer={<>
+      {!following && <div className="conversation-jump-row"><button type="button" className="conversation-jump-latest" onClick={() => jump()}>Jump to latest</button></div>}
+      {props.status}
+      {(props.send || (props.busy && props.stop)) && (props.renderComposer ?? ((composer) => <ChatComposer {...composer} />))({
+        context: props.context, controls: props.controls,
+        value: draft, onChange: setDraft, placeholder: props.placeholder,
+        disabled: !props.ready || !props.send || pending,
+        canSend: !!props.send && props.ready && !!draft.trim() && !props.busy,
+        pending, busy: props.busy,
+        onSubmit: () => void submit(), onStop: props.stop ? () => void stop() : undefined,
+        stopLabel: props.stopLabel ?? 'Stop response',
+      })}
+    </>}
+  >
       {props.items.length === 0 && !error && <div className="conversation-empty">{props.empty}</div>}
-      {props.items.map((item, index) => <ConversationTranscriptItem key={item.key} fileHrefs={props.fileHrefs} onFileReference={props.onFileReference} item={item} latest={index === props.items.length - 1} working={props.busy && index === props.items.length - 1} />)}
+      {props.items.map((item, index) => <ConversationTranscriptItem key={item.key} fileHrefs={props.fileHrefs} onFileReference={props.onFileReference} item={item} animate={props.busy && !stopped && JSON.stringify(initialItems.current?.get(item.key)) !== JSON.stringify(item) && index === props.items.length - 1} latest={index === props.items.length - 1} working={props.busy && index === props.items.length - 1} />)}
       {error && <div className="conversation-error" role="alert">
         <strong>Could not continue</strong><span>{error}</span>
         {props.retry && <button type="button" onClick={() => { setActionError(null); props.retry?.() }}>Retry</button>}
         {props.recover && <button type="button" onClick={props.recover}>Refresh session</button>}
       </div>}
-    </div>
-    <div className="conversation-composer-wrap">
-      {!following && <div className="conversation-jump-row"><button type="button" className="conversation-jump-latest" onClick={() => jump()}>Jump to latest</button></div>}
-      {props.status}
-      {(props.send || (props.busy && props.stop)) && <ComposerShell context={props.context} controls={props.controls} action={
-        props.busy ? (props.stop && <Button size="icon" className="conversation-send" disabled={pending} aria-label={props.stopLabel ?? 'Stop response'} onClick={() => void stop()}>{pending ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : <Square size={14} fill="currentColor" aria-hidden />}</Button>)
-          : props.send && <Button size="icon" className="conversation-send" disabled={!props.ready || !draft.trim() || pending} aria-label="Send message" aria-busy={pending} onClick={() => void submit()}>{pending ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : <ArrowUp size={18} aria-hidden />}</Button>
-      }>
-        <Textarea value={draft} rows={1} className="conversation-input" aria-label={props.placeholder} placeholder={props.placeholder} disabled={!props.ready || !props.send || pending} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit() }
-        }} />
-      </ComposerShell>}
-    </div>
-  </div>
+  </ConversationLayout>
 }

@@ -70,6 +70,7 @@ describe('OpenAlice CLI updates', () => {
     const result = await checkForUpdate({
       currentVersion: '0.87.0',
       installSource: stableSource,
+      platform: 'linux',
     }, {
       fetchImpl: manifestFetch(newerStableVersion),
       env: {},
@@ -87,6 +88,7 @@ describe('OpenAlice CLI updates', () => {
     await expect(checkForUpdate({
       currentVersion: `${currentMajor}.${currentMinor}.0-beta.1`,
       installSource: betaSource,
+      platform: 'linux',
     }, { fetchImpl, env: {} })).resolves.toMatchObject({
       status: 'available',
       latestVersion: newerBetaVersion,
@@ -212,6 +214,7 @@ describe('OpenAlice CLI updates', () => {
       currentVersion: newerStableVersion,
       installSource: stableSource,
       channel: 'beta',
+      platform: 'linux',
     }, { fetchImpl: manifestFetch(newerBetaVersion), env: {} })).resolves.toMatchObject({
       status: 'available',
       channel: 'beta',
@@ -229,6 +232,7 @@ describe('OpenAlice CLI updates', () => {
         selector: { kind: 'branch', value: 'master' },
         installerUrl: 'https://openalice.ai/install',
       },
+      platform: 'linux',
     }, {
       fetchImpl: manifestFetch(newerStableVersion),
       env: {},
@@ -251,6 +255,7 @@ describe('OpenAlice CLI updates', () => {
     await expect(runUpdateCommand(['--yes'], {
       applyUpdate,
       fetchImpl: manifestFetch(newerStableVersion),
+      platform: 'linux',
       layout: { installRoot: '/tmp/.openalice' },
       readInstallSourceImpl: async () => stableSource,
       stdout,
@@ -307,6 +312,7 @@ describe('OpenAlice CLI updates', () => {
       },
     }, {
       layout: { installRoot: '/tmp/.openalice' },
+      platform: 'linux',
       yes: true,
       env: { PATH: '/bin' },
       fetchImpl: async () => ({
@@ -437,6 +443,7 @@ describe('OpenAlice CLI updates', () => {
       },
     }, {
       layout: { installRoot: '/tmp/.openalice' },
+      platform: 'linux',
       yes: true,
       env: { PATH: '/bin' },
       fetchImpl: async () => ({
@@ -465,6 +472,7 @@ describe('OpenAlice CLI updates', () => {
     const stderr = { isTTY: true, write: vi.fn() }
     const dependencies = {
       interactive: true,
+      platform: 'linux',
       layout: { updateCachePath: '/tmp/update-cache.json' },
       readFileImpl: async () => {
         if (cache == null) {

@@ -112,7 +112,7 @@ describe('telegram desk ingest and stamp', () => {
     expect(shouldProjectDeskComment(created.ok ? created.issue : { connectorDesk: 'telegram' }, result.comment)).toBe(false)
   })
 
-  it('starts native owner-chat activity after the Agent turn is scheduled', async () => {
+  it('leaves activity lifecycle to the dispatched turn', async () => {
     const created = await createTelegramConnectorDesk(
       { id: 'ws-a', dir: wsDir },
       [{ id: 'ws-a', dir: wsDir }],
@@ -131,11 +131,7 @@ describe('telegram desk ingest and stamp', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(sent).toEqual([expect.objectContaining({
-      id: `desk-accepted-${result.comment.id}`,
-      conversationId: result.comment.id,
-      phase: 'accepted',
-    })])
+    expect(sent).toEqual([])
   })
 
   it('stamps a scheduled fire as a comment', async () => {
@@ -171,8 +167,7 @@ describe('telegram desk ingest and stamp', () => {
     })
     expect(comment?.markdown).toContain('[[no-reply]]')
     expect(comment?.id).toBe('comment-fire-run-1')
-    expect(sent).toEqual([expect.objectContaining({ phase: 'final', conversationId: 'run-1' })])
-    expect(sent[0]).toMatchObject({ source: 'automation', text: 'Markets are quiet. [[no-reply]] no send.' })
+    expect(sent).toEqual([]) // Persistence is independent of execution-owned delivery.
     if (!comment) return
     expect(shouldProjectDeskComment(created.issue, comment, {
       triggerMetadata: { kind: 'connector-cron-issue', connectorId: 'telegram' },

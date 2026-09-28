@@ -8,7 +8,7 @@ import { PortfolioPage } from '../pages/PortfolioPage'
 import { TradingAsGitPage } from '../pages/TradingAsGitPage'
 import { IssuePage } from '../pages/IssuePage'
 import { IssueSettingsPage } from '../pages/IssueSettingsPage'
-import { HarnessSettingsPage } from '../pages/HarnessSettingsPage'
+import { SessionVisibilitySettingsPage } from '../pages/SessionVisibilitySettingsPage'
 import { IssueDetailPage } from '../pages/IssueDetailPage'
 import { TrackedIssueDetailPage } from '../pages/TrackedIssueDetailPage'
 import { OfficePage } from '../pages/OfficePage'
@@ -18,8 +18,9 @@ import { MarketRotationPage } from '../pages/MarketRotationPage'
 import { MarketBoardPage } from '../pages/MarketBoardPage'
 import { MARKET_BOARD_TITLES } from '../pages/market-board-titles'
 import { MarketDetailPage } from '../pages/MarketDetailPage'
-import { AppearanceSettingsPage, SettingsPage, ToolsSettingsPage } from '../pages/SettingsPage'
+import { AppearanceSettingsPage, LanguageSettingsPage, SettingsPage, ToolsSettingsPage } from '../pages/SettingsPage'
 import { ActivityBarSettingsPage } from '../pages/ActivityBarSettingsPage'
+import { PetSettingsPage } from '../pages/PetSettingsPage'
 import { WorkspaceInjectionPage } from '../pages/WorkspaceInjectionPage'
 import { BetaSettingsPage } from '../pages/BetaSettingsPage'
 import { AgentPermissionsPage } from '../pages/AgentPermissionsPage'
@@ -265,16 +266,18 @@ const settingsCategoryTitle: Record<
   Extract<ViewSpec, { kind: 'settings' }>['params']['category'],
   string
 > = {
-  general: 'Settings',
-  appearance: 'Appearance',
+  general: 'Overview',
+  language: 'Language',
+  appearance: 'Skin',
+  pet: 'Pet',
   'activity-bar': 'Activity bar',
   'ai-provider': 'AI Provider',
   'agent-runtimes': 'Agent runtimes',
-  'agent-permissions': 'Agent Permissions',
+  'agent-permissions': 'Mode',
   tools: 'Tools',
-  trading: 'Trading',
+  trading: 'Broker',
   issues: 'Issues',
-  harness: 'Harness',
+  visibility: 'Visibility',
   connectors: 'Connectors',
   mcp: 'MCP Server',
   'market-data': 'Market Data',
@@ -286,7 +289,9 @@ const settingsCategoryTitle: Record<
 function SettingsRouter({ spec }: ViewProps<'settings'>) {
   switch (spec.params.category) {
     case 'general': return <SettingsPage />
+    case 'language': return <LanguageSettingsPage />
     case 'appearance': return <AppearanceSettingsPage />
+    case 'pet': return <PetSettingsPage />
     case 'activity-bar': return <ActivityBarSettingsPage />
     case 'ai-provider': return <AIProviderPage />
     case 'agent-runtimes': return <AgentRuntimesSettingsPage />
@@ -294,7 +299,7 @@ function SettingsRouter({ spec }: ViewProps<'settings'>) {
     case 'tools': return <ToolsSettingsPage />
     case 'trading': return <TradingPage />
     case 'issues': return <IssueSettingsPage />
-    case 'harness': return <HarnessSettingsPage />
+    case 'visibility': return <SessionVisibilitySettingsPage />
     case 'connectors': return <ConnectorsPage />
     case 'mcp': return <MCPPage />
     case 'market-data': return <MarketDataPage />
@@ -316,7 +321,6 @@ const settingsModule: ViewModule<'settings'> = {
       storageKey="settings"
       titleKey="nav.item.settings"
       defaultWidth={220}
-      desktopMinWidth={960}
       sidebar={({ closeMobileDrawer }) => <SettingsCategoryList onSelect={closeMobileDrawer} />}
     >
       <SettingsRouter {...props} />
@@ -369,7 +373,6 @@ const devModule: ViewModule<'dev'> = {
       storageKey="settings"
       titleKey="nav.item.settings"
       defaultWidth={220}
-      desktopMinWidth={960}
       sidebar={({ closeMobileDrawer }) => <SettingsCategoryList onSelect={closeMobileDrawer} />}
     >
       <DevPage {...props} />

@@ -174,6 +174,12 @@ managed Bash path. Workspace child processes receive the PortableGit command
 directories on `PATH`, so the default packaged flow does not require Node,
 npm, Git for Windows, WSL, or a system agent CLI.
 
+A minimal Windows GUI `PATH` is also augmented with existing per-user Bun, npm,
+pnpm, WinGet-link, and registered native-agent directories before `/agents`
+probes and child-process launches. `OPENALICE_EXTRA_AGENT_PATH` remains
+available for non-standard installs. Inventory stays a filesystem lookup;
+runnability is still the separate credential/model readiness probe.
+
 User-installed npm Agent runtimes are resolved without evaluating task prompts
 as command text. Native `.exe`/`.com` binaries run directly; recognizable
 npm/pnpm `.cmd` shims are reduced to their JavaScript entrypoint and run on the
@@ -480,9 +486,11 @@ starts a local research branch at the approved commit, and writes
 the native Coding Agent owns environment setup, later research commits, and
 explicit fetch/merge upgrades inside the Workspace. When a pinned source
 declares a v1 Studio capability, Alice may launch it with allocator-owned
-loopback ports. Electron keeps its main UI on `app://` and uses the restricted
-streaming Surface Gateway described in [[docs/harness-web-surfaces.md]]; it does
-not re-enable the ordinary Alice web listener.
+loopback ports. Electron integrated mode keeps its main UI on `app://` and uses
+the restricted streaming Surface Gateway described in
+[[docs/harness-web-surfaces.md]]; it does not re-enable the ordinary Alice web
+listener. Separated mode instead loads the local relay's HTTP UI and connects
+to the selected backend through that relay.
 
 OpenAlice copies Workspace skills into two canonical project paths:
 
@@ -769,3 +777,10 @@ Windows package.
 
 That cleanup must not weaken the first-run contract: install OpenAlice,
 configure a credential, open a Workspace, and let Alice work.
+
+## Populated desktop preview
+
+For an isolated native frontend preview with shared mock data, use
+`pnpm electron:demo`. It preserves app protocol, preload and child IPC without
+starting managed agents or trading services. See [[docs/demo-mode.md]] for
+commands, data ownership and acceptance limits.

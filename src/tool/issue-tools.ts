@@ -439,8 +439,8 @@ export const issueCommentFactory: WorkspaceToolFactory = {
           await projectDeskComment(res.issue, res.comment, undefined, {
             workspaceId: ctx.workspaceId,
             ...(scope?.workspaceId === ctx.workspaceId && scope.issueId === id
-              ? { progressScopeId: scope.scopeId } : {}),
-            automated: run?.trigger?.kind === 'issue',
+              ? { progressScopeId: scope.scopeId, delivery: run?.communication?.delivery } : {}),
+            automated: scope ? run?.communication?.delivery?.source === 'automation' : false,
             ...(run?.status === 'running' && scope?.workspaceId === ctx.workspaceId && scope.issueId === id
               ? { phase: 'progress' as const } : {}),
           }).catch(() => undefined)

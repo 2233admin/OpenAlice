@@ -32,7 +32,7 @@ approval or cannot reopen an exact recorded conversation.
 
 | Wire | Runtimes | Process | Permission prompts | Fresh session |
 |---|---|---|---|---|
-| `pi-rpc` | `pi`, `omp` | `--mode rpc` JSONL; Pi additionally `--approve`, omp `--auto-approve` | none in RPC mode; launch-time approval | yes (RPC allocates the id) |
+| `pi-rpc` | `pi`, `omp` | `--mode rpc` JSONL; Pi additionally `--approve`, omp `--auto-approve` | none in RPC mode; launch-time approval | yes. Pi uses a launcher-minted `--session-id` on TUI and Web; omp lets RPC allocate the id |
 | `acp` | `cursor`, `grok`, `opencode` | Agent Client Protocol JSON-RPC over stdio (`cursor-agent acp`, `grok agent --no-leader stdio`, `opencode acp`) | `session/request_permission` with the agent's own options | `session/new`; resume via `session/load` when advertised |
 | `claude-stream-json` | `claude` | `-p --input-format stream-json --output-format stream-json --include-partial-messages --permission-prompt-tool stdio` | `control_request` `can_use_tool`; answered with allow/deny | `--session-id <uuid>` chosen by the adapter |
 | `codex-app-server` | `codex` | `codex app-server --listen stdio://` with MCP registration, `approvalPolicy: never`, `sandbox: danger-full-access` | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` (answered with a `decision` enum), `item/permissions/requestApproval` (answered with the granted `permissions` profile + `scope`), `item/tool/requestUserInput` | `thread/start`; resume via `thread/resume` |
@@ -87,7 +87,13 @@ components, labels) use "Web". User-facing copy says "Web", never "WebPi".
 
 ## Routes
 
-- `POST /web/open` — checks `capabilities.web`, refuses a Session with a
+- `POST /web/open` — optionally accepts the same complete native/vault, model
+  and effort selection as the paused Session editor. A selection restarts the
+  same native conversation under the resume lease: validate first, wait for the
+  old child to stop, replace the secret-free binding, then reopen. Busy turns
+  reject changes; no per-runtime hot-switch protocol is needed. Invalid
+  credentials retain the old process. A failed new launch remains paused for
+  recovery. Without a selection, the existing open behavior is unchanged. It checks `capabilities.web`, refuses a Session with a
   running headless turn, disposes a PTY on the same record, starts the host.
 - `GET /web?revision=` — snapshot or `{ unchanged: true }`.
 - `POST /web/prompt`, `POST /web/abort` — turn control.
@@ -206,3 +212,35 @@ poll, stale-response cancellation and retry state for KlinePanel, shared with
 the Market pages. Embedded interval selection opens/focuses the corresponding
 market tab and never navigates away from chat. Missing sources keep the card
 and show an actionable chart error. User prose is not parsed.
+
+### Text reveal
+
+The shared ConversationView buffers newly arriving assistant prose for an
+animation-frame reveal; runtime polling and authoritative snapshots are unchanged.
+It reveals Unicode graphemes, accelerates large batches, and keeps rich references
+and inline links whole. History (including the first asynchronously loaded
+snapshot) appears immediately. Completion, Stop, and reduced-motion preference
+flush the visual buffer; unmount cancels animation. A ResizeObserver follows
+text growth only while the reader remains near the bottom.
+
+### Shared Start and GUI composer
+
+`AgentChatComposer` owns the common `ChatComposer` input/actions and the combined
+AI access/model/effort menu. Start supplies runtime and surface selection in the
+context slot and follows the sidebar Workspace target; it has no Workspace
+picker. GUI shows its fixed runtime identity in the top bar beside surface
+switching, without a composer context tray. Its `useWebSessionModelConfig` uses
+the existing pinned runtime draft and unified model catalog hook, never launch
+preferences. Selecting AI configuration restarts the same Session via `/web/open`.
+Sending and configuration are locked during restart; the mounted composer keeps
+its draft and transcript. `useWebConversation` invalidates in-flight polls and
+accepts the restarted process's new revision sequence. No persisted shape changes.
+
+`ConversationLayout` owns the single page canvas for Start and GUI: header,
+scrolling content, and bottom composer dock. Start supplies the welcome state
+(centered when space permits, scrollable from the top when short); an existing
+Session supplies transcript content and follow-tail handling. Both use Start's
+46rem composer width, 12px narrow gutters/bottom inset, and 24px gutters with
+a 20px bottom inset from 42rem container width. Workspace pages must not add
+another padding wrapper around the GUI canvas. Route/session lifetimes remain
+unchanged; this shared layout does not keep a runtime alive across navigation.

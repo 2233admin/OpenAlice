@@ -792,6 +792,11 @@ body {
 }
 /* macOS owns the traffic lights; the existing navigation and page headers
    share their row. Browser windows keep their original geometry. */
+.oa-desktop-mac [data-desktop-banner] {
+  min-height: 44px;
+  padding-left: 88px;
+  -webkit-app-region: drag;
+}
 .oa-desktop-mac .oa-topbar,
 .oa-desktop-mac .oa-activity-brand,
 .oa-desktop-mac [data-testid="mobile-context-bar"] {
@@ -846,6 +851,21 @@ body {
    surface is auto-refreshing". 2.4s cycle so it reads as ambient
    not anxious. Color is the success/green token to keep the
    association with "alive + healthy". */
+
+/* Indeterminate activity only; its position never represents task progress. */
+@keyframes session-running-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(460%); }
+}
+.oa-session-running-line::after {
+  content: '';
+  display: block;
+  width: 22%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  animation: session-running-sweep 2.8s ease-in-out infinite;
+}
 
 @keyframes live-pulse {
   0%, 100% {
@@ -1084,6 +1104,7 @@ html[lang="ja"] .oa-onboarding-title {
     background-image: none;
     opacity: 0.7;
   }
+  .oa-session-running-line::after,
   .live-pulse,
   .live-pulse::after,
   .thinking-dot,
@@ -1876,3 +1897,13 @@ html[lang="ja"] .oa-onboarding-title {
 .markdown-content a[data-file-path]:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
 .markdown-content a.markdown-file-image.is-sticker img { border: 0; border-radius: 0; background: transparent; }
+
+/* Issue detail shares a flush reading column with its title and Activity. */
+.issue-detail-document .what-editor-content .ProseMirror {
+  padding: 0;
+}
+.issue-detail-document .what-editor-shell {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

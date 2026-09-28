@@ -68,3 +68,5 @@ captures/
 .dev/*.log
 .dev/*.pid
 .dev/*.pids
+# Isolated Electron demo UI bundle
+/ui/dist-demo/
