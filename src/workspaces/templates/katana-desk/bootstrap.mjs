@@ -14,7 +14,8 @@
  *          AQ_TEMPLATE_FILES_DIR — abs path to this template's `files/` dir
  */
 
-import { cpSync, existsSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { initWorkspaceDir, copyReadme, setupGitExcludes, git } from '../_common.mjs'
 
 const tag = process.argv[2]
@@ -34,8 +35,22 @@ if (filesDir && existsSync(filesDir)) {
   console.error(`[katana-desk] no files/ dir at ${filesDir ?? '(unset AQ_TEMPLATE_FILES_DIR)'}, skipping seed`)
 }
 
+// The MCP server must run inside katana's uv-managed backend env (the `mcp` SDK and
+// `app.*` live there), so .mcp.json launches it through scripts/katana_uv.py with an
+// absolute --project path. Fill the checkout root from KATANA_RUNTIME_ROOT when set.
+const runtimeRoot = process.env.KATANA_RUNTIME_ROOT?.replace(/\\/g, '/').replace(/\/+$/, '')
+const mcpPath = join(outDir, '.mcp.json')
+let placeholderLeft = true
+if (runtimeRoot && existsSync(mcpPath)) {
+  const filled = readFileSync(mcpPath, 'utf8').replaceAll('<KATANA_RUNTIME_ROOT>', runtimeRoot)
+  writeFileSync(mcpPath, filled)
+  placeholderLeft = false
+}
+
 await git(['init', '-q'], outDir)
 setupGitExcludes(outDir)
 
 console.log(`bootstrapped katana-desk workspace '${tag}' at ${outDir}`)
-console.log('[katana-desk] edit .mcp.json: replace <KATANA_RUNTIME_ROOT> with your katana-runtime checkout path (see README.md)')
+if (placeholderLeft) {
+  console.log('[katana-desk] KATANA_RUNTIME_ROOT unset: edit .mcp.json and replace <KATANA_RUNTIME_ROOT> with your katana-runtime checkout path (see README.md)')
+}

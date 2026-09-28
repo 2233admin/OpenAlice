@@ -35,16 +35,24 @@ this workspace. This template only seeds:
   "mcpServers": {
     "katana": {
       "command": "python",
-      "args": ["<KATANA_RUNTIME_ROOT>/scripts/bridge/mcp.py"]
+      "args": [
+        "<KATANA_RUNTIME_ROOT>/scripts/katana_uv.py", "run",
+        "--project", "<KATANA_RUNTIME_ROOT>/backend",
+        "python", "<KATANA_RUNTIME_ROOT>/scripts/bridge/mcp.py"
+      ]
     }
   }
 }
 ```
 
-After creating a workspace from this template, edit `.mcp.json` in the new
+The server runs through `scripts/katana_uv.py`, not bare `python`: the `mcp` SDK and
+katana's `app.*` modules exist only in katana's uv-managed backend environment. A bare
+`python .../mcp.py` fails with `ModuleNotFoundError: No module named 'mcp.server.mcpserver'`.
+
+Set `KATANA_RUNTIME_ROOT` (for example `D:/projects/k-atana-runtime`) before creating the
+workspace and bootstrap fills in the placeholder. Otherwise edit `.mcp.json` in the new
 workspace and replace `<KATANA_RUNTIME_ROOT>` with the absolute path to your
-katana-runtime checkout (the directory containing `scripts/bridge/mcp.py`),
-for example `D:/projects/k-atana-runtime`. This keeps the machine-specific
+katana-runtime checkout (the directory containing `scripts/bridge/mcp.py`). This keeps the machine-specific
 path out of the template source so the template stays portable across
 hosts and shareable without leaking a local filesystem layout.
 
