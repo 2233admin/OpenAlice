@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -148,6 +148,23 @@ describe('omp composeHeadlessCommand', () => {
       '--',
       'next',
     ]);
+  });
+
+  it.skipIf(process.platform !== 'win32')('launches the native omp.exe instead of an npm PATH shim', async () => {
+    const bin = await mkdtemp(join(tmpdir(), 'omp-bin-'));
+    try {
+      const exe = join(bin, 'omp.exe');
+      await writeFile(exe, '');
+      const launchCtx = ctx({ env: { PATH: bin } });
+      const commands = [
+        ompAdapter.composeCommand([], launchCtx),
+        ompAdapter.composeHeadlessCommand!([], launchCtx, PROMPT),
+        ompAdapter.composeWebCommand!([], launchCtx),
+      ];
+      for (const argv of commands) expect(argv[0]).toBe(exe);
+    } finally {
+      await rm(bin, { recursive: true, force: true });
+    }
   });
 });
 
