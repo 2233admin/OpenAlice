@@ -1,3 +1,4 @@
+import { selectRelease, isVersion, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -88,9 +89,14 @@ export async function checkForUpdate(options = {}, dependencies = {}) {
     const currentArtifactSha256 = options.currentArtifactSha256
       ?? installSource?.artifact?.sha256
       ?? null
-    const sameArtifact = currentArtifactSha256 === manifest.target.sha256
+    const decision = selectRelease(
+      { channel: sourceChannel, version: currentVersion, artifactSha256: currentArtifactSha256 ?? undefined },
+      { channel: 'dev', version: manifest.version, commit: manifest.commit, artifactSha256: manifest.target.sha256 },
+      'dev',
+    )
     return {
-      status: sourceChannel !== 'dev' || !sameArtifact ? 'available' : 'current',
+      status: decision.status === 'unknown' ? 'unsupported' : decision.status,
+      ...(decision.status === 'unknown' ? { message: 'Cannot determine the running release identity' } : {}),
       currentVersion,
       latestVersion: manifest.version,
       latestCommit: manifest.commit,
@@ -129,9 +135,15 @@ export async function checkForUpdate(options = {}, dependencies = {}) {
       message: 'Stable 0.90.1 uses the legacy Node-managed layout and cannot safely replace a native CLI installation. Stay on beta/dev until a native stable release is available.',
     }
   }
-  const comparison = compareVersions(manifest.version, currentVersion)
+  const decision = selectRelease(
+    { channel: sourceChannel, version: currentVersion },
+    { channel: manifest.channel, version: manifest.version },
+    channel,
+    options.channel !== undefined ? 'switch-channel' : 'update',
+  )
   return {
-    status: sourceChannel !== channel || comparison > 0 ? 'available' : 'current',
+    status: decision.status === 'unknown' ? 'unsupported' : decision.status === 'available' ? 'available' : 'current',
+    ...(decision.status === 'unknown' ? { message: 'Cannot determine the running release identity' } : {}),
     currentVersion,
     latestVersion: manifest.version,
     releaseNotesUrl: manifest.releaseNotesUrl,
@@ -314,17 +326,6 @@ export async function maybeNotifyUpdate(options = {}, dependencies = {}) {
   }
   await writeCacheBestEffort(layout.updateCachePath, cache, writeFileImpl)
   return result
-}
-
-export function compareVersions(left, right) {
-  const parsedLeft = parseVersion(left)
-  const parsedRight = parseVersion(right)
-  for (let index = 0; index < 3; index += 1) {
-    if (parsedLeft.core[index] !== parsedRight.core[index]) {
-      return parsedLeft.core[index] > parsedRight.core[index] ? 1 : -1
-    }
-  }
-  return comparePrerelease(parsedLeft.prerelease, parsedRight.prerelease)
 }
 
 export function formatUpdateHelp() {
@@ -628,48 +629,6 @@ export function normalizeUpdateChannel(channel) {
   if (channel === 'stable' || channel === 'beta' || channel === 'dev') return channel
   if (channel === 'development') return 'dev'
   return null
-}
-
-function releaseChannelMatchesVersion(channel, version) {
-  if (channel === 'stable') return /^\d+\.\d+\.\d+$/.test(version)
-  if (channel === 'beta') return /^\d+\.\d+\.\d+-beta(?:\.[1-9][0-9]*)?$/.test(version)
-  return false
-}
-
-function parseVersion(value) {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value)
-  if (!match) throw new Error(`Invalid OpenAlice version: ${value}`)
-  return {
-    core: [Number(match[1]), Number(match[2]), Number(match[3])],
-    prerelease: match[4]?.split('.') ?? [],
-  }
-}
-
-function isVersion(value) {
-  try {
-    parseVersion(value)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function comparePrerelease(left, right) {
-  if (left.length === 0 && right.length === 0) return 0
-  if (left.length === 0) return 1
-  if (right.length === 0) return -1
-  const length = Math.max(left.length, right.length)
-  for (let index = 0; index < length; index += 1) {
-    if (left[index] === undefined) return -1
-    if (right[index] === undefined) return 1
-    if (left[index] === right[index]) continue
-    const leftNumeric = /^\d+$/.test(left[index])
-    const rightNumeric = /^\d+$/.test(right[index])
-    if (leftNumeric && rightNumeric) return Number(left[index]) > Number(right[index]) ? 1 : -1
-    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1
-    return left[index] > right[index] ? 1 : -1
-  }
-  return 0
 }
 
 function cachedResult(cache, now, channel, sourceFingerprint) {

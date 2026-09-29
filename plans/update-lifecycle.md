@@ -1,7 +1,7 @@
 # Update lifecycle
 
-Status: active planning. Centralization direction accepted; the migration below
-is proposed and not implemented. Related issues: none linked; findings remain
+Status: active implementation. Centralization direction accepted; shared release
+selection is implemented, with inventory and lifecycle migration still open. Related issues: none linked; findings remain
 in this workstream. Owner guides: [[docs/alice-project.md]],
 [[docs/harness-web-surfaces.md]], [[docs/workspace-template-upgrade.md]],
 [[docs/local-runtime.md]], and [[docs/ui-interaction-and-motion.md]].
@@ -463,3 +463,40 @@ production three-way merge or replace its preview digest/conflict protections.
 Validation: five mismatch behavior specs plus existing publication and hook
 regressions; UI typecheck; real browser review of frontend/backend mismatches and
 execution of backend-to-Chat plus busy/resume. Real installers remain untouched.
+
+## 2026-09-29 first shared-core increment
+
+The first slice of phase 1 introduces `@traderalice/update-lifecycle` and wires
+production backend checks, CLI stable/beta/dev checks, UI badges and rehearsal
+selection to it. Source Workspace tag comparison uses the same comparator.
+Removed the UI discovery comparator module and server/CLI comparator exports;
+shared comparison/channel tests now live in the package. Installer ownership,
+legacy stable-layout refusal and checksum verification remain in their adapters.
+
+Normal checks cannot select lower SemVer releases; an explicit CLI channel switch
+remains a separate intent. Missing/invalid evidence stays unknown in the shared
+decision and projects to existing transport error/unsupported fields. No new
+persisted state or API schema is introduced.
+
+Phase 1 remains open for scoped installation/active/desired inventory and
+compatibility evidence. This increment does not unify probes or execute the
+simulator through the real operation coordinator yet. See
+[[docs/update-lifecycle.md]] for the implemented boundary.
+
+Packaged acceptance exposed historical `snapshot-*` source catalog entries. They
+remain valid exact selections; automatic SemVer selection excludes them and an
+opaque installed baseline requires explicit source selection rather than guessing
+its order. A Git-backed regression covers both stable discovery and exact
+snapshot planning. The onboarding smoke's synchronous pre-render Chat assertion
+was corrected to wait for post-render preparation. Its subsequent mock credential
+verification timeout is tracked separately in GitHub issue #1657; it is not
+claimed as passing onboarding acceptance.
+
+Acceptance for this increment: root/UI/CLI/shared-package/desktop typechecks,
+UI and Electron builds, the complete hermetic suite (859 passed files, 7,371
+passed tests; 1 file/5 tests skipped), Git-backed source snapshot regression,
+real browser mismatch and stable/dev selection flows, and unsigned packaged
+Electron Workspace acceptance. Temporary packages and test process trees were
+cleaned. No real remote installation, native auto-update restart or publication
+was performed; those remain later adapter acceptance. Onboarding credential
+verification remains the explicitly separate #1657 failure.

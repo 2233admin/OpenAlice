@@ -16,6 +16,7 @@ export const ownerSuites = {
       'src/tool',
       'src/webui',
       'packages/opentypebb',
+      'packages/update-lifecycle',
     ],
   },
   ui: {

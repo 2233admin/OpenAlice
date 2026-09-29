@@ -1,9 +1,9 @@
 import {
   identityLabel,
   newerRelease,
-  isReleaseUpdate,
+  selectRelease,
   type ReleaseChannel,
-} from '../../../lib/updates/discovery'
+} from '@traderalice/update-lifecycle'
 import {
   initialPublication,
   createRelease,
@@ -254,7 +254,7 @@ export function reduce(s: State, a: Action): State {
     if (a.type === 'discover') {
       const release = head(s.publication, s.channel)
       const [version, commit] = s.client.split('+dev.')
-      const clientUpdate = isReleaseUpdate(
+      const clientUpdate = selectRelease(
         {
           version,
           channel: commit ? 'dev' : version.includes('-') ? 'beta' : 'stable',
@@ -262,12 +262,12 @@ export function reduce(s: State, a: Action): State {
         },
         release,
         s.channel,
-      )
+      ).status === 'available'
       const [serverVersion, serverCommit] = s.server.split('+dev.')
       const update =
         clientUpdate ||
         (s.backend &&
-          isReleaseUpdate(
+          selectRelease(
             {
               version: serverVersion,
               channel: serverCommit
@@ -279,7 +279,7 @@ export function reduce(s: State, a: Action): State {
             },
             release,
             s.channel,
-          ))
+          ).status === 'available')
       return {
         ...s,
         selectedRelease: update ? release : null,

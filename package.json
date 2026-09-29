@@ -111,6 +111,7 @@
     "@traderalice/guardian-runtime": "workspace:*",
     "@traderalice/ibkr": "workspace:*",
     "@traderalice/opentypebb": "workspace:*",
+    "@traderalice/update-lifecycle": "workspace:*",
     "@traderalice/uta-protocol": "workspace:*",
     "@xterm/addon-serialize": "0.15.0-beta.287",
     "@xterm/headless": "6.1.0-beta.287",

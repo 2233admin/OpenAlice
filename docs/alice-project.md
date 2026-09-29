@@ -91,7 +91,9 @@ existing runtime choices and headless defaults are preserved. The guide stays
 on the confirmed AI-ready step until the user continues. Its page layer sits
 below the shared credential/UTA dialogs so these remain visible and operable.
 Packaged onboarding smoke uses isolated Pi state, the local mock provider, and
-the same Chat birth request before verifying the renderer and provider binding.
+the same Chat birth request. It first verifies the renderer is available, then
+waits for Chat's asynchronous preparation before checking provider binding;
+other default Workspaces do not gate Chat onboarding.
 
 Create a named project from the CLI:
 

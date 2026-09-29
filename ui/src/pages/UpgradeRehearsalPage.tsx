@@ -1,6 +1,6 @@
 import { displayVersion } from '../components/dev/upgrade-rehearsal/releases'
 import { ReleasePublisher } from '../components/dev/upgrade-rehearsal/ReleasePublisher'
-import { identityLabel, type ReleaseChannel } from '../lib/updates/discovery'
+import { identityLabel, type ReleaseChannel } from '@traderalice/update-lifecycle'
 import {
   ArrowRight,
   Check,

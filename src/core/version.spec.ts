@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  compareVersions,
   getCurrentVersion,
   fetchLatestRelease,
   getVersionInfo,
@@ -59,37 +58,6 @@ function mockJsonResponse(value: unknown, response?: { status?: number; statusTe
   globalThis.fetch = fetchMock as unknown as typeof fetch
   return fetchMock
 }
-
-describe('compareVersions', () => {
-  it('compares core versions numerically', () => {
-    expect(compareVersions('1.0.0', '1.0.0')).toBe(0)
-    expect(compareVersions('1.0.1', '1.0.0')).toBeGreaterThan(0)
-    expect(compareVersions('1.0.0', '1.0.1')).toBeLessThan(0)
-    expect(compareVersions('2.0.0', '1.99.99')).toBeGreaterThan(0)
-    expect(compareVersions('1.10.0', '1.9.0')).toBeGreaterThan(0)
-  })
-
-  it('treats release as greater than prerelease for the same core', () => {
-    expect(compareVersions('1.0.0', '1.0.0-beta.1')).toBeGreaterThan(0)
-    expect(compareVersions('1.0.0-beta.1', '1.0.0')).toBeLessThan(0)
-  })
-
-  it('compares prerelease identifiers by semver rules', () => {
-    expect(compareVersions('1.0.0-beta.1', '1.0.0-beta.0')).toBeGreaterThan(0)
-    expect(compareVersions('1.0.0-beta.10', '1.0.0-beta.2')).toBeGreaterThan(0)
-    expect(compareVersions('1.0.0-alpha', '1.0.0-beta')).toBeLessThan(0)
-  })
-
-  it('strips a leading v', () => {
-    expect(compareVersions('v1.2.3', '1.2.3')).toBe(0)
-    expect(compareVersions('v1.2.4', 'v1.2.3')).toBeGreaterThan(0)
-  })
-
-  it('handles missing parts as zero', () => {
-    expect(compareVersions('1', '1.0.0')).toBe(0)
-    expect(compareVersions('1.2', '1.2.0')).toBe(0)
-  })
-})
 
 describe('getCurrentVersion', () => {
   it('returns a non-empty version string from package.json', () => {

@@ -8,7 +8,7 @@ import {
 import {
   identityLabel,
   type ReleaseChannel,
-} from '../../../lib/updates/discovery'
+} from '@traderalice/update-lifecycle'
 import { displayVersion, publicationStages, releaseAssets, type Publication } from './releases'
 import type { Action } from './model'
 
