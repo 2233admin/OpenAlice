@@ -3,10 +3,14 @@
 The normal desktop and isolated Electron demo start one Alice companion window
 from `apps/desktop/src/app-window.ts`. It shares the Electron main process and
 adds a renderer, with no additional Guardian, Alice, UTA or remote connection.
-Closing the main window hides it while the app tray and companion stay available;
-the tray can restore the main window or quit the app. Minimizing the main window
-also leaves the companion available. Quitting destroys the companion and stops
-the managed processes.
+Closing the normal desktop's main window hides it on every platform while the
+app tray, companion and managed processes stay available. The Windows tray or
+macOS menu-bar tray can restore and focus the same window; clicking the macOS
+Dock icon also restores it, including after minimization. Only an explicit Quit
+action (tray menu, macOS app menu or Cmd+Q) starts managed-process shutdown.
+Minimizing the main window also leaves the companion available. Quitting destroys
+the companion and stops the managed processes. The isolated demo retains
+exit-on-close so its disposable fixture backend is cleaned up.
 The bottom-left Alice’s Settings menu also provides Show pet / Hide pet in
 desktop mode. Its local preload bridge reads the saved preference, toggles the
 same native controller as the tray, and subscribes to visibility changes. The
