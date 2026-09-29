@@ -61,4 +61,6 @@ it('starts TTL at completion and normalizes synchronous transport errors', async
   expect(await store.check(async () => 'v2')).toBe('v1')
   await store.check(() => { throw 'failure' }, true)
   expect(store.getSnapshot().error).toBe('failure')
+  await store.check(() => { throw new Error('') }, true)
+  expect(store.getSnapshot().error).toBe('Discovery failed')
 })

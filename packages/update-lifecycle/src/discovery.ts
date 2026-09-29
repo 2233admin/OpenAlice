@@ -61,7 +61,7 @@ export class DiscoveryStore<T> {
         if (generation !== this.generation) return null
         this.pending = null
         this.publish({ ...this.snapshot, checking: false, checkedAt: now(),
-          error: cause instanceof Error ? cause.message : String(cause) })
+          error: (cause instanceof Error ? cause.message : String(cause)) || 'Discovery failed' })
         return null
       }
     })
