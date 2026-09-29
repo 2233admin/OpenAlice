@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { newerRelease } from '../lib/updates/discovery'
+import { useVersionDiscovery } from './useVersionDiscovery'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
@@ -45,19 +47,6 @@ const Context = createContext<UpdateLifecycle | null>(null)
 const POLL_MS = 60_000
 const CLIENT_VERSION = typeof __OPENALICE_UI_VERSION__ === 'string' ? __OPENALICE_UI_VERSION__ : 'development'
 
-function newerRelease(latest: string | null | undefined, current: string): boolean {
-  const parse = (version: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(version)
-  const a = latest && parse(latest)
-  const b = parse(current)
-  if (!a || !b) return false
-  for (let index = 1; index <= 3; index += 1) {
-    const difference = Number(a[index]) - Number(b[index])
-    if (difference) return difference > 0
-  }
-  if (!a[4]) return Boolean(b[4])
-  if (!b[4]) return false
-  return a[4].localeCompare(b[4], undefined, { numeric: true }) > 0
-}
 
 async function getUpdates(): Promise<UpdateResponse> {
   const response = await fetch('/api/updates')
@@ -76,12 +65,12 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const { workspaces, refresh: refreshWorkspaces } = useWorkspaces()
   const { backendUnavailable, backendRecoveryGeneration } = useBackendRecoverySignal()
   const [preferences, setPreferences] = useState<UpdatePreferences | null>(null)
-  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
+  const discovery = useVersionDiscovery<VersionInfo>(`${backendRecoveryGeneration}:${backendUnavailable}`)
+  const { value: versionInfo, error: versionError, check: checkVersion, clear: clearVersion } = discovery
   const [nativeStatus, setNativeStatus] = useState<NativeStatus | null>(null)
   const [workspaceStates, setWorkspaceStates] = useState<WorkspaceUpdateState[]>([])
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [versionError, setVersionError] = useState<string | null>(null)
   const [updatesUnsupported, setUpdatesUnsupported] = useState(false)
   const updatesSupported = useRef<boolean | null>(null)
   const nativeAutoChecked = useRef(false)
@@ -127,26 +116,24 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     // Version identity is independent of the newer Workspace update API.
     // Keep it visible when an older remote Runtime cannot serve /api/updates.
     try {
-      const next = force ? await api.version.check() : snapshot?.preferences.autoCheckApp === false ? await api.version.current() : await api.version.get()
-      setVersionInfo(next)
-      setVersionError(null)
+      const next = await checkVersion(() => force ? api.version.check() : snapshot?.preferences.autoCheckApp === false ? api.version.current() : api.version.get())
+      if (!next) return
       if (force) await window.openAlice?.updater?.checkForUpdates().catch(() => undefined)
       else if (!nativeAutoChecked.current && window.openAlice?.updater && snapshot?.preferences.autoCheckApp !== false) {
         nativeAutoChecked.current = true
         void window.openAlice.updater.checkForUpdates().catch(() => undefined)
       }
     } catch (cause) {
-      setVersionError(cause instanceof Error ? cause.message : String(cause))
+      // Native updater failures are reported by its own status stream.
     }
     finally { if (force) setChecking(false) }
-  }, [backendUnavailable, refreshWorkspaces])
+  }, [backendUnavailable, refreshWorkspaces, checkVersion])
 
   useEffect(() => {
     if (backendUnavailable) {
       setPreferences(null)
-      setVersionInfo(null)
+      clearVersion()
       setWorkspaceStates([])
-      setVersionError(null)
       setUpdatesUnsupported(false)
       updatesSupported.current = null
       return
@@ -171,7 +158,7 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       cancelSecond?.()
       if (timer !== undefined) window.clearInterval(timer)
     }
-  }, [backendRecoveryGeneration, backendUnavailable, load])
+  }, [backendRecoveryGeneration, backendUnavailable, load, clearVersion])
 
   useEffect(() => {
     const updater = window.openAlice?.updater

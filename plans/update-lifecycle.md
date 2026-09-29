@@ -277,3 +277,47 @@ Acceptance: UI typecheck; focused reducer, hook and Developer navigation tests;
 real app route against the existing local backend. Browser walk verifies review,
 approval, staged install, reload at restart, resume and completion. All simulation
 version values and proposed compatibility rules are labelled as assumptions.
+
+## 2026-09-29 channel publication and shared discovery increment
+
+Selected interaction: add a compact publication card above the existing consumer
+flow. Choose stable, beta or dev; build the next candidate, verify it, publish
+immutable artifacts, then activate only that channel head. Consumers select their
+own channel and check for updates. Publication remains available during an
+approved run; its target and consumed artifacts remain frozen. Completing a run
+allows another update without resetting installed versions or release history.
+Native selects and shared Button/Collapsible retain keyboard support; lists wrap
+and stack at narrow widths. This is an extension of the accepted reference layout.
+
+Actual reuse in this increment:
+- `useVersionDiscovery` owns loading/error state, latest-request selection and
+  scope invalidation. Both the production `useUpdateLifecycle` provider and
+  rehearsal invoke it with their own readers. Stale results or callbacks from a
+  previous backend/channel cannot replace a newer result.
+- The existing UI release comparison moved into `lib/updates/discovery.ts`; the
+  real client update badge and mock release selection use the same comparison.
+  Dev selection compares accepted commit identity, not lexical SHA ordering.
+- Production transport, server-side version authority, native updater and actual
+  installation/restart remain unchanged. `/api/version` does not expose dev
+  commit identity; this increment does not pretend that it does or replace the
+  CLI owner's dev update decision with a UI guess.
+
+Simulation publication begins at 0.94.1. Stable advances patch, beta advances
+candidate numbers, dev advances a synthetic full commit with the same package
+version. Stable/beta inventory derives from the captured 73-file stable snapshot
+(beta omits its 12 package-manager attachments). Dev topology follows
+`scripts/prepare-cli-dev-assets.mjs` and `scripts/dev-broker-binding.mjs`: six CLI
+targets, six Pack catalogs, 29 Pack archives and two installers, under an immutable
+commit path. Channel pointers are state, not extra immutable release attachments.
+All generated builds, checks and publication are simulated, not remotely executed.
+
+Remaining migration boundary: installation plans/execution are still the mock
+reducer. Remote Machine maintenance, Electron installation, CLI commit identity
+and Workspace source-update execution have not yet been unified. This is the
+first shared discovery slice, not a claim that the full updater has been replaced.
+
+Verification includes reducer publication isolation/frozen artifacts, numeric
+beta and unchanged-version dev identities, production provider regression tests,
+shared hook stale-request/error/retry tests, UI owner suite and UI typecheck;
+real browser exercises beta isolation and dev publication/consumption. No real
+update, SSH, broker activation or signed release action is performed.
