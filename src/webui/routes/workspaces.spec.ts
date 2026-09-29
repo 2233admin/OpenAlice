@@ -684,6 +684,17 @@ describe('Workspace template upgrade routes', () => {
 });
 
 describe('Workspace Harness source upgrade routes', () => {
+  it.each(['auto-quant-v2', 'auto-prediction'])('keeps upstream %s candidates reviewable without automatic-apply permission', async (template) => {
+    const { app, sourceUpgrades } = build({ meta: { id: 'ws-1', dir: '/w', template } });
+    await get(app, '/ws-1/source-upgrade?targetVersion=v2.0.0');
+    expect(sourceUpgrades.plan).toHaveBeenCalledWith('ws-1', true, 'v2.0.0');
+    expect(sourceUpgrades.apply).not.toHaveBeenCalled();
+    await post(app, '/ws-1/source-upgrade', { planDigest: 'reviewed', targetVersion: 'v2.0.0' });
+    expect(sourceUpgrades.apply).toHaveBeenCalledWith('ws-1', true, {
+      planDigest: 'reviewed', targetVersion: 'v2.0.0',
+    });
+  });
+
   it('uses the same reviewed source plan contract for AQ and AP workspaces', async () => {
     const sourceUpgrades = {
       plan: vi.fn(async () => ({

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { VersionInfo } from '../api/types'
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   backendRecoveryGeneration: 0,
   refreshWorkspaces: vi.fn(async () => undefined),
 }))
+vi.mock('./useRelayConnection', () => ({ useRelayConnection: () => ({ refresh: async () => undefined }) }))
 vi.mock('../api', () => ({ api: { version: {
   get: mocks.getVersion, current: mocks.currentVersion, check: mocks.checkVersion,
 } } }))
@@ -121,6 +122,7 @@ it('ignores an old backend project response after switching targets', async () =
   let finish!: (value: unknown) => void
   let reads = 0
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (input.startsWith('/relay/')) return { ok: true, json: async () => null }
     if (input === '/api/updates/activate') return { ok: true }
     reads++
     if (reads === 1) return new Promise(resolve => { finish = resolve })
@@ -173,6 +175,38 @@ it('does not replace a native status event with an older initial snapshot', asyn
     expect(result.current.nativeStatus?.phase).toBe('downloaded')
     unmount()
     expect(unsubscribe).toHaveBeenCalledOnce()
+  } finally {
+    if (original) Object.defineProperty(window, 'openAlice', original)
+    else Reflect.deleteProperty(window, 'openAlice')
+  }
+})
+
+it('two consumers share the native subscription and a single install handoff', async () => {
+  let finish!: () => void
+  const updater = {
+    getStatus: vi.fn(async () => ({ phase: 'downloaded', version: '1.0.0', releaseUrl: 'https://example.test/release' })),
+    onStatus: vi.fn(() => () => undefined),
+    checkForUpdates: vi.fn(async () => undefined),
+    installAndRestart: vi.fn(() => new Promise<void>(resolve => { finish = resolve })),
+  }
+  const original = Object.getOwnPropertyDescriptor(window, 'openAlice')
+  Object.defineProperty(window, 'openAlice', { configurable: true, value: { updater } })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
+  try {
+    const { result } = renderHook(() => ({ first: useUpdateLifecycle(), second: useUpdateLifecycle() }), { wrapper })
+    await waitFor(() => expect(result.current.first.nativeReady?.version).toBe('1.0.0'))
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.first.installClient()
+      expect(result.current.second.installClient()).toBe(pending)
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(updater.installAndRestart).toHaveBeenCalledOnce()
+    expect(updater.onStatus).toHaveBeenCalledOnce()
+    await act(async () => { finish(); await pending })
+    await act(async () => { await result.current.second.installClient() })
+    expect(updater.installAndRestart).toHaveBeenCalledOnce()
+    expect(result.current.first.nativeInstalling).toBe(true)
   } finally {
     if (original) Object.defineProperty(window, 'openAlice', original)
     else Reflect.deleteProperty(window, 'openAlice')

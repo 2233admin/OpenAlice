@@ -2,9 +2,14 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { MachinePlan } from '../../lib/updates/machine-types'
 import type { VersionInfo } from '../../api/types'
 
 const mocks = vi.hoisted(() => ({
+  plan: null as MachinePlan | null,
+  probe: vi.fn(async () => undefined),
+  installClient: vi.fn(async () => undefined),
+  openClientRelease: vi.fn(async () => undefined),
   versionInfo: null as VersionInfo | null,
   nativeStatus: null as { phase: 'downloaded'; version: string; releaseUrl: string } | null,
   versionError: null as string | null,
@@ -12,7 +17,12 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../hooks/useUpdateLifecycle', () => ({
-  useUpdateLifecycle: () => ({ versionInfo: mocks.versionInfo, nativeStatus: mocks.nativeStatus,
+  useUpdateLifecycle: () => ({ machines: {
+    status: { target: mocks.relayTarget }, plan: mocks.plan, probe: mocks.probe,
+    operation: null, probing: false, applying: false, operationError: null,
+    clearPlan: vi.fn(), apply: vi.fn(async () => undefined),
+  }, versionInfo: mocks.versionInfo, nativeStatus: mocks.nativeStatus,
+    installClient: mocks.installClient, openClientRelease: mocks.openClientRelease,
     versionError: mocks.versionError, checking: false, refresh: vi.fn(async () => undefined) }),
 }))
 
@@ -39,6 +49,7 @@ beforeEach(() => {
   mocks.nativeStatus = null
   mocks.versionError = null
   mocks.relayTarget = null
+  mocks.plan = null
 })
 afterEach(() => { cleanup(); Reflect.deleteProperty(window, 'openAlice'); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
@@ -53,16 +64,14 @@ describe('AboutOpenAliceSection', () => {
       actions: ['update remote OpenAlice CLI', 'restart remote OpenAlice Server'], blocker: null,
       deferredUpdate: false, expiresAt: '2026-09-24T10:00:00Z',
     }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => preview }))
+    mocks.plan = preview as MachinePlan
     render(<AboutOpenAliceSection />)
     expect(screen.getByText('This app').parentElement?.textContent).not.toContain('v0.93.1')
     expect(screen.getByText('v0.93.1')).toBeTruthy()
     expect(screen.getByText('Cloud Linux')).toBeTruthy()
     expect(screen.getByText(/Main Cloud/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Review backend update' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/relay/v1/machines/plan', expect.objectContaining({
-      body: JSON.stringify({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'main-cloud' }),
-    })))
+    await waitFor(() => expect(mocks.probe).toHaveBeenCalledWith({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'main-cloud' }))
     expect(await screen.findByText('0.93.1 → 0.94.1-beta')).toBeTruthy()
   })
 
@@ -96,7 +105,8 @@ describe('AboutOpenAliceSection', () => {
     expect(await screen.findByText('Desktop app')).toBeTruthy()
     expect(screen.getByText('OpenAlice v0.83.0-beta is ready to install.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Restart and update' }))
-    await waitFor(() => expect(installAndRestart).toHaveBeenCalledOnce())
+    await waitFor(() => expect(mocks.installClient).toHaveBeenCalledOnce())
+    expect(installAndRestart).not.toHaveBeenCalled()
   })
 
   it('shows a failed shared version read without stale status', () => {

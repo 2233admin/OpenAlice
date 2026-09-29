@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { newerRelease } from '@traderalice/update-lifecycle'
 import { ArrowUpRight, CheckCircle2, CircleAlert, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaces } from '../../contexts/workspaces-context'
@@ -14,17 +15,6 @@ const templateLabel: Record<string, string> = {
   'auto-quant-v2': 'Auto Quant',
   'auto-prediction': 'Auto Prediction',
 }
-const clientHasUpdate = (latest: string | null | undefined) => {
-  const match = (value: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(value)
-  const a = latest && match(latest)
-  const b = match(VERSION)
-  if (!a || !b) return false
-  for (let index = 1; index <= 3; index += 1) {
-    if (a[index] !== b[index]) return Number(a[index]) > Number(b[index])
-  }
-  return !a[4] && Boolean(b[4]) || Boolean(a[4] && b[4] && a[4].localeCompare(b[4], undefined, { numeric: true }) > 0)
-}
-
 export function UpdateLifecycleSection() {
   const { t } = useTranslation()
   const updates = useUpdateLifecycle()
@@ -77,33 +67,33 @@ export function UpdateLifecycleSection() {
           <CheckCircle2 className="size-4 shrink-0 text-primary" aria-hidden />
           <span className="min-w-0 flex-1">{t('settings.updateLifecycle.client')} · {displayVersion(VERSION)}</span>
           <span className="max-w-[42%] text-right text-muted-foreground">{updates.nativeStatus && 'version' in updates.nativeStatus && updates.nativeStatus.version && ['available', 'downloaded'].includes(updates.nativeStatus.phase)
-            ? t('settings.updateLifecycle.available', { version: updates.nativeStatus.version })
-            : preferences?.autoCheckApp && updates.versionInfo?.latest && clientHasUpdate(updates.versionInfo.latest)
-              ? t('settings.updateLifecycle.available', { version: updates.versionInfo.latest })
+            ? t('settings.updateLifecycle.available', { version: updates.nativeStatus.version.replace(/^v/, '') })
+            : preferences?.autoCheckApp && updates.versionInfo?.latest && newerRelease(updates.versionInfo.latest, VERSION)
+              ? t('settings.updateLifecycle.available', { version: updates.versionInfo.latest.replace(/^v/, '') })
             : t('settings.updateLifecycle.currentOrManaged')}</span>
         </div>
         <div className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2 text-xs">
           <CheckCircle2 className="size-4 shrink-0 text-primary" aria-hidden />
           <span className="min-w-0 flex-1">{t('settings.updateLifecycle.backend')} · {updates.versionInfo?.current ? displayVersion(updates.versionInfo.current) : '—'}</span>
           <span className="max-w-[42%] text-right text-muted-foreground">{updates.versionInfo?.hasUpdate && updates.versionInfo.latest
-            ? t('settings.updateLifecycle.available', { version: updates.versionInfo.latest })
+            ? t('settings.updateLifecycle.available', { version: updates.versionInfo.latest.replace(/^v/, '') })
             : t('settings.updateLifecycle.currentOrManaged')}</span>
         </div>
         {workspaces.filter((workspace) => ['chat', 'auto-quant-v2', 'auto-prediction'].includes(workspace.template ?? '')).map((workspace) => {
           const status = updates.workspaceStates.find((state) => state.workspaceId === workspace.id)
           const available = status?.phase === 'updated' && status.toVersion === workspace.upgradeAvailable?.to
-            ? undefined : workspace.upgradeAvailable
+            ? undefined : status?.phase === 'available' && status.toVersion ? { to: status.toVersion } : workspace.upgradeAvailable
           const attention = available || status?.phase === 'blocked' || status?.phase === 'failed'
-          const Icon = status?.phase === 'checking' ? LoaderCircle : attention ? CircleAlert : CheckCircle2
+          const Icon = (status?.phase === 'checking' || status?.phase === 'applying') ? LoaderCircle : attention ? CircleAlert : CheckCircle2
           return <div key={workspace.id} className="flex min-w-0 items-start gap-3 rounded-md px-2 py-2 text-xs">
-            <Icon className={`size-4 shrink-0 ${attention ? 'text-primary' : 'text-muted-foreground'} ${status?.phase === 'checking' ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden />
+            <Icon className={`size-4 shrink-0 ${attention ? 'text-primary' : 'text-muted-foreground'} ${(status?.phase === 'checking' || status?.phase === 'applying') ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden />
             <span className="min-w-0 flex-1">{templateLabel[workspace.template ?? ''] ?? workspace.displayName ?? workspace.tag}
               {status?.fromVersion ? <span className="ml-1 text-muted-foreground">{displayVersion(status.fromVersion)}</span> : null}</span>
             <span className="max-w-[42%] text-right text-muted-foreground" title={status?.reason}>{status?.phase === 'blocked'
               ? t('settings.updateLifecycle.blocked')
               : status?.phase === 'failed' ? t('settings.updateLifecycle.failed')
-                : available ? t('settings.updateLifecycle.available', { version: available.to })
-                  : status?.phase === 'checking' ? t('settings.updateLifecycle.checking')
+                : available ? t('settings.updateLifecycle.available', { version: available.to.replace(/^v/, '') })
+                  : (status?.phase === 'checking' || status?.phase === 'applying') ? t('settings.updateLifecycle.checking')
                     : updates.updatesUnsupported ? t('settings.updateLifecycle.unavailable')
                     : t('settings.updateLifecycle.currentOrManaged')}</span>
             {attention && <Button type="button" size="icon" variant="ghost" aria-label={t('settings.updateLifecycle.review', { name: workspace.displayName || workspace.tag })}

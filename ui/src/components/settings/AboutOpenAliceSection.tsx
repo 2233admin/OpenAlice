@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Download, ExternalLink, LoaderCircle, RefreshCw, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { useMachineManagement } from '../../hooks/useMachineManagement'
 import { useUpdateLifecycle } from '../../hooks/useUpdateLifecycle'
 import { Button } from '../ui/button'
 import { ConfigSection } from '../form'
@@ -10,17 +9,15 @@ import { MachineUpgradeDialog } from './MachineUpgradeDialog'
 import { claimUpgradeDialog, shouldRestoreUpgradeDialog } from './upgrade-dialog-owner'
 
 type RuntimeMode = 'browser' | 'electron-dev' | 'electron-packaged'
-const RELEASES_URL = 'https://github.com/TraderAlice/OpenAlice/releases'
 const UI_VERSION = typeof __OPENALICE_UI_VERSION__ === 'string' ? __OPENALICE_UI_VERSION__ : 'development'
 
 export function AboutOpenAliceSection() {
   const { t } = useTranslation()
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>('browser')
-  const [installing, setInstalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
-  const { versionInfo, nativeStatus, versionError, checking, refresh: refreshUpdates } = useUpdateLifecycle()
-  const machines = useMachineManagement()
+  const { versionInfo, nativeStatus, nativeInstalling: installing, nativeError, installClient, openClientRelease, versionError, checking, refresh: refreshUpdates } = useUpdateLifecycle()
+  const machines = useUpdateLifecycle().machines
   useEffect(() => { if (machines.operation?.mode === 'upgrade' && machines.operation.phase === 'running' && shouldRestoreUpgradeDialog('about')) setUpgradeOpen(true) }, [machines.operation?.id, machines.operation?.phase, machines.operation?.mode])
   const target = machines.status?.target
   const remote = Boolean(target && target.machine !== 'local')
@@ -40,7 +37,7 @@ export function AboutOpenAliceSection() {
   const backendVersion = versionInfo?.current ?? t('settings.about.versionLoading')
   const updateVersion = nativeStatus && 'version' in nativeStatus && nativeStatus.version
     ? nativeStatus.version
-    : versionInfo?.hasUpdate ? versionInfo.latest : null
+    : null
 
   const backendStatus = useMemo(() => {
     if (checking && !updater) return { kind: 'checking' as const, text: t('settings.about.status.checking') }
@@ -66,7 +63,7 @@ export function AboutOpenAliceSection() {
           : t('settings.about.status.downloading')
         : nativeStatus?.phase === 'available'
           ? updateVersion ? t('settings.about.status.available', { version: updateVersion }) : t('settings.about.status.availableUnknown')
-          : nativeStatus?.phase === 'error' || error ? t('settings.about.status.error')
+          : nativeStatus?.phase === 'error' || nativeError || error ? t('settings.about.status.error')
             : checking && updater ? t('settings.about.status.checking') : null
   const nativeBusy = checking || nativeStatus?.phase === 'downloading' || nativeStatus?.phase === 'installing'
   const backendTone = backendStatus.kind === 'error'
@@ -79,18 +76,11 @@ export function AboutOpenAliceSection() {
   const openRelease = async () => {
     setError(null)
     try {
-      if (updater) await updater.openRelease(updateVersion ?? undefined)
-      else window.open(RELEASES_URL, '_blank', 'noopener,noreferrer')
+      await openClientRelease(updateVersion ?? undefined)
     } catch { setError(t('settings.about.openReleaseError')) }
   }
 
-  const installAndRestart = async () => {
-    if (!updater) return
-    setInstalling(true)
-    setError(null)
-    try { await updater.installAndRestart() }
-    catch { setError(t('settings.about.installError')); setInstalling(false) }
-  }
+  const installAndRestart = () => { void installClient().catch(() => undefined) }
 
   const probeBackend = () => {
     if (!target || target.machine === 'local') return

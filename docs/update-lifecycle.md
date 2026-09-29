@@ -59,13 +59,33 @@ its own discovery request state machine; `useVersionDiscovery` is removed.
 Project status and preference responses are also fenced by connection generation.
 Native client status is independent of the selected backend.
 
+## Project commands and UI entry
+
+`WorkspaceUpdateService.check()` observes AQ/AP stable upstream releases even
+when automatic merging is disabled. It never creates a source plan or applies
+content. `applyPolicy()` is a separate serialized command: it re-reads policy,
+plans the exact observed target, checks policy again after planning, and invokes
+the authoritative source manager with its digest. Activation, the background
+timer and a saved policy change explicitly call `refreshAndApplyPolicy()`.
+`POST /api/updates/check` only checks; saving preferences no longer depends on a
+browser follow-up request to start approved automatic work. Failed discovery
+retains the previous observation but cannot trigger an automatic apply. AQ/AP
+manual source review exposes the same stable upstream candidates regardless of
+auto-apply policy; candidate visibility is not permission to merge.
+
+The sole public React hook is `useUpdateLifecycle`. Its provider owns the
+native status subscription, client install command and Machine plan/progress
+state. Settings, desktop prompt and Machine controls subscribe to it; there is
+no `useMachineManagement` or nullable companion lifecycle hook. Shared chrome
+can request the same hook's optional preview mode. Connection/fleet CRUD still
+belongs to the connection owner. Source repository discovery also uses the
+shared cache primitive rather than an independent promise/expiry implementation.
+
 ## Current migration boundary
 
-`useUpdateLifecycle` remains the production UI facade. Real version discovery and
-rehearsal share selection and discovery state, but project/SSH scheduling, native
-subscription consolidation, operation journals and the rehearsal execution
-reducer still need migration. The Workspace `/updates/check` endpoint still has
-the historical automatic-apply behavior; it is not a reader for DiscoveryStore.
-Do not infer full lifecycle or real installation acceptance from discovery tests.
-New work should advance the canonical plan rather than introduce another public
-hook or independently implemented selection/request-ordering rule.
+Project/SSH orchestration and operation journals still need migration into the
+shared coordinator; the rehearsal execution reducer is still separate. Client
+versus project preference authority and frontend-host discovery are still open.
+Do not infer full lifecycle or real installation acceptance from discovery or
+IPC-mock tests. Advance the canonical plan rather than introduce another public
+hook or independent request-ordering rule.

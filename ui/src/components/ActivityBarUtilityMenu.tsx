@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useThemeStore, type AppTheme } from '../theme/store'
 import { useDesktopCompanion } from '../hooks/useDesktopCompanion'
-import { useOptionalUpdateLifecycle } from '../hooks/useUpdateLifecycle'
+import { useUpdateLifecycle } from '../hooks/useUpdateLifecycle'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +47,7 @@ export function ActivityBarUtilityMenu({
   const setTheme = useThemeStore((state) => state.setTheme)
   const [menuOpen, setMenuOpen] = useState(false)
   const companion = useDesktopCompanion(menuOpen)
-  const updateCount = useOptionalUpdateLifecycle()?.availableCount ?? 0
+  const updateCount = useUpdateLifecycle({ optional: true })?.availableCount ?? 0
   const CurrentThemeIcon = THEME_MODES.find((item) => item.mode === theme)?.Icon ?? Laptop
 
   return (

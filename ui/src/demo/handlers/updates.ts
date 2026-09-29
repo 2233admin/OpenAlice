@@ -1,11 +1,20 @@
 import { http, HttpResponse } from 'msw'
+import { DEMO_AUTO_QUANT_WORKSPACE_ID } from '../fixtures/workspaces'
 
 let preferences = {
   autoCheckApp: true,
   autoUpdateAutoQuant: true,
   autoUpdateAutoPrediction: true,
 }
-const snapshot = () => ({ preferences, workspaces: [] })
+// Deliberately blocked by the seeded running Quant Session. Toggling auto
+// application does not make the observable upstream release disappear.
+const snapshot = () => ({ preferences, workspaces: [{
+  workspaceId: DEMO_AUTO_QUANT_WORKSPACE_ID, template: 'auto-quant-v2',
+  phase: preferences.autoUpdateAutoQuant ? 'blocked' : 'available',
+  fromVersion: 'v0.8.31', toVersion: 'v0.8.32', verified: false,
+  checkedAt: new Date().toISOString(),
+  ...(preferences.autoUpdateAutoQuant ? { reason: 'active_runtime' } : {}),
+}] })
 
 export const updatesHandlers = [
   http.post('/api/updates/activate', () => HttpResponse.json({ accepted: true }, { status: 202 })),

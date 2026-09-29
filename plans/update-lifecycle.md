@@ -526,3 +526,29 @@ package/UI builds passed. Real browser Settings refreshed against the older
 stable -> empty dev -> stable and reviewed the correct backend-only target.
 Native initial-read/event ordering was verified with an isolated IPC mock.
 No native installation, remote upgrade or restart was executed in this slice.
+
+## Goal continuation: project observation and shared UI controls
+
+Autonomous completion now stays on `codex/unified-update-lifecycle` with one
+Draft PR until the complete plan is accepted. Earlier merged increments remain
+the baseline; no phase is marked complete by a narrow incremental check.
+
+Replaced `WorkspaceAutoUpdates` with `WorkspaceUpdateService`: manual checks are
+read-only and disabled auto-apply still discovers. Separate policy application
+serializes with checks, revalidates policy after planning and keeps source-owner
+merge guards. Policy changes trigger the project command on the backend rather
+than relying on browser follow-up. Source repository metadata now uses shared
+discovery state. The public facade owns native subscription/install and Machine
+probe/operation polling; removed `useMachineManagement` and the separate optional
+hook. UI call sites use the same provider, including desktop prompt and About.
+
+Remaining phase-2 work includes client-scoped policy/host discovery and moving
+imperative coordination behind the shared manager. Phases 1 (inventory), 3, 4
+and 5 are not complete. No real installation is authorized by rehearsal work.
+
+Current browser acceptance: the demo Settings page retains a stable upstream
+AQ candidate with automatic application disabled; the native prompt preview
+opens and dismisses through the shared provider. Machine controls coalesce two
+consumers' apply calls and discard dismissed late probes. AQ/AP manual review
+now sees the same upstream candidate even when automatic application is off.
+No real native installation or remote mutation was performed.

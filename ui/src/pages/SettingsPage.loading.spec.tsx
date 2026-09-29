@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   configLoad: vi.fn(),
   getVersion: vi.fn(),
   getWorkspaceShell: vi.fn(),
+  refreshMachines: vi.fn(async () => undefined),
 }))
 
 vi.mock('../api', () => ({
@@ -30,7 +31,7 @@ vi.mock('../api/preferences', () => ({
 }))
 
 vi.mock('../hooks/useUpdateLifecycle', () => ({
-  useUpdateLifecycle: () => ({ versionInfo: null, nativeStatus: null, workspaceStates: [],
+  useUpdateLifecycle: () => ({ machines: { status: null, fleet: [], loading: false, busy: false, error: null, refresh: mocks.refreshMachines }, versionInfo: null, nativeStatus: null, workspaceStates: [],
     preferences: null, checking: false, error: null, availableCount: 0,
     refresh: vi.fn(async () => undefined), savePreferences: vi.fn(async () => undefined) }),
 }))

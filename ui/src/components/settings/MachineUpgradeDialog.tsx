@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, LoaderCircle, Server } from 'lucide-react'
 
-import type { MachineOperation, MachinePlan } from '../../hooks/useMachineManagement'
+import type { MachineOperation, MachinePlan } from '../../lib/updates/machine-types'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 import { useHideBackendOutageOverlay } from '../../auth/BackendOutageOverlayContext'

@@ -3,6 +3,8 @@ import { newerRelease } from '@traderalice/update-lifecycle'
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
+import { useRelayConnection } from './useRelayConnection'
+import type { MachinePlan, MachinePlanInput, MachineOperation } from '../lib/updates/machine-types'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
 import { useWorkspaces } from '../contexts/workspaces-context'
 
@@ -14,14 +16,14 @@ export interface UpdatePreferences {
 export interface WorkspaceUpdateState {
   workspaceId: string
   template: 'auto-quant-v2' | 'auto-prediction'
-  phase: 'checking' | 'current' | 'updated' | 'blocked' | 'failed' | 'disabled'
+  phase: 'checking' | 'available' | 'applying' | 'current' | 'updated' | 'blocked' | 'failed'
   checkedAt: string | null
   fromVersion?: string
   toVersion?: string
   verified?: boolean
   reason?: string
 }
-type NativeStatus =
+export type NativeStatus =
   | { phase: 'available'; version?: string; releaseUrl?: string }
   | { phase: 'downloading'; version?: string; percent?: number }
   | { phase: 'downloaded'; version: string; releaseUrl: string }
@@ -30,9 +32,15 @@ type NativeStatus =
 interface UpdateResponse { preferences: UpdatePreferences; workspaces: WorkspaceUpdateState[] }
 
 export interface UpdateLifecycle {
+  machines: ReturnType<typeof useMachineControls>
   preferences: UpdatePreferences | null
   versionInfo: VersionInfo | null
   nativeStatus: NativeStatus | null
+  nativeReady: Extract<NativeStatus, { phase: 'downloaded' }> | null
+  nativeInstalling: boolean
+  nativeError: string | null
+  installClient(): Promise<void>
+  openClientRelease(version?: string): Promise<void>
   workspaceStates: WorkspaceUpdateState[]
   checking: boolean
   error: string | null
@@ -62,12 +70,17 @@ async function getUpdates(): Promise<UpdateResponse> {
 class UnsupportedUpdatesError extends Error {}
 
 export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
+  const machines = useMachineControls()
   const { workspaces, refresh: refreshWorkspaces } = useWorkspaces()
   const { backendUnavailable, backendRecoveryGeneration } = useBackendRecoverySignal()
   const [preferences, setPreferences] = useState<UpdatePreferences | null>(null)
   const discovery = useDiscoverySnapshot<VersionInfo>(`${backendRecoveryGeneration}:${backendUnavailable}`)
   const { value: versionInfo, error: versionError, check: checkVersion, clear: clearVersion } = discovery
   const [nativeStatus, setNativeStatus] = useState<NativeStatus | null>(null)
+  const [nativeReady, setNativeReady] = useState<Extract<NativeStatus, { phase: 'downloaded' }> | null>(null)
+  const [nativeInstalling, setNativeInstalling] = useState(false)
+  const [nativeError, setNativeError] = useState<string | null>(null)
+  const nativeInstallFlight = useRef<Promise<void> | null>(null)
   const [workspaceStates, setWorkspaceStates] = useState<WorkspaceUpdateState[]>([])
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -182,22 +195,52 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     if (!updater) return
     let active = true
     let receivedEvent = false
+    const accept = (status: NativeStatus | null) => {
+      setNativeStatus(status)
+      if (status?.phase === 'downloaded') setNativeReady(status)
+      if (status?.phase === 'installing') setNativeInstalling(true)
+      if (status?.phase === 'error') {
+        setNativeError(status.message)
+        setNativeInstalling(false)
+        nativeInstallFlight.current = null
+      } else setNativeError(null)
+    }
     const unsubscribe = updater.onStatus((status) => {
       receivedEvent = true
-      if (active) setNativeStatus(status)
+      if (active) accept(status)
     })
     void updater.getStatus().then((status) => {
-      if (active && !receivedEvent) setNativeStatus(status)
+      if (active && !receivedEvent) accept(status)
     }).catch(() => undefined)
     return () => { active = false; unsubscribe() }
   }, [])
 
+  const installClient = useCallback((): Promise<void> => {
+    if (nativeInstallFlight.current) return nativeInstallFlight.current
+    const updater = window.openAlice?.updater
+    if (!updater || !nativeReady) return Promise.reject(new Error('No downloaded client update is ready'))
+    setNativeInstalling(true)
+    setNativeError(null)
+    const flight = Promise.resolve().then(async () => { await updater.installAndRestart() }).catch((cause: unknown) => {
+      nativeInstallFlight.current = null
+      setNativeInstalling(false)
+      setNativeError(cause instanceof Error ? cause.message : String(cause))
+      throw cause
+    })
+    nativeInstallFlight.current = flight
+    return flight
+  }, [nativeReady])
+
+  const openClientRelease = useCallback(async (version?: string) => {
+    const updater = window.openAlice?.updater
+    if (updater) await updater.openRelease(version)
+    else window.open(version
+      ? `https://github.com/TraderAlice/OpenAlice/releases/tag/v${encodeURIComponent(version)}`
+      : 'https://github.com/TraderAlice/OpenAlice/releases', '_blank', 'noopener,noreferrer')
+  }, [])
+
   const savePreferences = useCallback(async (next: UpdatePreferences) => {
     if (backendUnavailable || !isCurrent()) throw new Error('The update target changed; retry on the current backend')
-    const enabledWorkspaceUpdates = Boolean(
-      (next.autoUpdateAutoQuant && !preferences?.autoUpdateAutoQuant)
-      || (next.autoUpdateAutoPrediction && !preferences?.autoUpdateAutoPrediction),
-    )
     const response = await fetch('/api/preferences/updates', {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next),
     })
@@ -206,9 +249,7 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     if (!isCurrent()) return
     setPreferences(saved)
     await load()
-    if (enabledWorkspaceUpdates && isCurrent()) {
-      void fetch('/api/updates/check', { method: 'POST' }).then(() => load()).catch(() => undefined)
-    }
+
   }, [load, preferences, isCurrent, backendUnavailable])
 
   const availableCount = useMemo(() => {
@@ -222,25 +263,116 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       if (workspace.upgradeAvailable && !completed) candidates.add(workspace.id)
     }
     for (const state of workspaceStates) {
-      if (state.toVersion && ['blocked', 'failed'].includes(state.phase)) candidates.add(state.workspaceId)
+      if (state.toVersion && ['available', 'blocked', 'failed'].includes(state.phase)) candidates.add(state.workspaceId)
     }
     return candidates.size
   }, [nativeStatus, preferences, versionInfo, workspaceStates, workspaces])
 
   const value = useMemo<UpdateLifecycle>(() => ({
-    preferences, versionInfo, nativeStatus, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount,
+    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount,
     refresh: () => load(true), savePreferences,
-  }), [preferences, versionInfo, nativeStatus, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, load, savePreferences])
+  }), [machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, load, savePreferences])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 
-export function useUpdateLifecycle(): UpdateLifecycle {
+export function useUpdateLifecycle(options: { optional: true }): UpdateLifecycle | null
+export function useUpdateLifecycle(): UpdateLifecycle
+export function useUpdateLifecycle(options?: { optional: true }): UpdateLifecycle | null {
   const value = useContext(Context)
-  if (!value) throw new Error('UpdateLifecycleProvider is missing')
+  if (!value && !options?.optional) throw new Error('UpdateLifecycleProvider is missing')
   return value
 }
 
-/** For shared chrome rendered in isolated component previews. */
-export function useOptionalUpdateLifecycle(): UpdateLifecycle | null {
-  return useContext(Context)
+// Mounted once by the public provider; presentation consumers never poll.
+async function relayMutation<T>(path: string, input: unknown): Promise<T> {
+  const response = await fetch(`/relay/v1/machines/${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null
+    throw new Error(body?.error ?? `Relay returned HTTP ${response.status}`)
+  }
+  return response.json() as Promise<T>
+}
+
+/** Machine operations are local client controls, never proxied backend API calls. */
+function useMachineControls() {
+  const relay = useRelayConnection()
+  const desktop = window.openAlice?.desktopMachine
+  const [plan, setPlan] = useState<MachinePlan | null>(null)
+  const [probing, setProbing] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const operationDiscovery = useDiscoverySnapshot<MachineOperation | null>('local-machine-control')
+  const operation = operationDiscovery.value
+  const checkOperation = operationDiscovery.check
+  const probeGeneration = useRef(0)
+  const applyFlight = useRef<Promise<void> | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const refreshOperation = useCallback(() => checkOperation(async () => {
+    if (desktop) return await desktop.operation() as MachineOperation | null
+    const response = await fetch('/relay/v1/machines/operation', { cache: 'no-store' })
+    if (response.status === 404 || response.headers?.get('content-type')?.includes('text/html')) return null
+    if (!response.ok) throw new Error(`Operation status failed: HTTP ${response.status}`)
+    return response.json() as Promise<MachineOperation | null>
+  }), [desktop, checkOperation])
+  useEffect(() => () => { probeGeneration.current++ }, [])
+
+  useEffect(() => { void refreshOperation() }, [refreshOperation])
+  useEffect(() => {
+    if (!applying && operation?.phase !== 'running') return
+    const timer = window.setInterval(() => { void refreshOperation() }, 700)
+    return () => window.clearInterval(timer)
+  }, [applying, operation?.phase, refreshOperation])
+
+  const clearPlan = useCallback(() => { probeGeneration.current++; setPlan(null); setError(null); setProbing(false) }, [])
+  const probe = useCallback(async (input: MachinePlanInput) => {
+    if (applyFlight.current) throw new Error('Wait for the current operation to finish')
+    const generation = ++probeGeneration.current
+    setProbing(true)
+    setPlan(null)
+    setError(null)
+    try {
+      const next = desktop
+        ? await desktop.plan(input) as MachinePlan
+        : await relayMutation<MachinePlan>('plan', input)
+      if (generation !== probeGeneration.current) throw new Error('This probe was superseded')
+      setPlan(next)
+      return next
+    } catch (cause) {
+      if (generation === probeGeneration.current) setError(cause instanceof Error ? cause.message : String(cause))
+      throw cause
+    } finally { if (generation === probeGeneration.current) setProbing(false) }
+  }, [desktop])
+
+  const apply = useCallback((): Promise<void> => {
+    if (applyFlight.current) return applyFlight.current
+    if (!plan || plan.blocker) return Promise.reject(new Error('A reviewed unblocked plan is required'))
+    const approved = plan
+    setApplying(true)
+    setError(null)
+    const flight = Promise.resolve().then(async () => {
+      try {
+        if (desktop) await desktop.apply(approved.id)
+        else await relayMutation('apply', { id: approved.id })
+        await refreshOperation()
+        setPlan(null)
+        await relay.refresh()
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        await refreshOperation()
+        throw cause
+      } finally {
+        setApplying(false)
+        applyFlight.current = null
+      }
+    })
+    applyFlight.current = flight
+    return flight
+  }, [desktop, plan, relay.refresh, refreshOperation])
+
+  return { ...relay, plan, probing, applying, operation, operationError: error ?? operationDiscovery.error, clearPlan, probe, apply }
 }

@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { readUpdatePreferences } from '../../core/update-preferences.js'
-import type { WorkspaceAutoUpdates } from '../../workspaces/workspace-auto-updates.js'
+import type { WorkspaceUpdateService } from '../../workspaces/workspace-update-service.js'
 
-export function createUpdateRoutes(coordinator: WorkspaceAutoUpdates, activate: () => void) {
+export function createUpdateRoutes(coordinator: Pick<WorkspaceUpdateService, 'check' | 'list'>, activate: () => void) {
   const app = new Hono()
   app.post('/activate', (c) => {
     activate()
