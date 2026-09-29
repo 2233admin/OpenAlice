@@ -29,10 +29,9 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
-- [[plans/update-lifecycle.md]] — Audit update units and authority across desktop,
-  relay, backend, Workspaces and Broker Packs; propose coordinated discovery,
-  durable operations and recovery while preserving existing upgrade guards
-  and asynchronous Workspace preparation.
+- [[plans/update-lifecycle.md]] — Unify version inventory, backend probing, planning and durable update
+  operations behind one lifecycle and UI hook; migrate real consumers and the
+  rehearsal together, retiring duplicate paths while preserving owner engines.
 
 - [[plans/cli-relay-entry-unification.md]] — Consolidates CLI-launched browser
   sessions on the client-owned WebRelay while retaining explicit local and
