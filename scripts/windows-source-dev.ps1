@@ -252,6 +252,7 @@ switch ($Mode) {
       $env:PATH = ($localBinDir + ';' + $nodeDir + ';' + $env:PATH)
       if ($DisableAuth) { $env:OPENALICE_DISABLE_AUTH = '1' } else { Remove-Item Env:OPENALICE_DISABLE_AUTH -ErrorAction SilentlyContinue }
       $env:OPENALICE_LITE_MODE = '1'
+      $env:OPENALICE_TRADING_MODE = 'lite'
 
       $aliceLog = Join-Path $stateDir 'alice.log'
       $aliceErr = Join-Path $stateDir 'alice.err'
