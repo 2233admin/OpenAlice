@@ -2120,6 +2120,7 @@ export const en = {
     },
   },
   dev: {
+    upgradeRehearsal: 'Upgrade rehearsal',
     onboarding: 'Onboarding',
     snapshots: 'Snapshots',
     frontend: 'Frontend',

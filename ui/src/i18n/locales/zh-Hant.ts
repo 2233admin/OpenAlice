@@ -2096,6 +2096,7 @@ export const zhHant: Resources = {
     },
   },
   dev: {
+    upgradeRehearsal: '升級演練',
     onboarding: '新手引導',
     snapshots: '快照',
     frontend: '前端',
