@@ -85,8 +85,16 @@ interface Window {
       setAskOnStartup(enabled: boolean): Promise<OpenAliceDataHomeStatus>
       openCurrent(): Promise<string>
     }
+    readonly clientUpdates?: {
+      status(): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+      check(): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+      activate(): Promise<void>
+      savePreferences(input: import('@traderalice/update-lifecycle').ClientUpdatePreferences): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+    }
     readonly updater?: {
       getStatus(): Promise<
+        | { phase: 'checking' }
+        | { phase: 'current'; version: string }
         | { phase: 'available'; version?: string; releaseUrl?: string }
         | { phase: 'downloading'; version?: string; percent?: number }
         | { phase: 'downloaded'; version: string; releaseUrl: string }
@@ -98,11 +106,9 @@ interface Window {
         | { phase: 'error'; message: string }
         | null
       >
-      checkForUpdates(): Promise<
-        | { supported: true }
-        | { supported: false; reason: 'not-packaged' | 'missing-config' }
-      >
       onStatus(cb: (status:
+        | { phase: 'checking' }
+        | { phase: 'current'; version: string }
         | { phase: 'available'; version?: string; releaseUrl?: string }
         | { phase: 'downloading'; version?: string; percent?: number }
         | { phase: 'downloaded'; version: string; releaseUrl: string }

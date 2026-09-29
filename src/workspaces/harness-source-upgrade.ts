@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 
 import { exec as gitExec, type IGitStringExecutionOptions } from './git-execution.js'
 
-import { compareVersions, isVersion, newerRelease } from '@traderalice/update-lifecycle'
+import { DiscoveryStore, compareVersions, isVersion, newerRelease } from '@traderalice/update-lifecycle'
 
 import { parseHarnessManifest } from './harness-manifest.js'
 import { readHarnessSource, type HarnessSourceReceipt } from './harness-source.js'
@@ -93,10 +93,7 @@ export interface HarnessSourceUpgradeManagerOptions {
 
 /** Shared exact-tag Git lifecycle for source-backed Harness Workspaces. */
 export class HarnessSourceUpgradeManager {
-  private readonly discovery = new Map<string, {
-    expiresAt: number
-    promise: Promise<readonly HarnessSourceRelease[]>
-  }>()
+  private readonly discovery = new Map<string, DiscoveryStore<readonly HarnessSourceRelease[]>>()
 
   constructor(private readonly opts: HarnessSourceUpgradeManagerOptions) {}
 
@@ -306,19 +303,19 @@ export class HarnessSourceUpgradeManager {
   }
 
   private async discover(repository: string): Promise<readonly HarnessSourceRelease[]> {
-    const now = Date.now()
-    const cached = this.discovery.get(repository)
-    if (cached && cached.expiresAt > now) return cached.promise
-    const promise = this.opts.discoverReleases
-      ? this.opts.discoverReleases(repository)
-      : discoverStableReleases(repository)
-    this.discovery.set(repository, { expiresAt: now + DISCOVERY_TTL_MS, promise })
-    try {
-      return await promise
-    } catch (err) {
-      this.discovery.delete(repository)
-      throw err
+    let resource = this.discovery.get(repository)
+    if (!resource) {
+      // Source catalogs are adapter-owned and bounded, but use the same probe
+      // ordering/cache semantics as app and backend release discovery.
+      resource = new DiscoveryStore({ successTtlMs: DISCOVERY_TTL_MS, errorTtlMs: 5_000 })
+      this.discovery.set(repository, resource)
+      if (this.discovery.size > 32) this.discovery.delete(this.discovery.keys().next().value!)
     }
+    const releases = await resource.check(() => this.opts.discoverReleases
+      ? this.opts.discoverReleases(repository)
+      : discoverStableReleases(repository))
+    if (!releases) throw new Error(resource.getSnapshot().error ?? 'Source release discovery is unavailable')
+    return releases
   }
 
   private async recoverWorkspace(workspace: WorkspaceMeta): Promise<void> {

@@ -2,6 +2,7 @@ import {
   identityLabel,
   newerRelease,
   selectRelease,
+  verifyReleaseEvidence,
   type ReleaseChannel,
 } from '@traderalice/update-lifecycle'
 import {
@@ -244,7 +245,7 @@ export function reduce(s: State, a: Action): State {
       phase: 'running',
       log: [
         ...s.log,
-        'Retrying reconnect; completed installation is retained.',
+        'Retrying the unfinished stage; completed installation is retained.',
       ],
     }
   if (s.phase === 'scenario') {
@@ -321,6 +322,18 @@ export function reduce(s: State, a: Action): State {
         'Simulated reconnect failure. Backend is already upgraded.',
       ],
     }
+  if (step === 'client-verify' || step === 'backend-reconnect') {
+    const active = step === 'client-verify' ? s.client : s.server
+    const [version, commit] = active.split('+dev.')
+    const [targetVersion, targetCommit] = s.target.split('+dev.')
+    const verified = verifyReleaseEvidence(
+      { version: targetVersion, ...(targetCommit ? { commit: targetCommit } : {}) },
+      { version, ...(commit ? { commit } : {}) },
+    )
+    if (verified.status !== 'matched') return {
+      ...s, phase: 'failed', log: [...s.log, `Active release does not match the approved target (${verified.status}).`],
+    }
+  }
   const next = {
     ...s,
     cursor: s.cursor + 1,

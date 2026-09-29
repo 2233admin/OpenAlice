@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next'
 
 import { useThemeStore, type AppTheme } from '../theme/store'
 import { useDesktopCompanion } from '../hooks/useDesktopCompanion'
-import { useOptionalUpdateLifecycle } from '../hooks/useUpdateLifecycle'
+import { useUpdateLifecycle } from '../hooks/useUpdateLifecycle'
+import { UpdateGuidanceBadge } from './settings/UpdateGuidanceBadge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +48,13 @@ export function ActivityBarUtilityMenu({
   const setTheme = useThemeStore((state) => state.setTheme)
   const [menuOpen, setMenuOpen] = useState(false)
   const companion = useDesktopCompanion(menuOpen)
-  const updateCount = useOptionalUpdateLifecycle()?.availableCount ?? 0
+  const guidance = useUpdateLifecycle({ optional: true })?.guidance
+  const updateCount = guidance?.availableCount ?? 0
+  const needsAttentionCount = guidance?.needsAttentionCount ?? 0
+  const warningLabel = [
+    ...(needsAttentionCount > 0 ? [t('nav.updatesNeedAttention', { count: needsAttentionCount })] : []),
+    ...(connectorWarnings > 0 ? [t('nav.connectorNeedsAttention', { count: connectorWarnings })] : []),
+  ].join('; ')
   const CurrentThemeIcon = THEME_MODES.find((item) => item.mode === theme)?.Icon ?? Laptop
 
   return (
@@ -77,11 +84,11 @@ export function ActivityBarUtilityMenu({
         )}
         {updateCount > 0 && <span role="status" aria-label={t('nav.updatesAvailable', { count: updateCount })}
           className={`size-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_var(--sidebar)] ${compactRail ? 'absolute -right-0.5 -top-0.5' : ''}`} />}
-        {connectorWarnings > 0 && (
+        {warningLabel && (
           <span
             role="status"
-            aria-label={t('nav.connectorNeedsAttention', { count: connectorWarnings })}
-            className={`h-1.5 w-1.5 shrink-0 rounded-full bg-warning ${compactRail ? 'absolute right-1 top-1' : ''}`}
+            aria-label={warningLabel}
+            className={`h-1.5 w-1.5 shrink-0 rounded-full bg-warning ${compactRail ? 'absolute -bottom-0.5 -right-0.5' : ''}`}
           />
         )}
         {!compactRail && <Ellipsis size={16} strokeWidth={1.75} aria-hidden
@@ -110,7 +117,9 @@ export function ActivityBarUtilityMenu({
           className="min-h-9 cursor-pointer gap-2 px-2.5 text-[12px]"
         >
           <Settings size={15} strokeWidth={1.75} aria-hidden />
-          <span>{t('nav.item.settings')}</span>
+          <span className="flex-1">{t('nav.item.settings')}</span>
+          <UpdateGuidanceBadge count={updateCount} />
+          <UpdateGuidanceBadge count={needsAttentionCount} tone="attention" />
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={onOpenConnectors}

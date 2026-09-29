@@ -89,7 +89,7 @@ export function UpgradeRehearsalPage() {
     s.phase === 'suspended'
       ? 'App restart checkpoint. Resume to verify the new version and continue.'
       : s.phase === 'failed'
-        ? 'Reconnect failed. The backend is already upgraded; retry the connection without reinstalling.'
+        ? s.log.at(-1) ?? 'Verification failed. Completed installation is retained.'
         : s.phase === 'blocked'
           ? 'The workspace is busy. Release it before applying content changes.'
           : s.phase === 'done'
@@ -115,7 +115,7 @@ export function UpgradeRehearsalPage() {
     review: 'Review plan',
     approve: 'Approve & rehearse',
     resume: 'Resume after restart',
-    retry: 'Retry connection',
+    retry: 'Retry current stage',
     release: 'Simulate workspace becoming idle',
     next: 'Run next stage',
   }[action]

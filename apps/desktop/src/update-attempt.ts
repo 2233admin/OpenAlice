@@ -1,3 +1,4 @@
+import { verifyReleaseEvidence } from '@traderalice/update-lifecycle'
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -92,15 +93,16 @@ export async function inspectPreviousUpdateAttempt(
     return { kind: 'none' }
   }
 
-  // Reaching the requested version, or any version different from the one
-  // that initiated the handoff, proves that the old binary was replaced.
-  if (currentVersion !== attempt.fromVersion) {
+  // The native handoff records version evidence only. A different/newer binary
+  // is not proof that the approved target was activated. Artifact validation
+  // remains with electron-updater; this receipt does not invent payload evidence.
+  if (verifyReleaseEvidence({ version: attempt.toVersion }, { version: currentVersion }).status === 'matched') {
     await removeIfPresent(path)
     return { kind: 'succeeded', attempt }
   }
 
   const ageMs = (options.now ?? new Date()).getTime() - Date.parse(attempt.startedAt)
-  if (ageMs < (options.failureAfterMs ?? UPDATE_ATTEMPT_FAILURE_AFTER_MS)) {
+  if (currentVersion === attempt.fromVersion && ageMs < (options.failureAfterMs ?? UPDATE_ATTEMPT_FAILURE_AFTER_MS)) {
     return { kind: 'pending', attempt }
   }
 

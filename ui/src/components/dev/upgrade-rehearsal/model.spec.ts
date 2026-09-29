@@ -98,3 +98,12 @@ it('does not downgrade a newer backend when the selected channel has no matching
   expect(s.phase).toBe('review')
   expect(s.server).toBe('0.94.2')
 })
+
+it('does not complete activation when a different release starts after handoff', () => {
+  let s = until(approved(initial('client')), 'suspended')
+  s = reduce({ ...s, client: '0.94.3' }, { type: 'resume' })
+  const failed = reduce(s, { type: 'next' })
+  expect(failed.phase).toBe('failed')
+  expect(failed.clientInstalled).toBe('0.94.2')
+  expect(failed.cursor).toBe(s.cursor)
+})

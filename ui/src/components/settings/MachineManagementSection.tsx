@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, ChevronDown, LoaderCircle, Monitor, Plus, RefreshCw, Server, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { useMachineManagement } from '../../hooks/useMachineManagement'
+import { useUpdateLifecycle } from '../../hooks/useUpdateLifecycle'
 import { Button } from '../ui/button'
 import { ConfigSection, inputClass } from '../form'
 import { MachinePlanReview } from './MachinePlanReview'
@@ -12,7 +12,7 @@ import { claimUpgradeDialog, shouldRestoreUpgradeDialog } from './upgrade-dialog
 /** Inline Machine management for the local relay and Electron's main process. */
 export function MachineManagementSection() {
   const { t } = useTranslation()
-  const manager = useMachineManagement()
+  const manager = useUpdateLifecycle().machines
   const [expanded, setExpanded] = useState<string | null>(null)
   const [sshTarget, setSshTarget] = useState('')
   const [label, setLabel] = useState('')

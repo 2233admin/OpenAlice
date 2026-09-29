@@ -1,3 +1,5 @@
+import { ClientUpdateService } from './client-updates.ts'
+export { ClientUpdateService } from './client-updates.ts'
 /** One local browser relay owns exactly one active Machine/AliceProject. */
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
@@ -42,6 +44,7 @@ export interface WebRelayOptions {
   readRegistry?: typeof readMachineRegistrySummary
   connect?: typeof connectSsh
   waitReady?: typeof waitForOpenAlice
+  clientUpdates?: ClientUpdateService
   machineManagement?: MachineManagement
 }
 
@@ -59,6 +62,7 @@ export class WebRelay {
   private readonly sockets = new Set<Duplex>()
   private readonly server = createServer((req, res) => void this.handle(req, res))
   private readonly options: WebRelayOptions
+  private readonly clientUpdates: ClientUpdateService
   private readonly machines: MachineManagement
   private origin = ''
   private readonly devUi: URL | null
@@ -69,6 +73,7 @@ export class WebRelay {
     if (this.devUi && (this.devUi.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(this.devUi.hostname) || this.devUi.username || this.devUi.password || this.devUi.pathname !== '/')) {
       throw new Error('Development UI must be a loopback HTTP origin.')
     }
+    this.clientUpdates = options.clientUpdates ?? new ClientUpdateService()
     this.machines = options.machineManagement ?? new MachineManagement()
     this.server.on('upgrade', (req, socket, head) => this.upgrade(req, socket, head))
   }
@@ -139,6 +144,7 @@ export class WebRelay {
 
   async close(): Promise<void> {
     this.closing = true
+    this.clientUpdates.stop()
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
     this.target?.abort?.abort()
     for (const socket of this.sockets) socket.destroy()
@@ -329,6 +335,13 @@ export class WebRelay {
       }
       if (!this.validRequest(req, mutation)) return json(res, 403, { error: 'Relay origin rejected.' })
       res.setHeader('cache-control', 'no-store')
+      if (url.pathname === '/relay/v1/updates' && req.method === 'GET') return json(res, 200, await this.clientUpdates.snapshot())
+      if (url.pathname === '/relay/v1/updates/activate' && req.method === 'POST') {
+        this.clientUpdates.activate()
+        return json(res, 202, { accepted: true })
+      }
+      if (url.pathname === '/relay/v1/updates/check' && req.method === 'POST') return json(res, 200, await this.clientUpdates.check())
+      if (url.pathname === '/relay/v1/updates/preferences' && req.method === 'PUT') return json(res, 200, await this.clientUpdates.savePreferences(await readJsonBody(req)))
       if (url.pathname === '/relay/v1/status' && req.method === 'GET') return json(res, 200, this.status)
       if (url.pathname === '/relay/v1/reconnect' && req.method === 'POST') {
         if (!this.target) return json(res, 503, { error: 'No AliceProject is selected.' })

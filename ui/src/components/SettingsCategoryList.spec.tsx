@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SettingsCategoryList } from './SettingsCategoryList'
@@ -10,7 +11,10 @@ const mocks = vi.hoisted(() => ({
   focused: null as null | { kind: 'dev'; params: { tab: 'logs' | 'runs' | 'api' } }
     | { kind: 'automation'; params: { section: 'runs' | 'api' } },
   openOrFocus: vi.fn(),
+  guidance: { availableCount: 0, needsAttentionCount: 0 },
 }))
+
+vi.mock('../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({ guidance: mocks.guidance }) }))
 
 vi.mock('../hooks/useAliceProject', () => ({
   useAliceProject: () => ({
@@ -42,13 +46,15 @@ vi.mock('./SidebarRow', () => ({
     label,
     onClick,
     ariaExpanded,
+    trail,
   }: {
     label: string
     onClick: () => void
     ariaExpanded?: boolean
+    trail?: ReactNode
   }) => (
     <button type="button" onClick={onClick} aria-expanded={ariaExpanded}>
-      {label}
+      {label}{trail}
     </button>
   ),
 }))
@@ -57,6 +63,7 @@ beforeEach(() => {
   window.sessionStorage.clear()
   mocks.focused = null
   mocks.openOrFocus.mockClear()
+  mocks.guidance = { availableCount: 0, needsAttentionCount: 0 }
 })
 
 afterEach(() => {
@@ -65,6 +72,11 @@ afterEach(() => {
 })
 
 describe('SettingsCategoryList', () => {
+  it('shows the update count on Overview, one level below Settings', () => {
+    mocks.guidance = { availableCount: 1, needsAttentionCount: 0 }
+    render(<SettingsCategoryList />)
+    expect(screen.getByRole('button', { name: /settings.category.general/ }).textContent).toContain('1')
+  })
   it('places Mode before Broker in Trading, outside General', () => {
     render(<SettingsCategoryList />)
 

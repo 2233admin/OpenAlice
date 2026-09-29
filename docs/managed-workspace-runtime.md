@@ -560,7 +560,9 @@ platform installer does not expose one to the old Electron process.
 
 Before the handoff, Electron atomically records
 `openalice-update-attempt.json` in its machine-local `userData` directory. The
-new version clears that marker on first launch. If the initiating version is
+approved target version clears that marker on first launch, using the shared
+release-evidence verifier. A different unapproved version archives the marker
+as failed rather than claiming a successful update. If the initiating version is
 still running after the bounded installer window, the marker is archived as
 `.failed` and a native error names the target version and desktop diagnostic
 log. This marker is updater evidence, not user-owned OpenAlice state, and does

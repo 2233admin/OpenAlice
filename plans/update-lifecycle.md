@@ -526,3 +526,96 @@ package/UI builds passed. Real browser Settings refreshed against the older
 stable -> empty dev -> stable and reviewed the correct backend-only target.
 Native initial-read/event ordering was verified with an isolated IPC mock.
 No native installation, remote upgrade or restart was executed in this slice.
+
+## Goal continuation: project observation and shared UI controls
+
+Autonomous completion now stays on `codex/unified-update-lifecycle` with one
+Draft PR until the complete plan is accepted. Earlier merged increments remain
+the baseline; no phase is marked complete by a narrow incremental check.
+
+Replaced `WorkspaceAutoUpdates` with `WorkspaceUpdateService`: manual checks are
+read-only and disabled auto-apply still discovers. Separate policy application
+serializes with checks, revalidates policy after planning and keeps source-owner
+merge guards. Policy changes trigger the project command on the backend rather
+than relying on browser follow-up. Source repository metadata now uses shared
+discovery state. The public facade owns native subscription/install and Machine
+probe/operation polling; removed `useMachineManagement` and the separate optional
+hook. UI call sites use the same provider, including desktop prompt and About.
+
+Remaining phase-2 work includes client-scoped policy/host discovery and moving
+imperative coordination behind the shared manager. Phases 1 (inventory), 3, 4
+and 5 are not complete. No real installation is authorized by rehearsal work.
+
+Current browser acceptance: the demo Settings page retains a stable upstream
+AQ candidate with automatic application disabled; the native prompt preview
+opens and dismisses through the shared provider. Machine controls coalesce two
+consumers' apply calls and discard dismissed late probes. AQ/AP manual review
+now sees the same upstream candidate even when automatic application is off.
+No real native installation or remote mutation was performed.
+
+### Exact activation evidence increment
+
+The shared core now verifies approved release evidence independently of SemVer
+ordering and provenance. Electron's startup handoff marker and the rehearsal's
+client/backend verification use it: a different unapproved active version cannot
+report success, and commit/hash evidence required by a target cannot be omitted.
+The native marker shape is unchanged and records version evidence only. Owner
+artifact validation remains authoritative; this is not a claim that durable
+coordinator/recovery or full inventory migration is complete.
+
+Acceptance for both continuation increments: 862 hermetic test files passed,
+7,396 tests passed, 5 tests skipped; root/UI/Electron typechecks and complete
+Electron build passed. Unsigned packaged Workspace smoke passed with temporary
+state/package cleanup confirmed. Browser Settings verifies disabled automatic
+apply still discovers; native prompt preview dismisses; the backend-newer
+rehearsal completes through a reload at its restart checkpoint using shared
+activation verification. Native installer handoff and real SSH upgrade remain
+unperformed and are still required for final topic acceptance. Draft PR #1660
+collects this goal; it remains unmerged and the five-phase plan remains open.
+
+### Overview B and interaction design (maintainer-selected)
+
+The maintainer selected three stacked App / Backend / AliceProject cards and
+approved the companion detail/review/progress/recovery design. Overview now
+replaces the old About and duplicated status list; update preferences disclose
+inline. Settings navigation and location selection stay with their owners.
+A single focus scope handles details and scope selection; backend review uses
+the shared Machine update panel, native restart requires explicit review, and
+Workspace file conflicts hand off to the existing merge owner after closing
+Overview's dialog. Narrow layouts use one column, bounded scrolling and visible
+footer actions. Installed identity is not inferred from a running version.
+
+The UI explicitly exposes the remaining coordinator boundary: execution scopes
+are approved separately until durable cross-client-restart continuation exists.
+Do not call this the complete multi-target plan UI. Native/SSH installation was
+not performed by visual acceptance. Recovery does not silently reapply an unknown
+operation. Later phases must replace the interim scope selector with shared-core
+plan selection and resumable execution, without creating another facade.
+
+This increment passed the complete hermetic suite (864 files, 7,401 tests;
+1 file and 5 tests skipped), UI/root/CLI/desktop typechecks, Electron build,
+and unsigned packaged Electron Workspace smoke with temporary state and package
+cleanup. Demo Settings exercised the three cards, one-dialog scope selection,
+Workspace merge handoff, and a narrow App-details viewport. The browser's
+admin-enforced security check prevented the final click-through of the Machine
+upgrade demo dialog; its focused component tests passed, but that browser path
+remains unverified. No real remote upgrade or native installer restart was run.
+
+### Update guidance through Settings (maintainer-selected A)
+
+The maintainer selected the continuous breadcrumb design. The one update hook
+now projects actionable App, Backend and Workspace targets separately from
+Workspace blockers that require attention. AQ/AP automatic work waiting only
+for an active runtime stays visible as waiting, without raising the blue
+update count. The avatar menu, Settings Overview row, owner cards and exact
+Workspace row share that projection; the summary focuses the target row.
+Opening Settings from the avatar or choosing Overview with pending work focuses
+Versions & updates. Narrow Workspace rows stack version and status beneath the
+name so the navigation target remains readable. This is a UI projection over
+existing approvals, not a new installer or cross-restart coordinator.
+
+Acceptance: the complete UI owner suite passed (356 files, 2,048 tests) and
+UI typecheck passed. Demo Settings at a narrow desktop width and 390px mobile
+width showed one Chat update across the breadcrumb, while AQ remained an
+automatic wait. Keyboard entry from the avatar focused Versions & updates;
+the summary focused the exact Chat row. No installation command was invoked.

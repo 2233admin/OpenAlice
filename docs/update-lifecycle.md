@@ -38,6 +38,20 @@ source. Workspace dependencies and the build graph must build it before CLI/UI
 consumers. Shared identity and selection tests live beside the package; network,
 installer and native-update tests stay with their effect owners.
 
+## Exact activation evidence
+
+`verifyReleaseEvidence` compares the approved target with an installed or active
+receipt. A different newer version is a mismatch, not success. Missing/invalid
+versions, full commits or payload hashes remain unknown; an adapter cannot drop
+required target evidence to manufacture success. Build metadata is identity here,
+not SemVer precedence. Compare artifact hashes only for the same installation
+unit/platform. Installer provenance is not release identity.
+
+Electron's existing restart marker and rehearsal activation verification consume
+this rule. The native marker currently supplies version evidence only; native
+payload validation remains with electron-updater. This does not yet replace the
+owner journal or verify every service's readiness after application startup.
+
 ## Shared discovery resource
 
 `DiscoveryStore` in the same pure package owns read-only probe single-flight,
@@ -59,13 +73,62 @@ its own discovery request state machine; `useVersionDiscovery` is removed.
 Project status and preference responses are also fenced by connection generation.
 Native client status is independent of the selected backend.
 
+## Project commands and UI entry
+
+`WorkspaceUpdateService.check()` observes AQ/AP stable upstream releases even
+when automatic merging is disabled. It never creates a source plan or applies
+content. `applyPolicy()` is a separate serialized command: it re-reads policy,
+plans the exact observed target, checks policy again after planning, and invokes
+the authoritative source manager with its digest. Activation, the background
+timer and a saved policy change explicitly call `refreshAndApplyPolicy()`.
+`POST /api/updates/check` only checks; saving preferences no longer depends on a
+browser follow-up request to start approved automatic work. Failed discovery
+retains the previous observation but cannot trigger an automatic apply. AQ/AP
+manual source review exposes the same stable upstream candidates regardless of
+auto-apply policy; candidate visibility is not permission to merge.
+
+The sole public React hook is `useUpdateLifecycle`. Its provider owns the
+native status subscription, client install command and Machine plan/progress
+state. Settings, desktop prompt and Machine controls subscribe to it; there is
+no `useMachineManagement` or nullable companion lifecycle hook. Shared chrome
+can request the same hook's optional preview mode. Connection/fleet CRUD still
+belongs to the connection owner. Source repository discovery also uses the
+shared cache primitive rather than an independent promise/expiry implementation.
+
 ## Current migration boundary
 
-`useUpdateLifecycle` remains the production UI facade. Real version discovery and
-rehearsal share selection and discovery state, but project/SSH scheduling, native
-subscription consolidation, operation journals and the rehearsal execution
-reducer still need migration. The Workspace `/updates/check` endpoint still has
-the historical automatic-apply behavior; it is not a reader for DiscoveryStore.
-Do not infer full lifecycle or real installation acceptance from discovery tests.
-New work should advance the canonical plan rather than introduce another public
-hook or independently implemented selection/request-ordering rule.
+Project/SSH orchestration and operation journals still need migration into the
+shared coordinator; the rehearsal execution reducer is still separate. Local client policy and host discovery now have separate authority; terminal
+passive notices still need convergence with that resource.
+Do not infer full lifecycle or real installation acceptance from discovery or
+IPC-mock tests. Advance the canonical plan rather than introduce another public
+hook or independent request-ordering rule.
+
+## Overview surface and local client policy
+
+Settings Overview separates App, Backend and AliceProject cards. Project content
+has individual Workspace versions, not an invented aggregate project version.
+The shared `useUpdateLifecycle` observation also projects one guidance path:
+avatar indicator, Settings menu, Overview navigation, owner card and exact
+Workspace row all use the same available target set. Automatic AQ/AP work
+blocked only by an active runtime stays on its row as waiting, without raising
+an actionable blue count; manual blockers and failed target updates use a
+separate needs-attention count. The Overview summary links directly to each
+target while ordinary `/settings` navigation retains its own scroll position.
+The old About component and duplicate status summary are retired. Details and
+update scope selection share one dialog; actual commands retain the authoritative
+native, Machine and Workspace merge approvals. The current UI explains that
+cross-app-restart multi-target continuation is still pending rather than promising
+it. Unknown installed identity is shown as unreported; read failures do not imply
+that the running service is unhealthy. Remote progress uses stages without a
+fabricated percentage.
+
+`ClientUpdateService` provides local relay/Electron discovery and preferences.
+Its `client-updates.json` belongs to the local supervisor root or Electron userData,
+never the selected AliceProject. Construction/status reads do not start network
+work; GUI activation schedules it after paint. Discovery is single-flight and
+retains the last observation after failure. `/relay/v1/updates` and the narrow
+Electron bridge expose the same snapshot/commands. The old native check IPC is
+removed. The shipped project field `autoCheckApp` remains the backend automatic
+check preference; it is not migrated into a local client preference. Terminal
+passive notices and the full execution coordinator still need consolidation.

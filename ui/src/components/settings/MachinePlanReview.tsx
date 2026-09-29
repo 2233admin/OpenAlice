@@ -1,7 +1,7 @@
 import { AlertCircle, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import type { MachinePlan } from '../../hooks/useMachineManagement'
+import type { MachinePlan } from '../../lib/updates/machine-types'
 import { Button } from '../ui/button'
 
 export function MachinePlanReview({ plan, busy, onApply }: { plan: MachinePlan; busy: boolean; onApply: () => void }) {

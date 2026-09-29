@@ -16,3 +16,12 @@ export declare class WebRelay {
   disconnect(): void
   close(): Promise<void>
 }
+
+export declare class ClientUpdateService {
+  constructor(options?: { path?: string; kind?: 'cli' | 'desktop'; currentVersion?: string; discover?: () => Promise<import('@traderalice/update-lifecycle').ClientReleaseObservation> })
+  snapshot(): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+  check(): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+  activate(): void
+  stop(): void
+  savePreferences(input: unknown): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+}

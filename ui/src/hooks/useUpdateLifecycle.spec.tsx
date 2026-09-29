@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
 
-import { cleanup, renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { VersionInfo } from '../api/types'
 
 const mocks = vi.hoisted(() => ({
   getVersion: vi.fn(), currentVersion: vi.fn(), checkVersion: vi.fn(),
-  workspaces: [] as { id: string; upgradeAvailable?: { to: string } }[],
+  workspaces: [] as { id: string; template?: string; upgradeAvailable?: { to: string } }[],
   backendUnavailable: false,
   backendRecoveryGeneration: 0,
   refreshWorkspaces: vi.fn(async () => undefined),
 }))
+vi.mock('./useRelayConnection', () => ({ useRelayConnection: () => ({ refresh: async () => undefined }) }))
 vi.mock('../api', () => ({ api: { version: {
   get: mocks.getVersion, current: mocks.currentVersion, check: mocks.checkVersion,
 } } }))
@@ -43,14 +44,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 it('starts after paint, selects distinct app and Workspace updates, and activates the backend', async () => {
-  mocks.workspaces = [{ id: 'aq', upgradeAvailable: { to: 'v1.2.3' } }]
+  mocks.workspaces = [{ id: 'aq', template: 'auto-quant-v2', upgradeAvailable: { to: 'v1.2.3' } }]
   const fetchMock = vi.fn(async (input: string) => input === '/api/updates/activate'
     ? { ok: true }
     : { ok: true, json: async () => ({ preferences, workspaces: [{ workspaceId: 'aq', template: 'auto-quant-v2', phase: 'blocked', checkedAt: null, toVersion: 'v1.2.3' }] }) })
   vi.stubGlobal('fetch', fetchMock)
   const { result } = renderHook(useUpdateLifecycle, { wrapper })
   expect(result.current.preferences).toBeNull()
-  await waitFor(() => expect(result.current.availableCount).toBeGreaterThanOrEqual(2))
+  await waitFor(() => expect(result.current.preferences).toEqual(preferences))
+  expect(result.current.availableCount).toBe(1)
+  expect(result.current.guidance.workspaceIds).toEqual([])
   expect(fetchMock).toHaveBeenCalledWith('/api/updates/activate', { method: 'POST' })
   expect(mocks.getVersion).toHaveBeenCalledOnce()
 })
@@ -67,7 +70,7 @@ it('keeps backend identity without automatic release discovery when app checks a
 })
 
 it('clears an already-applied Workspace update from the badge and refreshes its inventory', async () => {
-  mocks.workspaces = [{ id: 'aq', upgradeAvailable: { to: 'v1.2.3' } }]
+  mocks.workspaces = [{ id: 'aq', template: 'auto-quant-v2', upgradeAvailable: { to: 'v1.2.3' } }]
   mocks.getVersion.mockResolvedValue({ ...version, hasUpdate: false, latest: null })
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
     preferences, workspaces: [{ workspaceId: 'aq', template: 'auto-quant-v2', phase: 'updated', checkedAt: null, toVersion: 'v1.2.3' }],
@@ -77,14 +80,15 @@ it('clears an already-applied Workspace update from the badge and refreshes its 
   expect(result.current.availableCount).toBe(0)
 })
 
-it('exposes status loading failures without inventing an update', async () => {
+it('retains independent version discovery when project status fails', async () => {
   vi.stubGlobal('fetch', vi.fn(async (input: string) => input === '/api/updates/activate'
     ? { ok: true }
     : { ok: false, status: 503 }))
   const { result } = renderHook(useUpdateLifecycle, { wrapper })
   await waitFor(() => expect(result.current.error).toContain('HTTP 503'))
   expect(result.current.preferences).toBeNull()
-  expect(result.current.availableCount).toBe(0)
+  await waitFor(() => expect(result.current.versionInfo).toEqual(version))
+  expect(result.current.availableCount).toBe(1)
 })
 
 it('keeps version identity when an older backend serves HTML for the updates API', async () => {
@@ -121,6 +125,7 @@ it('ignores an old backend project response after switching targets', async () =
   let finish!: (value: unknown) => void
   let reads = 0
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (input.startsWith('/relay/')) return { ok: true, json: async () => null }
     if (input === '/api/updates/activate') return { ok: true }
     reads++
     if (reads === 1) return new Promise(resolve => { finish = resolve })
@@ -161,7 +166,6 @@ it('does not replace a native status event with an older initial snapshot', asyn
   Object.defineProperty(window, 'openAlice', { configurable: true, value: { updater: {
     getStatus: () => new Promise(resolve => { finish = resolve }),
     onStatus: (listener: typeof onStatus) => { onStatus = listener; return unsubscribe },
-    checkForUpdates: async () => undefined,
   } } })
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
   try {
@@ -177,4 +181,55 @@ it('does not replace a native status event with an older initial snapshot', asyn
     if (original) Object.defineProperty(window, 'openAlice', original)
     else Reflect.deleteProperty(window, 'openAlice')
   }
+})
+
+it('two consumers share the native subscription and a single install handoff', async () => {
+  let finish!: () => void
+  const updater = {
+    getStatus: vi.fn(async () => ({ phase: 'downloaded', version: '1.0.0', releaseUrl: 'https://example.test/release' })),
+    onStatus: vi.fn(() => () => undefined),
+    installAndRestart: vi.fn(() => new Promise<void>(resolve => { finish = resolve })),
+  }
+  const original = Object.getOwnPropertyDescriptor(window, 'openAlice')
+  Object.defineProperty(window, 'openAlice', { configurable: true, value: { updater } })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
+  try {
+    const { result } = renderHook(() => ({ first: useUpdateLifecycle(), second: useUpdateLifecycle() }), { wrapper })
+    await waitFor(() => expect(result.current.first.nativeReady?.version).toBe('1.0.0'))
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.first.installClient()
+      expect(result.current.second.installClient()).toBe(pending)
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(updater.installAndRestart).toHaveBeenCalledOnce()
+    expect(updater.onStatus).toHaveBeenCalledOnce()
+    await act(async () => { finish(); await pending })
+    await act(async () => { await result.current.second.installClient() })
+    expect(updater.installAndRestart).toHaveBeenCalledOnce()
+    expect(result.current.first.nativeInstalling).toBe(true)
+  } finally {
+    if (original) Object.defineProperty(window, 'openAlice', original)
+    else Reflect.deleteProperty(window, 'openAlice')
+  }
+})
+
+it('retains local client policy across backend switches and checks while the backend is offline', async () => {
+  const snapshot = { kind: 'cli', currentVersion: '0.94.1', preferences: { autoCheck: false },
+    discovery: { value: { status: 'available', latestVersion: '0.95.0', currentVersion: '0.94.1', channel: 'stable' }, checking: false, error: null, checkedAt: 1, succeededAt: 1 } }
+  const requests = vi.fn(async (input: string) => {
+    if (input.startsWith('/relay/v1/updates')) return { ok: true, json: async () => snapshot }
+    return { ok: true, json: async () => ({ preferences, workspaces: [] }) }
+  })
+  vi.stubGlobal('fetch', requests)
+  const { result, rerender } = renderHook(useUpdateLifecycle, { wrapper })
+  await waitFor(() => expect(result.current.client?.preferences.autoCheck).toBe(false))
+  mocks.backendUnavailable = true
+  mocks.backendRecoveryGeneration++
+  rerender()
+  await act(async () => { await result.current.refresh() })
+  expect(result.current.client?.preferences.autoCheck).toBe(false)
+  expect(result.current.client?.currentVersion).toBe('0.94.1')
+  expect(requests).toHaveBeenCalledWith('/relay/v1/updates/check', expect.objectContaining({ method: 'POST' }))
+  expect(result.current.versionInfo).toBeNull()
 })

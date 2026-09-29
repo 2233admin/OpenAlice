@@ -63,7 +63,7 @@ import { childIsRunning, stopChild } from './child-shutdown.js'
 import { exitDesktopProcess } from './app-exit.js'
 import { createAppWindow } from './app-window.js'
 import type { CompanionHandle } from './companion.js'
-import { WebRelay } from './web-relay.js'
+import { ClientUpdateService, WebRelay } from './web-relay.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1350,7 +1350,7 @@ app.whenReady().then(async () => {
   })
   win.loadURL('app://openalice/')
 
-  configureAutoUpdate(win, {
+  const nativeUpdates = configureAutoUpdate(win, {
     beforeInstall: async (version, report) => {
       await recordUpdateAttempt(updateAttemptPath, {
         fromVersion: app.getVersion(),
@@ -1386,6 +1386,16 @@ app.whenReady().then(async () => {
       }
     },
   })
+  const clientUpdates = new ClientUpdateService({
+    kind: 'desktop', currentVersion: app.getVersion(),
+    path: join(app.getPath('userData'), 'client-updates.json'),
+    discover: nativeUpdates.discover,
+  })
+  ipcMain.handle('openalice:client-updates:status', () => clientUpdates.snapshot())
+  ipcMain.handle('openalice:client-updates:check', () => clientUpdates.check())
+  ipcMain.handle('openalice:client-updates:activate', () => { clientUpdates.activate() })
+  ipcMain.handle('openalice:client-updates:preferences', (_event, input: unknown) => clientUpdates.savePreferences(input))
+  win.once('closed', () => clientUpdates.stop())
 }).catch((error) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
   console.error('[guardian] desktop startup failed:', error)
