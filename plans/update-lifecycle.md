@@ -500,3 +500,29 @@ Electron Workspace acceptance. Temporary packages and test process trees were
 cleaned. No real remote installation, native auto-update restart or publication
 was performed; those remain later adapter acceptance. Onboarding credential
 verification remains the explicitly separate #1657 failure.
+
+## 2026-09-29 shared discovery resource increment
+
+Implemented the request/cache portion of phase 2 in
+`packages/update-lifecycle/src/discovery.ts`: single-flight, separate success and
+error TTLs, last-success preservation, timestamps, subscription and generation
+invalidation. Backend CDN probes and both real UI/rehearsal readers now consume
+this implementation. Removed `useVersionDiscovery`; the internal React binding
+only subscribes and fences target lifetime. Added connection-generation guards
+for project status/preference replies so late old-backend responses cannot
+replace the current project's state. Native initial status reads cannot overwrite
+newer native events.
+
+This increment does not claim phase 2 complete. Native prompt subscription
+consolidation, project/SSH probe orchestration, separating Workspace check from
+automatic application and client/project preference authority remain next. The
+rehearsal planner/executor migration stays in phase 3. No new installer or
+compatibility path was introduced.
+
+Acceptance: shared/backend/UI focused checks passed (75 cases); complete
+hermetic suite passed (7379 tests, 5 skipped). Root/UI typechecks and shared
+package/UI builds passed. Real browser Settings refreshed against the older
+0.91.0-beta.3 backend without losing its identity; the rehearsal switched
+stable -> empty dev -> stable and reviewed the correct backend-only target.
+Native initial-read/event ordering was verified with an isolated IPC mock.
+No native installation, remote upgrade or restart was executed in this slice.

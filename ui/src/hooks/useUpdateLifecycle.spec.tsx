@@ -116,3 +116,65 @@ it('drops the previous backend identity while disconnected and loads the recover
   rerender()
   await waitFor(() => expect(result.current.versionInfo?.current).toBe('0.95.0-beta'))
 })
+
+it('ignores an old backend project response after switching targets', async () => {
+  let finish!: (value: unknown) => void
+  let reads = 0
+  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (input === '/api/updates/activate') return { ok: true }
+    reads++
+    if (reads === 1) return new Promise(resolve => { finish = resolve })
+    return { ok: true, json: async () => ({ preferences: { ...preferences, autoCheckApp: false }, workspaces: [] }) }
+  }))
+  const { result, rerender } = renderHook(useUpdateLifecycle, { wrapper })
+  await waitFor(() => expect(reads).toBe(1))
+  mocks.backendRecoveryGeneration++
+  rerender()
+  await waitFor(() => expect(result.current.preferences?.autoCheckApp).toBe(false))
+  finish({ ok: true, json: async () => ({ preferences, workspaces: [{ workspaceId: 'old', phase: 'updated', toVersion: '9.0.0' }] }) })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(result.current.preferences?.autoCheckApp).toBe(false)
+  expect(result.current.workspaceStates).toEqual([])
+  expect(mocks.refreshWorkspaces).not.toHaveBeenCalled()
+  expect(mocks.getVersion).not.toHaveBeenCalled()
+})
+
+it('preserves known project and version observations when a refresh fails', async () => {
+  const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) }))
+  vi.stubGlobal('fetch', fetchMock)
+  const { result } = renderHook(useUpdateLifecycle, { wrapper })
+  await waitFor(() => expect(result.current.versionInfo).toEqual(version))
+  fetchMock.mockRejectedValue(new Error('project offline'))
+  mocks.checkVersion.mockRejectedValueOnce(new Error('version offline'))
+  await result.current.refresh()
+  await waitFor(() => expect(result.current.versionError).toBe('version offline'))
+  expect(result.current.versionInfo).toEqual(version)
+  expect(result.current.preferences).toEqual(preferences)
+  expect(result.current.error).toBe('project offline')
+})
+
+it('does not replace a native status event with an older initial snapshot', async () => {
+  let finish!: (value: unknown) => void
+  let onStatus!: (status: unknown) => void
+  const unsubscribe = vi.fn()
+  const original = Object.getOwnPropertyDescriptor(window, 'openAlice')
+  Object.defineProperty(window, 'openAlice', { configurable: true, value: { updater: {
+    getStatus: () => new Promise(resolve => { finish = resolve }),
+    onStatus: (listener: typeof onStatus) => { onStatus = listener; return unsubscribe },
+    checkForUpdates: async () => undefined,
+  } } })
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
+  try {
+    const { result, unmount } = renderHook(useUpdateLifecycle, { wrapper })
+    onStatus({ phase: 'downloaded', version: '1.0.0', releaseUrl: 'https://example.test/release' })
+    await waitFor(() => expect(result.current.nativeStatus?.phase).toBe('downloaded'))
+    finish({ phase: 'available', version: '0.99.0' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(result.current.nativeStatus?.phase).toBe('downloaded')
+    unmount()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  } finally {
+    if (original) Object.defineProperty(window, 'openAlice', original)
+    else Reflect.deleteProperty(window, 'openAlice')
+  }
+})

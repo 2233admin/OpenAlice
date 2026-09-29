@@ -96,6 +96,23 @@ describe('fetchLatestRelease (mocked manifest fetch)', () => {
     })
   })
 
+  it('shares a concurrent forced probe and retains its last manifest after a failed refresh', async () => {
+    let finish!: (value: unknown) => void
+    const fetchMock = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const first = fetchLatestRelease({ channel: 'stable' })
+    const second = fetchLatestRelease({ channel: 'stable', force: true })
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    finish({ ok: true, json: async () => releaseManifest('stable', '99.0.0') })
+    expect(await first).toEqual(await second)
+    fetchMock.mockRejectedValueOnce(new Error('feed unavailable'))
+    const info = await getVersionInfo({ channel: 'stable', force: true })
+    expect(info.latest).toBe('99.0.0')
+    expect(info.error).toBe('feed unavailable')
+    expect(info.hasUpdate).toBe(true)
+  })
+
   it('reads the beta channel from its separate manifest URL', async () => {
     const fetchMock = mockJsonResponse(releaseManifest('beta', '1.3.0-beta.2'))
 

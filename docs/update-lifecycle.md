@@ -38,11 +38,34 @@ source. Workspace dependencies and the build graph must build it before CLI/UI
 consumers. Shared identity and selection tests live beside the package; network,
 installer and native-update tests stay with their effect owners.
 
+## Shared discovery resource
+
+`DiscoveryStore` in the same pure package owns read-only probe single-flight,
+success/error TTLs, timestamps, subscriptions and invalidation. Adapters supply
+the reader and TTL policy; they retain feed parsing, transport timeouts and
+installation authority. Forced checks bypass settled cache entries but join an
+already-running probe. TTL begins when the probe finishes.
+
+A failed refresh preserves the last successful observation and its timestamp,
+and records the new error/check time separately. A failed `check()` returns null,
+not the cached observation: commands cannot mistake stale data for freshly
+verified approval. This store neither authorizes nor executes an installation.
+
+The backend owns one resource per supported release channel (a bounded two-entry
+inventory). The frontend provider and rehearsal use the internal React snapshot
+binding with one resource per current target/channel generation. Switching away
+and back does not revive old responses or callbacks. React no longer implements
+its own discovery request state machine; `useVersionDiscovery` is removed.
+Project status and preference responses are also fenced by connection generation.
+Native client status is independent of the selected backend.
+
 ## Current migration boundary
 
-`useUpdateLifecycle` is still the production UI provider, and the rehearsal now
-uses the same selection decisions as real discovery. Probe scheduling, native
-subscriptions, operation journals and the rehearsal execution reducer have not
-been unified yet. Do not infer full lifecycle or real installation acceptance
-from shared selection tests. New work should advance the canonical plan rather
-than introduce another hook or independently implemented selection rule.
+`useUpdateLifecycle` remains the production UI facade. Real version discovery and
+rehearsal share selection and discovery state, but project/SSH scheduling, native
+subscription consolidation, operation journals and the rehearsal execution
+reducer still need migration. The Workspace `/updates/check` endpoint still has
+the historical automatic-apply behavior; it is not a reader for DiscoveryStore.
+Do not infer full lifecycle or real installation acceptance from discovery tests.
+New work should advance the canonical plan rather than introduce another public
+hook or independently implemented selection/request-ordering rule.
