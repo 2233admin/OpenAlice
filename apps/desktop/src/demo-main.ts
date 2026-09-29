@@ -66,7 +66,18 @@ void app.whenReady().then(async () => {
     },
   })
   ipcMain.handle('openalice:updater:get-status', () => null)
-  ipcMain.handle('openalice:updater:check-for-updates', () => ({ supported: false, reason: 'not-packaged' }))
+  let clientPreferences = { autoCheck: true }
+  const clientSnapshot = () => ({ kind: 'desktop', currentVersion: app.getVersion(), preferences: clientPreferences,
+    discovery: { value: { status: 'unsupported', currentVersion: app.getVersion(), channel: 'demo', message: 'Demo mode' },
+      checking: false, error: null, checkedAt: null, succeededAt: null } })
+  ipcMain.handle('openalice:client-updates:status', clientSnapshot)
+  ipcMain.handle('openalice:client-updates:check', clientSnapshot)
+  ipcMain.handle('openalice:client-updates:activate', () => undefined)
+  ipcMain.handle('openalice:client-updates:preferences', (_event, input: unknown) => {
+    if (!input || typeof input !== 'object' || !('autoCheck' in input) || typeof input.autoCheck !== 'boolean') throw new Error('Invalid client update preferences')
+    clientPreferences = { autoCheck: input.autoCheck }
+    return clientSnapshot()
+  })
   for (const action of ['install-and-restart', 'open-release']) {
     ipcMain.handle(`openalice:updater:${action}`, () => { throw new Error('Unavailable in demo mode') })
   }

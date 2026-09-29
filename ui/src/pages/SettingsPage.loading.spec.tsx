@@ -75,7 +75,7 @@ describe('SettingsPage loading', () => {
 
     render(<SettingsPage />)
 
-    expect(screen.getByRole('heading', { name: 'About OpenAlice' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Versions & updates' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Language' })).toBeNull()
     expect(screen.getByText('openalice run --home <path>')).toBeTruthy()
     expect(mocks.configLoad).not.toHaveBeenCalled()

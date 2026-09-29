@@ -26,7 +26,7 @@ import {
   type UiStyleProfileId,
 } from '../theme/styleProfiles'
 import { useEffectivePreferenceSlot } from '../theme/useEffectiveTheme'
-import { AboutOpenAliceSection } from '../components/settings/AboutOpenAliceSection'
+import { VersionOverviewSection } from '../components/settings/VersionOverviewSection'
 import { UpdateLifecycleSection } from '../components/settings/UpdateLifecycleSection'
 import { AliceLocationSection } from '../components/settings/AliceLocationSection'
 import { MachineManagementSection } from '../components/settings/MachineManagementSection'
@@ -850,11 +850,11 @@ function SettingsSection() {
   return (
     <div className="mx-auto w-full max-w-[1100px]">
       <AliceLocationSection />
-      <MachineManagementSection />
 
       {/* Installation and update ownership */}
-      <AboutOpenAliceSection />
+      <VersionOverviewSection />
       <UpdateLifecycleSection />
+      <MachineManagementSection />
 
       {/* Complete OpenAlice home + runtime lock boundary */}
       <DataHomeSection />

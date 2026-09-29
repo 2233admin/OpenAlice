@@ -22,6 +22,8 @@ interface PtyListeners {
 }
 
 type UpdaterStatus =
+  | { phase: 'checking' }
+  | { phase: 'current'; version: string }
   | { phase: 'available'; version?: string; releaseUrl?: string }
   | { phase: 'downloading'; version?: string; percent?: number }
   | { phase: 'downloaded'; version: string; releaseUrl: string }
@@ -174,9 +176,14 @@ const api = {
       ipcRenderer.invoke('openalice:data-home:set-ask-on-startup', enabled),
     openCurrent: () => ipcRenderer.invoke('openalice:data-home:open-current'),
   },
+  clientUpdates: {
+    status: () => ipcRenderer.invoke('openalice:client-updates:status'),
+    check: () => ipcRenderer.invoke('openalice:client-updates:check'),
+    activate: () => ipcRenderer.invoke('openalice:client-updates:activate'),
+    savePreferences: (input: { autoCheck: boolean }) => ipcRenderer.invoke('openalice:client-updates:preferences', input),
+  },
   updater: {
     getStatus: () => ipcRenderer.invoke('openalice:updater:get-status'),
-    checkForUpdates: () => ipcRenderer.invoke('openalice:updater:check-for-updates'),
     onStatus: (cb: (status: UpdaterStatus) => void) => {
       updaterListeners.add(cb)
       return () => updaterListeners.delete(cb)
@@ -250,5 +257,6 @@ if (window.location.protocol === 'app:') {
     desktopMachine: api.desktopMachine,
     windowChrome: api.windowChrome,
     updater: api.updater,
+    clientUpdates: api.clientUpdates,
   })
 }

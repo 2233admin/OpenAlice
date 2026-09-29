@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { newerRelease } from '@traderalice/update-lifecycle'
+import type { ClientUpdatePreferences, ClientUpdateSnapshot } from '@traderalice/update-lifecycle'
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
@@ -24,6 +24,8 @@ export interface WorkspaceUpdateState {
   reason?: string
 }
 export type NativeStatus =
+  | { phase: 'checking' }
+  | { phase: 'current'; version: string }
   | { phase: 'available'; version?: string; releaseUrl?: string }
   | { phase: 'downloading'; version?: string; percent?: number }
   | { phase: 'downloaded'; version: string; releaseUrl: string }
@@ -32,6 +34,9 @@ export type NativeStatus =
 interface UpdateResponse { preferences: UpdatePreferences; workspaces: WorkspaceUpdateState[] }
 
 export interface UpdateLifecycle {
+  client: ClientUpdateSnapshot | null
+  clientError: string | null
+  saveClientPreferences(next: ClientUpdatePreferences): Promise<void>
   machines: ReturnType<typeof useMachineControls>
   preferences: UpdatePreferences | null
   versionInfo: VersionInfo | null
@@ -53,7 +58,6 @@ export interface UpdateLifecycle {
 
 const Context = createContext<UpdateLifecycle | null>(null)
 const POLL_MS = 60_000
-const CLIENT_VERSION = typeof __OPENALICE_UI_VERSION__ === 'string' ? __OPENALICE_UI_VERSION__ : 'development'
 
 
 async function getUpdates(): Promise<UpdateResponse> {
@@ -71,6 +75,37 @@ class UnsupportedUpdatesError extends Error {}
 
 export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const machines = useMachineControls()
+  const clientDiscovery = useDiscoverySnapshot<ClientUpdateSnapshot | null>('client-host')
+  const { value: client, error: clientTransportError, check: checkClient, clear: clearClient } = clientDiscovery
+  const refreshClient = useCallback(async (force = false) => {
+    // Join a passive read first; a user check must not be swallowed by it.
+    await checkClient(() => readClientUpdates('status'))
+    if (force) await checkClient(() => readClientUpdates('check'))
+  }, [checkClient])
+  useEffect(() => {
+    let active = true
+    let second = 0
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        if (!active) return
+        void readClientUpdates('activate').then(() => { if (active) void refreshClient() }).catch(() => undefined)
+      })
+    })
+    void refreshClient()
+    const timer = setInterval(() => { void refreshClient() }, POLL_MS)
+    return () => { active = false; cancelAnimationFrame(first); cancelAnimationFrame(second); clearInterval(timer) }
+  }, [refreshClient])
+  useEffect(() => {
+    if (!client?.discovery.checking) return
+    const timer = setInterval(() => { void refreshClient() }, 700)
+    return () => clearInterval(timer)
+  }, [client?.discovery.checking, refreshClient])
+  const saveClientPreferences = useCallback(async (next: ClientUpdatePreferences) => {
+    const saved = await readClientUpdates('preferences', next)
+    if (!saved) throw new Error('This host does not support client update preferences')
+    clearClient() // Retire any status read started before the policy write.
+    await checkClient(async () => saved)
+  }, [checkClient, clearClient])
   const { workspaces, refresh: refreshWorkspaces } = useWorkspaces()
   const { backendUnavailable, backendRecoveryGeneration } = useBackendRecoverySignal()
   const [preferences, setPreferences] = useState<UpdatePreferences | null>(null)
@@ -96,7 +131,6 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     return () => { scope.active = false }
   }, [scope])
   const updatesSupported = useRef<boolean | null>(null)
-  const nativeAutoChecked = useRef(false)
   const observedWorkspaceUpdates = useRef(new Set<string>())
 
   const load = useCallback(async (force = false) => {
@@ -143,15 +177,9 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     // Version identity is independent of the newer Workspace update API.
     // Keep it visible when an older remote Runtime cannot serve /api/updates.
     try {
-      const next = await checkVersion(() => force ? api.version.check() : snapshot?.preferences.autoCheckApp === false ? api.version.current() : api.version.get())
-      if (!next || !isCurrent()) return
-      if (force) await window.openAlice?.updater?.checkForUpdates().catch(() => undefined)
-      else if (!nativeAutoChecked.current && window.openAlice?.updater && snapshot?.preferences.autoCheckApp !== false) {
-        nativeAutoChecked.current = true
-        void window.openAlice.updater.checkForUpdates().catch(() => undefined)
-      }
+      await checkVersion(() => force ? api.version.check() : snapshot?.preferences.autoCheckApp === false ? api.version.current() : api.version.get())
     } catch (cause) {
-      // Native updater failures are reported by its own status stream.
+      // Discovery retains the last observation alongside its error.
     }
     finally { if (force && isCurrent()) setChecking(false) }
   }, [backendUnavailable, refreshWorkspaces, checkVersion, isCurrent])
@@ -207,13 +235,13 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     }
     const unsubscribe = updater.onStatus((status) => {
       receivedEvent = true
-      if (active) accept(status)
+      if (active) { accept(status); void refreshClient() }
     })
     void updater.getStatus().then((status) => {
       if (active && !receivedEvent) accept(status)
     }).catch(() => undefined)
     return () => { active = false; unsubscribe() }
-  }, [])
+  }, [refreshClient])
 
   const installClient = useCallback((): Promise<void> => {
     if (nativeInstallFlight.current) return nativeInstallFlight.current
@@ -250,13 +278,12 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     setPreferences(saved)
     await load()
 
-  }, [load, preferences, isCurrent, backendUnavailable])
+  }, [load, isCurrent, backendUnavailable])
 
   const availableCount = useMemo(() => {
     const candidates = new Set<string>()
-    if (preferences?.autoCheckApp && versionInfo?.hasUpdate) candidates.add('backend')
-    if (preferences?.autoCheckApp && newerRelease(versionInfo?.latest, CLIENT_VERSION)) candidates.add('client')
-    if (preferences?.autoCheckApp && ['available', 'downloaded'].includes(nativeStatus?.phase ?? '')) candidates.add('client')
+    if (versionInfo?.hasUpdate) candidates.add('backend')
+    if (client?.discovery.value?.status === 'available' || ['available', 'downloaded'].includes(nativeStatus?.phase ?? '')) candidates.add('client')
     for (const workspace of workspaces) {
       const completed = workspaceStates.find((state) => state.workspaceId === workspace.id
         && state.phase === 'updated' && state.toVersion === workspace.upgradeAvailable?.to)
@@ -266,12 +293,13 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       if (state.toVersion && ['available', 'blocked', 'failed'].includes(state.phase)) candidates.add(state.workspaceId)
     }
     return candidates.size
-  }, [nativeStatus, preferences, versionInfo, workspaceStates, workspaces])
+  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces])
 
   const value = useMemo<UpdateLifecycle>(() => ({
-    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount,
-    refresh: () => load(true), savePreferences,
-  }), [machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, load, savePreferences])
+    client, clientError: clientTransportError ?? client?.discovery.error ?? null, saveClientPreferences,
+    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking: checking || clientDiscovery.checking || Boolean(client?.discovery.checking), error, versionError, updatesUnsupported, availableCount,
+    refresh: async () => { await Promise.all([load(true), refreshClient(true)]) }, savePreferences,
+  }), [client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, load, savePreferences])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 
@@ -375,4 +403,33 @@ function useMachineControls() {
   }, [desktop, plan, relay.refresh, refreshOperation])
 
   return { ...relay, plan, probing, applying, operation, operationError: error ?? operationDiscovery.error, clearPlan, probe, apply }
+}
+
+/** Local authority only. A legacy/direct host is explicitly unsupported; backend
+ * /api/version must never be repurposed as the renderer/relay release feed. */
+async function readClientUpdates(action: 'status' | 'check' | 'activate' | 'preferences', input?: ClientUpdatePreferences): Promise<ClientUpdateSnapshot | null> {
+  const bridge = window.openAlice?.clientUpdates
+  if (bridge) {
+    if (action === 'status') return bridge.status()
+    if (action === 'check') return bridge.check()
+    if (action === 'preferences') return bridge.savePreferences(input!)
+    await bridge.activate()
+    return bridge.status()
+  }
+  if (window.openAlice?.updater) return null
+  const suffix = action === 'status' ? '' : `/${action}`
+  const response = await fetch(`/relay/v1/updates${suffix}`, {
+    method: action === 'status' ? 'GET' : action === 'preferences' ? 'PUT' : 'POST',
+    ...(input ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) } : {}),
+    cache: 'no-store',
+  })
+  if (response.status === 404 || response.status === 405 || response.headers?.get('content-type')?.includes('text/html')) return null
+  if (!response.ok) throw new Error(`Client update ${action} failed: HTTP ${response.status}`)
+  if (action === 'activate') return null
+  const value = await response.json() as ClientUpdateSnapshot
+  if (!value || !['cli', 'desktop'].includes(value.kind) || typeof value.currentVersion !== 'string'
+    || typeof value.preferences?.autoCheck !== 'boolean' || typeof value.discovery?.checking !== 'boolean') {
+    throw new Error('Invalid client update status from local host')
+  }
+  return value
 }

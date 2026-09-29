@@ -1,3 +1,4 @@
+import type { ClientReleaseObservation } from '@traderalice/update-lifecycle'
 import { app, ipcMain, shell, type BrowserWindow } from 'electron'
 import electronUpdater from 'electron-updater'
 import { resolveAutoUpdateCapability } from './auto-update-policy.js'
@@ -11,6 +12,8 @@ export type UpdaterInstallStage =
   | 'handing-off'
 
 type UpdaterStatus =
+  | { phase: 'checking' }
+  | { phase: 'current'; version: string }
   | { phase: 'available'; version?: string; releaseUrl?: string }
   | { phase: 'downloading'; version?: string; percent?: number }
   | { phase: 'downloaded'; version: string; releaseUrl: string }
@@ -30,9 +33,10 @@ export interface AutoUpdateHooks {
   onInstallFailure?: (error: Error) => Promise<void> | void
 }
 
-export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks): void {
+export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks): { discover(): Promise<ClientReleaseObservation> } {
   let downloadedVersion: string | null = null
   let availableVersion: string | null = null
+  let checkedRelease: { version: string; available: boolean } | null = null
   let latestStatus: UpdaterStatus | null = null
   let activeCheck: Promise<UpdateCheckResult> | null = null
   let installInProgress = false
@@ -74,6 +78,8 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
       return Promise.resolve({ supported: false, reason: capability.reason })
     }
     if (activeCheck) return activeCheck
+    checkedRelease = null
+    sendStatus({ phase: 'checking' })
     activeCheck = autoUpdater.checkForUpdates()
       .then(() => ({ supported: true as const }))
       .catch((err: unknown) => {
@@ -92,8 +98,15 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
   ipcMain.removeHandler('openalice:updater:get-status')
   ipcMain.handle('openalice:updater:get-status', () => latestStatus)
 
-  ipcMain.removeHandler('openalice:updater:check-for-updates')
-  ipcMain.handle('openalice:updater:check-for-updates', () => checkForUpdates())
+  const controls = { discover: async (): Promise<ClientReleaseObservation> => {
+    const result = await checkForUpdates()
+    const base = { currentVersion: app.getVersion(), channel: app.getVersion().includes('-') ? 'beta' : 'stable' }
+    if (!result.supported) return { ...base, status: 'unsupported', message: result.reason }
+    if (latestStatus?.phase === 'error') throw new Error(latestStatus.message)
+    if (!checkedRelease) throw new Error('Native updater returned no release identity')
+    return { ...base, status: checkedRelease.available ? 'available' : 'current',
+      latestVersion: checkedRelease.version, releaseNotesUrl: releaseUrlFor(checkedRelease.version) }
+  } }
 
   ipcMain.removeHandler('openalice:updater:install-and-restart')
   ipcMain.handle('openalice:updater:install-and-restart', async () => {
@@ -141,7 +154,7 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
     if (capability.reason === 'missing-config') {
       console.info(`[updater] disabled: update metadata not found at ${capability.configPath}`)
     }
-    return
+    return controls
   }
 
   autoUpdater.autoDownload = true
@@ -162,12 +175,15 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
 
   autoUpdater.on('update-available', (info) => {
     console.log(`[updater] update available: ${info.version}`)
+    checkedRelease = { version: info.version, available: true }
     availableVersion = info.version
     sendStatus({ phase: 'available', version: info.version, releaseUrl: releaseUrlFor(info.version) })
   })
 
   autoUpdater.on('update-not-available', (info) => {
     console.log(`[updater] no update available (latest=${info.version})`)
+    checkedRelease = { version: info.version, available: false }
+    sendStatus({ phase: 'current', version: app.getVersion() })
   })
 
   autoUpdater.on('download-progress', (progress) => {
@@ -185,8 +201,9 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
     sendStatus({ phase: 'downloaded', version: info.version, releaseUrl: releaseUrlFor(info.version) })
   })
 
-  // The painted renderer activates update discovery after reading the shared
-  // automatic-check preference. Explicit IPC checks remain available here.
+  // The local lifecycle service owns policy and discovery activation; the
+  // native updater remains the download/install effect owner.
+  return controls
 }
 
 export function channelForVersion(version: string, platform: NodeJS.Platform, arch: string): string {

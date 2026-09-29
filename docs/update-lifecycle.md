@@ -98,8 +98,30 @@ shared cache primitive rather than an independent promise/expiry implementation.
 ## Current migration boundary
 
 Project/SSH orchestration and operation journals still need migration into the
-shared coordinator; the rehearsal execution reducer is still separate. Client
-versus project preference authority and frontend-host discovery are still open.
+shared coordinator; the rehearsal execution reducer is still separate. Local client policy and host discovery now have separate authority; terminal
+passive notices still need convergence with that resource.
 Do not infer full lifecycle or real installation acceptance from discovery or
 IPC-mock tests. Advance the canonical plan rather than introduce another public
 hook or independent request-ordering rule.
+
+## Overview surface and local client policy
+
+Settings Overview separates App, Backend and AliceProject cards. Project content
+has individual Workspace versions, not an invented aggregate project version.
+The old About component and duplicate status summary are retired. Details and
+update scope selection share one dialog; actual commands retain the authoritative
+native, Machine and Workspace merge approvals. The current UI explains that
+cross-app-restart multi-target continuation is still pending rather than promising
+it. Unknown installed identity is shown as unreported; read failures do not imply
+that the running service is unhealthy. Remote progress uses stages without a
+fabricated percentage.
+
+`ClientUpdateService` provides local relay/Electron discovery and preferences.
+Its `client-updates.json` belongs to the local supervisor root or Electron userData,
+never the selected AliceProject. Construction/status reads do not start network
+work; GUI activation schedules it after paint. Discovery is single-flight and
+retains the last observation after failure. `/relay/v1/updates` and the narrow
+Electron bridge expose the same snapshot/commands. The old native check IPC is
+removed. The shipped project field `autoCheckApp` remains the backend automatic
+check preference; it is not migrated into a local client preference. Terminal
+passive notices and the full execution coordinator still need consolidation.

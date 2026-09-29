@@ -104,3 +104,4 @@ export function selectRelease(
 
 export { DiscoveryStore, type DiscoverySnapshot } from './discovery.js'
 export { verifyReleaseEvidence, type ReleaseEvidence, type ReleaseVerification } from './verification.js'
+export type { ClientUpdatePreferences, ClientReleaseObservation, ClientUpdateSnapshot } from './client.js'

@@ -572,3 +572,31 @@ rehearsal completes through a reload at its restart checkpoint using shared
 activation verification. Native installer handoff and real SSH upgrade remain
 unperformed and are still required for final topic acceptance. Draft PR #1660
 collects this goal; it remains unmerged and the five-phase plan remains open.
+
+### Overview B and interaction design (maintainer-selected)
+
+The maintainer selected three stacked App / Backend / AliceProject cards and
+approved the companion detail/review/progress/recovery design. Overview now
+replaces the old About and duplicated status list; update preferences disclose
+inline. Settings navigation and location selection stay with their owners.
+A single focus scope handles details and scope selection; backend review uses
+the shared Machine update panel, native restart requires explicit review, and
+Workspace file conflicts hand off to the existing merge owner after closing
+Overview's dialog. Narrow layouts use one column, bounded scrolling and visible
+footer actions. Installed identity is not inferred from a running version.
+
+The UI explicitly exposes the remaining coordinator boundary: execution scopes
+are approved separately until durable cross-client-restart continuation exists.
+Do not call this the complete multi-target plan UI. Native/SSH installation was
+not performed by visual acceptance. Recovery does not silently reapply an unknown
+operation. Later phases must replace the interim scope selector with shared-core
+plan selection and resumable execution, without creating another facade.
+
+This increment passed the complete hermetic suite (864 files, 7,401 tests;
+1 file and 5 tests skipped), UI/root/CLI/desktop typechecks, Electron build,
+and unsigned packaged Electron Workspace smoke with temporary state and package
+cleanup. Demo Settings exercised the three cards, one-dialog scope selection,
+Workspace merge handoff, and a narrow App-details viewport. The browser's
+admin-enforced security check prevented the final click-through of the Machine
+upgrade demo dialog; its focused component tests passed, but that browser path
+remains unverified. No real remote upgrade or native installer restart was run.

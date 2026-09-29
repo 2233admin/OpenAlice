@@ -77,29 +77,27 @@ describe('configureAutoUpdate', () => {
   })
 
   it('keeps updater IPC stable when the updater engine is disabled', async () => {
-    configureAutoUpdate({} as never, { beforeInstall: vi.fn(async () => {}) })
+    const controls = configureAutoUpdate({} as never, { beforeInstall: vi.fn(async () => {}) })
 
     expect([...mocks.handlers.keys()]).toEqual([
       'openalice:updater:get-status',
-      'openalice:updater:check-for-updates',
       'openalice:updater:install-and-restart',
       'openalice:updater:open-release',
     ])
     expect(mocks.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
 
     const getStatus = mocks.handlers.get('openalice:updater:get-status')
-    const check = mocks.handlers.get('openalice:updater:check-for-updates')
     const install = mocks.handlers.get('openalice:updater:install-and-restart')
     const openRelease = mocks.handlers.get('openalice:updater:open-release')
     expect(await getStatus?.()).toBeNull()
-    await expect(check?.()).resolves.toEqual({ supported: false, reason: 'not-packaged' })
+    await expect(controls.discover()).resolves.toMatchObject({ status: 'unsupported', message: 'not-packaged' })
     await expect(install?.()).rejects.toThrow('No downloaded update is ready to install.')
     await openRelease?.({}, undefined)
     expect(mocks.shell.openExternal)
       .toHaveBeenCalledWith('https://github.com/TraderAlice/OpenAlice/releases')
   })
 
-  it('deduplicates an active native check and exposes a manual check handler', async () => {
+  it('deduplicates owner discovery without exposing a second check IPC', async () => {
     mocks.app.isPackaged = true
     mocks.capability = { enabled: true, configPath: '/Applications/OpenAlice.app/app-update.yml' }
     let resolveCheck!: () => void
@@ -108,19 +106,20 @@ describe('configureAutoUpdate', () => {
     })
     mocks.autoUpdater.checkForUpdates.mockReturnValue(pendingCheck)
 
-    configureAutoUpdate({ isDestroyed: () => false, webContents: { send: vi.fn() } } as never, {
+    const controls = configureAutoUpdate({ isDestroyed: () => false, webContents: { send: vi.fn() } } as never, {
       beforeInstall: vi.fn(async () => {}),
     })
 
-    const check = mocks.handlers.get('openalice:updater:check-for-updates')!
-    const manual = check()
+    expect(mocks.handlers.has('openalice:updater:check-for-updates')).toBe(false)
+    const manual = controls.discover()
+    const joined = controls.discover()
     expect(mocks.autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
 
+    mocks.listeners.get('update-not-available')?.({ version: '0.94.1' })
     resolveCheck()
-    await expect(manual).resolves.toEqual({ supported: true })
-
-    await check()
-    expect(mocks.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+    await expect(manual).resolves.toMatchObject({ status: 'current', latestVersion: '0.94.1' })
+    await expect(joined).resolves.toMatchObject({ status: 'current' })
+    expect(mocks.autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
   })
 
   it('reports visible install stages before handing off to the native updater', async () => {
