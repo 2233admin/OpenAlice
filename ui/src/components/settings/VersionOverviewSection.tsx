@@ -79,11 +79,14 @@ export function VersionOverviewSection() {
           : backend?.updateAuthority === 'source' ? text('sourceManaged')
             : backend?.latest ? text('current') : text('unknown')
   const card = (kind: 'app' | 'backend' | 'project', icon: ReactNode, subtitle: string, identity: string, status: string, children?: ReactNode) => <section className="min-w-0 rounded-xl border border-border/70 bg-secondary/25">
-    <div className="flex flex-wrap items-center gap-4 p-5 sm:p-6">
+    <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 p-5 sm:gap-x-4 sm:p-6">
       <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary" aria-hidden>{icon}</div>
-      <div className="min-w-0 flex-1"><h3 className="text-base font-semibold">{text(kind)}</h3><p className="mt-1 break-words text-xs text-muted-foreground">{subtitle}</p></div>
-      <div className="min-w-0 basis-full pl-15 sm:basis-auto sm:pl-0 sm:text-right"><p className="font-mono text-sm tabular-nums">{identity}</p><p className="mt-1 max-w-xs text-xs text-muted-foreground">{status}</p></div>
-      <Button variant="ghost" size="sm" aria-label={`${text(kind)} · ${text('details')}`} onClick={() => open(kind)}>{text('details')}<ChevronRight className="size-4" /></Button>
+      <div className="min-w-0"><h3 className="text-base font-semibold">{text(kind)}</h3><p className="mt-1 break-words text-xs text-muted-foreground">{subtitle}</p></div>
+      <Button className="col-start-3 row-start-1" variant="ghost" size="sm" aria-label={`${text(kind)} · ${text('details')}`} onClick={() => open(kind)}>{text('details')}<ChevronRight className="size-4" /></Button>
+      <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+        {identity && <p className="break-all font-mono text-sm tabular-nums">{identity}</p>}
+        <p className="text-xs text-muted-foreground">{status}</p>
+      </div>
     </div>{children}
   </section>
   const workspaceList = <div className="mx-5 mb-5 divide-y divide-border/60 rounded-lg border border-border/60 sm:mx-6">
