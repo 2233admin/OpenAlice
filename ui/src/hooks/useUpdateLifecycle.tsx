@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { newerRelease } from '@traderalice/update-lifecycle'
-import { useVersionDiscovery } from './useVersionDiscovery'
+import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
@@ -65,19 +65,29 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const { workspaces, refresh: refreshWorkspaces } = useWorkspaces()
   const { backendUnavailable, backendRecoveryGeneration } = useBackendRecoverySignal()
   const [preferences, setPreferences] = useState<UpdatePreferences | null>(null)
-  const discovery = useVersionDiscovery<VersionInfo>(`${backendRecoveryGeneration}:${backendUnavailable}`)
+  const discovery = useDiscoverySnapshot<VersionInfo>(`${backendRecoveryGeneration}:${backendUnavailable}`)
   const { value: versionInfo, error: versionError, check: checkVersion, clear: clearVersion } = discovery
   const [nativeStatus, setNativeStatus] = useState<NativeStatus | null>(null)
   const [workspaceStates, setWorkspaceStates] = useState<WorkspaceUpdateState[]>([])
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [updatesUnsupported, setUpdatesUnsupported] = useState(false)
+  // A connection generation owns every project response, not only /version.
+  // Native updater state remains local and is deliberately outside this scope.
+  const scope = useMemo(() => ({ active: true }), [backendRecoveryGeneration, backendUnavailable])
+  const currentScope = useRef(scope)
+  currentScope.current = scope
+  const isCurrent = useCallback(() => scope.active && currentScope.current === scope, [scope])
+  useEffect(() => {
+    scope.active = true
+    return () => { scope.active = false }
+  }, [scope])
   const updatesSupported = useRef<boolean | null>(null)
   const nativeAutoChecked = useRef(false)
   const observedWorkspaceUpdates = useRef(new Set<string>())
 
   const load = useCallback(async (force = false) => {
-    if (backendUnavailable) return
+    if (backendUnavailable || !isCurrent()) return
     if (force) setChecking(true)
     let snapshot: UpdateResponse | null = null
     try {
@@ -91,6 +101,7 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       }
       if (response && !response.ok) throw new Error(`Update check failed: HTTP ${response.status}`)
       snapshot = response ? await response.json() as UpdateResponse : await getUpdates()
+      if (!isCurrent()) return
       updatesSupported.current = true
       setUpdatesUnsupported(false)
       setPreferences(snapshot.preferences)
@@ -106,18 +117,21 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       if (refreshedWorkspace) void refreshWorkspaces().catch(() => undefined)
       setError(null)
     } catch (cause) {
+      if (!isCurrent()) return
       const unsupported = cause instanceof UnsupportedUpdatesError
       updatesSupported.current = unsupported ? false : updatesSupported.current
       setUpdatesUnsupported(unsupported)
-      setPreferences(null)
-      setWorkspaceStates([])
+      if (unsupported) {
+        setPreferences(null)
+        setWorkspaceStates([])
+      }
       setError(unsupported ? null : cause instanceof Error ? cause.message : String(cause))
     }
     // Version identity is independent of the newer Workspace update API.
     // Keep it visible when an older remote Runtime cannot serve /api/updates.
     try {
       const next = await checkVersion(() => force ? api.version.check() : snapshot?.preferences.autoCheckApp === false ? api.version.current() : api.version.get())
-      if (!next) return
+      if (!next || !isCurrent()) return
       if (force) await window.openAlice?.updater?.checkForUpdates().catch(() => undefined)
       else if (!nativeAutoChecked.current && window.openAlice?.updater && snapshot?.preferences.autoCheckApp !== false) {
         nativeAutoChecked.current = true
@@ -126,16 +140,19 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     } catch (cause) {
       // Native updater failures are reported by its own status stream.
     }
-    finally { if (force) setChecking(false) }
-  }, [backendUnavailable, refreshWorkspaces, checkVersion])
+    finally { if (force && isCurrent()) setChecking(false) }
+  }, [backendUnavailable, refreshWorkspaces, checkVersion, isCurrent])
 
   useEffect(() => {
+    setChecking(false)
+    setError(null)
+    updatesSupported.current = null
+    observedWorkspaceUpdates.current.clear()
+    setPreferences(null)
+    setWorkspaceStates([])
+    setUpdatesUnsupported(false)
     if (backendUnavailable) {
-      setPreferences(null)
       clearVersion()
-      setWorkspaceStates([])
-      setUpdatesUnsupported(false)
-      updatesSupported.current = null
       return
     }
     let active = true
@@ -163,11 +180,20 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const updater = window.openAlice?.updater
     if (!updater) return
-    void updater.getStatus().then((status) => setNativeStatus(status)).catch(() => undefined)
-    return updater.onStatus((status) => setNativeStatus(status))
+    let active = true
+    let receivedEvent = false
+    const unsubscribe = updater.onStatus((status) => {
+      receivedEvent = true
+      if (active) setNativeStatus(status)
+    })
+    void updater.getStatus().then((status) => {
+      if (active && !receivedEvent) setNativeStatus(status)
+    }).catch(() => undefined)
+    return () => { active = false; unsubscribe() }
   }, [])
 
   const savePreferences = useCallback(async (next: UpdatePreferences) => {
+    if (backendUnavailable || !isCurrent()) throw new Error('The update target changed; retry on the current backend')
     const enabledWorkspaceUpdates = Boolean(
       (next.autoUpdateAutoQuant && !preferences?.autoUpdateAutoQuant)
       || (next.autoUpdateAutoPrediction && !preferences?.autoUpdateAutoPrediction),
@@ -176,12 +202,14 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next),
     })
     if (!response.ok) throw new Error(`Could not save update preferences: HTTP ${response.status}`)
-    setPreferences(await response.json() as UpdatePreferences)
+    const saved = await response.json() as UpdatePreferences
+    if (!isCurrent()) return
+    setPreferences(saved)
     await load()
-    if (enabledWorkspaceUpdates) {
+    if (enabledWorkspaceUpdates && isCurrent()) {
       void fetch('/api/updates/check', { method: 'POST' }).then(() => load()).catch(() => undefined)
     }
-  }, [load, preferences])
+  }, [load, preferences, isCurrent, backendUnavailable])
 
   const availableCount = useMemo(() => {
     const candidates = new Set<string>()

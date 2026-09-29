@@ -14,7 +14,7 @@
  * discovery does not depend on GitHub's anonymous API.
  */
 
-import { selectRelease, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
+import { DiscoveryStore, selectRelease, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -64,12 +64,6 @@ export interface LatestRelease {
   publishedAt: string
 }
 
-interface CacheEntry {
-  fetchedAt: number
-  result: LatestRelease | null
-  error: string | null
-}
-
 export type ReleaseChannel = 'stable' | 'beta'
 
 const MANIFEST_URLS: Record<ReleaseChannel, string> = {
@@ -108,7 +102,8 @@ interface GetVersionInfoOptions extends FetchLatestReleaseOptions {
 const SUCCESS_TTL_MS = 60 * 60 * 1000 // 1h
 const ERROR_TTL_MS = 5 * 60 * 1000 // 5min
 
-const cache = new Map<ReleaseChannel, CacheEntry>()
+// Fixed feed inventory: each channel owns one bounded single-flight resource.
+const cache = new Map<ReleaseChannel, DiscoveryStore<LatestRelease>>()
 
 function releaseChannelForVersion(version: string): ReleaseChannel {
   return /^v?\d+\.\d+\.\d+-beta(?:\.|$)/.test(version)
@@ -164,46 +159,34 @@ function parseReleaseManifest(value: unknown, channel: ReleaseChannel): LatestRe
 
 /**
  * Fetch the latest release from the requested OpenAlice CDN channel manifest.
- * Returns null + an error string when the manifest is unreachable or invalid.
+ * Retains the last valid result alongside an error when refreshing fails.
  * Successes and failures are cached independently per channel so repeated UI
  * loads do not flap the discovery endpoint.
  */
 export async function fetchLatestRelease(
   opts?: FetchLatestReleaseOptions,
 ): Promise<{ result: LatestRelease | null; error: string | null }> {
-  const now = Date.now()
   const channel = opts?.channel ?? releaseChannelForVersion(getCurrentVersion())
-  const cached = cache.get(channel)
-  if (!opts?.force && cached) {
-    const ttl = cached.error ? ERROR_TTL_MS : SUCCESS_TTL_MS
-    if (now - cached.fetchedAt < ttl) {
-      return { result: cached.result, error: cached.error }
-    }
+  let store = cache.get(channel)
+  if (!store) {
+    store = new DiscoveryStore<LatestRelease>({ successTtlMs: SUCCESS_TTL_MS, errorTtlMs: ERROR_TTL_MS })
+    cache.set(channel, store)
   }
-
-  try {
-    const url = MANIFEST_URLS[channel]
-    const res = await fetch(url, {
+  await store.check(async () => {
+    const res = await fetch(MANIFEST_URLS[channel], {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(10_000),
     })
-    if (!res.ok) {
-      const error = `OpenAlice ${channel} manifest ${res.status} ${res.statusText}`
-      cache.set(channel, { fetchedAt: now, result: null, error })
-      return { result: null, error }
-    }
-    const result = parseReleaseManifest(await res.json(), channel)
-    cache.set(channel, { fetchedAt: now, result, error: null })
-    return { result, error: null }
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    cache.set(channel, { fetchedAt: now, result: null, error })
-    return { result: null, error }
-  }
+    if (!res.ok) throw new Error(`OpenAlice ${channel} manifest ${res.status} ${res.statusText}`)
+    return parseReleaseManifest(await res.json(), channel)
+  }, opts?.force)
+  const { value: result, error } = store.getSnapshot()
+  return { result, error }
 }
 
 /** Reset the in-memory cache. Test-only. */
 export function _resetCacheForTest(): void {
+  for (const store of cache.values()) store.clear()
   cache.clear()
 }
 
@@ -282,7 +265,7 @@ export async function getVersionInfo(opts?: GetVersionInfoOptions): Promise<Vers
     releaseUrl: result.url,
     releaseNotes: result.body,
     publishedAt: result.publishedAt,
-    error: decision.status === 'unknown' ? 'Cannot determine the running release identity' : null,
+    error: error ?? (decision.status === 'unknown' ? 'Cannot determine the running release identity' : null),
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useVersionDiscovery } from './useVersionDiscovery'
+import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import { head } from '../components/dev/upgrade-rehearsal/releases'
 import {
   initial,
@@ -56,7 +56,7 @@ export function useUpgradeRehearsal() {
     }
   }, [actions])
   const state = useMemo(() => actions.reduce(reduce, initial()), [actions])
-  const discovery = useVersionDiscovery<ReturnType<typeof head>>(
+  const discovery = useDiscoverySnapshot<ReturnType<typeof head>>(
     `${state.channel}:${state.publication.heads[state.channel] ?? 'empty'}:${state.client}`,
   )
   useEffect(() => {

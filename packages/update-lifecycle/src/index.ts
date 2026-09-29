@@ -101,3 +101,5 @@ export function selectRelease(
     : precedence === 0 ? { status: 'current', reason: 'same-release' }
       : { status: 'blocked', reason: 'older-release' }
 }
+
+export { DiscoveryStore, type DiscoverySnapshot } from './discovery.js'

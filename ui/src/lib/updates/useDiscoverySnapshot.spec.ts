@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react'
 import { expect, it } from 'vitest'
-import { useVersionDiscovery } from './useVersionDiscovery'
+import { useDiscoverySnapshot } from './useDiscoverySnapshot'
 it('rejects stale responses and callbacks across backend/channel switches', async () => {
   const { result, rerender } = renderHook(
-    ({ scope }) => useVersionDiscovery<string>(scope),
+    ({ scope }) => useDiscoverySnapshot<string>(scope),
     { initialProps: { scope: 'stable' } },
   )
   let finish!: (value: string) => void
@@ -18,6 +18,7 @@ it('rejects stale responses and callbacks across backend/channel switches', asyn
         }),
     )
   })
+  await act(async () => { await Promise.resolve() })
   rerender({ scope: 'beta' })
   await act(async () => {
     await result.current.check(async () => 'beta.1')
@@ -29,8 +30,8 @@ it('rejects stale responses and callbacks across backend/channel switches', asyn
   expect(result.current.value).toBe('beta.1')
   expect(await oldCheck(async () => 'late old caller')).toBeNull()
 })
-it('exposes errors without retaining a stale actionable release and supports retry', async () => {
-  const { result } = renderHook(() => useVersionDiscovery<string>('stable'))
+it('retains the last observation alongside a failed refresh and supports retry', async () => {
+  const { result } = renderHook(() => useDiscoverySnapshot<string>('stable'))
   await act(async () => {
     await result.current.check(async () => 'v1')
   })
@@ -39,7 +40,7 @@ it('exposes errors without retaining a stale actionable release and supports ret
       throw new Error('offline')
     })
   })
-  expect(result.current.value).toBeNull()
+  expect(result.current.value).toBe('v1')
   expect(result.current.error).toBe('offline')
   await act(async () => {
     await result.current.check(async () => 'v2')
@@ -49,11 +50,12 @@ it('exposes errors without retaining a stale actionable release and supports ret
 })
 
 it('does not revive a request after switching away and back to the same channel', async () => {
-  const {result,rerender}=renderHook(({scope})=>useVersionDiscovery<string>(scope),{initialProps:{scope:'stable'}})
+  const {result,rerender}=renderHook(({scope})=>useDiscoverySnapshot<string>(scope),{initialProps:{scope:'stable'}})
   let finish!: (value:string)=>void
   const original=result.current.check
   let pending!: Promise<string|null>
   act(()=>{pending=original(()=>new Promise(resolve=>{finish=resolve}))})
+  await act(async () => { await Promise.resolve() })
   rerender({scope:'beta'})
   rerender({scope:'stable'})
   await act(async()=>{finish('stale'); await pending})
