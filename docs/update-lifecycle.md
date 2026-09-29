@@ -38,6 +38,20 @@ source. Workspace dependencies and the build graph must build it before CLI/UI
 consumers. Shared identity and selection tests live beside the package; network,
 installer and native-update tests stay with their effect owners.
 
+## Exact activation evidence
+
+`verifyReleaseEvidence` compares the approved target with an installed or active
+receipt. A different newer version is a mismatch, not success. Missing/invalid
+versions, full commits or payload hashes remain unknown; an adapter cannot drop
+required target evidence to manufacture success. Build metadata is identity here,
+not SemVer precedence. Compare artifact hashes only for the same installation
+unit/platform. Installer provenance is not release identity.
+
+Electron's existing restart marker and rehearsal activation verification consume
+this rule. The native marker currently supplies version evidence only; native
+payload validation remains with electron-updater. This does not yet replace the
+owner journal or verify every service's readiness after application startup.
+
 ## Shared discovery resource
 
 `DiscoveryStore` in the same pure package owns read-only probe single-flight,

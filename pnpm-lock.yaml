@@ -180,6 +180,9 @@ importers:
       '@traderalice/guardian-runtime':
         specifier: workspace:*
         version: link:../../packages/guardian-runtime
+      '@traderalice/update-lifecycle':
+        specifier: workspace:*
+        version: link:../../packages/update-lifecycle
       electron:
         specifier: ^39.8.5
         version: 39.8.10

@@ -552,3 +552,23 @@ opens and dismisses through the shared provider. Machine controls coalesce two
 consumers' apply calls and discard dismissed late probes. AQ/AP manual review
 now sees the same upstream candidate even when automatic application is off.
 No real native installation or remote mutation was performed.
+
+### Exact activation evidence increment
+
+The shared core now verifies approved release evidence independently of SemVer
+ordering and provenance. Electron's startup handoff marker and the rehearsal's
+client/backend verification use it: a different unapproved active version cannot
+report success, and commit/hash evidence required by a target cannot be omitted.
+The native marker shape is unchanged and records version evidence only. Owner
+artifact validation remains authoritative; this is not a claim that durable
+coordinator/recovery or full inventory migration is complete.
+
+Acceptance for both continuation increments: 862 hermetic test files passed,
+7,396 tests passed, 5 tests skipped; root/UI/Electron typechecks and complete
+Electron build passed. Unsigned packaged Workspace smoke passed with temporary
+state/package cleanup confirmed. Browser Settings verifies disabled automatic
+apply still discovers; native prompt preview dismisses; the backend-newer
+rehearsal completes through a reload at its restart checkpoint using shared
+activation verification. Native installer handoff and real SSH upgrade remain
+unperformed and are still required for final topic acceptance. Draft PR #1660
+collects this goal; it remains unmerged and the five-phase plan remains open.
