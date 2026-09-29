@@ -31,6 +31,9 @@ import { useWorkspace } from '../tabs/store'
 import { getFocusedTab } from '../tabs/types'
 import { SidebarRow } from './SidebarRow'
 import { SidebarSectionHeader } from './SidebarSectionHeader'
+import { useUpdateLifecycle } from '../hooks/useUpdateLifecycle'
+import { UpdateGuidanceBadge } from './settings/UpdateGuidanceBadge'
+import { focusVersionOverviewAfterNavigation } from '../lib/updates/focusVersionOverview'
 
 const DEVELOPER_DISCLOSURE_SESSION_KEY = 'openalice.settings.developer-expanded'
 const DEVELOPER_GROUP_ID = 'settings-developer-pages'
@@ -124,6 +127,7 @@ const CATEGORY_GROUPS = [
 export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
   const { t } = useTranslation()
   const { project } = useAliceProject()
+  const guidance = useUpdateLifecycle({ optional: true })?.guidance
   const focused = useWorkspace((state) => getFocusedTab(state)?.spec)
   const openOrFocus = useWorkspace((state) => state.openOrFocus)
   const developerTab = focused?.kind === 'dev' ? focused.params.tab
@@ -164,9 +168,11 @@ export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
                 label={t(item.labelKey)}
                 active={active}
                 icon={<item.Icon size={14} strokeWidth={1.75} className="text-muted-foreground/70" aria-hidden />}
+                trail={item.category === 'general' ? <><UpdateGuidanceBadge count={guidance?.availableCount ?? 0} /><UpdateGuidanceBadge count={guidance?.needsAttentionCount ?? 0} tone="attention" /></> : undefined}
                 onClick={() => {
                   openOrFocus({ kind: 'settings', params: { category: item.category } })
                   onSelect?.()
+                  if (item.category === 'general' && (guidance?.availableCount || guidance?.needsAttentionCount)) focusVersionOverviewAfterNavigation()
                 }}
               />
             )

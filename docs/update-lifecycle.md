@@ -108,6 +108,13 @@ hook or independent request-ordering rule.
 
 Settings Overview separates App, Backend and AliceProject cards. Project content
 has individual Workspace versions, not an invented aggregate project version.
+The shared `useUpdateLifecycle` observation also projects one guidance path:
+avatar indicator, Settings menu, Overview navigation, owner card and exact
+Workspace row all use the same available target set. Automatic AQ/AP work
+blocked only by an active runtime stays on its row as waiting, without raising
+an actionable blue count; manual blockers and failed target updates use a
+separate needs-attention count. The Overview summary links directly to each
+target while ordinary `/settings` navigation retains its own scroll position.
 The old About component and duplicate status summary are retired. Details and
 update scope selection share one dialog; actual commands retain the authoritative
 native, Machine and Workspace merge approvals. The current UI explains that

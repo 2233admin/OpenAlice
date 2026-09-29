@@ -18,7 +18,9 @@ beforeEach(() => {
     machines: { status: { target: { machine: 'cloud', machineName: 'Railway Linux', project: 'main-cloud' } }, plan: null, operation: null, probe: mocks.probe, clearPlan: vi.fn(), applying: false },
     client: { kind: 'cli', currentVersion: '0.94.1', discovery: { value: { status: 'current', channel: 'stable' } } },
     versionInfo: { current: '0.93.1', latest: '0.94.1', hasUpdate: true, channel: 'stable', updateAuthority: 'cli' },
-    workspaceStates: [], availableCount: 2, installClient: mocks.install, refresh: vi.fn(async () => {}), openClientRelease: vi.fn(async () => {}),
+    workspaceStates: [], availableCount: 2,
+    guidance: { app: false, backend: true, workspaceIds: ['aq'], needsAttentionWorkspaceIds: [], availableCount: 2, needsAttentionCount: 0 },
+    installClient: mocks.install, refresh: vi.fn(async () => {}), openClientRelease: vi.fn(async () => {}),
   }
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); Reflect.deleteProperty(window, 'openAlice') })
@@ -30,6 +32,12 @@ it('keeps three identities separate and project content has its own versions', (
   expect(screen.getByText('v0.8.31')).toBeTruthy()
   expect(screen.getByText('v0.8.32')).toBeTruthy()
   expect(screen.getByText('Main Cloud')).toBeTruthy()
+})
+it('traces an update from the overview summary to its Workspace row', () => {
+  render(<VersionOverviewSection />)
+  const target = screen.getByRole('button', { name: 'AliceProject / Quant' })
+  fireEvent.click(target)
+  expect(document.activeElement?.id).toBe('settings-version-workspace-aq')
 })
 it('moves details to review in one focus scope without installing', async () => {
   render(<VersionOverviewSection />)

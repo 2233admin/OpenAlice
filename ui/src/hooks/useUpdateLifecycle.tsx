@@ -7,6 +7,7 @@ import { useRelayConnection } from './useRelayConnection'
 import type { MachinePlan, MachinePlanInput, MachineOperation } from '../lib/updates/machine-types'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
 import { useWorkspaces } from '../contexts/workspaces-context'
+import { selectWorkspaceUpdateGuidance, type UpdateGuidance } from '../lib/updates/guidance'
 
 export interface UpdatePreferences {
   autoCheckApp: boolean
@@ -52,6 +53,7 @@ export interface UpdateLifecycle {
   versionError: string | null
   updatesUnsupported: boolean
   availableCount: number
+  guidance: UpdateGuidance
   refresh(): Promise<void>
   savePreferences(next: UpdatePreferences): Promise<void>
 }
@@ -280,26 +282,24 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
 
   }, [load, isCurrent, backendUnavailable])
 
-  const availableCount = useMemo(() => {
-    const candidates = new Set<string>()
-    if (versionInfo?.hasUpdate) candidates.add('backend')
-    if (client?.discovery.value?.status === 'available' || ['available', 'downloaded'].includes(nativeStatus?.phase ?? '')) candidates.add('client')
-    for (const workspace of workspaces) {
-      const completed = workspaceStates.find((state) => state.workspaceId === workspace.id
-        && state.phase === 'updated' && state.toVersion === workspace.upgradeAvailable?.to)
-      if (workspace.upgradeAvailable && !completed) candidates.add(workspace.id)
+  const guidance = useMemo<UpdateGuidance>(() => {
+    const app = client?.discovery.value?.status === 'available'
+      || ['available', 'downloaded'].includes(nativeStatus?.phase ?? '')
+    const backend = Boolean(versionInfo?.hasUpdate)
+    const project = selectWorkspaceUpdateGuidance(workspaces, workspaceStates, preferences)
+    return {
+      app, backend, ...project,
+      availableCount: Number(app) + Number(backend) + project.workspaceIds.length,
+      needsAttentionCount: project.needsAttentionWorkspaceIds.length,
     }
-    for (const state of workspaceStates) {
-      if (state.toVersion && ['available', 'blocked', 'failed'].includes(state.phase)) candidates.add(state.workspaceId)
-    }
-    return candidates.size
-  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces])
+  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences])
+  const availableCount = guidance.availableCount
 
   const value = useMemo<UpdateLifecycle>(() => ({
     client, clientError: clientTransportError ?? client?.discovery.error ?? null, saveClientPreferences,
-    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking: checking || clientDiscovery.checking || Boolean(client?.discovery.checking), error, versionError, updatesUnsupported, availableCount,
+    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking: checking || clientDiscovery.checking || Boolean(client?.discovery.checking), error, versionError, updatesUnsupported, availableCount, guidance,
     refresh: async () => { await Promise.all([load(true), refreshClient(true)]) }, savePreferences,
-  }), [client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, load, savePreferences])
+  }), [client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, guidance, load, savePreferences])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 

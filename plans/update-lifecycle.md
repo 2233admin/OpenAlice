@@ -600,3 +600,22 @@ Workspace merge handoff, and a narrow App-details viewport. The browser's
 admin-enforced security check prevented the final click-through of the Machine
 upgrade demo dialog; its focused component tests passed, but that browser path
 remains unverified. No real remote upgrade or native installer restart was run.
+
+### Update guidance through Settings (maintainer-selected A)
+
+The maintainer selected the continuous breadcrumb design. The one update hook
+now projects actionable App, Backend and Workspace targets separately from
+Workspace blockers that require attention. AQ/AP automatic work waiting only
+for an active runtime stays visible as waiting, without raising the blue
+update count. The avatar menu, Settings Overview row, owner cards and exact
+Workspace row share that projection; the summary focuses the target row.
+Opening Settings from the avatar or choosing Overview with pending work focuses
+Versions & updates. Narrow Workspace rows stack version and status beneath the
+name so the navigation target remains readable. This is a UI projection over
+existing approvals, not a new installer or cross-restart coordinator.
+
+Acceptance: the complete UI owner suite passed (356 files, 2,048 tests) and
+UI typecheck passed. Demo Settings at a narrow desktop width and 390px mobile
+width showed one Chat update across the breadcrumb, while AQ remained an
+automatic wait. Keyboard entry from the avatar focused Versions & updates;
+the summary focused the exact Chat row. No installation command was invoked.

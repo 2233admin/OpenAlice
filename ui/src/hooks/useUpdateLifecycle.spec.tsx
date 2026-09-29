@@ -7,7 +7,7 @@ import type { VersionInfo } from '../api/types'
 
 const mocks = vi.hoisted(() => ({
   getVersion: vi.fn(), currentVersion: vi.fn(), checkVersion: vi.fn(),
-  workspaces: [] as { id: string; upgradeAvailable?: { to: string } }[],
+  workspaces: [] as { id: string; template?: string; upgradeAvailable?: { to: string } }[],
   backendUnavailable: false,
   backendRecoveryGeneration: 0,
   refreshWorkspaces: vi.fn(async () => undefined),
@@ -44,14 +44,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 it('starts after paint, selects distinct app and Workspace updates, and activates the backend', async () => {
-  mocks.workspaces = [{ id: 'aq', upgradeAvailable: { to: 'v1.2.3' } }]
+  mocks.workspaces = [{ id: 'aq', template: 'auto-quant-v2', upgradeAvailable: { to: 'v1.2.3' } }]
   const fetchMock = vi.fn(async (input: string) => input === '/api/updates/activate'
     ? { ok: true }
     : { ok: true, json: async () => ({ preferences, workspaces: [{ workspaceId: 'aq', template: 'auto-quant-v2', phase: 'blocked', checkedAt: null, toVersion: 'v1.2.3' }] }) })
   vi.stubGlobal('fetch', fetchMock)
   const { result } = renderHook(useUpdateLifecycle, { wrapper })
   expect(result.current.preferences).toBeNull()
-  await waitFor(() => expect(result.current.availableCount).toBeGreaterThanOrEqual(2))
+  await waitFor(() => expect(result.current.preferences).toEqual(preferences))
+  expect(result.current.availableCount).toBe(1)
+  expect(result.current.guidance.workspaceIds).toEqual([])
   expect(fetchMock).toHaveBeenCalledWith('/api/updates/activate', { method: 'POST' })
   expect(mocks.getVersion).toHaveBeenCalledOnce()
 })
@@ -68,7 +70,7 @@ it('keeps backend identity without automatic release discovery when app checks a
 })
 
 it('clears an already-applied Workspace update from the badge and refreshes its inventory', async () => {
-  mocks.workspaces = [{ id: 'aq', upgradeAvailable: { to: 'v1.2.3' } }]
+  mocks.workspaces = [{ id: 'aq', template: 'auto-quant-v2', upgradeAvailable: { to: 'v1.2.3' } }]
   mocks.getVersion.mockResolvedValue({ ...version, hasUpdate: false, latest: null })
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
     preferences, workspaces: [{ workspaceId: 'aq', template: 'auto-quant-v2', phase: 'updated', checkedAt: null, toVersion: 'v1.2.3' }],

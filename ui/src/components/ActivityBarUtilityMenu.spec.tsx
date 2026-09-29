@@ -10,7 +10,10 @@ import { ActivityBarUtilityMenu } from './ActivityBarUtilityMenu'
 const mocks = vi.hoisted(() => ({
   theme: 'auto',
   setTheme: vi.fn(),
+  guidance: { availableCount: 0, needsAttentionCount: 0 },
 }))
+
+vi.mock('../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({ guidance: mocks.guidance }) }))
 
 vi.mock('../theme/store', () => ({
   useThemeStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
@@ -30,6 +33,8 @@ vi.mock('react-i18next', () => ({
       'nav.showCompanion': 'Show pet',
       'nav.hideCompanion': 'Hide pet',
       'nav.connectorNeedsAttention': '1 connector needs attention',
+      'nav.updatesAvailable': `${(params as { count?: number })?.count} updates available`,
+      'nav.updatesNeedAttention': `${(params as { count?: number })?.count} updates need attention`,
       'settings.group.appearance': 'Appearance',
       'theme.mode.auto': 'Auto',
       'theme.mode.day': 'Day',
@@ -42,10 +47,24 @@ afterEach(() => {
   cleanup()
   Reflect.deleteProperty(window, 'openAlice')
   mocks.theme = 'auto'
+  mocks.guidance = { availableCount: 0, needsAttentionCount: 0 }
   vi.clearAllMocks()
 })
 
 describe('ActivityBarUtilityMenu', () => {
+  it('carries the update count from the avatar into Settings', async () => {
+    mocks.guidance = { availableCount: 1, needsAttentionCount: 0 }
+    render(<ActivityBarUtilityMenu compactRail denseRail={false} onOpenSettings={vi.fn()} onOpenConnectors={vi.fn()} />)
+    expect(screen.getByRole('status', { name: '1 updates available' })).toBeTruthy()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Alice’s Settings: Open application menu' }))
+    expect(screen.getByRole('menuitem', { name: /Settings.*updates available/ })).toBeTruthy()
+  })
+  it('keeps update and connector warnings readable when both are present', () => {
+    mocks.guidance = { availableCount: 1, needsAttentionCount: 1 }
+    render(<ActivityBarUtilityMenu compactRail denseRail={false} onOpenSettings={vi.fn()} onOpenConnectors={vi.fn()} connectorWarnings={1} />)
+    expect(screen.getByRole('status', { name: '1 updates need attention; 1 connector needs attention' })).toBeTruthy()
+  })
   it('recovers a hidden companion from Alice Settings and then offers Hide pet', async () => {
     let visible = false
     const toggle = vi.fn(async () => { visible = !visible; return visible })

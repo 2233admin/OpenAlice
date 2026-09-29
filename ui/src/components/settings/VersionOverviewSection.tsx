@@ -11,6 +11,8 @@ import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 import { MachineUpgradeDialog } from './MachineUpgradeDialog'
 import { claimUpgradeDialog, shouldRestoreUpgradeDialog } from './upgrade-dialog-owner'
+import { UpdateGuidanceBadge } from './UpdateGuidanceBadge'
+import { VERSION_OVERVIEW_ID } from '../../lib/updates/focusVersionOverview'
 
 const UI_VERSION = typeof __OPENALICE_UI_VERSION__ === 'string' ? __OPENALICE_UI_VERSION__ : 'development'
 const version = (value?: string | null) => value ? `v${value.replace(/^v/, '')}` : '—'
@@ -46,6 +48,20 @@ export function VersionOverviewSection() {
     return { workspace, state, current: applied ? state.toVersion : state?.fromVersion ?? workspace.currentVersion ?? workspace.upgradeAvailable?.from,
       candidate: applied ? undefined : state?.toVersion ? state.toVersion : workspace.upgradeAvailable?.to }
   })
+  const guidance = updates.guidance
+  const workspaceNames = new Map(workspaceRows.map(({ workspace }) => [workspace.id, workspace.displayName || workspace.tag]))
+  const guidanceTargets = [
+    ...(guidance.app ? [{ id: 'app', label: text('app'), attention: false }] : []),
+    ...(guidance.backend ? [{ id: 'backend', label: text('backend'), attention: false }] : []),
+    ...guidance.workspaceIds.map(id => ({ id: `workspace-${id}`, label: `${text('project')} / ${workspaceNames.get(id) ?? id}`, attention: false })),
+    ...guidance.needsAttentionWorkspaceIds.map(id => ({ id: `workspace-${id}`, label: `${text('project')} / ${workspaceNames.get(id) ?? id}`, attention: true })),
+  ]
+  const focusTarget = (id: string) => {
+    const target = document.getElementById(`settings-version-${id}`)
+    if (!target) return
+    target.scrollIntoView?.({ block: 'center', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+    target.focus({ preventScroll: true })
+  }
   useEffect(() => {
     if (machines.operation?.mode === 'upgrade' && machines.operation.phase === 'running' && shouldRestoreUpgradeDialog('about')) setView('backend-review')
   }, [machines.operation?.id, machines.operation?.phase, machines.operation?.mode])
@@ -78,10 +94,10 @@ export function VersionOverviewSection() {
         : backend?.updateAuthority === 'none' ? t('settings.about.status.noUpdater')
           : backend?.updateAuthority === 'source' ? text('sourceManaged')
             : backend?.latest ? text('current') : text('unknown')
-  const card = (kind: 'app' | 'backend' | 'project', icon: ReactNode, subtitle: string, identity: string, status: string, children?: ReactNode) => <section className="min-w-0 rounded-xl border border-border/70 bg-secondary/25">
+  const card = (kind: 'app' | 'backend' | 'project', icon: ReactNode, subtitle: string, identity: string, status: string, children?: ReactNode) => <section id={`settings-version-${kind}`} tabIndex={-1} className="min-w-0 scroll-mt-5 rounded-xl border border-border/70 bg-secondary/25 outline-none focus:border-primary/50 focus:bg-primary/5">
     <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 p-5 sm:gap-x-4 sm:p-6">
       <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary" aria-hidden>{icon}</div>
-      <div className="min-w-0"><h3 className="text-base font-semibold">{text(kind)}</h3><p className="mt-1 break-words text-xs text-muted-foreground">{subtitle}</p></div>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-semibold">{text(kind)}</h3><UpdateGuidanceBadge count={kind === 'app' ? Number(guidance.app) : kind === 'backend' ? Number(guidance.backend) : guidance.workspaceIds.length} /><UpdateGuidanceBadge count={kind === 'project' ? guidance.needsAttentionWorkspaceIds.length : 0} tone="attention" /></div><p className="mt-1 break-words text-xs text-muted-foreground">{subtitle}</p></div>
       <Button className="col-start-3 row-start-1" variant="ghost" size="sm" aria-label={`${text(kind)} · ${text('details')}`} onClick={() => open(kind)}>{text('details')}<ChevronRight className="size-4" /></Button>
       <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
         {identity && <p className="break-all font-mono text-sm tabular-nums">{identity}</p>}
@@ -90,19 +106,22 @@ export function VersionOverviewSection() {
     </div>{children}
   </section>
   const workspaceList = <div className="mx-5 mb-5 divide-y divide-border/60 rounded-lg border border-border/60 sm:mx-6">
-    {workspaceRows.map(({ workspace, state, current, candidate }) => <button key={workspace.id} type="button" onClick={() => openWorkspace(workspace.id)} className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-secondary/60 focus-visible:outline-primary">
-      <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{workspace.displayName || workspace.tag}</p><p className="mt-1 text-xs text-muted-foreground">{workspace.template === 'chat' ? text('bundled') : text('independent')}</p></div>
-      <span className="font-mono text-xs tabular-nums">{version(current)}</span>
-      {candidate && <><ArrowRight className="size-3 text-muted-foreground"/><span className="font-mono text-xs text-primary">{version(candidate)}</span></>}
-      <span className="text-xs text-muted-foreground">{state?.phase === 'applying' ? text('updating') : state?.phase === 'blocked' ? text('waiting') : state?.phase === 'failed' ? text('needsAttention') : candidate ? text('available') : state?.phase === 'current' || state?.phase === 'updated' ? text('current') : text('unknown')}</span><ChevronRight className="size-4 shrink-0 text-muted-foreground"/>
+    {workspaceRows.map(({ workspace, state, current, candidate }) => <button key={workspace.id} id={`settings-version-workspace-${workspace.id}`} type="button" onClick={() => openWorkspace(workspace.id)} className="grid w-full min-w-0 scroll-mt-5 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3 text-left hover:bg-secondary/60 focus:bg-primary/5 focus:outline-primary">
+      <div className="min-w-0"><p className="truncate text-sm font-medium" title={workspace.displayName || workspace.tag}>{workspace.displayName || workspace.tag}</p><p className="mt-1 text-xs text-muted-foreground">{workspace.template === 'chat' ? text('bundled') : text('independent')}</p></div>
+      <ChevronRight className="col-start-2 row-start-1 size-4 shrink-0 self-center text-muted-foreground" aria-hidden />
+      <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        <span className="font-mono tabular-nums">{version(current)}</span>
+        {candidate && <><ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden /><span className={`font-mono tabular-nums ${guidance.workspaceIds.includes(workspace.id) ? 'text-primary' : guidance.needsAttentionWorkspaceIds.includes(workspace.id) ? 'text-warning' : 'text-muted-foreground'}`}>{version(candidate)}</span></>}
+        <span className={`ml-auto ${guidance.workspaceIds.includes(workspace.id) ? 'font-medium text-primary' : guidance.needsAttentionWorkspaceIds.includes(workspace.id) ? 'font-medium text-warning' : 'text-muted-foreground'}`}>{state?.phase === 'applying' ? text('updating') : state?.phase === 'blocked' ? guidance.needsAttentionWorkspaceIds.includes(workspace.id) ? text('needsAttention') : text('waiting') : state?.phase === 'failed' ? text('needsAttention') : candidate ? text('available') : state?.phase === 'current' || state?.phase === 'updated' ? text('current') : text('unknown')}</span>
+      </div>
     </button>)}
     {!workspaceRows.length && <p className="p-4 text-sm text-muted-foreground">{listError || (!hasLoaded ? text('loading') : text('noWorkspaces'))}</p>}
   </div>
   return <section className="border-t border-border/60 py-7">
-    <h2 className="mb-5 text-lg font-semibold">{text('title')}</h2>
+    <h2 id={VERSION_OVERVIEW_ID} tabIndex={-1} className="mb-5 w-fit scroll-mt-5 rounded-sm text-lg font-semibold outline-none focus-visible:[box-shadow:var(--oa-focus-shadow)]">{text('title')}</h2>
     <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
       <RefreshCw className={`size-5 shrink-0 text-primary ${updates.checking ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden/>
-      <div className="min-w-0 flex-1"><p className="text-sm font-medium">{updates.availableCount ? t('settings.versions.updateCount', { count: updates.availableCount }) : text('summary')}</p><p className="mt-1 text-xs text-muted-foreground">{integrated ? text('integrated') : text('separated')}</p></div>
+      <div className="min-w-0 flex-1"><p className="text-sm font-medium">{updates.availableCount ? t('settings.versions.updateCount', { count: updates.availableCount }) : text('summary')}</p><p className="mt-1 text-xs text-muted-foreground">{integrated ? text('integrated') : text('separated')}</p>{guidanceTargets.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{guidanceTargets.map(target => <button key={target.id} type="button" onClick={() => focusTarget(target.id)} className={`max-w-full truncate rounded-md border px-2 py-1 text-xs focus-visible:outline-primary ${target.attention ? 'border-warning/35 text-warning hover:bg-warning/10' : 'border-primary/25 text-primary hover:bg-primary/10'}`}>{target.label}</button>)}</div>}</div>
       <Button onClick={() => open('review')}>{text('review')}</Button>
     </div>
     <div className="space-y-4">
