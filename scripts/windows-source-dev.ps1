@@ -21,7 +21,7 @@ $Root = (Resolve-Path -LiteralPath $Root).Path
 $stateDir = Join-Path $Root '.openalice-source-dev'
 $logPath = Join-Path $stateDir 'stages.jsonl'
 $stampPath = Join-Path $stateDir 'install-stamp.json'
-$taskBackupPath = Join-Path $stateDir 'previous-task.xml'
+$script:previousTaskXml = $null
 if (-not $DataHome) { $DataHome = Join-Path $stateDir 'data' }
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
@@ -77,7 +77,7 @@ function Read-InstallStamp {
 }
 
 function Get-SourceProcesses {
-  $rootNeedle = $Root.TrimEnd('\')
+  $rootNeedle = $Root.TrimEnd('\', '/') + '\'
   return @(Get-CimInstance Win32_Process | Where-Object {
     if ($_.ProcessId -eq $PID -or -not $_.CommandLine -or $_.CommandLine.IndexOf($rootNeedle, [StringComparison]::OrdinalIgnoreCase) -lt 0) { return $false }
     $line = $_.CommandLine
@@ -162,9 +162,8 @@ function Start-SourceTask([int]$TimeoutSeconds) {
 
 function Restore-PreviousTask {
   try { Stop-SourceProcesses } catch { Write-Warning ('[source-dev] failed runtime cleanup during rollback: {0}' -f $_.Exception.Message) }
-  if (Test-Path -LiteralPath $taskBackupPath) {
-    $xml = Get-Content -Raw -LiteralPath $taskBackupPath
-    Register-ScheduledTask -TaskName $TaskName -Xml $xml -Force | Out-Null
+  if ($script:previousTaskXml) {
+    Register-ScheduledTask -TaskName $TaskName -Xml $script:previousTaskXml -Force | Out-Null
     if ($previousTaskWasRunning) { Start-ScheduledTask -TaskName $TaskName }
     Write-Warning '[source-dev] previous scheduled task restored'
   } else {
@@ -262,7 +261,7 @@ switch ($Mode) {
       Add-Content -LiteralPath $runtimeLog -Value ('START ' + [DateTime]::UtcNow.ToString('o'))
       Add-Content -LiteralPath $runtimeLog -Value ('CONFIG web=' + $WebPort + ' mcp=' + $McpPort + ' ui=' + $UiPort + ' lite=true')
 
-      $alice = Start-Process -FilePath $resolvedNodePath -ArgumentList @($tsxPath, $alicePath) -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $aliceLog -RedirectStandardError $aliceErr -PassThru
+      $alice = Start-Process -FilePath $resolvedNodePath -ArgumentList @(('"{0}"' -f $tsxPath), ('"{0}"' -f $alicePath)) -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $aliceLog -RedirectStandardError $aliceErr -PassThru
       Add-Content -LiteralPath $runtimeLog -Value ('ALICE_PID ' + $alice.Id)
       $version = Wait-SourceVersion $WebPort $WaitSeconds $alice
       Add-Content -LiteralPath $runtimeLog -Value ('ALICE_READY ' + [DateTime]::UtcNow.ToString('o'))
@@ -287,8 +286,9 @@ switch ($Mode) {
     & $PSCommandPath -Mode Prepare -Root $Root -DataHome $DataHome -TaskName $TaskName -WebPort $WebPort -McpPort $McpPort -UiPort $UiPort -WaitSeconds $WaitSeconds -NodePath $NodePath -DisableAuth:$DisableAuth -NoInstall:$NoInstall -NoBuild:$NoBuild
     $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     $previousTaskWasRunning = $existingTask -and $existingTask.State.ToString() -eq 'Running'
+    $script:previousTaskXml = $null
     if ($existingTask) {
-      Write-Stage 'backup-task' { Export-ScheduledTask -TaskName $TaskName | Set-Content -LiteralPath $taskBackupPath }
+      Write-Stage 'backup-task' { $script:previousTaskXml = Export-ScheduledTask -TaskName $TaskName }
     }
     try {
       Write-Stage 'stop-old-runtime' {
@@ -317,7 +317,6 @@ switch ($Mode) {
         Wait-Http "http://127.0.0.1:$UiPort/" $WaitSeconds | Out-Null
       }
       $version = Wait-SourceVersion $WebPort 5
-      Remove-Item -LiteralPath $taskBackupPath -Force -ErrorAction SilentlyContinue
       [ordered]@{ status = 'ready'; elapsed = (Get-Date).ToString('o'); version = $version; root = $Root; web = "http://127.0.0.1:$WebPort"; ui = "http://127.0.0.1:$UiPort" } | ConvertTo-Json -Depth 5
     } catch {
       try { Write-Stage 'rollback' { Restore-PreviousTask } } catch { Write-Warning ('[source-dev] rollback failed: {0}' -f $_.Exception.Message) }
