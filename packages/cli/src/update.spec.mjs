@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   checkForUpdate,
-  compareVersions,
   downloadAndRunInstaller,
   maybeNotifyUpdate,
   parseUpdateArgs,
@@ -49,14 +48,6 @@ const devSource = {
 }
 
 describe('OpenAlice CLI updates', () => {
-  it('compares product release and prerelease versions', () => {
-    expect(compareVersions('0.88.0-beta', '0.87.0-beta')).toBe(1)
-    expect(compareVersions('0.87.0', '0.87.0-beta')).toBe(1)
-    expect(compareVersions('0.87.0-beta.2', '0.87.0-beta.1')).toBe(1)
-    expect(compareVersions('0.87.0-beta', '0.87.0-beta')).toBe(0)
-    expect(compareVersions('0.86.0', '0.87.0-beta')).toBe(-1)
-  })
-
   it('requires JSON update output to be a read-only check', () => {
     expect(parseUpdateArgs(['--check', '--json'])).toEqual({
       checkOnly: true,

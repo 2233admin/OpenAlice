@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 
 import { exec as gitExec, type IGitStringExecutionOptions } from './git-execution.js'
 
-import { compareVersions } from '@/core/version.js'
+import { compareVersions, isVersion, newerRelease } from '@traderalice/update-lifecycle'
 
 import { parseHarnessManifest } from './harness-manifest.js'
 import { readHarnessSource, type HarnessSourceReceipt } from './harness-source.js'
@@ -128,8 +128,9 @@ export class HarnessSourceUpgradeManager {
     currentVersion: string,
     includeUnverified: boolean,
   ): Promise<HarnessSourceRelease | null> {
+    requireComparableSourceVersion(currentVersion)
     const releases = await this.releases(templateName, includeUnverified)
-    return releases.find((release) => compareVersions(release.version, currentVersion) > 0) ?? null
+    return releases.find((release) => newerRelease(release.version, currentVersion)) ?? null
   }
 
   async plan(
@@ -143,9 +144,10 @@ export class HarnessSourceUpgradeManager {
       await this.recoverWorkspace(workspace)
       const { template, receipt } = await this.requireSource(workspace)
       const releases = await this.releases(template.name, includeUnverified)
+      if (!requestedVersion) requireComparableSourceVersion(receipt.version)
       const target = requestedVersion
         ? releases.find((release) => release.version === requestedVersion)
-        : releases.find((release) => compareVersions(release.version, receipt.version) > 0)
+        : releases.find((release) => newerRelease(release.version, receipt.version))
       if (!target) {
         throw new HarnessSourceUpgradeError(
           requestedVersion ? 'unknown_release' : 'no_update',
@@ -343,7 +345,7 @@ async function discoverStableReleases(repository: string): Promise<readonly Harn
   const peeled = new Map<string, string>()
   for (const line of String(result.stdout).split(/\r?\n/)) {
     const match = /^([0-9a-f]{40})\s+refs\/tags\/(.+?)(\^\{\})?$/.exec(line.trim())
-    if (!match || !match[1] || !match[2] || !STABLE_SEMVER.test(match[2])) continue
+    if (!match || !match[1] || !match[2] || !STABLE_SEMVER.test(match[2]) || !isVersion(match[2])) continue
     ;(match[3] ? peeled : direct).set(match[2], match[1])
   }
   return sortReleases([...direct].map(([version, commit]) => ({
@@ -362,7 +364,13 @@ async function fetchExactRelease(workspaceDir: string, template: TemplateMeta, r
 }
 
 function sortReleases<T extends { version: string }>(releases: readonly T[]): T[] {
-  return [...releases].sort((a, b) => compareVersions(b.version, a.version))
+  // Qualified historical snapshots are valid exact source selections, not
+  // SemVer zero. Preserve their catalog order below ordered release tags.
+  return [
+    ...releases.filter(release => isVersion(release.version))
+      .sort((a, b) => compareVersions(b.version, a.version)),
+    ...releases.filter(release => !isVersion(release.version)),
+  ]
 }
 
 function parseChangedPaths(output: string): string[] {
@@ -400,4 +408,11 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   const temp = `${path}.tmp`
   await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   await rename(temp, path)
+}
+
+function requireComparableSourceVersion(version: string): void {
+  if (!isVersion(version)) throw new HarnessSourceUpgradeError(
+    'unsupported',
+    `Workspace source ${version} has no release ordering. Select an exact source release to upgrade it.`,
+  )
 }

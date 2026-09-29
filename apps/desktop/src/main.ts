@@ -469,11 +469,16 @@ async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<void> {
       throw new Error('isolated packaged smoke should be locked by OPENALICE_HOME')
     }
 
-    const setup = await json(await fetch('/api/workspaces/project-setup'))
-    const workspaceList = await json(await fetch('/api/workspaces'))
-    if (setup.pending?.length || !workspaceList.workspaces?.some(ws => ws.template === 'chat')) {
-      throw new Error('new project did not prepare Chat before opening the renderer')
-    }
+    // Preparation is activated after the renderer opens. First prove the UI
+    // is usable, then wait for Chat's own durable setup result; other default
+    // Workspaces may still be preparing and must not gate Chat onboarding.
+    await waitFor('first-run guide', () => document.querySelector('[data-testid="first-run-guide"]'))
+    await waitFor('asynchronous Chat preparation', async () => {
+      const setup = await json(await fetch('/api/workspaces/project-setup'))
+      if (setup.errors?.chat) throw new Error(setup.errors.chat)
+      const workspaceList = await json(await fetch('/api/workspaces'))
+      return !setup.pending?.includes('chat') && workspaceList.workspaces?.some(ws => ws.template === 'chat')
+    }, 60000)
 
     const agents = await json(await fetch('/api/workspaces/agents'))
     const pi = agents.agents?.find((agent) => agent.id === 'pi')

@@ -14,6 +14,7 @@
  * discovery does not depend on GitHub's anonymous API.
  */
 
+import { selectRelease, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -52,62 +53,6 @@ function readPackageJson(): PackageJson {
 
 export function getCurrentVersion(): string {
   return readPackageJson().version ?? '0.0.0'
-}
-
-// ==================== Semver comparison (minimal) ====================
-
-interface ParsedVersion {
-  core: number[]
-  pre: string | null
-}
-
-function parseVersion(s: string): ParsedVersion {
-  const stripped = s.replace(/^v/, '')
-  const dashIdx = stripped.indexOf('-')
-  const core = dashIdx === -1 ? stripped : stripped.slice(0, dashIdx)
-  const pre = dashIdx === -1 ? null : stripped.slice(dashIdx + 1)
-  const coreNums = core.split('.').map((n) => parseInt(n, 10) || 0)
-  while (coreNums.length < 3) coreNums.push(0)
-  return { core: coreNums.slice(0, 3), pre }
-}
-
-/**
- * Compare two semver-style versions. Returns negative if a<b, 0 if equal,
- * positive if a>b. Handles the common cases (MAJOR.MINOR.PATCH-PRERELEASE)
- * — not a full RFC-compliant comparator, but enough for "is the remote
- * release newer than ours".
- */
-export function compareVersions(a: string, b: string): number {
-  const A = parseVersion(a)
-  const B = parseVersion(b)
-  for (let i = 0; i < 3; i++) {
-    if (A.core[i] !== B.core[i]) return A.core[i] - B.core[i]
-  }
-  return comparePrerelease(A.pre, B.pre)
-}
-
-function comparePrerelease(left: string | null, right: string | null): number {
-  if (left === null && right === null) return 0
-  if (left === null) return 1
-  if (right === null) return -1
-
-  const leftParts = left.split('.')
-  const rightParts = right.split('.')
-  const length = Math.max(leftParts.length, rightParts.length)
-  for (let index = 0; index < length; index += 1) {
-    const leftPart = leftParts[index]
-    const rightPart = rightParts[index]
-    if (leftPart === undefined) return -1
-    if (rightPart === undefined) return 1
-    if (leftPart === rightPart) continue
-
-    const leftNumeric = /^\d+$/.test(leftPart)
-    const rightNumeric = /^\d+$/.test(rightPart)
-    if (leftNumeric && rightNumeric) return Number(leftPart) > Number(rightPart) ? 1 : -1
-    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1
-    return leftPart > rightPart ? 1 : -1
-  }
-  return 0
 }
 
 // ==================== Latest release (cached manifest fetch) ====================
@@ -166,14 +111,9 @@ const ERROR_TTL_MS = 5 * 60 * 1000 // 5min
 const cache = new Map<ReleaseChannel, CacheEntry>()
 
 function releaseChannelForVersion(version: string): ReleaseChannel {
-  return parseVersion(version).pre?.split('.')[0]?.toLowerCase() === 'beta'
+  return /^v?\d+\.\d+\.\d+-beta(?:\.|$)/.test(version)
     ? 'beta'
     : 'stable'
-}
-
-function releaseChannelMatchesVersion(channel: ReleaseChannel, version: string): boolean {
-  if (channel === 'stable') return /^\d+\.\d+\.\d+$/.test(version)
-  return /^\d+\.\d+\.\d+-beta(?:\.[1-9][0-9]*)?$/.test(version)
 }
 
 function isHttpUrl(value: string): boolean {
@@ -327,7 +267,12 @@ export async function getVersionInfo(opts?: GetVersionInfoOptions): Promise<Vers
       error,
     }
   }
-  const hasUpdate = compareVersions(result.version, current) > 0
+  const decision = selectRelease(
+    { channel: context.channel, version: current },
+    { channel: context.channel, version: result.version },
+    context.channel,
+  )
+  const hasUpdate = decision.status === 'available'
   return {
     current,
     channel: context.channel,
@@ -337,7 +282,7 @@ export async function getVersionInfo(opts?: GetVersionInfoOptions): Promise<Vers
     releaseUrl: result.url,
     releaseNotes: result.body,
     publishedAt: result.publishedAt,
-    error: null,
+    error: decision.status === 'unknown' ? 'Cannot determine the running release identity' : null,
   }
 }
 

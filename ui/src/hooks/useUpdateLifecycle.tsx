@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { newerRelease } from '../lib/updates/discovery'
+import { newerRelease } from '@traderalice/update-lifecycle'
 import { useVersionDiscovery } from './useVersionDiscovery'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'

@@ -2,7 +2,7 @@ import {
   identityLabel,
   type ReleaseChannel,
   type ReleaseIdentity,
-} from '../../../lib/updates/discovery'
+} from '@traderalice/update-lifecycle'
 import snapshot from './release-snapshot.json'
 export interface SimRelease extends ReleaseIdentity {
   id: string

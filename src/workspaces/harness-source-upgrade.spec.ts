@@ -78,6 +78,23 @@ describe('HarnessSourceUpgradeManager', () => {
     })
   }, GIT_FIXTURE_TIMEOUT_MS)
 
+  it('keeps qualified snapshots selectable without treating them as SemVer zero', async () => {
+    const fixture = await createFixture({ snapshot: true })
+    const manager = new HarnessSourceUpgradeManager({
+      registry: fixture.registry, templates: fixture.templates,
+      operationGuard: new WorkspaceOperationGuard(), logger,
+    })
+    expect((await manager.releases('fixture-harness', false)).map(release => release.version))
+      .toEqual(['v1.1.0', 'v1.0.0', 'snapshot-baseline'])
+    await expect(manager.latest('fixture-harness', 'v1.0.0', false)).resolves.toMatchObject({ version: 'v1.1.0' })
+    await expect(manager.latest('fixture-harness', 'snapshot-baseline', false)).rejects.toMatchObject({ code: 'unsupported' })
+    // Explicit snapshot selection still goes through the existing exact-commit
+    // preview and safety checks; it is not lost from the catalog.
+    await expect(manager.plan('desk-1', false, 'snapshot-baseline')).resolves.toMatchObject({
+      toVersion: 'snapshot-baseline', toCommit: fixture.v1,
+    })
+  }, GIT_FIXTURE_TIMEOUT_MS)
+
   it('blocks a dirty Workspace before any merge is applied', async () => {
     const fixture = await createFixture()
     await writeFile(join(fixture.workspace, 'local.txt'), 'not committed\n')
@@ -100,7 +117,7 @@ function normalizeLineEndings(value: string): string {
   return value.replaceAll('\r\n', '\n')
 }
 
-async function createFixture(options: { catalogV2?: boolean } = {}) {
+async function createFixture(options: { catalogV2?: boolean; snapshot?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'harness-source-upgrade-'))
   roots.push(root)
   const upstream = join(root, 'upstream')
@@ -111,6 +128,7 @@ async function createFixture(options: { catalogV2?: boolean } = {}) {
   await commit(upstream, 'v1')
   const v1 = await rev(upstream)
   await git(upstream, ['tag', 'v1.0.0'])
+  if (options.snapshot) await git(upstream, ['tag', 'snapshot-baseline'])
   await writeFile(join(upstream, 'harness.json'), manifest('1.1.0'))
   await writeFile(join(upstream, 'feature.txt'), 'new upstream feature\n')
   await commit(upstream, 'v2')
@@ -141,7 +159,8 @@ async function createFixture(options: { catalogV2?: boolean } = {}) {
       defaultVersion: options.catalogV2 === false ? 'v1.0.0' : 'v1.1.0',
       versions: options.catalogV2 === false
         ? [{ version: 'v1.0.0', commit: v1 }]
-        : [{ version: 'v1.1.0', commit: v2 }, { version: 'v1.0.0', commit: v1 }],
+        : [{ version: 'v1.1.0', commit: v2 }, { version: 'v1.0.0', commit: v1 },
+          ...(options.snapshot ? [{ version: 'snapshot-baseline', commit: v1 }] : [])],
     },
   }))
   const templates = await TemplateRegistry.load(templateRoot, logger)

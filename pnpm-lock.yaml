@@ -68,6 +68,9 @@ importers:
       '@traderalice/opentypebb':
         specifier: workspace:*
         version: link:packages/opentypebb
+      '@traderalice/update-lifecycle':
+        specifier: workspace:*
+        version: link:packages/update-lifecycle
       '@traderalice/uta-protocol':
         specifier: workspace:*
         version: link:packages/uta-protocol
@@ -195,6 +198,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 0.83.0
         version: 0.83.0
+      '@traderalice/update-lifecycle':
+        specifier: workspace:*
+        version: link:../update-lifecycle
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -278,6 +284,12 @@ importers:
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.25)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/update-lifecycle:
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
         version: 5.9.3
 
   packages/uta-broker-alpaca:
@@ -578,6 +590,9 @@ importers:
       '@traderalice/connector-protocol':
         specifier: workspace:*
         version: link:../packages/connector-protocol
+      '@traderalice/update-lifecycle':
+        specifier: workspace:*
+        version: link:../packages/update-lifecycle
       '@vercel/analytics':
         specifier: ^2.0.1
         version: 2.0.1(react@19.2.4)

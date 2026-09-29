@@ -106,6 +106,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.83.0",
+    "@traderalice/update-lifecycle": "workspace:*",
     "yaml": "^2.9.0"
   }
 }
