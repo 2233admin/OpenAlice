@@ -532,7 +532,7 @@ Read-only public market data; no credentials or entitlement required.`,
 
 Each rate is the rate charged PER FUNDING PERIOD. It is NOT annualized and NOT an amount: it is a rate. A POSITIVE rate means LONGS PAY SHORTS for that period, so sum or average these per-period rates for a realized holding cost and never multiply them by a fixed annualization factor — the period length is venue-set (commonly 8h, but venues have moved pairs off it), so read it from the gaps between the returned timestamps instead of assuming it.
 
-start is an optional ISO 8601 lower bound on the window; omitted reads the venue's most recent periods. limit truncates to the MOST RECENT periods in that window (default 100, max 1000) — never the oldest ones first. Venues cap their own page sizes, so a request larger than the venue's cap returns fewer periods than asked, always the most recent available. The envelope timestamp is OUR read time (the window's upper bound), not the last period's settlement time. Read-only public market data; no credentials required.`,
+start is an optional ISO 8601 lower bound on the window; omitted reads the venue's most recent periods. limit selects the MOST RECENT periods in that window (default 100, max 1000) — never the oldest ones first. Venue page caps are paginated; fewer periods mean that the requested window or available venue history contains fewer settled periods, not that a single page was truncated. The envelope timestamp is OUR read time (the window's upper bound), not the last period's settlement time. Read-only public market data; no credentials required.`,
       inputSchema: fundingRateHistorySchema,
       execute: async request => {
         try {

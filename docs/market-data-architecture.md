@@ -58,9 +58,10 @@ Rates are per funding period, not annualized. A positive rate means longs pay
 shorts. History is oldest-first with venue settlement timestamps and a local
 read-time envelope; `start` is an ISO timestamp lower bound and `limit`
 selects the most recent periods (up to 1000). Native CCXT history support is
-required; synthesized or absent history capabilities are refused. Venues may
-limit page sizes and return fewer rows than requested, so callers must not
-infer a complete historical window solely from the requested `limit`.
+required; synthesized or absent history capabilities are refused. Venue page
+limits are paginated; a shorter result means the window or venue history has
+fewer settled periods. Failed or stalled pagination is reported as an error,
+not silently treated as complete.
 
 ## TraderHub and Reference Data
 

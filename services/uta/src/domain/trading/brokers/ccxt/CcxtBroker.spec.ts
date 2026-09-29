@@ -1767,6 +1767,33 @@ describe('CcxtBroker — getFundingRateHistory', () => {
     expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)
   }))
 
+  it('returns a contiguous newest max-limit window despite a small venue page cap', atNow(async () => {
+    const acc = makeFundingAccount()
+    const venue = series(1100)
+    const fetch = serveVenue(venue, 5)
+    const exchange = (acc as unknown as { exchange: { fetchFundingRateHistory: typeof fetch } }).exchange
+    exchange.fetchFundingRateHistory = fetch
+
+    const history = await acc.getFundingRateHistory(contract(), { limit: 1000 })
+
+    expect(history.rates).toEqual(venue.slice(-1000).map(row => ({ timestamp: new Date(row.ts), fundingRate: row.rate })))
+  }))
+
+  it('keeps each venue request within the native Bybit 200-row bound', atNow(async () => {
+    const acc = makeFundingAccount()
+    const venue = series(1100)
+    const fetch = serveVenue(venue, 200)
+    const exchange = (acc as unknown as { exchange: { fetchFundingRateHistory: typeof fetch } }).exchange
+    exchange.fetchFundingRateHistory = vi.fn(async (symbol: string, since?: number, limit?: number) => {
+      if ((limit ?? 0) > 200) throw new Error('venue rejects page above 200')
+      return fetch(symbol, since, limit)
+    })
+
+    const history = await acc.getFundingRateHistory(contract(), { limit: 1000 })
+
+    expect(history.rates).toEqual(venue.slice(-1000).map(row => ({ timestamp: new Date(row.ts), fundingRate: row.rate })))
+  }))
+
   // 4h venues exist. The trailing anchor is derived from the venue's own two
   // newest periods; with a page cap below `limit` a wrong anchor surfaces as a
   // hole in the returned window rather than as a merely shorter one.
@@ -1845,7 +1872,41 @@ describe('CcxtBroker — getFundingRateHistory', () => {
     ;(acc as any).exchange.fetchFundingRateHistory = serveVenue(series(3))
     await expect(acc.getFundingRateHistory(contract(), { start: 'last-tuesday' })).rejects.toThrow(/not a valid ISO 8601/)
   })
+  it('returns all available settled periods when the venue history is shorter than the requested maximum', atNow(async () => {
+    const acc = makeFundingAccount()
+    const venue = series(600)
+    ;(acc as any).exchange.fetchFundingRateHistory = serveVenue(venue, 5)
 
+    const history = await acc.getFundingRateHistory(contract(), { limit: 1000 })
+
+    expect(history.rates).toEqual(venue.map(row => ({ timestamp: new Date(row.ts), fundingRate: row.rate })))
+  }))
+
+  it('refuses a partial result when the venue cannot supply a pagination anchor', atNow(async () => {
+    const acc = makeFundingAccount()
+    ;(acc as any).exchange.fetchFundingRateHistory = serveVenue(series(30), 1)
+
+    await expect(acc.getFundingRateHistory(contract(), { limit: 5 })).rejects.toThrow(/cannot paginate|funding-rate history/i)
+  }))
+
+  it('refuses a stalled venue cursor rather than returning only the newest page', atNow(async () => {
+    const acc = makeFundingAccount()
+    const recentPage = serveVenue(series(30), 2)
+    ;(acc as any).exchange.fetchFundingRateHistory = vi.fn((symbol: string, since?: number, limit?: number) =>
+      recentPage(symbol, undefined, limit))
+
+    await expect(acc.getFundingRateHistory(contract(), { limit: 10 })).rejects.toThrow(/pagination|cursor/i)
+  }))
+
+  it('refuses a missing current rate without turning it into a zero rate', async () => {
+    const acc = makeFundingAccount()
+    const exchange = (acc as unknown as { exchange: { fetchFundingRate: (symbol: string) => Promise<unknown> } }).exchange
+    exchange.fetchFundingRate = vi.fn().mockResolvedValue({ fundingRate: null, timestamp: NOW })
+    await expect(acc.getFundingRate(contract())).rejects.toThrow(/did not return a funding rate/)
+
+    exchange.fetchFundingRate = vi.fn().mockResolvedValue({ fundingRate: 0, timestamp: NOW })
+    expect((await acc.getFundingRate(contract())).fundingRate).toBe(0)
+  })
   it('throws when the contract cannot be resolved', async () => {
     const acc = makeAccount()
     setInitialized(acc, {})

@@ -1392,13 +1392,16 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
 
     try {
       const funding = await this.exchange.fetchFundingRate(ccxtSymbol)
+      if (funding.fundingRate == null || !Number.isFinite(funding.fundingRate)) {
+        throw new BrokerError('EXCHANGE', `${this.exchangeName} did not return a funding rate`)
+      }
       const market = this.markets[ccxtSymbol]
 
       return {
         contract: market
           ? marketToContract(market, this.exchangeName)
           : contract,
-        fundingRate: funding.fundingRate ?? 0,
+        fundingRate: funding.fundingRate,
         nextFundingTime: funding.fundingDatetime ? new Date(funding.fundingDatetime) : undefined,
         previousFundingRate: funding.previousFundingRate ?? undefined,
         timestamp: new Date(funding.timestamp ?? Date.now()),
@@ -1450,12 +1453,15 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     // is already visible, and an exact N-period window can otherwise come back
     // with only N-1 settled periods.
     const queryLimit = limit + 1
+    // Bybit, for example, rejects pages above 200 even when the caller asks
+    // for a larger overall window. Keep individual CCXT requests conservative.
+    const pageLimit = Math.min(queryLimit, 100)
 
     try {
       // The newest page first. With no `since` ccxt reads the most recent rows,
       // so this page is both the cadence measurement the anchor needs and, when
       // `limit` fits one page, the whole answer.
-      const newest = fundingRatePoints(await this.exchange.fetchFundingRateHistory(ccxtSymbol, undefined, queryLimit), upperBound)
+      const newest = fundingRatePoints(await this.exchange.fetchFundingRateHistory(ccxtSymbol, undefined, pageLimit), upperBound)
       const timestamps = [...newest.keys()].sort((a, b) => a - b)
       const cadenceMs = fundingCadenceMs(timestamps)
       const trailingSince = cadenceMs == null ? undefined : upperBound - cadenceMs * queryLimit + 1
@@ -1475,21 +1481,37 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
       // newest page still have to be read.
       const windowCovered = lowerBound != null && timestamps.length > 0 && timestamps[0] <= lowerBound
       if (!windowCovered && byTime.size < limit) {
+        if (since == null) {
+          throw new BrokerError('EXCHANGE', 'Funding-rate history cannot paginate without a venue cadence or start')
+        }
         // Walk forward from the trailing anchor, exactly like the OHLCV walk
         // above. The one-extra-period budget is what keeps the walk from
         // stopping a period short of the newest page and leaving a hole in
         // the tail that is sliced last.
         let cursor = since
-        for (let page = 0; page < 100 && cursor != null && byTime.size < queryLimit; page++) {
-          const rows = fundingRatePoints(await this.exchange.fetchFundingRateHistory(ccxtSymbol, cursor, queryLimit), upperBound)
+        let page = 0
+        for (; page < queryLimit && cursor != null && byTime.size < queryLimit; page++) {
+          const rows = fundingRatePoints(await this.exchange.fetchFundingRateHistory(ccxtSymbol, cursor, pageLimit), upperBound)
           let latest = Number.NEGATIVE_INFINITY
           for (const [ts, rate] of rows) {
             latest = Math.max(latest, ts)
             if (lowerBound != null && ts < lowerBound) continue
             byTime.set(ts, rate)
           }
-          if (!rows.size || latest < cursor || latest >= upperBound || byTime.size >= queryLimit) break
+          if (!rows.size) {
+            if (cursor <= timestamps[timestamps.length - 1]!) {
+              throw new BrokerError('EXCHANGE', 'Funding-rate history pagination stopped before the newest period')
+            }
+            break
+          }
+          if (latest < cursor) {
+            throw new BrokerError('EXCHANGE', 'Funding-rate history pagination cursor did not advance')
+          }
+          if (latest >= upperBound || byTime.size >= queryLimit) break
           cursor = latest + 1
+        }
+        if (page === queryLimit && byTime.size < limit) {
+          throw new BrokerError('EXCHANGE', 'Funding-rate history pagination could not complete the requested window')
         }
       }
 
