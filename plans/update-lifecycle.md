@@ -321,3 +321,24 @@ beta and unchanged-version dev identities, production provider regression tests,
 shared hook stale-request/error/retry tests, UI owner suite and UI typecheck;
 real browser exercises beta isolation and dev publication/consumption. No real
 update, SSH, broker activation or signed release action is performed.
+
+## Version mismatch rehearsal cases
+
+Add directly selectable, seeded fixtures with an active 0.94.2 release:
+frontend newer (0.94.2/0.94.1), backend newer (0.94.1/0.94.2), backend upgrade
+followed by its bundled Chat template, current backend with an outdated Chat
+template, and busy Chat waiting after backend reconnection. Selecting a scenario
+loads a fresh fixture, explicitly disclosed by the page. Publication and channel
+selection remain available within each fixture.
+
+Plans now avoid implicit SemVer downgrades. A missing matching frontend release
+blocks a backend-ahead plan. Chat template identity is separate from app SemVer:
+synthetic template 1/2 model a bundled managed-context update, not an AQ/AP Git
+source update. Backend activation and reconnection precede template apply. Busy
+Chat retains its old template and the successful backend upgrade; release resumes
+only the remaining template work. The fixture does not claim to execute the
+production three-way merge or replace its preview digest/conflict protections.
+
+Validation: five mismatch behavior specs plus existing publication and hook
+regressions; UI typecheck; real browser review of frontend/backend mismatches and
+execution of backend-to-Chat plus busy/resume. Real installers remain untouched.

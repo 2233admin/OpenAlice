@@ -48,3 +48,53 @@ describe('upgrade rehearsal guards and recovery', () => {
     expect(new Set(releaseSnapshot.assets.map((a) => a.name)).size).toBe(73)
   })
 })
+
+it('upgrades only the older side of a frontend/backend mismatch', () => {
+  for (const scenario of ['client-ahead', 'server-ahead'] as const) {
+    let s = initial(scenario)
+    s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+    expect(
+      s.steps.some((step) =>
+        step.startsWith(scenario === 'client-ahead' ? 'client-' : 'backend-'),
+      ),
+    ).toBe(false)
+    const done = until(s, 'done')
+    expect(done.phase).toBe('done')
+    expect([done.client, done.server]).toEqual(['0.94.2', '0.94.2'])
+  }
+})
+it('reconnects the upgraded backend before updating its managed Chat template', () => {
+  let s = initial('chat-follow')
+  s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+  expect(s.steps.indexOf('backend-reconnect')).toBeLessThan(
+    s.steps.indexOf('content-apply'),
+  )
+  const done = until(s, 'done')
+  expect(done.workspace).toBe('Chat template 2')
+  expect(done.client).toBe('0.94.2')
+})
+it('updates an outdated Chat template without reinstalling current app/backend', () => {
+  let s = initial('chat-stale')
+  s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+  expect(s.steps).toEqual(['content-check', 'content-apply', 'content-verify'])
+  expect(until(s, 'done').workspace).toBe('Chat template 2')
+})
+it('keeps the backend upgrade while busy Chat waits, then applies only its template', () => {
+  let s = initial('chat-busy')
+  s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+  s = until(s, 'blocked')
+  expect([s.server, s.workspace]).toEqual(['0.94.2', 'Chat template 1'])
+  expect(s.connected).toBe(true)
+  const done = until(reduce(s, { type: 'release' }), 'done')
+  expect(done.workspace).toBe('Chat template 2')
+  expect(
+    done.log.filter((line) => line === 'backend-install completed'),
+  ).toHaveLength(1)
+})
+it('does not downgrade a newer backend when the selected channel has no matching frontend', () => {
+  let s = initial('server-ahead')
+  s = reduce(s, { type: 'channel', value: 'beta' })
+  s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+  expect(s.phase).toBe('review')
+  expect(s.server).toBe('0.94.2')
+})

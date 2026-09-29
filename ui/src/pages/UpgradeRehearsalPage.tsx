@@ -21,6 +21,9 @@ import {
 import { useUpgradeRehearsal } from '../hooks/useUpgradeRehearsal'
 import {
   blocker,
+  contentTarget,
+  isChatCase,
+  scenarioExplanation,
   consumed,
   group,
   plan,
@@ -212,6 +215,9 @@ export function UpgradeRehearsalPage() {
         {s.phase !== 'scenario' &&
           'This plan is frozen; later publications do not change it.'}
       </p>
+      <p className="rounded-lg bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+        {scenarioExplanation(s)} Switching scenarios loads a fresh fixture.
+      </p>
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
         <section className={`${panel} min-w-0 overflow-hidden`}>
           <div className="p-5 border-b border-border">
@@ -232,7 +238,7 @@ export function UpgradeRehearsalPage() {
               icon: Monitor,
               active: s.client,
               installed: s.clientInstalled,
-              target: s.scenario === 'blocked' ? s.client : s.target,
+              target: steps.includes('client-download') ? s.target : s.client,
             },
             {
               name:
@@ -243,14 +249,14 @@ export function UpgradeRehearsalPage() {
               active: s.server,
               installed: s.serverInstalled,
               target:
-                s.backend || s.scenario === 'integrated' ? s.target : s.server,
+                steps.includes('backend-download') || s.scenario === 'integrated' && steps.includes('client-download') ? s.target : s.server,
             },
             {
-              name: 'Workspace content',
+              name: isChatCase(s) ? 'Chat Workspace' : 'Workspace content',
               icon: Package,
               active: s.workspace,
               installed: s.workspace,
-              target: s.content ? 'R2' : s.workspace,
+              target: s.content ? contentTarget(s) : s.workspace,
             },
           ].map(({ name, icon: Icon, active, installed, target }) => (
             <div
@@ -264,14 +270,17 @@ export function UpgradeRehearsalPage() {
                 <h4 className="text-sm font-medium">{name}</h4>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Active {displayVersion(active)}
-                  {installed !== active && ` · Installed ${displayVersion(installed)}`}
+                  {installed !== active &&
+                    ` · Installed ${displayVersion(installed)}`}
                   {name === 'Remote backend' &&
                     !s.connected &&
                     ' · Reconnecting'}
                 </p>
               </div>
               <span className="min-w-0 max-w-full break-all text-sm font-mono">
-                {active === target ? displayVersion(active) : `${displayVersion(active)} → ${displayVersion(target)}`}
+                {active === target
+                  ? displayVersion(active)
+                  : `${displayVersion(active)} → ${displayVersion(target)}`}
               </span>
             </div>
           ))}
@@ -298,7 +307,9 @@ export function UpgradeRehearsalPage() {
                   dispatch({ type: 'content', value: e.target.checked })
                 }
               />{' '}
-              Include workspace content
+              {isChatCase(s)
+                ? 'Include managed Chat template update'
+                : 'Include workspace content'}
             </label>
           </div>
           <Disclosure title="Artifacts consumed by this plan">

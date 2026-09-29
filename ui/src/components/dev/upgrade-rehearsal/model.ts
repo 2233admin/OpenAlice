@@ -1,5 +1,6 @@
 import {
   identityLabel,
+  newerRelease,
   isReleaseUpdate,
   type ReleaseChannel,
 } from '../../../lib/updates/discovery'
@@ -20,7 +21,12 @@ export const scenarios = {
   together: 'App + remote backend',
   client: 'App only',
   integrated: 'Integrated Electron',
-  blocked: 'Backend ahead of app',
+  blocked: 'Prevent backend-only upgrade',
+  'client-ahead': 'Frontend newer than backend',
+  'server-ahead': 'Backend newer than frontend',
+  'chat-follow': 'Backend upgrade brings a Chat template update',
+  'chat-stale': 'Backend current, Chat template outdated',
+  'chat-busy': 'Chat busy during backend upgrade',
   reconnect: 'Reconnect failure',
   busy: 'Workspace busy',
 } as const
@@ -86,45 +92,103 @@ export type Action =
     }
 export function initial(scenario: Scenario = 'together'): State {
   const version = '0.94.1'
+  const mismatch = [
+    'client-ahead',
+    'server-ahead',
+    'chat-follow',
+    'chat-stale',
+    'chat-busy',
+  ].includes(scenario)
+  let publication = initialPublication()
+  if (mismatch) {
+    publication = createRelease(publication, 'stable')
+    const id = publication.records.at(-1)!.id
+    for (let i = 0; i < 3; i++) publication = advanceRelease(publication, id)
+  }
+  const client = mismatch && scenario !== 'server-ahead' ? '0.94.2' : version
+  const server =
+    scenario === 'server-ahead' || scenario === 'chat-stale'
+      ? '0.94.2'
+      : version
   return {
     scenario,
     phase: 'scenario',
     backend: scenario !== 'client',
-    content: scenario === 'busy',
-    target: version,
+    content: scenario === 'busy' || scenario.startsWith('chat-'),
+    target: mismatch ? '0.94.2' : version,
     channel: 'stable',
-    publication: initialPublication(),
-    selectedRelease: null,
-    client: version,
-    clientInstalled: version,
-    server: version,
-    serverInstalled: version,
-    workspace: 'R1',
+    publication,
+    selectedRelease: mismatch ? head(publication, 'stable') : null,
+    client,
+    clientInstalled: client,
+    server,
+    serverInstalled: server,
+    workspace: scenario.startsWith('chat-') ? 'Chat template 1' : 'R1',
     connected: true,
-    busy: scenario === 'busy',
+    busy: scenario === 'busy' || scenario === 'chat-busy',
     fault: scenario === 'reconnect',
     steps: [],
     cursor: 0,
     log: [],
   }
 }
+export function isChatCase(s: State): boolean {
+  return s.scenario.startsWith('chat-')
+}
+// This fixture models the bundled template identity independently from app SemVer.
+// Real managed-context apply must still use its preview digest and merge guards.
+export function contentTarget(s: State): string {
+  const backend = projectedServer(s)
+  return isChatCase(s)
+    ? newerRelease(backend.split('+')[0], '0.94.1')
+      ? 'Chat template 2'
+      : 'Chat template 1'
+    : 'R2'
+}
+function advances(current: string, target: string): boolean {
+  return target.includes('+dev.')
+    ? target !== current
+    : newerRelease(target, current.split('+')[0])
+}
+function projectedServer(s: State): string {
+  return (s.backend || s.scenario === 'integrated') &&
+    advances(s.server, s.target)
+    ? s.target
+    : s.server
+}
+export function scenarioExplanation(s: State): string {
+  switch (s.scenario) {
+    case 'client-ahead':
+      return 'Frontend 0.94.2 / backend 0.94.1. Keep the frontend; upgrade only the selected backend.'
+    case 'server-ahead':
+      return 'Frontend 0.94.1 / backend 0.94.2. Catch the frontend up; do not downgrade the backend. Compatibility is a rehearsal assumption.'
+    case 'chat-follow':
+      return 'Frontend 0.94.2 / backend 0.94.1 / Chat template 1. Reconnect to backend 0.94.2 before applying its bundled Chat template 2.'
+    case 'chat-stale':
+      return 'Both app and backend are 0.94.2; Chat still has template 1. Only the managed Chat template needs updating.'
+    case 'chat-busy':
+      return 'Upgrade the backend first. If Chat is busy, keep its template unchanged and wait; completed backend work is retained.'
+    default:
+      return 'Select a channel, discover a release, then review the proposed update scope.'
+  }
+}
 export function plan(s: State): Step[] {
   const steps: Step[] = []
-  if (s.scenario !== 'blocked' && s.client !== s.target)
+  if (s.scenario !== 'blocked' && advances(s.client, s.target))
     steps.push(
       'client-download',
       'client-install',
       'client-activate',
       'client-verify',
     )
-  if (s.backend && s.server !== s.target && s.scenario !== 'integrated')
+  if (s.backend && advances(s.server, s.target) && s.scenario !== 'integrated')
     steps.push(
       'backend-download',
       'backend-install',
       'backend-activate',
       'backend-reconnect',
     )
-  if (s.content && s.workspace !== 'R2')
+  if (s.content && s.workspace !== contentTarget(s))
     steps.push('content-check', 'content-apply', 'content-verify')
   return steps
 }
@@ -135,8 +199,14 @@ export function blocker(s: State): string | null {
     return 'Dev commit artifacts are CLI-only in this rehearsal. Choose a separated scenario.'
   if (s.scenario === 'blocked' && s.backend && s.target !== s.client)
     return 'This plan would put the backend ahead of the app. Upgrade the app first.'
-  const server = s.backend || s.scenario === 'integrated' ? s.target : s.server
-  if (s.content && server.split('+')[0] === '0.94.1')
+  const client =
+    s.scenario !== 'blocked' && advances(s.client, s.target)
+      ? s.target
+      : s.client
+  const server = projectedServer(s)
+  if (newerRelease(server.split('+')[0], client.split('+')[0]))
+    return 'The backend would remain newer than the frontend. Select a channel with a matching or newer frontend release.'
+  if (s.content && !isChatCase(s) && server.split('+')[0] === '0.94.1')
     return 'Workspace R2 needs backend 0.94.2 or newer (rehearsal assumption).'
   return null
 }
@@ -178,12 +248,7 @@ export function reduce(s: State, a: Action): State {
       ],
     }
   if (s.phase === 'scenario') {
-    if (a.type === 'scenario')
-      return {
-        ...initial(a.value),
-        publication: s.publication,
-        channel: s.channel,
-      }
+    if (a.type === 'scenario') return initial(a.value)
     if (a.type === 'channel')
       return { ...s, channel: a.value, selectedRelease: null, target: s.client }
     if (a.type === 'discover') {
@@ -274,7 +339,7 @@ export function reduce(s: State, a: Action): State {
     next.connected = false
   }
   if (step === 'backend-reconnect') next.connected = true
-  if (step === 'content-apply') next.workspace = 'R2'
+  if (step === 'content-apply') next.workspace = contentTarget(s)
   if (next.cursor === next.steps.length) next.phase = 'done'
   return next
 }
