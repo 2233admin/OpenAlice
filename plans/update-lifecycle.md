@@ -1,6 +1,8 @@
 # Update lifecycle
 
-Status: active. Owner guides: [[docs/alice-project.md]],
+Status: active planning. Centralization direction accepted; the migration below
+is proposed and not implemented. Related issues: none linked; findings remain
+in this workstream. Owner guides: [[docs/alice-project.md]],
 [[docs/harness-web-surfaces.md]], [[docs/workspace-template-upgrade.md]],
 [[docs/local-runtime.md]], and [[docs/ui-interaction-and-motion.md]].
 
@@ -50,8 +52,8 @@ checks or forces a merge into an active Workspace.
 
 ## 2026-09-28 semantic audit and proposed next phase
 
-Status: audit complete; the following architecture is proposed for maintainer
-alignment, not implemented or accepted. Baseline: `origin/dev` at `f1ce0ef1`.
+Historical audit; the active migration below supersedes its implementation
+sequence. Individual findings must be rechecked during migration. Baseline: `origin/dev` at `f1ce0ef1`.
 Related issues: none linked yet; findings below remain in this change's scope.
 Additional owner guides: [[docs/remote-access.md]],
 [[docs/managed-workspace-runtime.md]], [[docs/cli-installer.md]],
@@ -208,25 +210,144 @@ Automatic migration failure blocks readiness; never silently downgrade data.
 Workspace update verification must not auto-start an Agent or Studio merely
 to manufacture a success signal. Optional UTA failure must not disable Chat.
 
-### Ordered implementation proposal
+### Active migration: one lifecycle, real and simulated adapters
 
-- [ ] P0: Correct packaged release identity and remote target verification;
-      retain integrity checks, precise installed/active diagnostics, and
-      verify the original official-package failure without blind retries.
-- [ ] P1: Define target identity, discovery, operation and compatibility
-      contracts. Separate read-only check from automatic apply and repair
-      preference ownership. Consolidate comparison/catalog rules where shared,
-      preserving native feeds and external installer ownership.
-- [ ] P2: Adapt native desktop, CLI and remote operations to durable progress,
-      exact-target completion and restart/reconnect recovery. Add dependency
-      planning for client/backend updates and explicit downgrade semantics.
-- [ ] P3: Project Workspace templates, source updates, injected skills and
-      Broker Packs through the same inventory; preserve their transaction
-      engines and activity/permission rules. Distinguish source applied from
-      runtime ready.
-- [ ] P4: Align Settings discovery, review, progress and recovery UI with the
-      inventory; update owner guides/demo contracts and complete surface
-      acceptance. Retire duplicated public entry logic after callers migrate.
+Planning baseline: `origin/dev` at `07ec71b3` (2026-09-29). The current
+rehearsal shares discovery request handling and some version comparison, not
+production planning or execution lifecycle. Its seeded version-order rules
+must not silently become production compatibility policy.
+
+#### Ownership and public entry
+
+Introduce a browser-safe shared `packages/update-lifecycle` core for identities,
+release selection, dependency planning and operation transitions. Node adapters
+own effects; one public `useUpdateLifecycle` facade projects snapshots and
+commands into React. Do not make React responsible for SSH, durable operations,
+background policy, or restarting its own host.
+
+- Separated mode: the local relay owns coordinated client/backend operations.
+- Integrated Electron: the desktop main/control plane owns the same coordinator
+  contract, with IPC and the native updater as adapters.
+- Each backend owns project-local execution, serialization and durable receipts.
+  Automatic Workspace work and non-GUI commands enter that same project service.
+  A relay delegates a child operation with an idempotency key and reconciles its
+  receipt; it does not create a competing Workspace scheduler.
+- Uniqueness means one implementation and one authoritative operation per scope,
+  not a fictitious global singleton spanning unrelated machines. Different
+  relays must still serialize through the target installation/project owner.
+- Existing connection lifecycle owns transport health and target generation.
+  Update management consumes that evidence; it does not add another heartbeat
+  or take over Machine profile CRUD and ordinary connection switching.
+
+The simulator instantiates the same coordinator with an in-memory journal,
+virtual clock, mock release catalog and fake owner adapters. It must not carry
+its own plan/approval/retry/dependency rules. Its publisher remains a fixture
+producer following release contracts; signing and actual publication stay in CI.
+
+#### Inventory, probing and operation contract
+
+Inventory records installation identity separately from project and process
+roles. Every entry distinguishes installed, active and desired release, source,
+channel, capability and policy scope. Bundled components update as one unit;
+Chat assets follow the backend's delivered template, while AQ/AP resolve their
+independent upstream stable tags. Skills and Broker Packs retain their owners.
+
+All version discovery enters one command. Backend/SSH probe implementations
+return evidence to the manager; components cannot start their own update polls.
+Use bounded concurrency, timeout, single-flight and metadata caching keyed by
+installation, project where relevant, platform/architecture, channel and source.
+A target-generation change prevents late responses updating the new selection.
+Catalog freshness and runtime health have separate timestamps; apply always
+revalidates the target and review fingerprint rather than trusting a cached probe.
+An unavailable probe reports unknown/stale/error, never a fabricated current state.
+
+A check is read-only with respect to installations and Workspace content.
+Automatic application is a separate policy command following discovery. Turning
+off auto-apply does not turn off discovery. Preserve approved defaults for
+asynchronous preparation and safe automatic AQ/AP stable updates.
+
+Commands cover check, create plan, approve, execute, retry/resume and policy
+changes. Plans freeze exact artifacts/commits, scope and prerequisite edges;
+approval becomes stale when relevant evidence changes. New publication during
+execution cannot change the approved target. Distinguish approval waiting,
+safety blocking and execution failure.
+
+Journal the operation before mutation and before replacing its owner process.
+Record completed stages, child receipt IDs, exact-target verification and
+structured recovery actions without secrets. Installation success followed by
+reconnect failure retries verification/reconnection, not installation. After a
+crash, reconcile unknown outcomes with owner evidence before repeating effects.
+Client restart recovery is locally durable and must not depend solely on the
+backend being upgraded. Existing atomic install, merge, activity and integrity
+guards remain authoritative; this is not a replacement installer.
+
+#### Migration and retirement map
+
+| Existing implementation | Destination / retirement |
+| --- | --- |
+| `ui/src/hooks/useUpdateLifecycle.tsx` | Keep the public name; replace component-owned orchestration with the shared coordinator projection |
+| `ui/src/hooks/useVersionDiscovery.ts` | Move request generation/single-flight behavior into shared discovery; retire the separate public lifecycle hook |
+| `ui/src/lib/updates/discovery.ts`, server/CLI release comparison | Consolidate shared identity/channel/selection rules; keep format-specific feed parsers in adapters |
+| `ui/src/hooks/useMachineManagement.ts` | Move upgrade probe, plan, operation and polling into lifecycle; retain non-update Machine administration in its owner |
+| `DesktopUpdatePrompt` and native status subscriptions | Subscribe through the facade; retain only presentation state such as dialog visibility |
+| `src/webui/routes/updates.ts`, `WorkspaceAutoUpdates.check()` | Thin project-service commands; separate observe from policy apply and remove mixed check/apply behavior |
+| `packages/cli/src/machine-management.ts` | Adapter to coordinated plans and durable operations; preserve fingerprint, expiry, consent and serialization guards |
+| `useUpgradeRehearsal.ts`, rehearsal `model.ts` | Keep scenario fixtures and interaction bindings; delete duplicate lifecycle reducer/planner/retry rules as each shared slice lands |
+| Desktop native updater, CLI installer, template/source engines | Retain effect ownership; normalize progress/receipts and require the common lifecycle entry |
+
+Do not preserve old hooks or executable aliases as compatibility wrappers.
+Migrate all callers of each replaced slice in the same increment and remove it.
+Transport compatibility for already shipped runtimes is capability-based and
+explicit; it must not resurrect a second lifecycle. Establish shipped persistence
+boundaries before adding migrations; replace unreleased shapes directly.
+
+#### Ordered implementation and acceptance
+
+- [ ] **1. Shared identity and inventory.** Establish installation/role identity,
+  release/artifact/provenance separation, stable/beta/commit selection and
+  explicit compatibility evidence. Move comparison/selection into the core;
+  connect real discovery and the simulator in the same increment. Keep existing
+  mismatch cases, but distinguish supported incompatibility from unknown legacy
+  capability rather than assuming every higher backend version is incompatible.
+- [ ] **2. Centralized probing and facade.** Route app, relay/backend and project
+  observations through scoped discovery. Remove duplicate hooks, subscriptions
+  and polling; separate checks from automatic apply and repair preference scope.
+  Prove two UI consumers share one check, switching targets rejects stale results,
+  disabling auto-apply still discovers, and cached availability survives a failed
+  refresh with its freshness/error visible.
+- [ ] **3. Shared planner and rehearsal.** Use the same dependency graph, immutable
+  approval, blockers and transition logic in product review and simulation.
+  Replace the rehearsal-specific lifecycle. Cover frontend ahead/behind, explicit
+  backend-only incompatibility, backend-to-Chat ordering, busy Workspace and
+  stable/beta/commit publication after approval. Compare plans and event traces
+  under identical evidence, rather than testing two independent implementations.
+- [ ] **4. Durable execution and recovery.** Adapt remote CLI and native desktop
+  execution to receipts, exact-target checks and restart recovery. Fix the original
+  official-package identity mismatch within these contracts. Exercise installed
+  versus active mismatch, lost response, backend restart, relay restart, browser
+  reload and desktop restart. Retry only the unfinished safe stage; require an
+  explicit recovery outcome when rollback or replay cannot be proved safe.
+- [ ] **5. Complete project coverage and retire bypasses.** Route Chat, AQ/AP,
+  injected skills and Broker Pack update intents through their authoritative
+  services and the common inventory. Preserve merge/ABI/activity safeguards and
+  optional UTA behavior. Move shared version/state tests to the core; retain
+  transport and installer-specific tests beside their engines. Remove remaining
+  bypass calls, document the public contract in owner guides and accept all
+  affected real surfaces.
+
+Each increment must pair a real consumer with rehearsal coverage. Do not finish
+an isolated simulator first and postpone product integration. Temporary progress
+is tracked here; it is not permission to keep two final public entry systems.
+No production install, restart, publication or automated upgrade is authorized
+merely by running a rehearsal.
+
+Final acceptance includes source-level caller audit, shared contract tests and
+real browser relay plus unsigned packaged Electron integrated/separated flows.
+Use an explicitly selected remote test target for installation acceptance, never
+live trading state. Demonstrate reload recovery and concurrent-client protection.
+A green simulator proves lifecycle decisions, not native installation or SSH.
+UI layout changes need their own proportional design alignment; this migration
+preserves the existing rehearsal interaction while replacing its implementation.
 
 ### Verification and completion criteria for implementation
 
