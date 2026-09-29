@@ -36,6 +36,7 @@ const DEVELOPER_DISCLOSURE_SESSION_KEY = 'openalice.settings.developer-expanded'
 const DEVELOPER_GROUP_ID = 'settings-developer-pages'
 
 const DEVELOPER_ITEMS = [
+  { labelKey: 'dev.upgradeRehearsal', tab: 'upgrade-rehearsal', Icon: FlaskConical },
   { labelKey: 'dev.frontend', tab: 'frontend', Icon: PanelsTopLeft },
   { labelKey: 'common.tools', tab: 'tools', Icon: Wrench },
   { labelKey: 'dev.onboarding', tab: 'onboarding', Icon: Compass },

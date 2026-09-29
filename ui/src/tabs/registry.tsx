@@ -354,6 +354,7 @@ const designProjectModule: ViewModule<'design-project'> = {
 }
 
 const devTabTitle: Record<Extract<ViewSpec, { kind: 'dev' }>['params']['tab'], string> = {
+  'upgrade-rehearsal': 'Upgrade rehearsal',
   frontend: 'Frontend',
   tools: 'Tools',
   onboarding: 'Onboarding',

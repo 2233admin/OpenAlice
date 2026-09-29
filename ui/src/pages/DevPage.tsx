@@ -7,6 +7,7 @@ import { getIntlLocale } from '../lib/intl'
 import { useToast } from '../components/Toast'
 import { LogsPage } from './LogsPage'
 import { AutomationPage } from './AutomationPage'
+import { UpgradeRehearsalPage } from './UpgradeRehearsalPage'
 import { SimulatorPage } from './SimulatorPage'
 import { FrontendLabPage } from './FrontendLabPage'
 import { OnboardingDesignPage } from './OnboardingDesignPage'
@@ -27,6 +28,7 @@ import { SelectionCheckIcon } from '../components/ui/selection-check-icon'
 type Tab = Extract<ViewSpec, { kind: 'dev' }>['params']['tab']
 
 const TAB_TITLE_KEYS = {
+  'upgrade-rehearsal': 'dev.upgradeRehearsal',
   frontend: 'dev.frontend',
   tools: 'common.tools',
   onboarding: 'dev.onboarding',
@@ -59,6 +61,7 @@ export function DevPage({ spec }: DevPageProps) {
       <PageHeader title={t(TAB_TITLE_KEYS[tab])} />
       <div className={`flex-1 min-h-0 ${SELF_SCROLLING_TABS.has(tab) ? 'flex flex-col' : 'overflow-y-auto'}`}>
         {tab === 'tools' && <ToolsTab />}
+        {tab === 'upgrade-rehearsal' && <UpgradeRehearsalPage />}
         {tab === 'frontend' && <FrontendLabPage />}
         {tab === 'onboarding' && <OnboardingDesignPage />}
         {tab === 'snapshots' && <SnapshotsTab />}

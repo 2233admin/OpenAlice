@@ -17,7 +17,7 @@ export type WorkspaceSource = 'chat' | 'auto-quant' | 'prediction'
 export type FileViewerSource = WorkspaceSource | 'tracked'
 
 /** One source of truth for the Developer section and its Settings URL contract. */
-export const DEV_TABS = ['frontend', 'tools', 'onboarding', 'snapshots', 'logs', 'runs', 'api', 'simulator'] as const
+export const DEV_TABS = ['upgrade-rehearsal', 'frontend', 'tools', 'onboarding', 'snapshots', 'logs', 'runs', 'api', 'simulator'] as const
 export type DevTab = typeof DEV_TABS[number]
 
 export function isDevTab(value: string): value is DevTab {

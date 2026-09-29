@@ -2089,6 +2089,7 @@ export const ja: Resources = {
     },
   },
   dev: {
+    upgradeRehearsal: 'アップグレード演習',
     onboarding: 'オンボーディング',
     snapshots: 'スナップショット',
     frontend: 'フロントエンド',

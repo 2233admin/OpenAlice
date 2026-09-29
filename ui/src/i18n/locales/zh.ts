@@ -2087,6 +2087,7 @@ export const zh: Resources = {
     },
   },
   dev: {
+    upgradeRehearsal: '升级演练',
     onboarding: '新手引导',
     snapshots: '快照',
     frontend: '前端',
