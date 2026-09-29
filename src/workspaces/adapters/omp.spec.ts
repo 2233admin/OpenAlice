@@ -166,6 +166,42 @@ describe('omp composeHeadlessCommand', () => {
       await rm(bin, { recursive: true, force: true });
     }
   });
+
+  it.skipIf(process.platform !== 'win32')('resolves relative PATH entries from the launch cwd for all modes', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omp-relative-path-'));
+    try {
+      const bin = join(cwd, 'native');
+      await mkdir(bin);
+      const exe = join(bin, 'omp.exe');
+      await writeFile(exe, '');
+      const launchCtx = ctx({ cwd, env: { PATH: 'missing;native' } });
+      for (const argv of [
+        ompAdapter.composeCommand([], launchCtx),
+        ompAdapter.composeHeadlessCommand!([], launchCtx, PROMPT),
+        ompAdapter.composeWebCommand!([], launchCtx),
+      ]) expect(argv[0]).toBe(exe);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform !== 'win32')('prefers the first native PATH entry and falls back when none exists', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'omp-path-order-'));
+    try {
+      const first = join(cwd, 'first');
+      const second = join(cwd, 'second');
+      await mkdir(first);
+      await mkdir(second);
+      await writeFile(join(first, 'omp.exe'), '');
+      await writeFile(join(second, 'omp.exe'), '');
+      expect(ompAdapter.composeCommand([], ctx({ cwd, env: { Path: 'first;second' } }))[0])
+        .toBe(join(first, 'omp.exe'));
+      expect(ompAdapter.composeCommand([], ctx({ cwd, env: { PATH: 'missing' } }))[0])
+        .toBe('omp');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('omp identity harvest', () => {

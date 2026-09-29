@@ -144,12 +144,13 @@ function ompRoleArgs(ctx: SpawnContext): readonly string[] {
  * Pin the native binary when PATH has one; other platforms already resolve
  * `omp` to the native binary.
  */
-function ompCommand(env: Readonly<Record<string, string>>): string {
+function ompCommand(env: Readonly<Record<string, string>>, cwd: string): string {
   if (process.platform !== 'win32') return 'omp';
   // Windows env var casing is unstable across hosts; check both.
   for (const dir of (env['PATH'] ?? env['Path'] ?? '').split(';')) {
     if (!dir) continue;
-    const native = join(dir, 'omp.exe');
+    // A child resolves relative PATH entries from its launch cwd, not Alice's.
+    const native = resolve(cwd, dir, 'omp.exe');
     try {
       if (statSync(native).isFile()) return native;
     } catch {
@@ -288,7 +289,7 @@ export const ompAdapter: CliAdapter = {
 
   composeCommand(_base: readonly string[], ctx: SpawnContext): readonly string[] {
     const cmd = [
-      ompCommand(ctx.env),
+      ompCommand(ctx.env, ctx.cwd),
       '--auto-approve',
       ...(ctx.sessionRuntime?.interactiveArgs ?? []),
       ...ompRoleArgs(ctx),
@@ -305,7 +306,7 @@ export const ompAdapter: CliAdapter = {
     prompt: string,
   ): readonly string[] {
     return [
-      ompCommand(ctx.env),
+      ompCommand(ctx.env, ctx.cwd),
       ...(ctx.sessionRuntime?.headlessArgs ?? []),
       ...ompRoleArgs(ctx),
       '-p',
@@ -325,7 +326,7 @@ export const ompAdapter: CliAdapter = {
   composeWebCommand(_base: readonly string[], ctx: SpawnContext): readonly string[] {
     if (ctx.resume === 'last') throw new Error('the Web surface requires a concrete omp session id or a fresh Session');
     return [
-      ompCommand(ctx.env),
+      ompCommand(ctx.env, ctx.cwd),
       ...(ctx.sessionRuntime?.webArgs ?? ctx.sessionRuntime?.interactiveArgs ?? []),
       ...ompRoleArgs(ctx),
       '--mode',
