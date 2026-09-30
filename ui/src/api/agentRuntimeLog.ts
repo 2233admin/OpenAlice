@@ -68,6 +68,7 @@ export interface AgentRuntimePayload {
   link?: string
   publishedAt?: number
   ingestSource?: string
+  image?: string
 }
 
 export interface AgentRuntimeEvent {
@@ -115,11 +116,11 @@ export const agentRuntimeLogApi = {
       body: JSON.stringify({ state }),
     })
   },
-  async triggerProductActivityTest(family: 'inbox' | 'news'): Promise<void> {
+  async triggerProductActivityTest(family: 'inbox' | 'news', preview?: 'image' | 'plain' | 'grouped' | 'broken'): Promise<void> {
     await fetchJson('/api/agent-runtime/product-test', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ family }),
+      body: JSON.stringify({ family, ...(preview ? { preview } : {}) }),
     })
   },
 }

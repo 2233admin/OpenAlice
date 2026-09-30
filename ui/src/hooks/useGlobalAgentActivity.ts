@@ -22,6 +22,9 @@ export const GLOBAL_ACTIVITY_REFRESH_EVENT = 'openalice:activity-refresh'
 export type AgentActivityKind =
   | 'conversation'
   | 'conversation-failed'
+  | 'conversation-completed'
+  | 'conversation-interrupted'
+  | 'conversation-paused'
   | 'inbox'
   | 'news'
   | 'sonner-test-running'
@@ -39,6 +42,9 @@ export interface AgentActivitySignal {
   readonly inboxEntryId?: string
   readonly newsItemId?: number
   readonly source?: string
+  readonly image?: string
+  readonly operationId?: string
+  readonly failureKind?: 'spawn' | 'rejected' | 'failed'
   readonly cause?: AgentRuntimeCause
   readonly detail?: string
   readonly occurredAt: number
@@ -72,7 +78,8 @@ export interface GlobalAgentActivityData {
 
 function runtimeOperationId(event: AgentRuntimeEvent): string {
   if (event.payload.taskId) return `task:${event.payload.taskId}`
-  return `session:${event.payload.workspaceId}:${event.payload.resumeId}`
+  if (event.payload.workspaceId && event.payload.resumeId) return `session:${event.payload.workspaceId}:${event.payload.resumeId}`
+  return `event:${event.seq}`
 }
 
 interface ConversationProjection {
@@ -84,10 +91,13 @@ interface ConversationProjection {
   readonly taskId?: string
   readonly cause: Extract<AgentRuntimeCause, { kind: 'conversation' }>
   readonly startedAt: number
+  readonly startRevision: number
   readonly updatedAt: number
   readonly revision: number
   readonly failed?: string
   readonly closed: boolean
+  readonly status?: 'done' | 'interrupted' | 'paused'
+  readonly failureKind?: 'spawn' | 'rejected' | 'failed'
 }
 
 function conversationFailure(event: AgentRuntimeEvent): string | undefined {
@@ -115,6 +125,7 @@ export const conversationActivityFilter: GlobalActivityFilter = {
 
       const failure = conversationFailure(event)
       const closed = event.type === 'runtime.stopped' && event.payload.status !== 'failed'
+      const restarted = event.type === 'runtime.started'
       projected.set(id, {
         id,
         workspaceId: event.payload.workspaceId || previous?.workspaceId || '',
@@ -127,24 +138,29 @@ export const conversationActivityFilter: GlobalActivityFilter = {
           ? { taskId: event.payload.taskId ?? previous?.taskId }
           : {}),
         cause,
-        startedAt: previous?.startedAt ?? event.ts,
+        startedAt: restarted ? event.ts : previous?.startedAt ?? event.ts,
+        startRevision: restarted ? event.seq : previous?.startRevision ?? event.seq,
         updatedAt: event.ts,
         // Tool-level progress can update the underlying conversation without
         // becoming a new global announcement. Only the conversation boundary
         // (start, failure, or close) advances the projected revision.
-        revision: failure || closed ? event.seq : previous?.revision ?? event.seq,
-        ...(failure ? { failed: failure } : previous?.failed ? { failed: previous.failed } : {}),
-        closed: failure ? false : closed || previous?.closed === true,
+        revision: failure || closed || restarted ? event.seq : previous?.revision ?? event.seq,
+        ...(failure ? { failed: failure, failureKind: event.type === 'runtime.spawn_failed' ? 'spawn' as const : event.type === 'runtime.rejected' ? 'rejected' as const : 'failed' as const } : !restarted && previous?.failed ? { failed: previous.failed, failureKind: previous.failureKind } : {}),
+        ...(closed ? { status: event.payload.status as 'done' | 'interrupted' | 'paused' } : {}),
+        closed: restarted || failure ? false : closed || previous?.closed === true,
       })
     }
 
     return [...projected.values()].flatMap((item): AgentActivitySignal[] => {
+      const operationId = item.taskId ? item.id : `${item.id}:run:${item.startRevision}`
       const age = Math.max(0, now - item.updatedAt)
       if (item.failed) {
         if (age > FAILURE_SIGNAL_MS) return []
         return [{
           id: `conversation-failed:${item.id}`,
           kind: 'conversation-failed',
+          operationId,
+          failureKind: item.failureKind,
           workspaceId: item.workspaceId,
           agent: item.agent,
           resumeId: item.resumeId,
@@ -156,10 +172,20 @@ export const conversationActivityFilter: GlobalActivityFilter = {
           revision: item.revision,
         }]
       }
-      if (item.closed || now - item.startedAt > ACTIVE_STALE_MS) return []
+      if (item.closed) {
+        if (age > RECENT_SIGNAL_MS) return []
+        const kind: AgentActivityKind = item.status === 'paused' ? 'conversation-paused' : item.status === 'interrupted' ? 'conversation-interrupted' : 'conversation-completed'
+        return [{
+          id: `${kind}:${item.id}`, kind, operationId, workspaceId: item.workspaceId,
+          agent: item.agent, resumeId: item.resumeId, sessionRecordId: item.sessionRecordId, taskId: item.taskId,
+          occurredAt: item.updatedAt, revision: item.revision,
+        }]
+      }
+      if (now - item.startedAt > ACTIVE_STALE_MS) return []
       return [{
         id: `conversation:${item.id}`,
         kind: 'conversation',
+        operationId,
         workspaceId: item.workspaceId,
         agent: item.agent,
         resumeId: item.resumeId,
@@ -209,6 +235,7 @@ export const newsActivityFilter: GlobalActivityFilter = {
         newsItemId: event.payload.newsItemId,
         source: event.payload.source,
         detail: event.payload.title,
+        image: event.payload.image,
         occurredAt: event.ts,
         revision: event.seq,
       }]

@@ -748,3 +748,35 @@ read-only. Completion offers explicit return to conversation instead of an
 automatic process restart. A cold background deep link keeps the existing busy
 Dialog behavior. Demo `?takeover=preview` seeds an isolated, simulated request for
 the AI-power conversation, including approval, idle timeout and completion.
+
+## Compact activity notifications
+
+The shared Sonner layer uses readable 352px pop-out cards, Instrument Sans,
+semantic popover colors, internal close controls, bounded previews and actions
+below copy. News may include a 64×48 feed image, validated at the producer and
+renderer; missing/failed media collapses without a placeholder. Article identity,
+headline and image always update as one tuple. Old events remain text-only.
+
+The display queue keeps three expanded cards; pending cards start their lifetime
+only when admitted. An error preempts the lowest-priority non-error card, which
+returns to the queue and receives its full lifetime when redisplayed. FIFO holds
+within severity. News groups by source and Inbox by publishing Session/Workspace
+for a fixed four-second arrival window; queued groups continue collecting until
+admission. Repeated identical local errors (with optional caller scope) share a
+fixed 30-second window. Group updates do not restart the timer. Sonner owns
+hover/focus pause, swipe, positioning and reduced-motion behavior.
+
+Current global eligibility stays narrow: non-human Agent conversation requests,
+agent-originated non-manual Inbox delivery, News and explicit developer probes.
+The initial successful snapshot is silent. Request lifecycle uses one operation
+card; completion is green, interruption/pause neutral, rejection amber and
+launch/terminal failure red. A correlated Inbox result updates that request's
+card without a redundant completion popup. An error-report delivery must never
+replace a known failed execution with success. Raw tool/text/recoverable errors
+remain detail in their existing surfaces, not independent global notifications.
+
+Dismissal hides only UI feedback; it neither cancels work nor deletes content.
+Running progress cannot reopen its dismissed bubble, but a new terminal result
+may appear once. News/Inbox actions retain their whole-page destinations; Agent
+inspection opens the existing read-only Session details when available, Office
+otherwise. No notification action automatically retries or takes over a runtime.
