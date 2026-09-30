@@ -262,10 +262,12 @@ failed bootstrap quarantine directories when Windows still holds a handle.
 
 ## Load-Bearing Code and Verification
 
-- `apps/desktop/src/data-home.ts` — preference parsing, canonicalization,
-  writeability checks, recent paths, and startup policy.
-- `apps/desktop/src/data-home-desktop.ts` — native selection dialogs, startup
-  resolution, Settings controller, and relaunch requests.
+- `apps/desktop/src/data-home.ts` — legacy preference parsing and canonicalization
+  helpers retained for migration and isolated data-home utilities.
+- `apps/desktop/src/data-home-desktop.ts` — explicit invocation-home resolution
+  and read-only Settings folder disclosure.
+- `packages/cli/src/supervisor-default-migration.ts` — one-time legacy startup
+  migration into the client Supervisor Default.
 - `apps/desktop/src/main.ts` — Guardian wiring, duplicate-owner choice, safe
   relaunch, and the machine-local preference location.
 - `apps/desktop/src/existing-owner-startup.ts` — existing-owner dialog and
@@ -282,8 +284,8 @@ failed bootstrap quarantine directories when Windows still holds a handle.
 
 For changes to this subsystem, run the focused unit/UI specs, Guardian recovery
 tests, strict desktop and UI type checks, and an isolated packaged onboarding
-or Workspace smoke. Manually verify a fresh startup prompt, a saved recent
-location, a missing saved location, and the duplicate-owner “choose another”
+or Workspace smoke. Manually verify the initial project chooser, a saved Default,
+a missing Default location, and the duplicate-owner “choose another”
 path. For healthy foreign `dev` / CLI Server owners, also run
 `pnpm electron:smoke:existing-owner` on disposable homes. Never use a real
 user home for these checks.
