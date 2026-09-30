@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { promisify } from 'node:util'
@@ -22,10 +23,22 @@ export const defaultProcessController: ProcessController = {
     if (!Number.isInteger(pid) || pid <= 0) return false
     try {
       process.kill(pid, 0)
-      return true
-    } catch {
-      return false
+    } catch (error) {
+      // Permission failure cannot establish that an owner has exited.
+      return (error as NodeJS.ErrnoException).code !== 'ESRCH'
     }
+    if (process.platform === 'linux') {
+      try {
+        // A zombie has exited but its parent/init has not collected its status.
+        // kill(pid, 0) still succeeds; only an explicit procfs Z state proves
+        // this distinction. Sleeping, stopped and inaccessible tasks stay live.
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+        if (/^\d+ \([\s\S]*\) Z \d+(?:\s|$)/.test(stat)) return false
+      } catch {
+        // Restricted procfs or an exit/read race: retain the positive probe.
+      }
+    }
+    return true
   },
   startedAt: readProcessStartedAt,
   machineId: readMachineId,

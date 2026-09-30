@@ -387,7 +387,16 @@ it('interrupts an uncooperative process tree and preserves partial output', asyn
     expect(headlessTaskStatus(result)).toBe('interrupted');
     expect(result.stdoutTail).toContain('child=');
     expect(descendant).toBeDefined();
-    expect(() => process.kill(descendant!, 0)).toThrow();
+    if (process.platform === 'linux') {
+      try {
+        const processStat = await readFile(`/proc/${descendant}/stat`, 'utf8');
+        expect(processStat.slice(processStat.lastIndexOf(')') + 2).split(' ')[0]).toBe('Z');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    } else {
+      expect(() => process.kill(descendant!, 0)).toThrow();
+    }
   } finally {
     if (descendant) { try { process.kill(descendant, 'SIGKILL'); } catch {} }
   }
