@@ -227,3 +227,19 @@ backend children. A registered local project selected for integrated execution
 retains native IPC and starts its own backend on launch; an already running CLI
 backend is attached through the relay. Automation's explicit `OPENALICE_HOME`
 remains authoritative and disposable smoke identities never overwrite Recent.
+
+Startup flow: check Recent → verify health and identity → open, or stay in the
+launcher with the reason. SSH addition tests access, reviews any CLI preparation,
+and saves only after approval succeeds; it does not start a default project.
+Project start/create then verifies the selected runtime before opening. Failed
+selection, probe or creation never changes Recent. A persistence failure after
+successful attachment keeps the live connection and reports that remembering
+failed. Desktop remembers only after the new page has loaded.
+
+The launcher uses a two-column selector at desktop width and Machine → project
+drill-in on narrow screens. Back stays inside the same shell; header and footer
+remain reachable while the content scrolls. Async checks show indeterminate
+loading or the controller's real stage rather than invented percentages. The
+shared `useMachineControls` and `useRelayConnection` hooks consume client control
+APIs; project-owned UI mounts only after attachment. No project file/PT Y IPC
+is exposed from the detached Electron shell.

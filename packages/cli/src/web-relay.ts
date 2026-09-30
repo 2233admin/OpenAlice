@@ -252,7 +252,7 @@ export class WebRelay {
       const project = machine.projects.find((entry) => entry.key === projectKey)
       if (!project) throw new Error(`AliceProject "${projectKey}" is not registered on ${machine.displayName}.`)
       if (!project.available || !project.runtime.webEndpoint) {
-        throw new Error(`AliceProject "${project.displayName}" is not running with a Web endpoint. Start it on that Machine first.`)
+        throw new Error(`AliceProject "${project.displayName}" is stopped or has no running Web endpoint.`)
       }
       const port = loopbackPort(project.runtime.webEndpoint)
       if (port === null) throw new Error('The selected Runtime did not advertise a loopback Web endpoint.')

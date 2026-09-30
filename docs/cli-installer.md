@@ -184,6 +184,12 @@ successful no-op. Candidate upload and channel activation can therefore be
 retried independently without rebuilding accepted native archives, and the
 manifest is the completed-set authority rather than an archive alias.
 
+The shared neutral payload includes `packages/update-lifecycle/dist`: both the
+CLI client and backend version services import its built export. Omitting it
+makes a clean native consumer fail to resolve the module even when local builds
+work from an existing workspace build. The commit-bound receipt verifies and
+restores this directory alongside the protocol/runtime packages.
+
 The rolling-dev matrix does not rebuild the platform-neutral server inputs on
 four hosts. One clean Ubuntu job runs `pnpm build:server` and publishes a
 commit-bound, SHA-256-verified artifact containing exactly `ui/dist` and the

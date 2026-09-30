@@ -572,7 +572,7 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
   const { window: win, companion } = createAppWindow(resolve(__dirname, 'preload.js'))
   createTray(win, companion)
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null)
-  win.on('close', event => { if (!appQuitting) { event.preventDefault(); win.hide() } })
+  configureWindowLifecycle(app, win, () => appQuitting)
   win.webContents.on('will-navigate', (event, destination) => {
     if (new URL(destination).origin === relay.originUrl) return
     event.preventDefault()
