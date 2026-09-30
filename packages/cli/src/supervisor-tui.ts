@@ -3706,6 +3706,9 @@ export async function runSupervisorTui(
     screen.setDetachHandler(() => finish())
     const onTerminate = () => finish()
     const removeInputListener = ui.addInputListener((data) => {
+      // Raw listeners run before pi-tui's focused-component release filter.
+      // Never route a release against state changed by the corresponding press.
+      if (piTui.isKeyRelease(data)) return { consume: true }
       const pointer = parseSupervisorPointer(data)
       if (pointer) {
         if (commandPaletteActive) {
@@ -4281,11 +4284,11 @@ export class SupervisorScreen implements Component {
       if (matchesKey(data, 'enter')) {
         return this.activateCommandDeckItem(items[this.commandDeckState.selected])
       }
-      if (data === '\x7f' || data === '\b') {
+      if (matchesKey(data, 'backspace') || data === '\x7f' || data === '\b') {
         this.setCommandDeckQuery(dropLastCommandQueryCodePoint(this.commandDeckQuery))
         return true
       }
-      if (data === '\x15') {
+      if (matchesKey(data, 'ctrl+u') || data === '\x15') {
         this.setCommandDeckQuery('')
         return true
       }
@@ -5696,6 +5699,11 @@ function appendCommandQueryInput(
   input: string,
   maxCodePoints: number,
 ): string | null {
+  // ProcessTerminal forwards a complete paste with these markers. Keep it as
+  // search text, never shortcuts, and flatten whitespace for the single line.
+  if (input.startsWith('\x1b[200~') && input.endsWith('\x1b[201~')) {
+    input = input.slice(6, -6).replace(/[\r\n\t]+/gu, ' ')
+  }
   if (!input || /[\u0000-\u001f\u007f-\u009f]/u.test(input)) return null
   const remaining = Math.max(0, maxCodePoints - [...current].length)
   return `${current}${[...input].slice(0, remaining).join('')}`
