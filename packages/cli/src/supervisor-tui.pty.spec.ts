@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as pty from 'node-pty'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '../bin/openalice.ts')
 const transferFixtureEntry = join(
@@ -71,6 +71,50 @@ afterEach(async () => {
 })
 
 describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
+  it('keeps the session alive after Kitty Esc release and accepts bracketed command-search paste', async () => {
+    const isolatedHome = await mkdtemp(join(tmpdir(), 'openalice-cli-key-release-'))
+    temporaryPaths.push(isolatedHome)
+    const child = pty.spawn(process.execPath, [launchpadFixtureEntry], {
+      cols: 110, rows: 30, cwd: dirname(cliEntry),
+      env: {
+        ...process.env, HOME: isolatedHome, OPENALICE_HOME: join(isolatedHome, 'state'),
+        OPENALICE_TUI_START_VIEW: 'home', OPENALICE_TUI_BOOT: '0', OPENALICE_TUI_MOTION: '0',
+        TERM: 'xterm-256color',
+      },
+    })
+    let output = ''
+    let negotiated = false
+    let exitCode: number | undefined
+    child.onData((data) => {
+      output += data
+      if (!negotiated && output.includes('\x1b[?u')) {
+        negotiated = true
+        child.write('\x1b[?7u')
+      }
+    })
+    child.onExit(event => { exitCode = event.exitCode })
+    const waitForText = async (text: string) => {
+      await vi.waitFor(() => expect(stripSgr(output)).toContain(text), { timeout: 4_000 })
+    }
+    try {
+      await waitForText('[ / ] Commands')
+      expect(negotiated).toBe(true)
+      child.write('/')
+      await waitForText('Command Dock')
+      child.write('\x1b[200~pastecheck\x1b[201~')
+      await waitForText('pastecheck')
+      // Close with press/release, reopen, and prove input still reaches the TUI.
+      child.write('\x1b[27;1:1u\x1b[27;1:3u/\x1b[200~aliveafterescape\x1b[201~')
+      await waitForText('aliveafterescape')
+      expect(exitCode).toBeUndefined()
+      child.write('q')
+      await vi.waitFor(() => expect(exitCode).toBe(0), { timeout: 4_000 })
+      expect(output).toContain('FIXTURE_RESULT starts=0 opens=0')
+    } finally {
+      if (exitCode === undefined) child.kill()
+    }
+  }, 15_000)
+
   it('shows a truthful Launch Flight Recorder while starting a local Runtime', async () => {
     const isolatedHome = await mkdtemp(join(tmpdir(), 'openalice-cli-launch-flight-'))
     temporaryPaths.push(isolatedHome)

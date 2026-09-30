@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
+import { isKeyRelease } from '@earendil-works/pi-tui'
 
 import { resolveLaunchContext } from './launch-context.ts'
 import type { MachineFleetEnvelope, MachineInventory } from './machine-inventory.ts'
@@ -3798,7 +3799,7 @@ describe('Supervisor TUI screen', () => {
         inspectFleet: isolatedLocalFleet,
         pollIntervalMs: 20,
         discoverUpdate: async () => null,
-        loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey }) as never,
+        loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey, isKeyRelease }) as never,
       })
       await vi.waitFor(() => expect(screen).toBeDefined())
       connected = true
@@ -3849,6 +3850,7 @@ describe('Supervisor TUI screen', () => {
       ProcessTerminal: class {},
       TUI: FakeTui,
       matchesKey,
+      isKeyRelease,
     }
     const context = resolveLaunchContext({
       cwd: '/tmp',
@@ -3935,6 +3937,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
     })).resolves.toBe(0)
 
@@ -4001,6 +4004,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
     })).resolves.toBe(0)
 
@@ -4069,6 +4073,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
     })).resolves.toBe(0)
 
@@ -4140,6 +4145,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
     })).resolves.toBe(0)
 
@@ -4208,6 +4214,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
     })).resolves.toBe(0)
 
@@ -4265,7 +4272,7 @@ describe('Supervisor TUI screen', () => {
       inspectFleet: async () => fleet,
       pollIntervalMs: 5,
       discoverUpdate: async () => null,
-      loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey }) as never,
+      loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey, isKeyRelease }) as never,
     })).resolves.toBe(0)
 
     const selectedFleet = screen?.snapshot.fleet
@@ -4346,7 +4353,7 @@ describe('Supervisor TUI screen', () => {
         })
       },
       discoverUpdate: async () => null,
-      loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey }) as never,
+      loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey, isKeyRelease }) as never,
     })).resolves.toBe(0)
 
     expect(inspectFleet).toHaveBeenCalled()
@@ -4641,6 +4648,7 @@ describe('Supervisor TUI screen', () => {
       ProcessTerminal: class {},
       TUI: FakeTui,
       matchesKey,
+      isKeyRelease,
     }
     const initialContext = resolveLaunchContext({
       cwd: '/tmp/empty',
@@ -5027,6 +5035,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
       version: '0.89.4-beta',
       channel: 'stable',
@@ -5071,6 +5080,7 @@ describe('Supervisor TUI screen', () => {
         ProcessTerminal: class {},
         TUI: FakeTui,
         matchesKey,
+        isKeyRelease,
       }) as never,
       version: '0.89.4-beta',
       channel: 'stable',
@@ -5198,6 +5208,7 @@ describe('Supervisor TUI screen', () => {
         TUI: FakeTui,
         SelectList: FakeSelectList,
         matchesKey,
+        isKeyRelease,
       }) as never,
       version: '0.89.4-beta',
       channel: 'stable',
@@ -5303,6 +5314,7 @@ describe('Supervisor TUI screen', () => {
         TUI: FakeTui,
         SelectList: FakeSelectList,
         matchesKey,
+        isKeyRelease,
       }) as never,
       channel: 'stable',
     })).resolves.toBe(0)
