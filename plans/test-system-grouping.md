@@ -403,3 +403,54 @@ commit rather than treating a green bounded gate as complete product coverage:
 
 This checklist is prepared for post-merge review. Neither merge nor release is
 performed by this follow-up.
+
+#### Assertion-level omissions and duplication audit
+
+The lifecycle follow-up adds two previously owner-only files to bounded groups:
+`lifecycle-command.spec.mjs` supports explicit registered-home dispatch as well
+as browserless readiness presentation; `lifecycle.spec.mjs` supports the core
+starting-to-running/ownership transition. Startup now selects five files,
+Desktop six, Guardian six; total inventory stays 909 and owner-only drops from
+871 to 869 (13 mapped files over the original 882 baseline). File reuse across
+scenario/protocol groups still does not duplicate execution.
+
+The same inspected files now describe independent safety claims that file-level
+selection already ran: Default writer serialization/concurrent config retention,
+live-owner stale heartbeat, PID reuse, forced takeover, and capped retry/reset.
+Fake timer recovery is not promoted to real service recovery. Core readiness,
+CLI presentation, real control sockets, and OS descendant termination remain
+separate evidence levels.
+
+| Inspected overlap | Distinct claims retained | Decision |
+| --- | --- | --- |
+| Default resolver, config writers, Web relay, TUI | Explicit override; durable serialization; verified request cancellation; polling does not attach fallback | Keep all layers and races; cross-reference files |
+| CLI lifecycle core and command presentation | Actual orchestration with injected child/status; dispatched named Home and output/browser boundary | Map both; neither replaces real launcher smoke |
+| Runtime lock tests | Live heartbeat authority; PID reuse protection; forced takeover; contender serialization | Different ownership safety invariants; retain |
+| Desktop close/Dock/tray | Close hides; Dock event restores; tray helper restores; quitting suppresses activation | Different entry paths/state transitions; retain |
+| Desktop fake-child and Guardian real-child shutdown | Signal/timer decision; actual descendant execution stops after wrapper exit | Different fidelity; retain |
+| Relay cancellation tests | Late verification cannot commit; cancelling old request cannot cancel replacement | Different race outcomes; retain |
+
+No same-layer duplicate in these inspected clusters has a demonstrated identical
+behavior/precondition/failure oracle; no assertion or test is deleted. PTY input,
+pointer/render and terminal-specific regression work must also select
+`packages/cli/src/supervisor-tui.pty.spec.ts` explicitly (or the Runtime/CLI
+owner); its known fixture/path and transcript failures are not certified by the
+bounded mock/HTTP startup selection. This remains a separate terminal surface,
+not native Desktop or SSH acceptance.
+
+Reproduce independent scope probes:
+`pnpm test:select --scenario startup-project-selection --owner runtime-cli --list --explain`;
+`pnpm test:select --contract guardian-process --owner runtime-cli --list --explain`;
+`pnpm test:select --scenario desktop-lifecycle --contract desktop-ipc --list --explain`.
+Startup and Guardian intersect on the shared command-presentation file only;
+that intersection omits the core, lock, and real descendant evidence. Run the
+whole affected protocol separately. Metadata does not repair static import
+closure across native processes.
+
+Expanded mapping validation: workflow 12 files /108 assertions passed;
+startup plus Desktop 11 files /157 assertions passed (2.86 seconds). Data-only
+owner/intersection probes returned startup five, Guardian six, IPC one, and
+startup/Guardian intersection one. Inventory confirms 909 specs, 70 commands,
+869 owner-only entries. Guardian selection still needs the separate process
+liveness fix in Draft #1678; that PR verifies the same six mapped paths against
+its fixed source. Drafts are intentionally independent, with neither merged.

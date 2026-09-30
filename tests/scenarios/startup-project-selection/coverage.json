@@ -35,6 +35,24 @@
           "assertion": "records a recoverable chooser state for %s without changing legacy data",
           "level": "integration",
           "scope": "Real temporary filesystem; parameterized conflict/corrupt/unmapped legacy choices; no native chooser."
+        },
+        {
+          "spec": "packages/cli/src/supervisor-default-migration.spec.ts",
+          "assertion": "preserves unrelated config during concurrent settings and successful-selection writes",
+          "level": "integration",
+          "scope": "Real temporary Supervisor filesystem; concurrent config writers, no native client."
+        },
+        {
+          "spec": "packages/cli/src/supervisor-default-migration.spec.ts",
+          "assertion": "serializes writes from independent CLI processes",
+          "level": "integration",
+          "scope": "Real independent Node CLI subprocesses and temporary filesystem; no installed binary or native chooser."
+        },
+        {
+          "spec": "packages/cli/src/lifecycle-command.spec.mjs",
+          "assertion": "loads a TUI-registered named home for explicit lifecycle commands",
+          "level": "contract",
+          "scope": "Injected Supervisor registry/home check and Runtime inspection; verifies explicit CLI dispatch selection."
         }
       ],
       "gap": "Real Desktop/Web/TUI shared chooser startup and persistence across restart require separate native/browser acceptance."
