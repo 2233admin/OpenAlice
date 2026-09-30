@@ -68,14 +68,20 @@ the same GUI without a TUI. `--remote` remains for plan/status/stop controls;
 its former direct browser attach is retired. `--machine` re-enters an ordinary
 CLI command on a selected enabled profile.
 
-Startup selection uses the client-owned **Recent** Machine/AliceProject pair
-in `Supervisor/startup-target.json`. Only successful verified attachment changes
-it; selecting, probing, creating or failing to connect does not. Missing or
-unavailable Recent leaves the relay detached and serves the full-window launcher,
-including Add SSH, reviewed machine preparation, project creation and explicit
-Start and open. There is no silent local fallback. Explicit `--project`/`--home`
-CLI invocations remain deliberate local selections. Registry `project use`
-controls the machine's lifecycle default, not the client's cross-machine Recent.
+Startup selection uses the current machine's **Default** pair in
+`Supervisor/config.json.defaultTarget`. Only successful user attachment changes
+it. Restore, reconnect, polling, inventory, create and start do not. Missing or
+unavailable Default leaves the relay detached in the existing launcher, without
+falling back to a healthy local runtime. TUI relay synchronization observes the
+selection without writing a second default. Explicit `--project` selects local;
+`--machine <key> --project <key>` selects a complete remote pair. Home/environment
+overrides apply to the invocation. `project use` explicitly changes this same
+Default (including `--machine <key> project use <key>` on the origin).
+
+Implicit lifecycle commands resolve the pair on the origin and send an explicit
+project over SSH. The remote machine's own Default is never consulted. Unsupported
+remote commands fail visibly; compatibility `server` commands require a local
+Default or explicit home. Creation does not change a local or remote Default.
 
 The normal TUI starts a local relay in the same CLI process. TUI selection and
 Settings → General → Where Alice is working operate one current Machine/AliceProject target;
@@ -892,12 +898,12 @@ another home. Config recovery itself never inspects those homes. An unavailable
 registered Home still fails when an environment or flag selection is explicit,
 because that path would otherwise start a different project.
 
-The current schema (`schemaVersion: 2`) preserves additive unknown fields
+The current schema (`schemaVersion: 3`) preserves additive unknown fields
 through parse and write so a later OpenAlice can add keys without being
 stripped by an older Supervisor save. Invalid known fields still fail. A
 genuinely newer `schemaVersion` is detected before unknown-field handling and
 reported as a distinct newer-schema error. Released v1 documents still
-canonicalize to v2 and still reject unknown v1 fields. Do not invent permanent
+canonicalize their registry fields before the Supervisor-root migration to v3. Do not invent permanent
 compatibility for unreleased shapes.
 
 The `p` Setup overlay atomically edits the selected AliceProject's data home,

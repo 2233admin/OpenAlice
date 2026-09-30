@@ -953,7 +953,7 @@ export const zh: Resources = {
       startupUnavailable: '无法检查默认启动位置。',
       machines: '机器',
       projectsOn: '{{machine}} 上的 AliceProject',
-      startupDefault: "最近打开",
+      startupDefault: 'Default',
       noStartupDefault: '下次启动时选择位置',
       rememberStartup: "自动记住最后一次成功打开的 AliceProject。",
       openProject: '打开 {{name}}',

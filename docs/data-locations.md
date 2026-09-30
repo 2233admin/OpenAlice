@@ -119,41 +119,23 @@ The packaged and Electron-development app resolve a home before acquiring any
 Guardian lock, relocating legacy data, reading ports, running migrations, or
 starting a child process.
 
-Resolution precedence is:
+Selection uses the same client Supervisor `config.json.defaultTarget` as Web,
+TUI and CLI. Explicit `OPENALICE_HOME` is an invocation override. A null,
+unavailable or ambiguous migrated Default opens the existing project chooser;
+it never silently selects `~/.openalice`.
 
-1. explicit `OPENALICE_HOME` — authoritative and UI-locked;
-2. the desktop's saved selection;
-3. `~/.openalice`.
+**Settings → General → Data location** reveals the effective home and can open
+its folder. Switch projects through **Where Alice is working**. The independent
+recent-directory list and ask-on-startup policy are retired. Choosing another
+project after an existing-owner dialog returns to the shared chooser rather
+than writing a native directory preference.
 
-On a genuinely fresh install, the native startup prompt offers the default or
-another folder. Existing `~/.openalice` users continue without an upgrade
-prompt. An old packaged install with legacy data under Electron `userData`
-also continues through the existing default relocation path before selection
-is introduced.
-
-**Settings → General → Data location** shows the effective root and its source.
-The desktop can open the current folder, choose another folder and restart,
-reuse a recent folder, or ask which location to use on every startup. If a
-healthy development or CLI Server Runtime already owns the selected home,
-Electron's primary action is **Open in browser**: it probes the advertised
-loopback Web endpoint, opens that page, and quits without taking the lock.
-**Choose another data location** remains available when the home is not
-environment-locked. Dismissing the dialog keeps the existing AliceProject and
-quits the redundant desktop launch. Takeover stays an explicit, destructive
-secondary action.
-Electron-owned, stale, starting, unhealthy, and incompatible owners keep
-tailored recovery dialogs and never receive a misleading browser button.
-
-The launcher preference is machine-local metadata stored at:
-
-```text
-<Electron app.getPath("userData")>/openalice-data-home.json
-```
-
-It contains only the selected path, up to eight recent paths, and the startup
-prompt preference. It contains no account or provider secret. It must stay
-outside every selectable home because a home cannot reliably store the pointer
-that selects itself.
+The old `<Electron userData>/openalice-data-home.json` is read only as migration
+input. Its selectedHome must map to one registered local project. Conflicts,
+corruption or unmapped folders require explicit selection. The old file remains
+as a backup, and no project data is moved or deleted by selection migration.
+See [[docs/alice-project.md]] for save/cancel semantics and the Supervisor-root
+migration boundary.
 
 ## Browser, CLI, and Development Flow
 
@@ -280,10 +262,12 @@ failed bootstrap quarantine directories when Windows still holds a handle.
 
 ## Load-Bearing Code and Verification
 
-- `apps/desktop/src/data-home.ts` — preference parsing, canonicalization,
-  writeability checks, recent paths, and startup policy.
-- `apps/desktop/src/data-home-desktop.ts` — native selection dialogs, startup
-  resolution, Settings controller, and relaunch requests.
+- `apps/desktop/src/data-home.ts` — legacy preference parsing and canonicalization
+  helpers retained for migration and isolated data-home utilities.
+- `apps/desktop/src/data-home-desktop.ts` — explicit invocation-home resolution
+  and read-only Settings folder disclosure.
+- `packages/cli/src/supervisor-default-migration.ts` — one-time legacy startup
+  migration into the client Supervisor Default.
 - `apps/desktop/src/main.ts` — Guardian wiring, duplicate-owner choice, safe
   relaunch, and the machine-local preference location.
 - `apps/desktop/src/existing-owner-startup.ts` — existing-owner dialog and
@@ -300,8 +284,8 @@ failed bootstrap quarantine directories when Windows still holds a handle.
 
 For changes to this subsystem, run the focused unit/UI specs, Guardian recovery
 tests, strict desktop and UI type checks, and an isolated packaged onboarding
-or Workspace smoke. Manually verify a fresh startup prompt, a saved recent
-location, a missing saved location, and the duplicate-owner “choose another”
+or Workspace smoke. Manually verify the initial project chooser, a saved Default,
+a missing Default location, and the duplicate-owner “choose another”
 path. For healthy foreign `dev` / CLI Server owners, also run
 `pnpm electron:smoke:existing-owner` on disposable homes. Never use a real
 user home for these checks.

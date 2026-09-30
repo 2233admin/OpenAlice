@@ -29,6 +29,7 @@ const machines = [
 ]
 
 export const relayHandlers = [
+  http.get('/relay/v1/startup-target', () => HttpResponse.json({ target: { machine: target.machine, project: target.project }, error: null })),
   http.get('/relay/v1/status', () => HttpResponse.json({ schemaVersion: 1, generation, target, switching: false })),
   http.get('/relay/v1/fleet', async () => {
     await delay(900)

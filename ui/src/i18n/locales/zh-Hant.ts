@@ -962,7 +962,7 @@ export const zhHant: Resources = {
       startupUnavailable: '無法檢查預設啟動位置。',
       machines: '機器',
       projectsOn: '{{machine}} 上的 AliceProject',
-      startupDefault: "最近開啟",
+      startupDefault: 'Default',
       noStartupDefault: '下次啟動時選擇位置',
       rememberStartup: "自動記住最後一次成功開啟的 AliceProject。",
       openProject: '開啟 {{name}}',

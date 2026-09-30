@@ -137,7 +137,7 @@ export async function runCreateAliceProjectCommand(
     const entries = await readdir(home).catch(error => { if (error.code === 'ENOENT') return []; throw error })
     if (entries.some(entry => !['.DS_Store', 'Thumbs.db', 'desktop.ini'].includes(entry))) throw usageError('Choose a new or empty data folder.')
   }
-  const context = await (io.resolveContext ?? (() => resolveStoredLaunchContext({})))()
+  const context = await (io.resolveContext ?? (() => resolveStoredLaunchContext({ project: 'default' })))()
   await createSupervisorAliceProject(context, name, home, {
     product,
     workspaces,

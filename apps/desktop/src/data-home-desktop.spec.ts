@@ -66,87 +66,26 @@ describe('desktop data-home orchestration', () => {
     expect(electron.showMessageBox).not.toHaveBeenCalled()
   })
 
-  it('offers one first-start choice and remembers the default', async () => {
-    electron.showMessageBox.mockResolvedValue({ response: 0 })
-    const preferencePath = join(root, 'launcher', 'data-home.json')
-    const defaultHome = join(root, 'default')
-
-    const result = await resolveDesktopDataHome({
-      defaultHome,
-      legacyDataPresent: false,
-      preferencePath,
-      env: {},
-    })
-
-    expect(result).toMatchObject({ source: 'default', selectedDefault: true })
-    expect(electron.showMessageBox).toHaveBeenCalledOnce()
-    expect(await readDataHomePreferences(preferencePath)).toMatchObject({
-      selectedHome: result?.home,
-      startupPromptCompleted: true,
-    })
+  it('routes saved selection through the shared chooser without reading or rewriting native preferences', async () => {
+    const preferencePath = join(root, 'launcher.json')
+    const preferences = rememberDataHome(defaultDataHomePreferences(), join(root, 'missing'))
+    await writeDataHomePreferences(preferencePath, preferences)
+    await expect(resolveDesktopDataHome({ defaultHome: join(root, 'default'), legacyDataPresent: false, preferencePath, env: {} })).rejects.toThrow('registered AliceProject')
+    expect(await readDataHomePreferences(preferencePath)).toEqual(preferences)
+    expect(electron.showMessageBox).not.toHaveBeenCalled()
   })
 
-  it('does not show a second startup prompt after recovering a missing saved location', async () => {
-    const preferencePath = join(root, 'launcher', 'data-home.json')
-    let preference = rememberDataHome(defaultDataHomePreferences(), join(root, 'missing'), {
-      startupPromptCompleted: true,
-    })
-    preference = setAskForDataHomeOnStartup(preference, true)
-    await writeDataHomePreferences(preferencePath, preference)
-    electron.showMessageBox.mockResolvedValue({ response: 1 })
-
-    const result = await resolveDesktopDataHome({
-      defaultHome: join(root, 'default'),
-      legacyDataPresent: false,
-      preferencePath,
-      env: {},
-    })
-
-    expect(result).toMatchObject({ source: 'default', selectedDefault: true })
-    expect(electron.showMessageBox).toHaveBeenCalledOnce()
-  })
-
-  it('keeps an environment-locked controller read-only', async () => {
-    const controller = createDesktopDataHomeController({
-      currentHome: join(root, 'current'),
-      defaultHome: join(root, 'default'),
-      source: 'environment',
-      selectionLock: 'openalice-home-env',
-      preferencePath: join(root, 'must-not-be-written.json'),
-      initialPreferences: defaultDataHomePreferences(),
-      requestRelaunch: vi.fn(),
-    })
-
-    await expect(controller.chooseAndRestart()).resolves.toMatchObject({ outcome: 'locked' })
-    await expect(controller.setAskOnStartup(true)).resolves.toMatchObject({ askOnStartup: false })
-    expect(electron.showOpenDialog).not.toHaveBeenCalled()
-  })
-
-  it('validates a recent location, persists it, and requests one relaunch', async () => {
-    const currentHome = join(root, 'current')
-    const recentHome = join(root, 'recent')
-    await mkdir(currentHome)
-    await mkdir(recentHome)
-    const preferencePath = join(root, 'launcher', 'data-home.json')
-    const initialPreferences = rememberDataHome(
-      rememberDataHome(defaultDataHomePreferences(), recentHome),
-      currentHome,
-    )
+  it('keeps legacy controller methods from saving a competing startup policy', async () => {
+    const preferencePath = join(root, 'launcher.json')
+    const preferences = rememberDataHome(defaultDataHomePreferences(), join(root, 'old'))
+    await writeDataHomePreferences(preferencePath, preferences)
     const requestRelaunch = vi.fn()
-    const controller = createDesktopDataHomeController({
-      currentHome,
-      defaultHome: join(root, 'default'),
-      source: 'desktop-preference',
-      selectionLock: null,
-      preferencePath,
-      initialPreferences,
-      requestRelaunch,
-    })
-
-    await expect(controller.useRecentAndRestart(recentHome))
-      .resolves.toMatchObject({ outcome: 'restarting' })
-    expect(requestRelaunch).toHaveBeenCalledOnce()
-    expect(await readDataHomePreferences(preferencePath))
-      .toMatchObject({ selectedHome: await realpath(recentHome) })
+    const controller = createDesktopDataHomeController({ currentHome: join(root, 'current'), defaultHome: join(root, 'default'), source: 'desktop-preference', selectionLock: null, preferencePath, initialPreferences: preferences, requestRelaunch })
+    expect(controller.getStatus()).toMatchObject({ recentHomes: [], askOnStartup: false })
+    await expect(controller.chooseAndRestart()).rejects.toThrow('registered AliceProject')
+    await expect(controller.useRecentAndRestart(join(root, 'old'))).rejects.toThrow('registered AliceProject')
+    await expect(controller.setAskOnStartup(true)).rejects.toThrow('shared Default')
+    expect(await readDataHomePreferences(preferencePath)).toEqual(preferences)
+    expect(requestRelaunch).not.toHaveBeenCalled()
   })
 })

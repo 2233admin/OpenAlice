@@ -31,7 +31,7 @@ describe('openalice create alice-project', () => {
     const homeDir = join(root, 'user')
     const home = join(root, 'office-home')
     const { resolveStoredLaunchContext } = await import('./supervisor-config.ts')
-    const context = await resolveStoredLaunchContext({}, {
+    const context = await resolveStoredLaunchContext({ project: 'default' }, {
       homeDir,
       cwd: root,
       platform: 'linux',
