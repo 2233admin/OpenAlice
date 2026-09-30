@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/cli-artifact-signature.md]] — Bun compiler pin, final macOS ad-hoc
+  signatures and shared final-archive acceptance for #1670. Draft PR acceptance
+  remains pending.
+
 - [[plans/test-system-grouping.md]] — Stage 1 is implemented and locally verified,
   awaiting PR review: product scenario/protocol evidence groups and safe query
   entry points. Stage 2 will fill agreed critical gaps and connect acceptance gates.

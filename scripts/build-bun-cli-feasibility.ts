@@ -1,14 +1,12 @@
+import { signCliMacOS } from './sign-cli-macos.mjs'
+import { requireBunVersion } from './bun-toolchain.mjs'
 import { runtimeCompileOptions } from './bun-compile-options.js'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
-const pinnedBunVersion = (await readFile(join(repositoryRoot, '.bun-version'), 'utf8')).trim()
-
-if (Bun.version !== pinnedBunVersion) {
-  throw new Error(`Bun ${pinnedBunVersion} is required, but ${Bun.version} is running`)
-}
+requireBunVersion(Bun.version)
 
 const cliPackage = JSON.parse(
   await readFile(join(repositoryRoot, 'packages/cli/package.json'), 'utf8'),
@@ -46,6 +44,7 @@ if (!result.success) {
   for (const log of result.logs) console.error(log)
   throw new Error('Bun CLI feasibility build failed')
 }
+if (process.platform === 'darwin') signCliMacOS(executablePath, process.arch)
 
 const smokeEnvironment = minimalSmokeEnvironment(outputRoot)
 const version = runProbe(executablePath, ['--version'], smokeEnvironment)

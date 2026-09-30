@@ -1,6 +1,8 @@
+import { verifyCliReleaseArchive } from './verify-cli-release.mjs'
+import { requireBunVersion } from './bun-toolchain.mjs'
 import { writeDevBrokerBinding } from './dev-broker-binding.mjs'
 import { createHash } from 'node:crypto'
-import { cp, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,8 +13,7 @@ const channelBuild = process.env.OPENALICE_WINDOWS_CHANNEL_BUILD === '1'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const arch = process.argv[2] ?? process.arch
 if (!['x64', 'arm64'].includes(arch)) throw new Error(`Unsupported Windows architecture: ${arch}`)
-const pinned = (await readFile(join(root, '.bun-version'), 'utf8')).trim()
-if (Bun.version !== pinned) throw new Error(`Expected Bun ${pinned}, found ${Bun.version}`)
+requireBunVersion(Bun.version)
 const product = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 const cli = JSON.parse(await readFile(join(root, 'packages/cli/package.json'), 'utf8'))
 if (product.version !== cli.version) throw new Error('Product and CLI versions must match')
@@ -100,6 +101,15 @@ else if (process.platform === 'win32') run(['tar.exe', '-a', '-cf', archive, '-C
 else run(['zip', '-qr', archive, name], staging)
 const digest = sha256(await readFile(archive))
 await writeFile(`${archive}.sha256`, `${digest}  ${basename(archive)}\n`)
+if (channelBuild) {
+  try {
+    verifyCliReleaseArchive({ archivePath: archive, version, platform: 'win32', arch })
+  } catch (error) {
+    await rm(archive, { force: true })
+    await rm(`${archive}.sha256`, { force: true })
+    throw error
+  }
+}
 await cp(join(root, 'install-preview.ps1'), join(output, 'install-preview.ps1'))
 if (channelBuild) await cp(join(root, 'install.ps1'), join(output, 'install.ps1'))
 await writeFile(join(output, 'candidate.json'), JSON.stringify({

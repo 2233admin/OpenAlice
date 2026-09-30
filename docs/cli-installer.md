@@ -155,9 +155,10 @@ archives, validates the `release.json` target, version, and content-identity
 shape, checks an expected content identity when the update handoff supplied
 one, and runs the staged executable's `--version` before activation. The build
 owns the canonical content-identity calculation; the installer does not
-recompute that payload manifest. Dev and release publication do recompute the
-identity from `release.json` before accepting an archive, so stale or tampered
-manifest identities cannot become channel metadata.
+recompute that payload manifest. Dev, beta and stable publication verify the actual extracted files against
+`release.json`, recompute the identity, and statically verify macOS embedded
+signatures before accepting an archive. A fresh archive checksum cannot hide
+a stale file manifest or invalid code-page signature.
 
 `contentIdentity` is a canonical digest of the complete native payload
 manifest: product metadata plus every shipped file hash, size, mode, and
@@ -646,3 +647,40 @@ credentials or broker accounts.
 | `No previous OpenAlice release is retained` | Install/update once more before rollback is available |
 | startup says the activation was rolled back | The new direct-install Runtime failed first readiness; run `openalice` again to start the restored release |
 | update reports a non-updating channel | Refresh with the same selector instead of crossing trust boundaries |
+
+## CLI compiler and final artifact integrity
+
+`.bun-version` is the exact compiler source of truth, not a minimum host runtime
+requirement. `scripts/bun-toolchain.mjs` checks both Bun build entry points and
+the PATH executable used by manual compiled Broker Pack verification. The
+remote SSH Docker builder supplies its Bun image version from the same file.
+CI setup-bun consumes that file directly; newer global Bun is rejected.
+
+On existing macOS build runners, `scripts/sign-cli-macos.mjs` stages and signs
+the build-owned executable using system ad-hoc codesign. It preserves existing
+entitlements and runtime settings, verifies them afterward, and replaces the
+input only after native strict verification and static SHA-256 page checks.
+No Developer ID, certificate, timestamp service or notarization secret is used.
+This does not establish a stable TCC identity. Electron signing is independent.
+
+Signing occurs after the last executable mutation and before generating file
+hashes, contentIdentity and release.json. Native smoke must leave those bytes
+unchanged. `scripts/verify-cli-release.mjs` then checks final tar extraction,
+actual file hashes/sizes/modes/link targets, manifest identity and macOS page
+hashes. Dev preparation, package-manager generation and beta/stable publication
+share that verifier. Installers do not repair or re-sign release payloads.
+
+The read-only **CLI artifact acceptance** workflow builds Linux x64 and both Mac
+architectures from the exact PR head, runs compiled recovery/PTY acceptance,
+preserves head-named archives and reports for seven days, and rechecks them on
+Linux. It never publishes or activates a channel. Static checks prove embedded
+integrity; native execution and user permissions remain separate acceptance.
+
+For manual Mac acceptance, download the matching head-named Actions artifact,
+verify its SHA-256 sidecar and unpack into a new temporary directory. Run
+`codesign --verify --strict --verbose=2 <unpacked>/bin/openalice` and the binary's
+`--version`, then install using `bash install --archive <tar> --sha256 <digest>
+--install-dir <new-temporary-root> --no-modify-path --yes`. Keep the existing
+installation and user home intact; use a separate OPENALICE_HOME for startup
+and PTY checks. No machine-wide Gatekeeper/TCC changes or user-side re-signing
+are part of acceptance.
