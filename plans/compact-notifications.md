@@ -52,7 +52,7 @@ native shell clearance and Office's existing offsets remain respected.
 - [x] Inspect current dev, event taxonomy/producers and actual browser shell.
 - [x] Review actual desktop/light/dark/mobile news preview; maintainer accepts.
 - [x] Freeze requirements and architecture above before production edits.
-- [ ] Implement shared card/queue, activity mapping, optional image pipeline and demo.
+- [x] Implement shared card/queue, activity mapping, optional image pipeline and demo.
 - [ ] Complete contract tests, owner types, full hermetic tests and browser acceptance.
 - [ ] Save implementation screenshots and open Draft PR to dev; verify remote head/checks.
 
@@ -67,3 +67,14 @@ approval of any future expansion.
 
 Remove this plan/index entry after maintainer acceptance; retain durable behavior
 in the UI interaction owner guide. Git history preserves the accepted PRD.
+
+## Verification checkpoint
+
+Shared notification contracts, root/UI typechecks and complete `pnpm build`
+pass. Actual demo renders verify image/no-image/broken/grouped news,
+lifecycle delivery/failure, historical silence, close and News navigation.
+The complete hermetic suite is run, but this sandbox cannot supply node-pty
+headers/native bindings and retains terminated process descendants; its
+installer file-mode test also fails. These unrelated failures reproduce on
+unchanged `dev` (`a640693d`). Do not mark the complete-suite gate passed.
+Draft review must retain these limits until checks run in a supported environment.
