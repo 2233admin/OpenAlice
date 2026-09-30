@@ -97,10 +97,10 @@ describe('group selection through the existing lane/owner/package selector', () 
     expect(selected).toEqual(['src/services/uta-client/UTAManagerSDK.spec.ts'])
     expect(selectTestFiles(repoRoot, {
       scenarios: ['trading-approval'], lanes: ['integration'], packages: ['@traderalice/uta-service'],
-    })).toEqual(['tests/scenarios/trading-approval/uta-lifecycle.e2e.spec.ts'])
+    })).toEqual(['tests/contracts/alice-uta/approval-http.e2e.spec.ts', 'tests/scenarios/trading-approval/uta-lifecycle.e2e.spec.ts'])
     expect(selectTestFiles(repoRoot, {
       scenarios: ['workspace-creation', 'trading-approval'], lanes: ['integration'],
-    })).toHaveLength(2)
+    })).toHaveLength(3)
   })
 
   it('runs only hermetic spec evidence by default and explains separate acceptance', () => {
@@ -179,4 +179,12 @@ describe('complete data-only task inventory', () => {
     }
     expect(selector('--inventory', '--scenario', 'first-run').status).toBe(2)
   })
+})
+
+
+it('reports only the platforms supported by packaged macOS smoke modes', () => {
+  for (const id of ['open-alice#electron:smoke:packaged', 'open-alice#electron:smoke:onboarding', 'open-alice#electron:smoke:trading-mode']) {
+    expect(commands.find(command => command.id === id)?.platforms).toEqual(['macOS-arm64', 'macOS-x64'])
+  }
+  expect(commands.find(command => command.id === 'open-alice#electron:smoke:workspace')?.platforms).toContain('Windows-x64')
 })

@@ -30,7 +30,7 @@
           "scope": "Unsigned isolated Electron check; inspect its mode assertions before accepting a full Chat path."
         }
       ],
-      "gap": "No mapped single first-run journey combines unavailable UTA, credential setup, Chat creation, conversation, and restart."
+      "gap": "The local Chat service/create/conversation/restart journey is covered by local-chat-restart. Browser credential setup, remote login and packaged/native first run still require separate evidence."
     },
     {
       "id": "login-origin",
@@ -60,6 +60,33 @@
         }
       ],
       "gap": "Browser login, cookie persistence, logout, and restart are not mapped as one journey."
+    },
+    {
+      "id": "local-chat-restart",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "Fresh isolated home; UTA intentionally unavailable.",
+      "action": "Create Chat concurrently, run a controlled local Codex-protocol child, restart the service and resume.",
+      "expected": "One durable Chat and native Session identity survive; local replies decode without a broker carrier.",
+      "evidence": [
+        {
+          "spec": "tests/scenarios/first-run/broker-free-chat.e2e.spec.ts",
+          "assertion": "creates one broker-free Chat, decodes a local reply, and reuses its Session after restart",
+          "level": "integration",
+          "scope": "Real service/bootstrap/Git/stores/child; executable command substituted at external model boundary. No browser, credential onboarding, Guardian or packaged startup."
+        }
+      ],
+      "gap": ""
+    }
+  ],
+  "centralTests": [
+    {
+      "path": "tests/scenarios/first-run/broker-free-chat.e2e.spec.ts",
+      "owner": "alice",
+      "lane": "integration",
+      "areas": [
+        "workspace"
+      ]
     }
   ]
 }

@@ -39,9 +39,27 @@
           "assertion": "allows local staging but blocks venue push",
           "level": "contract",
           "scope": "Alice SDK with a fake UTA client."
+        },
+        {
+          "spec": "tests/contracts/alice-uta/approval-http.e2e.spec.ts",
+          "assertion": "refuses missing and stale approval hashes over real HTTP without a venue write",
+          "level": "integration",
+          "scope": "Real loopback HTTP/SDK/Hono/UTA/TradingGit with an in-memory venue; no GUI/CLI authentication, separate UTA process or real paper venue."
+        },
+        {
+          "spec": "tests/contracts/alice-uta/approval-http.e2e.spec.ts",
+          "assertion": "honors a readonly mode change after staging and server readonly policy without a venue write",
+          "level": "integration",
+          "scope": "Real loopback HTTP/SDK/Hono/UTA/TradingGit with an in-memory venue; no GUI/CLI authentication, separate UTA process or real paper venue."
+        },
+        {
+          "spec": "tests/contracts/alice-uta/approval-http.e2e.spec.ts",
+          "assertion": "serializes duplicate HTTP approvals and refuses replay after ledger restart",
+          "level": "integration",
+          "scope": "Real loopback HTTP/SDK/Hono/UTA/TradingGit with an in-memory venue; no GUI/CLI authentication, separate UTA process or real paper venue."
         }
       ],
-      "gap": "End-to-end permission changes, stale approval hashes, and duplicate push across reconnect need mapped evidence."
+      "gap": "Real loopback SDK/UTA approval is now mapped; the authenticated browser/CLI approval journey and real-venue recovery remain separate acceptance."
     },
     {
       "id": "venue-baseline",

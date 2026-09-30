@@ -456,3 +456,8 @@ directly and do not become permanent compatibility code.
 When current code disagrees with this guide, verify the runtime behavior and
 update the guide in the same change rather than leaving a second source of
 truth in `AGENTS.md`.
+
+Required local test policy lives in `tests/gates.json`; `scripts/test-results.mjs`
+resolves it through the coverage manifests and inspects actual runner outcomes.
+`tests/helpers/` contains isolated local journey fixtures, never product runtime
+or an independent test runner. See [[docs/testing.md]].

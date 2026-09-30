@@ -1,3 +1,4 @@
+import { collectionWideTestInputs } from './scripts/test-collection-inputs.mjs'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 
@@ -13,6 +14,7 @@ const workspaceAliases = {
   '@traderalice/connector-protocol': resolve(__dirname, './packages/connector-protocol/src/index.ts'),
   '@traderalice/ibkr': resolve(__dirname, './packages/ibkr/src/index.ts'),
   '@traderalice/uta-protocol': resolve(__dirname, './packages/uta-protocol/src/index.ts'),
+  '@traderalice/update-lifecycle': resolve(__dirname, './packages/update-lifecycle/src/index.ts'),
   '@traderalice/opentypebb': resolve(__dirname, './packages/opentypebb/src/index.ts'),
 }
 
@@ -24,6 +26,7 @@ export default {
     alias: workspaceAliases,
   },
   test: {
+    forceRerunTriggers: collectionWideTestInputs(__dirname),
     include: integrationIncludes,
     setupFiles: ['./vitest.setup.ts'],
     testTimeout: 60_000,

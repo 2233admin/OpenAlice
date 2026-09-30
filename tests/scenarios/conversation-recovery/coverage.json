@@ -24,7 +24,7 @@
           "scope": "Hook race/error behavior; no native process."
         }
       ],
-      "gap": "No mapped browser-to-native-CLI interruption, reconnect, and resume journey."
+      "gap": "Real Hono-to-service child interruption/release/stale-request behavior is covered by local-child-recovery. Browser/PTY reconnect and native-agent behavior remain separate."
     },
     {
       "id": "resume-once",
@@ -41,7 +41,7 @@
           "scope": "Concurrent Hono requests with stubbed Workspace service/spawn."
         }
       ],
-      "gap": "Actual child failure, process restart, and persisted Session reattachment are not proved by the route stub."
+      "gap": "Real child failure and persisted native identity recovery are covered by local-child-recovery; browser concurrent resume plus native PTY/Web reattachment and Guardian interruption remain unproved."
     },
     {
       "id": "workspace-recovery",
@@ -59,6 +59,51 @@
         }
       ],
       "gap": "Native Session survival during app/Guardian interruption requires separate evidence."
+    },
+    {
+      "id": "local-child-recovery",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "Real local child with a recorded native identity.",
+      "action": "Crash/restart/resume; HTTP interrupt/release/resume; then send a stale interrupt and dispose.",
+      "expected": "Recovery retains identity, interruption terminates the child, explicit release permits another launch and old requests cannot kill it.",
+      "evidence": [
+        {
+          "spec": "tests/scenarios/conversation-recovery/session-recovery.e2e.spec.ts",
+          "assertion": "records real child failure and resumes the persisted native identity after restart",
+          "level": "integration",
+          "scope": "Real service/child/translator/persistence; controlled external executable. No browser/PTY/Guardian kill."
+        },
+        {
+          "spec": "tests/scenarios/conversation-recovery/session-recovery.e2e.spec.ts",
+          "assertion": "interrupts through HTTP, requires explicit release, and rejects an old execution interrupt after resume",
+          "level": "integration",
+          "scope": "Real Hono routes/service/stores/child; in-process Hono requests, no browser network or native paid runtime."
+        },
+        {
+          "spec": "tests/scenarios/conversation-recovery/session-recovery.e2e.spec.ts",
+          "assertion": "waits for terminal dispatch persistence before dispose resolves",
+          "level": "integration",
+          "scope": "Real service and child; deliberately delayed task persistence proves concurrent dispose callers wait for completion and shutdown rejects new dispatch."
+        },
+        {
+          "spec": "tests/scenarios/conversation-recovery/session-recovery.e2e.spec.ts",
+          "assertion": "cleans transcript watchers after rejected completion and shares the failed disposal",
+          "level": "integration",
+          "scope": "Real service/child and filesystem watchers; injected completion rejection and one watcher close failure. Verifies cleanup and shared AggregateError, not propagation of every disk write failure."
+        }
+      ],
+      "gap": ""
+    }
+  ],
+  "centralTests": [
+    {
+      "path": "tests/scenarios/conversation-recovery/session-recovery.e2e.spec.ts",
+      "owner": "runtime-cli",
+      "lane": "integration",
+      "areas": [
+        "workspace"
+      ]
     }
   ]
 }
