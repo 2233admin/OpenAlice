@@ -236,10 +236,7 @@ export class WebRelay {
 
   async connect(machineKey: string, projectKey: string, options: { remember?: boolean; signal?: AbortSignal } = {}): Promise<void> {
     if (options.signal?.aborted) throw new Error('Selection cancelled.')
-    const cancel = () => this.defaultSelection.cancel()
-    options.signal?.addEventListener('abort', cancel, { once: true })
-    try { await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false) }
-    finally { options.signal?.removeEventListener('abort', cancel) }
+    await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false, undefined, options.signal)
   }
 
   /** A --home/env invocation supplies its observed local identity; it never saves. */
@@ -256,11 +253,19 @@ export class WebRelay {
     if (selected && this.targetConnection === 'healthy' && !this.closing) await this.rememberSelection(selected.machine, selected.project, () => current() && operation.current() && this.target === selected && !this.closing)
   }
 
-  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false, localInvocation?: MachineInventory): Promise<void> {
+  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false, localInvocation?: MachineInventory, signal?: AbortSignal): Promise<void> {
     if (this.projectOperation) throw new Error('Wait for the project operation to finish.')
     if (this.machines.busy && !duringMachineOperation) throw new Error('Wait for the Machine operation to finish before switching locations.')
     if (expectedTarget && this.switching) throw new Error('A user selection is in progress.')
     const operation = this.defaultSelection.begin()
+    const cancel = () => {
+      if (!operation.current()) return
+      operation.cancel()
+      this.switching = false
+      this.announce()
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (signal?.aborted) { cancel(); signal.removeEventListener('abort', cancel); throw new Error('Selection cancelled.') }
     this.switching = true
     this.announce()
     let candidateAbort: AbortController | undefined
@@ -335,6 +340,7 @@ export class WebRelay {
       candidateAbort?.abort()
       throw error
     } finally {
+      signal?.removeEventListener('abort', cancel)
       if (operation.current()) this.switching = false
       this.announce()
     }
