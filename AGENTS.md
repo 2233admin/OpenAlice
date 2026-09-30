@@ -114,23 +114,32 @@ synchronous gates.
 ## Verification Ladder
 
 Use the smallest gate that can realistically falsify the change, then escalate
-with ownership breadth and risk:
+with ownership breadth and risk. During development, select feedback for the
+current edit; before delivery, reassess the entire branch diff against the
+freshly fetched target base. Several individually small edits can require a
+broader owner or full-suite gate together. Record selection reasons, actual
+results, and unverified risks in the PR; see the detailed ladder in
+[[docs/development-workflow.md]].
 
 | Change shape | Minimum evidence |
 |---|---|
 | Leaf change inside one owner | `pnpm test:changed` or an explicit `test:select` intersection; owning typecheck; real affected surface |
 | Shared change inside one owner | Matching `pnpm test:owner:*` suite or package-local test; owning typecheck; real affected surface |
-| Cross-owner, shared test/build infrastructure, dependency/config change, or uncertain impact | Root and applicable package/UI typechecks; complete `pnpm test`; every touched surface's acceptance |
+| Cross-owner behavior, shared protocol/lifecycle, shared test/build infrastructure, dependency/config change, or uncertain impact | Root and applicable package/UI typechecks; complete `pnpm test`; every touched surface's acceptance |
 | Beta promotion | Recorded local full-suite/surface acceptance plus automatic master source gate and Windows dev-stack smoke |
 | Manual backstop or stable release | Complete remote matrix and release gates from [[docs/development-workflow.md]] |
 
 `pnpm test:changed` compares the feature branch and working tree with freshly
 fetched `origin/dev`. It follows Vitest's static import graph; dynamic imports,
-generated contracts, registries, implicit runtime coupling, and a zero-test
-selection require an explicit owner/area/package selection or escalation. It
+generated contracts, registries, process boundaries, implicit runtime coupling,
+and a zero-test selection require an explicit owner/area/package selection or escalation. It
 is development feedback, not a release gate. `pnpm test` retains the
 deterministic full-suite meaning. See [[docs/testing.md]] for the complete
-namespace, composition rules, and side-effect contracts.
+namespace, composition rules, and side-effect contracts. Scenario/protocol/owner
+filters intersect across dimensions; run affected protocol regressions
+independently when that intersection excludes their evidence. Owner-only specs
+without group metadata can still be affected. Required `test:critical` evidence
+is indivisible and cannot be narrowed by this ladder.
 
 Typecheck the owner that changed: root `npx tsc --noEmit` covers `src/`; UI uses
 `cd ui && npx tsc -b`; a package uses its own `typecheck` command. Do not cite a
