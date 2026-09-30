@@ -1,3 +1,4 @@
+import { en } from './en'
 import type { Resources } from './en'
 
 /**
@@ -10,6 +11,8 @@ import type { Resources } from './en'
  * Content is UI chrome only — no geographic or other non-technical terms.
  */
 export const zhHant: Resources = {
+  activityPreferences: en.activityPreferences,
+
   sessionControl: {
     "title": "Session 控制",
     "stopping": "正在停止…",

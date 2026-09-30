@@ -1,7 +1,10 @@
+import { en } from './en'
 import type { Resources } from './en'
 
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
+  activityPreferences: en.activityPreferences,
+
   sessionControl: {
     "title": "Session の制御",
     "stopping": "停止中…",

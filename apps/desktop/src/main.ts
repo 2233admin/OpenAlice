@@ -571,6 +571,10 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
   await relay.listen()
   const { window: win, companion } = createAppWindow(resolve(__dirname, 'preload.js'))
   createTray(win, companion)
+  companion?.configureActivity({
+    identity: () => !relay.status.switching && relay.status.target ? JSON.stringify([relay.originUrl, relay.status.generation, relay.status.target.machine, relay.status.target.project]) : null,
+    read: async (query, signal) => { const response = await win.webContents.session.fetch(`${relay.originUrl}/api/agent-runtime${query}`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) }); if (!response.ok) throw new Error('Activity unavailable'); return response.json() },
+  })
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null)
   configureWindowLifecycle(app, win, () => appQuitting)
   win.webContents.on('will-navigate', (event, destination) => {
@@ -1127,8 +1131,25 @@ app.whenReady().then(async () => {
       : null,
   )
 
+  let modeSwitching = false
   const { window: win, companion } = createAppWindow(resolve(__dirname, 'preload.js'))
   createTray(win, companion)
+  companion?.configureActivity({
+    identity: () => {
+      if (modeSwitching) return null
+      if (!localRuntimeSuspended && win.webContents.getURL().startsWith('app://openalice/')) return `integrated:${userDataHome}`
+      const relay = desktopRelay
+      return relay && !relay.status.switching && relay.status.target && win.webContents.getURL().startsWith(relay.originUrl)
+        ? JSON.stringify([relay.originUrl, relay.status.generation, relay.status.target.machine, relay.status.target.project]) : null
+    },
+    read: async (query, signal) => {
+      const response = !localRuntimeSuspended && win.webContents.getURL().startsWith('app://openalice/')
+        ? await fetchAliceWebRequest(new Request(`app://openalice/api/agent-runtime${query}`), alice)
+        : await win.webContents.session.fetch(`${desktopRelay!.originUrl}/api/agent-runtime${query}`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) })
+      if (!response.ok) throw new Error('Activity unavailable')
+      return response.json()
+    },
+  })
   configureWindowLifecycle(app, win, () => appQuitting)
   const mayNavigate = (destination: string): boolean => {
     try {
@@ -1165,7 +1186,6 @@ app.whenReady().then(async () => {
     }
   }
   let relayOpening: Promise<WebRelay> | null = null
-  let modeSwitching = false
   const ensureRelay = (): Promise<WebRelay> => {
     if (!relayOpening) {
       relayOpening = (async () => {

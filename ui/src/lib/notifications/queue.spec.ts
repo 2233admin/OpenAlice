@@ -91,3 +91,15 @@ describe('notification display policy', () => {
     expect(hide).toHaveBeenCalledWith(expect.stringContaining('task:2'))
   })
 })
+
+it('bounds waiting announcements while keeping error priority', () => {
+  const transport = { show: vi.fn(), hide: vi.fn() }
+  const queue = new NotificationQueue(transport, Date.now, 1, 3)
+  queue.publish({id:'visible',status:'success',title:'visible',duration:4000})
+  for(let i=0;i<20;i++) queue.publish({id:`pending:${i}`,status:'info',title:'news',duration:4000})
+  queue.publish({id:'error',status:'error',title:'failed',duration:10000})
+  expect(transport.show.mock.lastCall?.[1].status).toBe('error')
+  // Drain by visible dismissal; bounded queue cannot retain all 20 pending facts.
+  for(let i=0;i<10;i++) transport.show.mock.lastCall?.[2]()
+  expect(transport.show.mock.calls.length).toBeLessThanOrEqual(5)
+})

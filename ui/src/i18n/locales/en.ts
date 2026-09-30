@@ -13,6 +13,20 @@
  */
 
 export const en = {
+  activityPreferences: {
+    title: 'Activity notifications', description: 'Filter activity announcements. Your activity history stays complete.',
+    desktopOnly: 'Activity notification preferences require the desktop app.',
+    enabled: 'Automatic notifications', main: 'Top-right notifications', pet: 'Background pet bubbles',
+    brief: 'Brief pet messages · hide names and content', level: 'Notification level', overrides: 'Event overrides',
+    preset: { action: 'Action only', important: 'Important (official default)', all: 'All activity' },
+    help: { action: 'Failure and action needed only.', important: 'Completion, failure and action needed immediately. News grouped. Routine progress quiet.', all: 'All supported activity, including routine progress. News grouped.' },
+    event: { completion: 'Completion / Inbox', failure: 'Failure', action: 'Action needed', news: 'News', progress: 'Routine progress' },
+    override: { inherit: 'Use preset', show: 'Show', hide: 'Hide' },
+    pause: 'Pause for 1 hour', resume: 'Resume notifications', reset: 'Restore notification defaults', paused: 'Paused until {{time}}.',
+    local: 'Saved locally on this desktop. Pet visibility is separate. Restoring defaults clears event overrides.',
+    error: 'Could not load or save notification preferences. Confirmed settings are retained. Try again.',
+  },
+
   sessionControl: {
     blockedDescription: 'New starts are blocked. Wait for the cooldown or review and release the block below. Releasing a block does not start a run.',
     "title": "Session control",

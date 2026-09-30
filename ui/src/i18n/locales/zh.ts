@@ -2,6 +2,16 @@ import type { Resources } from './en'
 
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
+  activityPreferences: {
+    title: '活动通知', description: '按偏好过滤提醒，完整活动记录不受影响。', desktopOnly: '通知偏好仅在桌面应用中可用。',
+    enabled: '自动通知', main: '右上角通知', pet: '后台桌宠气泡', brief: '简短气泡 · 隐藏姓名和内容', level: '通知级别', overrides: '事件覆盖',
+    preset: { action: '仅需处理', important: '重要（官方默认）', all: '全部活动' },
+    help: { action: '仅提醒失败和需要处理的活动。', important: '完成、失败和需要处理立即提醒；新闻合并，常规进度不提醒。', all: '显示所有已支持的活动，包括常规进度；新闻合并。' },
+    event: { completion: '完成 / 收件箱', failure: '失败', action: '需要处理', news: '新闻', progress: '常规进度' },
+    override: { inherit: '使用预设', show: '显示', hide: '隐藏' }, pause: '暂停 1 小时', resume: '恢复通知', reset: '恢复通知默认值', paused: '已暂停至 {{time}}。',
+    local: '保存在当前桌面设备。桌宠显示单独控制。恢复默认值会清除事件覆盖。', error: '无法加载或保存通知偏好，已确认的设置保留。请重试。',
+  },
+
   sessionControl: {
     blockedDescription: '启动已被阻止。请等待冷却期结束，或检查原因后手动解除；解除不会自动启动。',
     "title": "Session 控制",

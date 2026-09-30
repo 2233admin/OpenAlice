@@ -65,6 +65,10 @@ void app.whenReady().then(async () => {
       openCurrent: async () => '',
     },
   })
+  // Demo is an attached isolated Project; the shared preload now asks for this status before mounting React.
+  ipcMain.handle('openalice:desktop-connection:status', () => ({
+    schemaVersion: 1, generation: 0, target: { machine: 'demo', project: 'isolated-demo' }, switching: false,
+  }))
   ipcMain.handle('openalice:updater:get-status', () => null)
   let clientPreferences = { autoCheck: true }
   const clientSnapshot = () => ({ kind: 'desktop', currentVersion: app.getVersion(), preferences: clientPreferences,
@@ -84,7 +88,12 @@ void app.whenReady().then(async () => {
   protocol.handle('app', request => fetchAliceWebRequest(request, backend))
   Menu.setApplicationMenu(process.platform === 'darwin'
     ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null)
-  const { window: win } = createAppWindow(join(root, 'dist/electron/preload.js'), 'OpenAlice — Demo')
+  const { window: win, companion } = createAppWindow(join(root, 'dist/electron/preload.js'), 'OpenAlice — Demo')
+  companion?.configureActivity({ identity: () => 'isolated-demo', read: async query => {
+    const response = await fetchAliceWebRequest(new Request(`app://openalice/api/agent-runtime${query}`), backend)
+    if (!response.ok) throw new Error('Demo activity unavailable')
+    return response.json()
+  } })
   win.webContents.on('console-message', (_event, level, message) => {
     if (level >= 2) console.error(`[demo renderer] ${message}`)
   })
