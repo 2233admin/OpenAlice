@@ -113,7 +113,10 @@ invent model activity from terminal bytes.
 
 The manager persists admission before spawning, excludes concurrent writers of
 one `resumeId`, waits for actual exit on stop/handoff, and rejects callbacks from
-an older execution. A shutdown closes admission and waits for startup/stop work.
+an older execution. A shutdown closes admission and waits for startup/stop work. The Workspace
+service also drains dispatch admissions and terminal task/conversation/Issue/
+delivery persistence after child exit. Concurrent dispose callers await the
+same shutdown promise; a closed service rejects new headless dispatches.
 PTY exit ends its execution; there is no hidden automatic respawn. A new process
 requires another managed launch and receives another execution ID.
 

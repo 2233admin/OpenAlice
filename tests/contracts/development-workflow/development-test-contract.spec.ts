@@ -99,7 +99,7 @@ describe('development test command contract', () => {
     expect(collectionWideTestInputs).toHaveLength(4)
     expect(collectionWideTestInputs[0]).toMatch(/\/\*\*\/package\.json$/)
     expect(collectionWideTestInputs[1]).toMatch(/\/\*\*\/\{vitest,vite\}\.config\.\*$/)
-    expect(collectionWideTestInputs[2]).toMatch(/\/scripts\/\{test-lanes,test-groups,test-commands\}\.mjs$/)
+    expect(collectionWideTestInputs[2]).toMatch(/\/scripts\/\{test-lanes,test-groups,test-commands,test-results\}\.mjs$/)
     expect(collectionWideTestInputs[3]).toMatch(/\/tests\/\*\*\/\*\.json$/)
     expect(collectionWideTestInputs.every((pattern) => !pattern.includes('\\'))).toBe(true)
   })

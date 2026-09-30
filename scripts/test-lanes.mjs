@@ -133,6 +133,7 @@ const workflowContractIncludes = [
   'tests/contracts/development-workflow/development-test-contract.spec.ts',
   'scripts/test-lanes.spec.ts',
   'scripts/test-groups.spec.ts',
+  'scripts/test-results.spec.ts',
   'scripts/classify-beta-release-prep.spec.mjs',
   'scripts/prepare-cli-neutral-inputs.spec.mjs',
   'scripts/ci-workflow.spec.ts',

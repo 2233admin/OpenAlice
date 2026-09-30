@@ -378,6 +378,13 @@ This boundary keeps expensive, credentialed, externally rate-limited release
 work out of the interactive development loop while retaining the same runtime
 and resource-layout coverage.
 
+The bounded `pnpm test:critical` gate now runs inside the existing dev clean-build
+and master/manual source-contract jobs, with an always-uploaded actual run
+receipt. It covers the designated local scenario/protocol assertions across the
+existing hermetic and integration configs. Required evidence cannot be narrowed
+or accepted when skipped. Native Dock/tray, packaged bytes and live-paper venue
+evidence remain owned by their dedicated lanes. See [[docs/testing.md]].
+
 ### CI/CD optimization order
 
 Optimize measured waiting time without collapsing the confidence lanes:

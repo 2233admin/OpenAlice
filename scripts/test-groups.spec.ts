@@ -97,10 +97,10 @@ describe('group selection through the existing lane/owner/package selector', () 
     expect(selected).toEqual(['src/services/uta-client/UTAManagerSDK.spec.ts'])
     expect(selectTestFiles(repoRoot, {
       scenarios: ['trading-approval'], lanes: ['integration'], packages: ['@traderalice/uta-service'],
-    })).toEqual(['tests/scenarios/trading-approval/uta-lifecycle.e2e.spec.ts'])
+    })).toEqual(['tests/contracts/alice-uta/approval-http.e2e.spec.ts', 'tests/scenarios/trading-approval/uta-lifecycle.e2e.spec.ts'])
     expect(selectTestFiles(repoRoot, {
       scenarios: ['workspace-creation', 'trading-approval'], lanes: ['integration'],
-    })).toHaveLength(2)
+    })).toHaveLength(3)
   })
 
   it('runs only hermetic spec evidence by default and explains separate acceptance', () => {

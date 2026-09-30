@@ -88,18 +88,25 @@ describe('CI workflow authority lanes', () => {
     expect(fullWorkflow.jobs['post-merge-dev-smoke']).toBeUndefined()
   })
 
-  it('keeps routine dev PR feedback to checkout, install, workflow contracts, and a complete build', () => {
+  it('keeps routine dev PR feedback to checkout, install, required local evidence, workflow contracts, and a complete build', () => {
     const cleanBuild = devPrWorkflow.jobs['clean-build']
 
     expect(commands(cleanBuild)).toEqual([
       'pnpm install --frozen-lockfile',
       'pnpm test:contract:workflow',
+      'pnpm test:critical --receipt artifacts/tests/critical-local.json',
       'pnpm build',
     ])
     expect(commands(cleanBuild)).not.toContain('npx tsc --noEmit')
     expect(commands(cleanBuild)).not.toContain('pnpm test')
     expect(cleanBuild.strategy).toBeUndefined()
     expect(cleanBuild['timeout-minutes']).toBe(15)
+    const required = step(cleanBuild, 'Verify required local product and protocol evidence')
+    expect(required['continue-on-error']).toBeUndefined()
+    const upload = step(cleanBuild, 'Upload required evidence receipt')
+    expect(upload.if).toBe('always()')
+    expect(upload.with?.['if-no-files-found']).toBe('error')
+    expect(upload.with?.path).toBe('artifacts/tests/critical-local.json')
   })
 
   it('loads the beta classifier from trusted master before running source contracts', () => {
@@ -118,6 +125,7 @@ describe('CI workflow authority lanes', () => {
       'pnpm test:contract:workflow',
       'npx tsc --noEmit',
     ]))
+    expect(commands(sourceContracts)).toContain('pnpm test:critical --receipt artifacts/tests/critical-local.json')
     expect(commands(sourceContracts)).not.toContain('pnpm build')
     expect(commands(sourceContracts)).not.toContain('pnpm test')
   })

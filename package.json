@@ -86,7 +86,8 @@
     "test:live:bybit-diagnostic": "node scripts/run-tests.mjs --lane live-paper --area bybit-diagnostic",
     "test:watch": "vitest --config vitest.config.ts",
     "star-history:generate": "node scripts/generate-star-history.mjs",
-    "postinstall": "node scripts/fix-pty-perms.mjs"
+    "postinstall": "node scripts/fix-pty-perms.mjs",
+    "test:critical": "node scripts/run-tests.mjs --gate critical-local"
   },
   "keywords": [
     "trading",

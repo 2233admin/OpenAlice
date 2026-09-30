@@ -1,13 +1,15 @@
 # Test system grouping and product coverage
 
-Status: Stage 1 implemented and locally verified, ready for maintainer PR
-review. Stage 2 is planned and has not started. Maintainer acceptance of
-Stage 1 and the concrete Stage 2 gap set remains open.
+Status: Stage 1 accepted and merged as PR #1667. Stage 2's bounded local
+coverage and gates are implemented for a separate maintainer review PR;
+native desktop, browser onboarding and real paper-venue acceptance remain open.
 Audit baseline: `dev` at `b7dbe2af15626534d2784b8ccaee361bcf7e05b4` on
-2026-09-30. Implementation was synchronized with current `dev` at
-`a640693db70bdd8f0ea8593d443a38bcde7e92b6` and the full suite/typechecks were
-reverified there. Related issues: none linked. Findings addressed here remain
-within this workstream; concrete defects deferred outside it need GitHub issues.
+2026-09-30. Stage 2 incorporates notification integration at
+`48cdb0f1ada301e35b32c39fefce90e87626ab83` and Stage 1's final merge into dev
+at `e024be3ca40ab6fe7487889b7a3aa4f16414b15e`. The latter changes only a
+plan separator relative to the already verified combined source base.
+Related deferred findings: [Office navigation #1440](https://github.com/TraderAlice/OpenAlice/issues/1440)
+and [PTY probe-count timing #1671](https://github.com/TraderAlice/OpenAlice/issues/1671).
 
 Owner guides: [[docs/testing.md]], [[docs/development-workflow.md]], and
 [[docs/project-structure.md]]. Read the applicable surface guide before moving
@@ -99,26 +101,26 @@ into a misleading scenario merely to reach a classification percentage.
 
 ## Stage 2: fill critical gaps and enforce truthful acceptance
 
-1. [ ] Rank the Stage 1 gaps by user impact, regression history, and boundary
+1. [x] Rank the Stage 1 gaps by user impact, regression history, and boundary
    risk. Start with broker-free first run, Workspace/Session lifecycle and
    recovery, desktop close/reopen/explicit quit, and UTA approval/write
    semantics. The concrete missing assertions come from the matrix, not from
    assumptions that these entire surfaces are currently untested.
-2. [ ] Add product journeys through real affected layers with isolated state
+2. [x] Add product journeys through real affected layers with isolated state
    and controlled local dependencies. Cover success, failure, interruption,
    retry, and recovery as relevant. Use mocks only at the deliberate external
    boundary; native desktop behavior requires macOS and Windows evidence.
-3. [ ] Add missing protocol assertions for request/response shape, errors,
+3. [x] Add missing protocol assertions for request/response shape, errors,
    authorization, lifecycle transitions, disconnect/reconnect, cancellation,
    ordering, and idempotency where those contracts apply. Compatibility tests
    target shipped contracts; do not invent compatibility for unreleased shapes.
-4. [ ] Introduce consistent run summaries for the touched runners: source and
+4. [x] Introduce consistent run summaries for the touched runners: source and
    artifact identity, selected group/scenario, environment/platform, executed,
    skipped, failed, warning, and cleanup outcomes. Required all-skipped runs
    are not acceptance. Required smoke subchecks cannot be reduced to an
    informational warning while the overall result claims acceptance. Define
    advisory versus required subchecks explicitly before changing exit behavior.
-5. [ ] Connect required deterministic scenario/contract groups to appropriate
+5. [x] Connect required deterministic scenario/contract groups to appropriate
    local and CI gates, including the existing integration lane. Keep routine
    PR feedback bounded and stable-release/platform/artifact evidence complete.
    Select affected groups conservatively and use owner/full-suite fallback
@@ -128,6 +130,32 @@ into a misleading scenario merely to reach a classification percentage.
    matrix with actual evidence, and report remaining gaps with their limits.
    Live-paper acceptance remains separately selected under the existing
    verified-account and baseline/cleanup contract.
+
+The selected implementation increment contains five bounded behavior rows:
+
+| Required row | Executed layers | Remaining surface evidence |
+| --- | --- | --- |
+| Broker-free Chat and restart | Workspace bootstrap, Git, durable stores, real controlled CLI child and output decoder | Browser onboarding, credentials and native CLI |
+| Session failure, interrupt and resume | Real child failure/termination, HTTP routes, admission blocks and durable identity | Browser/PTY reconnect and packaged application |
+| Approval HTTP boundary | Real loopback HTTP, SDK, UTA manager, MockBroker and persisted ledger | Real broker venue, authenticated browser/CLI and version negotiation |
+| Run truth | Actual nested Vitest output, required assertion matching and selector rejection | Native/artifact runners retain their own receipt owners |
+| Desktop receipt completeness | Mandatory twelve producer checks, omitted/false cleanup and renderer errors | macOS/Windows close/reopen/explicit quit on actual artifacts |
+
+The shutdown journey exposed a production race: `dispose()` returned after
+child termination but before task, Issue, conversation and delivery persistence
+settled. Dispatch admission/completion tracking now drains those continuations;
+concurrent disposal shares one promise, and shutdown rejects new dispatches.
+The deliberately delayed persistence regression fails on the prior implementation
+and passes with this fix. No persisted format or UTA write ownership changes.
+
+`critical-local` resolves assertion evidence directly from these reviewed rows,
+not from a second file inventory. Its required assertions must actually pass;
+omitted, skipped, duplicate matches, cleanup/report errors and zero execution
+fail acceptance. Local selector receipts record source/index identity, actual
+counts, platform, required evidence and runner cleanup. Console warnings are
+explicitly not collected; native/resource cleanup is not implied by test hooks.
+Existing dev PR and master/manual source jobs run the bounded gate and always
+upload its receipt. Dedicated release, desktop and paper gates stay separate.
 
 Stage 2 acceptance: the agreed critical behavior rows have executed evidence
 for their required environments; a regression in a required row fails the
@@ -166,6 +194,32 @@ Stage 1 local evidence (Linux, Node 24.19.0):
   Discovery/inspection never executed dedicated native, Docker/SSH, external,
   or paper runners. Their additional evidence remains explicit in the matrix.
 
+Stage 2 local evidence (Linux x64, Node 24.19.0):
+
+- Inventory: 900 specs / 70 commands; actual Vitest collection matches all 873
+  hermetic and five integration specs, without missing/extra paths.
+- `pnpm test:critical`: five files, seventeen passing cases and fourteen
+  passing required assertion references; measured bounded run 22.23 seconds.
+- Complete deterministic integration: five files / 29 cases passed.
+- Workflow/selector contracts: twelve files / 107 cases passed.
+- Root, UTA, UI and central-spec/runner-guard typechecks passed. Real Guardian
+  recovery smoke passed duplicate ownership, graceful takeover, crash recovery
+  and forced stubborn-child reclamation.
+- Complete hermetic run executed all 873 files: 869 passed, three failed and
+  one skipped; 7,450 passing cases, four failures and five skips. This is **not**
+  a passing full-suite result. Connector unlink's timeout passed on isolated
+  rerun. Office Session action failure also reproduced on unmodified dev and
+  is tracked by #1440; other Office transition assertions vary between runs.
+  PTY's final exact probe count reported five instead of four despite completed
+  recovery assertions, then passed isolated rerun; tracked by #1671. None of
+  these UI/CLI files is changed by this increment.
+- The final integration/gate prove local child and loopback contracts only.
+  macOS/Windows native desktop, browser journeys, Docker/SSH, external-provider
+  and real paper-account runs were not executed and remain matrix gaps.
+- Local verification inherited `pnpm_config_verify_deps_before_run=false`
+  to prevent this host's pnpm from implicitly reinstalling modified manifest
+  dependencies in subprocesses; source/config acceptance was not relaxed.
+
 Implementation changes to the shared catalog, runner, configs, or collection
 require root and applicable package/UI typechecks, the complete `pnpm test`,
 targeted selector/workflow contracts, and every touched runner's applicable
@@ -175,8 +229,8 @@ checks should test observable command outcomes, not just mirror implementation.
 
 Deliver the two stages as coherent, reviewable increments targeting `dev` under
 the repository's delivery policy. The maintainer explicitly requested a PR
-review pause for Stage 1: open its PR and leave it unmerged. Stage 1 acceptance precedes committing to
-the detailed Stage 2 gap set. Keep this plan and [[docs/testing.md]] current in
+review pause for Stage 1: open its PR and leave it unmerged. The maintainer subsequently authorized Stage 2 and merged Stage 1; keep the
+second-stage PR open for review rather than merging it automatically. Keep this plan and [[docs/testing.md]] current in
 the same changes as implementation. Remove this plan and its [[PLANS.md]]
 entry only when the agreed Stage 2 scope is accepted and durable instructions
 are in the owner guide.
@@ -193,3 +247,11 @@ are in the owner guide.
 - 2026-09-30: Integrated the current-dev startup viewport and Issue Session
   guidance increments, then repeated full-suite, root/UTA/UI/central typecheck,
   and deterministic integration verification successfully before PR delivery.
+
+- 2026-09-30: Implemented the bounded Stage 2 priority rows, real local journey
+  and HTTP tests, assertion-level required gate, truthful run receipts and
+  receipt uploads in existing source CI jobs. Fixed terminal persistence during
+  Workspace shutdown and incomplete desktop receipt acceptance. Retained broad
+  native/browser/venue gaps; full-suite failures are recorded above rather than
+  counted as green acceptance. Synchronized with the accepted #1667 merge;
+  delivery targets current dev in a new review PR.

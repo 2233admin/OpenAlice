@@ -12,7 +12,7 @@ const workspaceGlob = (pattern: string): string => (
 export const collectionWideTestInputs = [
   workspaceGlob('**/package.json'),
   workspaceGlob('**/{vitest,vite}.config.*'),
-  workspaceGlob('scripts/{test-lanes,test-groups,test-commands}.mjs'),
+  workspaceGlob('scripts/{test-lanes,test-groups,test-commands,test-results}.mjs'),
   workspaceGlob('tests/**/*.json'),
 ]
 

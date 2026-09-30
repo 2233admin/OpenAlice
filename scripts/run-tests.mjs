@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, join } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -27,6 +29,7 @@ import {
   validateCoverageGroups,
 } from './test-groups.mjs'
 import { validateTestCommands } from './test-commands.mjs'
+import { requiredGate, inspectVitestResult, evaluateRequiredEvidence } from './test-results.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDir, '..')
@@ -65,6 +68,8 @@ function parseArgs(argv) {
     help: false,
     groups: false,
     inventory: false,
+    gate: null,
+    receipt: null,
     forward: [],
   }
 
@@ -80,6 +85,10 @@ function parseArgs(argv) {
     else if (arg === '--json') options.json = true
     else if (arg === '--groups') options.groups = true
     else if (arg === '--inventory') options.inventory = true
+    else if (arg === '--gate' || arg === '--receipt') {
+      options[arg.slice(2)] = takeValue(argv, index, arg)
+      index += 1
+    }
     else if (arg === '--changed') {
       const next = argv[index + 1]
       if (next && !next.startsWith('--')) {
@@ -146,6 +155,8 @@ Selectors (repeatable; comma-separated values also work):
   --package <name>    workspace package name
   --path <path|glob>  repo-relative test path, directory, or glob
   --changed [base]    intersect through Vitest's changed import graph (default: origin/dev)
+  --gate <name>      run all required assertion evidence (critical-local)
+  --receipt <path>   write an actual run receipt (default: temporary file)
 
 Values in one dimension are ORed; different dimensions are ANDed. The default
 lane is hermetic. Empty selections fail closed.
@@ -160,6 +171,9 @@ Modes (selection only; test modules, credentials, and prerequisites are not prob
 Group inspection supports --scenario/--contract filters and --json/--explain.
 Inventory is complete and unfiltered. Both modes are read-only; they never
 execute the commands they describe. Mapped evidence is not a recorded run.
+Required gates reject selectors/forwarded arguments that could narrow evidence.
+Actual runs reject empty/all-skipped results and write source/platform/outcome
+receipts. Test hook results do not prove native/venue cleanup.
 
 Scenarios: ${scenarioSuiteNames.join(', ')}
 Contracts: ${contractSuiteNames.join(', ')}
@@ -309,6 +323,7 @@ function createPlan(options, files, commands) {
       ? selectCoverageGroups(options).map((group) => describeGroup(group, commands)) : [],
     invocations: createInvocations(options, files),
     executionBlockers,
+    requiredGate: options.requiredGate ?? null,
     note: 'Dry-run only: no tests ran and no credentials or prerequisites were probed.',
   }
 }
@@ -361,7 +376,7 @@ function printGroups(groups, detailed) {
 
 function inspectCatalog(options, specs, commands) {
   if (options.groups && options.inventory) fail('choose --groups or --inventory')
-  if (options.laneExplicit || options.owners.length || options.areas.length || options.packages.length || options.paths.length || options.changed || options.forward.length) {
+  if (options.gate || options.receipt || options.laneExplicit || options.owners.length || options.areas.length || options.packages.length || options.paths.length || options.changed || options.forward.length) {
     fail('inspection does not apply file/lane filters or Vitest arguments; use only --scenario/--contract with --groups')
   }
   if (options.inventory) {
@@ -407,7 +422,17 @@ function main() {
       inspectCatalog(options, specs, commands)
       return
     }
-    files = selectTestFiles(repoRoot, options)
+    if (options.gate) {
+      if (options.laneExplicit || options.owners.length || options.areas.length || options.packages.length || options.paths.length || options.scenarios.length || options.contracts.length || options.changed || options.forward.length) {
+        fail('--gate requires its entire declared evidence; selectors and Vitest arguments cannot narrow it')
+      }
+      options.requiredGate = requiredGate(repoRoot, options.gate)
+      files = options.requiredGate.files
+      options.lanes = [...new Set(files.flatMap(lanesForTestFile))]
+    } else files = selectTestFiles(repoRoot, options)
+    if (options.forward.some(arg => /^--(?:reporter|outputFile|watch|ui|api|passWithNoTests)(?:[.=]|$)/.test(arg) || arg === '-w')) {
+      fail('runner-owned reporters/output and one-shot execution cannot be overridden')
+    }
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error))
   }
@@ -451,16 +476,52 @@ function main() {
 
   if (plan.groups.length) printGroups(plan.groups, true)
 
-  const vitest = resolve(repoRoot, 'node_modules/vitest/vitest.mjs')
-  for (const candidate of plan.invocations) {
-    const result = spawnSync(process.execPath, [vitest, ...candidate.args], {
-      cwd: repoRoot,
-      env: process.env,
-      stdio: 'inherit',
-    })
-    if (result.error) throw result.error
-    if (result.status !== 0) process.exit(result.status ?? 1)
+  executePlan(plan, options.receipt)
+}
+
+function executePlan(plan, destination) {
+  const startedAt = new Date().toISOString()
+  const git = args => spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8' })
+  const source = git(['rev-parse', 'HEAD'])
+  const tree = git(['write-tree'])
+  const status = git(['status', '--porcelain', '--untracked-files=normal'])
+  const temporary = mkdtempSync(join(tmpdir(), 'oa-test-run-'))
+  const receiptPath = destination ? resolve(repoRoot, destination) : join(tmpdir(), `oa-test-receipt-${Date.now()}-${process.pid}.json`)
+  const runs = []
+  let cleanup = 'passed'
+  try {
+    for (const [index, candidate] of plan.invocations.entries()) {
+      const output = join(temporary, `${index}.json`)
+      const result = spawnSync(process.execPath, [resolve(repoRoot, 'node_modules/vitest/vitest.mjs'), ...candidate.args,
+        '--reporter=default', '--reporter=json', `--outputFile=${output}`], { cwd: repoRoot, env: process.env, stdio: 'inherit' })
+      let report
+      try { report = JSON.parse(readFileSync(output, 'utf8')) } catch { /* fail closed below */ }
+      const inspected = inspectVitestResult(repoRoot, report, result.status, plan.selectors.changed ? [] : plan.files.filter(file => file.lane.includes(candidate.lane) && (!candidate.project || ownerSuites[file.owner[0]].project === candidate.project)).map(file => file.path))
+      if (result.error) { inspected.errors.push(`runner spawn failed: ${result.error.code ?? 'unknown'}`); inspected.accepted = false }
+      runs.push({ lane: candidate.lane, project: candidate.project, ...inspected })
+      if (!inspected.accepted) break
+    }
+  } finally {
+    try { rmSync(temporary, { recursive: true, force: true }) } catch { cleanup = 'failed' }
   }
+  const required = evaluateRequiredEvidence(plan.requiredGate?.evidence ?? [], runs.flatMap(run => run.tests))
+  const accepted = runs.length === plan.invocations.length && runs.every(run => run.accepted) && required.every(row => row.accepted) && cleanup === 'passed'
+  const receipt = {
+    schemaVersion: 1, kind: 'source-tests', startedAt, finishedAt: new Date().toISOString(),
+    source: { commit: source.status === 0 ? source.stdout.trim() : null, indexTree: tree.status === 0 ? tree.stdout.trim() : null, dirty: status.status === 0 ? Boolean(status.stdout.trim()) : null },
+    artifact: null, environment: { platform: process.platform, arch: process.arch, node: process.version },
+    selectors: plan.selectors, gate: plan.requiredGate?.name ?? null,
+    accepted, runs, required,
+    warnings: { status: 'not-collected', scope: 'Console warnings are diagnostic; required assertions, hook/file failures and unhandled errors determine acceptance.' },
+    cleanup: { runnerTemporaryFiles: cleanup, productResources: 'test-hooks-only; native/venue cleanup not observed by this receipt' },
+    unexecutedInvocations: plan.invocations.slice(runs.length).map(({ lane, project }) => ({ lane, project })),
+  }
+  mkdirSync(dirname(receiptPath), { recursive: true })
+  writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n')
+  console.log(`[test-select] acceptance=${accepted} receipt=${receiptPath}`)
+  for (const run of runs) for (const error of run.errors) console.error(`[test-select] ${error}`)
+  for (const row of required.filter(row => !row.accepted)) console.error(`[test-select] required ${row.group}/${row.requirement}: ${row.spec} — ${row.assertion}: ${row.status}`)
+  if (!accepted) process.exitCode = 1
 }
 
 main()
