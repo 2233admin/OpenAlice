@@ -958,7 +958,7 @@ export const ja: Resources = {
       startupUnavailable: '起動時の場所を確認できませんでした。',
       machines: 'マシン',
       projectsOn: '{{machine}} の AliceProject',
-      startupDefault: "最近開いた場所",
+      startupDefault: 'Default',
       noStartupDefault: '次回の起動時に場所を選択',
       rememberStartup: "最後に正常に開いた AliceProject を自動的に記憶します。",
       openProject: '{{name}} を開く',

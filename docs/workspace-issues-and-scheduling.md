@@ -540,6 +540,14 @@ central schedule store or revive the legacy cron/AgentWork path.
 
 ## Verification
 
+Use [[docs/development-workflow.md]]
+([shared ladder](development-workflow.md#local-feedback-ladder)) to select the
+applicable subset for a leaf edit or expand to owner/full-suite acceptance.
+The following focused checklist covers issues, schedules and headless execution;
+shared lifecycle/protocol or cross-owner changes still require the broader
+gates. Dynamic dispatch, registry and child-process effects need explicit
+evidence beyond changed-file imports.
+
 ```bash
 npx tsc --noEmit
 pnpm vitest run \
@@ -554,7 +562,6 @@ pnpm vitest run \
   src/webui/routes/issues.spec.ts \
   src/workspaces/issues/auto-complete.spec.ts \
   src/workspaces/schedule/scanner.spec.ts
-pnpm test
 ```
 
 For UI changes, run strict UI types and verify Issue board, issue detail,

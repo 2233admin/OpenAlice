@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
 
@@ -3713,6 +3716,40 @@ describe('Supervisor TUI screen', () => {
     }, { onOpenActiveTarget: () => { opened += 1 } })
     expect(screen.handleKey('o', matchesKey)).toBe(true)
     expect(opened).toBe(1)
+  })
+
+  it('keeps an unavailable remote Default detached across healthy local polls', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tui-remote-default-'))
+    const saved = { schemaVersion: 3, defaultTarget: { machine: 'cloud', project: 'research' } }
+    await writeFile(join(root, 'config.json'), JSON.stringify(saved))
+    const write = vi.fn(async () => undefined)
+    const local = vi.fn(async () => { throw new Error('Local attachment must require selection') })
+    const relay = new WebRelay({ readStartup: async () => saved.defaultTarget, writeStartup: write, inspectLocal: local,
+      readRegistry: async () => ({ machines: [{ key: 'cloud', enabled: true, sshTarget: 'offline' }] }) as never,
+      inspectRegistered: async () => { throw new Error('Remote unavailable') },
+    })
+    let screen: SupervisorScreen | undefined
+    let quit: ((data: string) => unknown) | undefined
+    const inspect = vi.fn(async () => ({ class: 'running', owner: { surface: 'cli-server', pid: 42 }, endpoints: { web: 'http://127.0.0.1:49100' } }))
+    class FakeTui {
+      addChild(component: SupervisorScreen): void { screen = component }
+      addInputListener(listener: (data: string) => unknown): () => void { quit = listener; return () => undefined }
+      requestRender(): void {} setShowHardwareCursor(): void {} start(): void {} stop(): void {}
+    }
+    const running = runSupervisorTui({}, { webRelay: relay, env: { OPENALICE_SUPERVISOR_HOME: root },
+      stdin: { isTTY: true } as NodeJS.ReadStream, stdout: { isTTY: true } as NodeJS.WriteStream,
+      inspect, seedFleet: isolatedLocalFleet, inspectFleet: isolatedLocalFleet, pollIntervalMs: 5,
+      discoverUpdate: async () => null, loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey }) as never,
+    })
+    try {
+      await vi.waitFor(() => expect(screen).toBeDefined())
+      await vi.waitFor(() => expect(inspect.mock.calls.length).toBeGreaterThan(4))
+      expect(relay.status.target).toBeNull()
+      expect(screen?.snapshot.activeTarget).toBeNull()
+      expect(local).not.toHaveBeenCalled()
+      expect(write).not.toHaveBeenCalled()
+      expect(JSON.parse(await readFile(join(root, 'config.json'), 'utf8'))).toEqual(saved)
+    } finally { quit?.('q'); await running; await rm(root, { recursive: true, force: true }) }
   })
 
   it('reflects a Web GUI connection in the running TUI through the same relay', async () => {

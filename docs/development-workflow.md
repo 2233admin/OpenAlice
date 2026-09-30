@@ -233,21 +233,32 @@ the issue/PR that shaped the work.
 ## Local Feedback Ladder
 
 Routine development starts with the smallest gate that can falsify the change;
-it does not purchase the complete monorepo suite by default.
+it does not purchase the complete monorepo suite by default. This is the shared
+ladder referenced by owner guides; their module-specific acceptance remains
+additional evidence.
+
+Separate the development loop from delivery acceptance. For each edit, use
+focused feedback to test the current hypothesis. Before handing off a PR, fetch
+the target base and inspect the entire cumulative branch diff (plus any local
+edits being delivered), then choose the applicable row again. A series of leaf
+edits can collectively cross owners, a shared protocol, or a lifecycle boundary;
+previous narrow passes do not establish acceptance for that combined change.
 
 | Change shape | Local gate |
 |---|---|
 | Leaf change inside one owner | `pnpm test:changed` or an explicit `test:select` intersection, the owning typecheck, and the real affected surface |
 | Shared change inside one owner | The matching `pnpm test:owner:*` suite or package-local test, the owning typecheck, and the real affected surface |
-| Cross-owner, shared test/build infrastructure, dependency/config change, or uncertain impact | Root and applicable package/UI typechecks, complete `pnpm test`, and every touched surface's acceptance |
+| Cross-owner behavior, shared protocol/lifecycle, shared test/build infrastructure, dependency/config change, or uncertain impact | Root and applicable package/UI typechecks, complete `pnpm test`, and every touched surface's acceptance |
 
 `pnpm test:changed` uses Vitest's changed-file dependency selection against a
 freshly fetched `origin/dev`, including committed and working-tree changes. It
 is a routine feature-branch feedback tool, not a release gate. Static imports
 are discoverable; dynamic imports, generated contracts, registries, implicit
 runtime coupling, and a zero-test selection require an explicit owner, area,
-package, or path selection or escalation. Changes to package manifests,
-Vitest/Vite configuration, aliases, or the test harness run the complete suite
+package, or path selection or escalation. Child processes and other runtime
+boundaries do not inherit a proven static dependency closure. There is no
+automatic complete impact analysis: the change author must inspect these edges.
+Changes to package manifests, Vitest/Vite configuration, aliases, or the test harness run the complete suite
 because they can change collection for every owner.
 
 Typecheck the code that changed. Root `npx tsc --noEmit` covers `src/`, UI uses
@@ -256,9 +267,28 @@ A green command that did not include the changed code is not evidence. UI and
 runtime behavior still require their real browser, launcher, package, or native
 surface; changed-test selection does not replace that acceptance.
 
-Record the exact commands and real-surface result in the PR. Use the matching
-`pnpm test:owner:*` suite when one owner's impact is wider than the static
-dependency closure. Keep `pnpm test` as the explicit hermetic full-suite
+For documentation-only changes, validate affected links, executable examples
+and the contracts behind the changed guidance. Editing several owner guides
+alone does not change cross-owner runtime behavior. Do not use this exception
+for changed runner/configuration, executable tests, or product code. Typechecks
+and real surfaces apply when their code or behavior changes; explain why a
+check is applicable or not rather than inventing runtime acceptance.
+
+Scenario, protocol and owner are separate selection dimensions: values within
+one dimension are ORed, dimensions are ANDed. An owner/scenario intersection
+can exclude part of an affected protocol; run that protocol regression
+independently as well. Inspect owner/package/path evidence beyond group
+metadata: an owner-only spec without a scenario mapping is not proof of
+irrelevance. `pnpm test:critical` always runs its complete declared evidence;
+neither focused development feedback nor this ladder may trim it or weaken its
+existing CI requirement.
+
+Record the cumulative diff scope, why selected checks can falsify the change,
+exact commands and actual results (including failures/skips), real-surface
+results, and any unverified boundary/risk in the PR. Distinguish checks not run
+from passes; list/explain output is selection evidence, not test acceptance.
+Use the matching `pnpm test:owner:*` suite when one owner's impact is wider than
+the static dependency closure. Keep `pnpm test` as the explicit hermetic full-suite
 backstop for the third row and for manually dispatched/stable lanes.
 The complete command catalog, package-local contract, selector composition,
 and side-effect rules live in [[docs/testing.md]].
@@ -269,15 +299,17 @@ Pull-request CI and the rolling dev CLI publication provide change-level and
 post-merge integration feedback. Their blocking authority depends on the
 delivery lane:
 
-- A routine integration PR whose base is not `master` runs one clean Ubuntu
-  lane: workflow contracts, root typecheck, and the complete workspace build.
-  The stable `build-and-test` check name remains successful by requiring that
-  build and intentionally accepting the skipped full-test lane. The PR must
+- A PR to `dev` runs the `clean-build` job in
+  `.github/workflows/dev-pr-clean-build.yml`: workflow contracts, the complete
+  `test:critical` gate with its receipt uploaded even on failure, and the
+  complete workspace build. This workflow has no separate root typecheck or
+  full-suite job and no `build-and-test` aggregate check. The PR must
   record the applicable owner-scoped tests, typecheck, browser, Electron,
   remote, installer, or native-runtime evidence from the ladder above; hosted
   CI is not a second purchase of the same confidence.
 - PRs to `master` automatically run the trusted source-contract/typecheck gate
-  and the native Windows dev-stack smoke. The hermetic Ubuntu suite, complete
+  (including workflow contracts and complete `test:critical` evidence with its
+  receipt uploaded even on failure) and the native Windows dev-stack smoke. The hermetic Ubuntu suite, complete
   workspace build, and macOS build-and-test repetition run only when a
   maintainer explicitly dispatches Full Source Validation for the selected
   commit or starts a stable Release (which calls the same full workflow).

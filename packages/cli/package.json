@@ -88,6 +88,8 @@
     "src/project-workspaces.ts",
     "src/client-updates.ts",
     "src/startup-target.ts",
+    "src/supervisor-config-lock.ts",
+    "src/supervisor-default-migration.ts",
     "src/project-control.ts"
   ],
   "scripts": {

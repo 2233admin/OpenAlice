@@ -62,7 +62,7 @@ describe('openalice project', () => {
     })).resolves.toBe(0)
     expect(used.join('')).toContain('office')
     const saved = JSON.parse(await env.readConfig()) as { defaultProject?: string }
-    expect(saved.defaultProject).toBe('office')
+    expect((saved as { defaultTarget: unknown }).defaultTarget).toEqual({ machine: 'local', project: 'office' })
   })
 
   it('copies AI credentials with --yes', async () => {
@@ -276,7 +276,7 @@ describe('openalice project', () => {
       defaultProject?: string
       projects?: Record<string, { displayName?: string; home?: string; product?: string }>
     }
-    expect(registered.defaultProject).toBe('office')
+    expect((registered as { defaultTarget: unknown }).defaultTarget).toEqual({ machine: 'local', project: 'office' })
     expect(registered.projects?.['remote-copy']).toMatchObject({
       displayName: 'Remote Copy',
       home: destination,
@@ -323,12 +323,12 @@ async function setupProjects() {
     platform: 'linux' as const,
     env: { XDG_CONFIG_HOME: join(root, 'config') },
   }
-  const context = await resolveStoredLaunchContext({}, options)
+  const context = await resolveStoredLaunchContext({ project: 'default' }, options)
   await persistMachineLaunchConfig(context, { home: defaultHome }, options)
-  const withHome = await resolveStoredLaunchContext({}, options)
+  const withHome = await resolveStoredLaunchContext({ project: 'default' }, options)
   await createSupervisorAliceProject(withHome, 'office', officeHome, options)
   await persistSelectedSupervisorAliceProject(withHome, 'default', options)
-  const ready = await resolveStoredLaunchContext({}, options)
+  const ready = await resolveStoredLaunchContext({ project: 'default' }, options)
   return {
     root,
     context: ready,

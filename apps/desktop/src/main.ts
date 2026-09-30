@@ -49,9 +49,8 @@ import { configureAutoUpdate } from './auto-update.js'
 import { BoundedTextTail, conciseDiagnosticTail, DesktopDiagnostics } from './desktop-diagnostics.js'
 import { cancelOpenAliceWebRequests, fetchAliceWebRequest, handleOpenAliceIpcMessage, registerOpenAliceIpc } from './ipc.js'
 import { resolveManagedRuntimeEnv } from './managed-runtime.js'
-import { rememberDataHome, writeDataHomePreferences } from './data-home.js'
+import { defaultDataHomePreferences } from './data-home.js'
 import {
-  chooseDataHomeDirectory,
   createDesktopDataHomeController,
   dataHomeErrorDetail,
   resolveDesktopDataHome,
@@ -586,14 +585,16 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
   const assertSender = (senderId: number) => {
     if (win.isDestroyed() || senderId !== win.webContents.id) throw new Error('Startup controls are only available in the main window.')
   }
-  // Keep navigation and remembering Recent in the same serialized operation.
+  // Keep navigation and saving Default in the same serialized operation.
   // Relay attachment alone finishes before loadURL; a second IPC request in
   // that gap must not replace the target that this window is about to remember.
   let launcherSwitching = false
-  const switchLauncher = async (action: () => Promise<unknown>) => {
+  let launcherGeneration = 0
+  const switchLauncher = async (action: (current: () => boolean) => Promise<unknown>) => {
+    const generation = ++launcherGeneration
     if (launcherSwitching) throw new Error('A startup operation is already in progress.')
     launcherSwitching = true
-    try { return await action() } finally { launcherSwitching = false }
+    try { return await action(() => generation === launcherGeneration && !appQuitting && !win.isDestroyed()) } finally { launcherSwitching = false }
   }
   const integrate = async (project: string) => {
     await resolveLocalStartupHome(project) // revalidate key/home before relaunch
@@ -607,7 +608,7 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
   ipcMain.handle('openalice:desktop-machine:plan', (event, input: unknown) => { assertSender(event.sender.id); return relay.planMachine(input as Parameters<WebRelay['planMachine']>[0]) })
   ipcMain.handle('openalice:desktop-machine:apply', (event, id: string) => { assertSender(event.sender.id); return relay.applyMachine(id) })
   ipcMain.handle('openalice:desktop-machine:operation', event => { assertSender(event.sender.id); return relay.machineOperation })
-  ipcMain.handle('openalice:desktop-connection:connect', async (event, machine: string, project: string) => switchLauncher(async () => {
+  ipcMain.handle('openalice:desktop-connection:connect', async (event, machine: string, project: string) => switchLauncher(async (current) => {
     assertSender(event.sender.id)
     if (machine === 'local') {
       const inventory = await inspectLocalMachine()
@@ -616,14 +617,14 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
     }
     await relay.connect(machine, project, { remember: false })
     await win.loadURL(`${relay.originUrl}/settings`)
-    await relay.rememberCurrentSelection()
+    if (!win.isDestroyed() && !appQuitting) await relay.rememberCurrentSelection(current)
   }))
-  ipcMain.handle('openalice:desktop-connection:project-control', async (event, input: { machine: string; project: string; action: string }) => switchLauncher(async () => {
+  ipcMain.handle('openalice:desktop-connection:project-control', async (event, input: { machine: string; project: string; action: string }) => switchLauncher(async (current) => {
     assertSender(event.sender.id)
     if (input?.machine === 'local' && input.action === 'start') return integrate(input.project)
     await relay.controlProject(input)
   }))
-  ipcMain.handle('openalice:desktop-connection:return-integrated', async event => switchLauncher(async () => {
+  ipcMain.handle('openalice:desktop-connection:return-integrated', async event => switchLauncher(async (current) => {
     assertSender(event.sender.id)
     relay.disconnect()
     await win.loadURL(relay.originUrl)
@@ -700,21 +701,28 @@ app.whenReady().then(async () => {
   const connectorEntry = resolve(repoRoot, 'services', 'connector', 'dist', 'connector.cjs')
 
   // User state and app resources have independent lifecycles. The desktop
-  // resolves Recent from the shared client Supervisor registry. The legacy
-  // data-home preference remains responsible only for data relocation.
+  // resolves Default from the shared client Supervisor registry. The legacy
+  // data-home preference is read only by the one-time migration.
   // OPENALICE_HOME remains authoritative for automation and
   // packaged smokes. App resources stay in the package (or repo in dev).
   let explicitUserDataHome = process.env['OPENALICE_HOME']?.trim()
   let localStartupProject: string | null = null
-  const integratedProject = process.argv.find(arg => arg.startsWith('--openalice-integrated-project='))?.split('=')[1]
+  const integratedSwitch = '--openalice-integrated-project='
+  const integratedProject = process.argv.find(arg => arg.startsWith(integratedSwitch))?.slice(integratedSwitch.length)
+  // Consume the successful-switch handoff; subsequent relaunches resolve the
+  // shared Default instead of retaining an invocation override indefinitely.
+  for (let index = process.argv.length - 1; index >= 0; index--) {
+    if (process.argv[index]?.startsWith(integratedSwitch)) process.argv.splice(index, 1)
+  }
+  app.commandLine.removeSwitch('openalice-integrated-project')
   const smokeStartup = Object.keys(process.env).some(key => key.startsWith('OPENALICE_ELECTRON_SMOKE_') && key !== 'OPENALICE_ELECTRON_SMOKE_STARTUP' && process.env[key] === '1')
   if (!explicitUserDataHome && !smokeStartup) {
     try {
-      const recent = integratedProject ? { machine: 'local', project: integratedProject } : await readStartupTarget()
+      const recent = integratedProject ? { machine: 'local', project: integratedProject } : await readStartupTarget({ legacyDesktopPreferencePath: join(app.getPath('userData'), DATA_HOME_PREFERENCES_FILE) })
       if (recent?.machine === 'local') {
         const inventory = await inspectLocalMachine()
         const selected = inventory.machine.projects.find(project => project.key === recent.project)
-        if (!integratedProject && (!selected?.available || selected.runtime.webEndpoint)) { await startDesktopLauncher(repoRoot, updateAttemptPath, !selected?.available ? new Error('The recent local AliceProject data folder is unavailable.') : undefined); return }
+        if (!integratedProject && (!selected?.available || selected.runtime.webEndpoint)) { await startDesktopLauncher(repoRoot, updateAttemptPath, !selected?.available ? new Error('The default local AliceProject data folder is unavailable.') : undefined); return }
         explicitUserDataHome = await resolveLocalStartupHome(recent.project)
         localStartupProject = recent.project
       }
@@ -794,26 +802,8 @@ app.whenReady().then(async () => {
       break
     }
 
-    const chosen = await chooseDataHomeDirectory(userDataHome)
-    if (!chosen) continue
-    if (chosen.path === userDataHome) {
-      dialog.showErrorBox(
-        'OpenAlice — choose another location',
-        'That folder is the complete home already owned by the running AliceProject.',
-      )
-      continue
-    }
-    try {
-      dataHomePreferences = rememberDataHome(dataHomePreferences, chosen.path, { startupPromptCompleted: true })
-      await writeDataHomePreferences(preferencePath, dataHomePreferences)
-    } catch (error) {
-      dialog.showErrorBox('OpenAlice — could not remember data location', dataHomeErrorDetail(error))
-      continue
-    }
-    userDataHome = chosen.path
-    launcherRoot = join(userDataHome, 'workspaces')
-    dataHomeSource = 'desktop-preference'
-    selectedDefaultHome = false
+    await startDesktopLauncher(repoRoot, updateAttemptPath)
+    return
   }
 
   const homeEnv = {
@@ -1058,7 +1048,7 @@ app.whenReady().then(async () => {
       source: dataHomeSource,
       selectionLock,
       preferencePath,
-      initialPreferences: dataHomePreferences,
+      initialPreferences: defaultDataHomePreferences(),
       requestRelaunch: scheduleDataHomeRelaunch,
     }),
   })
@@ -1172,16 +1162,17 @@ app.whenReady().then(async () => {
     env: { ...process.env, ...homeEnv },
   })
   let startupMemoryError: string | null = null
-  const rememberLocalSelection = async () => {
-    if (smokeStartup) return
+  let modeSwitchGeneration = 0
+  const rememberLocalSelection = async (current: () => boolean = () => true) => {
+    if (smokeStartup || process.env['OPENALICE_HOME']?.trim() || win.isDestroyed() || appQuitting) return
     // An explicit automation home is not necessarily a registered project.
-    // Never replace the user's real Recent with a disposable smoke identity.
+    // Never replace the user's real Default with a disposable smoke identity.
     try {
       if (await resolveLocalStartupHome(localProject.key) !== userDataHome) return
-      await writeStartupTarget({ machine: 'local', project: localProject.key })
+      await writeStartupTarget({ machine: 'local', project: localProject.key }, { current: () => current() && !win.isDestroyed() && !appQuitting })
       startupMemoryError = null
     } catch (error) {
-      startupMemoryError = `Could not remember this location: ${error instanceof Error ? error.message : String(error)}`
+      startupMemoryError = `Connected, but Default was not saved: ${error instanceof Error ? error.message : String(error)}`
       desktopDiagnostics?.write('startup', startupMemoryError)
     }
   }
@@ -1250,6 +1241,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('openalice:desktop-connection:startup-target', async (event) => {
     fromMainWindow(event.sender.id)
+    if (localRuntimeSuspended) return (await ensureRelay()).startupPreference()
     try { return { target: await readStartupTarget(), error: startupMemoryError } }
     catch (error) { return { target: null, error: error instanceof Error ? error.message : String(error) } }
   })
@@ -1273,20 +1265,21 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('openalice:desktop-connection:connect', async (event, machine: unknown, project: unknown) => {
     fromMainWindow(event.sender.id)
-    if (localRuntimeSuspended) {
-      const relay = await ensureRelay()
-      if (typeof machine !== 'string' || typeof project !== 'string') throw new Error('Choose a running AliceProject.')
-      await relay.connect(machine, project, { remember: false })
-      await win.loadURL(`${relay.originUrl}/settings`)
-      await relay.rememberCurrentSelection()
-      return relay.status
-    }
+    const generation = ++modeSwitchGeneration
     if (modeSwitching) throw new Error('A connection switch is already in progress.')
     if (typeof machine !== 'string' || typeof project !== 'string') {
       throw new Error('Choose a running AliceProject.')
     }
     modeSwitching = true
     try {
+      if (localRuntimeSuspended) {
+        const relay = await ensureRelay()
+        if (typeof machine !== 'string' || typeof project !== 'string') throw new Error('Choose a running AliceProject.')
+        await relay.connect(machine, project, { remember: false })
+        await win.loadURL(`${relay.originUrl}/settings`)
+        if (!win.isDestroyed() && !appQuitting) await relay.rememberCurrentSelection(() => generation === modeSwitchGeneration && !appQuitting && !win.isDestroyed())
+        return relay.status
+      }
       const relay = await ensureRelay()
       // The old local Runtime remains fully owned until the remote candidate
       // has passed the relay's SSH, endpoint, and Project identity checks.
@@ -1297,7 +1290,7 @@ app.whenReady().then(async () => {
       // replacement page has actually loaded. A failed navigation must not
       // strand the user with neither a window nor a local backend.
       await win.loadURL(`${relay.originUrl}/settings`)
-      await relay.rememberCurrentSelection()
+      if (!win.isDestroyed() && !appQuitting) await relay.rememberCurrentSelection(() => generation === modeSwitchGeneration && !appQuitting && !win.isDestroyed())
       desktopDiagnostics?.write('guardian', 'relay window loaded; retiring local runtime')
       localRuntimeSuspended = true
       flagWatchAbort.abort()
@@ -1339,6 +1332,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('openalice:desktop-connection:return-integrated', async (event) => {
     fromMainWindow(event.sender.id)
+    const generation = ++modeSwitchGeneration
     if (!localRuntimeSuspended) return
     if (modeSwitching) throw new Error('A connection switch is already in progress.')
     modeSwitching = true
@@ -1365,7 +1359,7 @@ app.whenReady().then(async () => {
       flagWatchAbort = new AbortController()
       watchLocalFlags()
       desktopRelay?.disconnect()
-      await rememberLocalSelection()
+      await rememberLocalSelection(() => generation === modeSwitchGeneration)
       console.log('[guardian] desktop connection → integrated')
     } catch (error) {
       flagWatchAbort.abort()
@@ -1505,7 +1499,7 @@ app.whenReady().then(async () => {
       })
   })
   await win.loadURL('app://openalice/')
-  if (localStartupProject) await rememberLocalSelection()
+  if (integratedProject) await rememberLocalSelection()
 
   configureDesktopUpdates(win, updateAttemptPath)
 

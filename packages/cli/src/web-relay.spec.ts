@@ -79,6 +79,64 @@ describe('WebRelay', () => {
     expect((await relay.startupPreference()).error).toContain('Disk is read-only')
   })
 
+  it('does not commit a cancelled, superseded, or closing connection after late verification', async () => {
+    const runtime = await backend('expected-id', 'working')
+    openedBackends.push(runtime.server)
+    let finish!: () => void
+    const write = vi.fn(async () => undefined)
+    const wait = vi.fn(() => new Promise<void>(done => { finish = done }))
+    const relay = new WebRelay({ readStartup: async () => ({ machine: 'cloud', project: 'old' }), writeStartup: write,
+      inspectLocal: async () => ({ machine: { key: 'local', displayName: 'Local', projects: [{ key: 'main', id: 'expected-id', displayName: 'Main', available: true, runtime: { webEndpoint: `http://127.0.0.1:${runtime.port}` } }] } }) as never, waitReady: wait,
+    })
+    openedRelays.push(relay)
+    await relay.listen()
+    const first = relay.connect('local', 'main')
+    const rejectedFirst = expect(first).rejects.toThrow('changed')
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(1))
+    const finishFirst = finish
+    const second = relay.connect('local', 'main')
+    const rejectedSecond = expect(second).rejects.toThrow('changed')
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(2))
+    relay.disconnect()
+    finishFirst(); finish()
+    await rejectedFirst; await rejectedSecond
+    expect(write).not.toHaveBeenCalled()
+    expect(relay.status.target).toBeNull()
+    const closing = relay.connect('local', 'main')
+    const rejectedClose = expect(closing).rejects.toThrow('changed')
+    await vi.waitFor(() => expect(wait).toHaveBeenCalledTimes(3))
+    await relay.close(); openedRelays.splice(openedRelays.indexOf(relay), 1)
+    finish(); await rejectedClose
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('does not let cancellation of an older request cancel its newer replacement', async () => {
+    const runtime = await backend('expected-id', 'working')
+    openedBackends.push(runtime.server)
+    const completions: Array<() => void> = []
+    const write = vi.fn(async () => undefined)
+    const relay = new WebRelay({ readStartup: async () => null, writeStartup: write,
+      inspectLocal: async () => ({ machine: { key: 'local', displayName: 'Local', projects: [{ key: 'main', id: 'expected-id', displayName: 'Main', available: true, runtime: { webEndpoint: `http://127.0.0.1:${runtime.port}` } }] } }) as never,
+      waitReady: () => new Promise<void>(done => { completions.push(done) }),
+    })
+    openedRelays.push(relay)
+    await relay.listen()
+    const old = new AbortController()
+    const first = relay.connect('local', 'main', { signal: old.signal })
+    const rejected = expect(first).rejects.toThrow('changed')
+    await vi.waitFor(() => expect(completions).toHaveLength(1))
+    const replacement = relay.connect('local', 'main')
+    await vi.waitFor(() => expect(completions).toHaveLength(2))
+    old.abort()
+    completions[1]!()
+    await replacement
+    completions[0]!()
+    await rejected
+    expect(write).toHaveBeenCalledOnce()
+    expect(relay.status.target?.project).toBe('main')
+    expect(relay.status.switching).toBe(false)
+  })
+
   it('serializes project mutations with switching and machine preparation', async () => {
     let finish!: () => void
     const pending = new Promise<void>(resolve => { finish = resolve })
