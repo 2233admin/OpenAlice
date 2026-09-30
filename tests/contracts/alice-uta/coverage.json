@@ -1,0 +1,41 @@
+{
+  "title": "Alice to UTA carrier and trading permission",
+  "owner": "uta",
+  "guide": "docs/uta-live-testing.md",
+  "requirements": [
+    {
+      "id": "optional-carrier",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "UTA is unavailable.",
+      "action": "Read local capabilities and request a trading operation.",
+      "expected": "Local reads degrade explicitly; unsupported writes refuse rather than pretending success.",
+      "evidence": [
+        {
+          "spec": "src/services/uta-client/UTAManagerSDK.spec.ts",
+          "assertion": "degrades local reads without touching the UTA HTTP client",
+          "level": "contract",
+          "scope": "Alice client facade with an unreachable-client sentinel."
+        }
+      ],
+      "gap": "Actual Alice/UTA HTTP status/error and reconnect behavior is not proved by the client stub."
+    },
+    {
+      "id": "cross-pack-error",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A separately loaded Broker Pack returns a structured error.",
+      "action": "Decode it through the UTA protocol type.",
+      "expected": "Known structured errors survive; unknown codes are rejected.",
+      "evidence": [
+        {
+          "spec": "packages/uta-protocol/src/types/broker.spec.ts",
+          "assertion": "preserves a structured error from a separately loaded broker pack",
+          "level": "contract",
+          "scope": "Wire-like object at the shared type boundary, not a running pack process."
+        }
+      ],
+      "gap": "Protocol version negotiation, stale approval, and duplicate-write behavior require a broader boundary harness."
+    }
+  ]
+}

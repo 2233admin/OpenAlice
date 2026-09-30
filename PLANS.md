@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/test-system-grouping.md]] — Stage 1 is implemented and locally verified,
+  awaiting PR review: product scenario/protocol evidence groups and safe query
+  entry points. Stage 2 will fill agreed critical gaps and connect acceptance gates.
+
 - [[plans/compact-notifications.md]] — Approved compact type-specific pop-out
   notifications, bounded news/Inbox grouping and optional news thumbnails;
   implementation and Draft PR review only, no merge authority.

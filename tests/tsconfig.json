@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": ["./**/*.spec.ts", "../scripts/test-groups.spec.ts"],
+  "exclude": ["../node_modules", "../dist"]
+}

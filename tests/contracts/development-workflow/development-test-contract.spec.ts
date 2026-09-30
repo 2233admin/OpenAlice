@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import vitestConfig, { collectionWideTestInputs } from '../vitest.config.js'
+import vitestConfig, { collectionWideTestInputs } from '../../../vitest.config.js'
 
 interface PackageManifest {
   scripts?: Record<string, string>
@@ -15,7 +15,7 @@ interface TestConfig {
   }
 }
 
-const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url))
+const packageJsonPath = fileURLToPath(new URL('../../../package.json', import.meta.url))
 
 function readRootScripts(): Record<string, string> {
   const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as PackageManifest
@@ -96,9 +96,11 @@ describe('development test command contract', () => {
     const config = vitestConfig as TestConfig
 
     expect(config.test?.forceRerunTriggers).toEqual(collectionWideTestInputs)
-    expect(collectionWideTestInputs).toHaveLength(2)
+    expect(collectionWideTestInputs).toHaveLength(4)
     expect(collectionWideTestInputs[0]).toMatch(/\/\*\*\/package\.json$/)
     expect(collectionWideTestInputs[1]).toMatch(/\/\*\*\/\{vitest,vite\}\.config\.\*$/)
+    expect(collectionWideTestInputs[2]).toMatch(/\/scripts\/\{test-lanes,test-groups,test-commands\}\.mjs$/)
+    expect(collectionWideTestInputs[3]).toMatch(/\/tests\/\*\*\/\*\.json$/)
     expect(collectionWideTestInputs.every((pattern) => !pattern.includes('\\'))).toBe(true)
   })
 })
