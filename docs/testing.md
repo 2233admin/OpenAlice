@@ -168,7 +168,7 @@ pnpm test:select --owner ui --changed origin/dev
 pnpm test:select --owner uta --package @traderalice/uta-service
 pnpm test:select --lane integration --area workspace
 pnpm test:select --lane external-readonly --area market-data --explain
-pnpm test:select --owner alice --path src/server -- --reporter=verbose
+pnpm test:select --owner alice --path src/server/inbox-origin.spec.ts -- --testNamePattern=origin
 ```
 
 Selectors in one dimension are ORed; different dimensions are ANDed. For
@@ -183,7 +183,21 @@ pass.
 `--list`, `--explain`, and `--json` are dry-run modes. They enumerate catalog
 selection, side effects, prerequisites, and the planned invocation without
 loading a test module, probing credentials, or proving that those prerequisites
-exist. Arguments after `--` are forwarded to Vitest.
+exist. Arguments after `--` are forwarded to Vitest except runner-owned
+reporter/output and one-shot execution options, which are rejected. Focused
+name filters are development feedback, not acceptance for excluded assertions;
+required gates reject all forwarded arguments.
+
+Use the [[docs/development-workflow.md]]
+([feedback ladder](development-workflow.md#local-feedback-ladder)) for the
+development-loop versus cumulative-delivery decision. A combined
+`--scenario`, `--contract`, and `--owner` query is an intersection, not the
+union of those groups. Run affected protocol regressions separately when a
+scenario/owner filter would omit their evidence, with the appropriate lane or
+dedicated command. Unmapped owner-only tests may still cover affected behavior.
+Static changed imports cannot establish dynamic/registry/process impact;
+inspect those edges and expand explicitly. The required critical gate remains
+whole and its CI requirement is unchanged.
 
 Docker fixtures under `scripts/` are disposable installer and SSH test hosts;
 they are not supported deployment images. OpenAlice does not ship a backend

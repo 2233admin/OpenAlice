@@ -1330,13 +1330,19 @@ This source entry does not install or copy a CLI payload. When `pnpm dev`
 already owns the selected home, the TUI and read-only commands discover that
 live Runtime rather than starting or replacing another owner.
 
-For command-only changes:
+For command-only changes, select focused or package/owner feedback using the
+[[docs/development-workflow.md]]
+([shared ladder](development-workflow.md#local-feedback-ladder)). The package
+suite is useful when impact spans CLI commands:
 
 ```bash
 pnpm -F @traderalice/openalice-cli test
-npx tsc --noEmit
-pnpm test
 ```
+
+Typecheck the changed owner and exercise the affected real CLI command. Shared
+protocol, process lifecycle, launcher, dependency/configuration or uncertain
+impact escalates to full-suite and applicable surface acceptance under that
+ladder; command-only wording does not exempt those boundaries.
 
 Config-recovery and in-TUI update work must keep the focused Supervisor config
 and TUI specs green: parser preservation, distinct newer-schema errors, recovery
