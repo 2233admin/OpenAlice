@@ -3740,7 +3740,7 @@ describe('Supervisor TUI screen', () => {
     const running = runSupervisorTui({}, { webRelay: relay, env: { OPENALICE_SUPERVISOR_HOME: root },
       stdin: { isTTY: true } as NodeJS.ReadStream, stdout: { isTTY: true } as NodeJS.WriteStream,
       inspect, seedFleet: isolatedLocalFleet, inspectFleet: isolatedLocalFleet, pollIntervalMs: 5,
-      discoverUpdate: async () => null, loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey }) as never,
+      discoverUpdate: async () => null, loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey, isKeyRelease }) as never,
     })
     try {
       await vi.waitFor(() => expect(screen).toBeDefined())

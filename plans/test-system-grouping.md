@@ -340,6 +340,15 @@ The existing Supervisor fixture defect is deferred from this metadata-only
 scope; retain its reproduction in the Draft PR rather than broadening this
 increment into a runtime or fixture repair.
 
+#### Authorized lifecycle validation follow-up
+
+The subsequent bounded continuation fixes the Supervisor test's injected
+pi-tui shape by supplying the existing real `isKeyRelease` function, matching
+the other fixtures and #1669's input contract. No behavior assertion changes.
+Startup plus Desktop now pass all 144 assertions in ten files (3.01 seconds;
+previously 143 passed / one failed). Guardian process liveness and inspected
+mapping omissions are investigated separately; native gaps stay explicit.
+
 - 2026-09-30: Completed the read-only audit and agreed the direction of product
   scenario/protocol boundary grouping. Proposed the two-stage sequence above.
 - 2026-09-30: Implemented and locally verified Stage 1 on
