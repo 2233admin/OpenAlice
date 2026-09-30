@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/compact-notifications.md]] — Approved compact type-specific pop-out
+  notifications, bounded news/Inbox grouping and optional news thumbnails;
+  implementation and Draft PR review only, no merge authority.
+
 - [[plans/update-lifecycle.md]] — Unify version inventory, backend probing, planning and durable update
   operations behind one lifecycle and UI hook; migrate real consumers and the
   rehearsal together, retiring duplicate paths while preserving owner engines.
