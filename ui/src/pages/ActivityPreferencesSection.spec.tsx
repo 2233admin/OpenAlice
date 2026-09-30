@@ -16,21 +16,20 @@ function bridge(fail=false) {
 }
 describe('activity settings',()=>{
   it('shows desktop boundary',()=>{render(<ActivityPreferencesSection/>);expect(screen.queryByRole('combobox')).toBeNull();expect(screen.getByText(/desktop app/)).toBeTruthy()})
-  it('loads official defaults, autosaves preset/override, pause and reset',async()=>{
-    const b=bridge();render(<ActivityPreferencesSection/>);const preset=await screen.findByRole('combobox',{name:'Notification level'})
-    expect((preset as HTMLSelectElement).value).toBe('important')
-    fireEvent.change(preset,{target:{value:'all'}});await waitFor(()=>expect(b.updatePreferences).toHaveBeenCalledWith({preset:'all'}))
-    await waitFor(()=>expect((preset as HTMLSelectElement).disabled).toBe(false))
-    fireEvent.change(screen.getByRole('combobox',{name:'News'}),{target:{value:'hide'}});await waitFor(()=>expect(b.updatePreferences).toHaveBeenCalledWith({overrides:{news:'hide'}}))
-    await waitFor(()=>expect((screen.getByRole('button',{name:'Pause for 1 hour'}) as HTMLButtonElement).disabled).toBe(false))
+  it('shows explicit initial switches, autosaves edits, pause and reset',async()=>{
+    const b=bridge();render(<ActivityPreferencesSection/>);const news=await screen.findByRole('switch',{name:'News'})
+    expect(screen.queryByRole('combobox')).toBeNull();expect(screen.queryByText('Use preset')).toBeNull()
+    for(const name of ['Completion / Inbox','Failure','Action needed','News']) expect(screen.getByRole('switch',{name}).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('switch',{name:'Routine progress'}).getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(news);await waitFor(()=>expect(b.updatePreferences).toHaveBeenCalledWith({events:{...defaults.events,news:false}}))
+    await waitFor(()=>expect(news.getAttribute('aria-checked')).toBe('false'))
     fireEvent.click(screen.getByRole('button',{name:'Pause for 1 hour'}));await screen.findByRole('button',{name:'Resume notifications'})
     fireEvent.click(screen.getByRole('button',{name:'Restore notification defaults'}));await waitFor(()=>expect(b.resetPreferences).toHaveBeenCalled())
-    await waitFor(()=>expect((preset as HTMLSelectElement).value).toBe('important'))
-    expect((screen.getByRole('combobox',{name:'News'}) as HTMLSelectElement).value).toBe('inherit')
+    await waitFor(()=>expect(news.getAttribute('aria-checked')).toBe('true'))
   })
   it('keeps confirmed settings after a save failure and exposes retry',async()=>{
-    const b=bridge(true);render(<ActivityPreferencesSection/>);const preset=await screen.findByRole('combobox',{name:'Notification level'})
-    fireEvent.change(preset,{target:{value:'all'}});await screen.findByRole('alert');expect((preset as HTMLSelectElement).value).toBe('important')
-    fireEvent.change(preset,{target:{value:'action'}});await waitFor(()=>expect(b.updatePreferences).toHaveBeenCalledTimes(2))
+    const b=bridge(true);render(<ActivityPreferencesSection/>);const news=await screen.findByRole('switch',{name:'News'})
+    fireEvent.click(news);await screen.findByRole('alert');expect(news.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(news);await waitFor(()=>expect(b.updatePreferences).toHaveBeenCalledTimes(2))
   })
 })

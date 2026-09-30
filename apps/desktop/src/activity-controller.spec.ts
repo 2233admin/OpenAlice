@@ -78,7 +78,7 @@ describe('desktop Journal arbitration', () => {
   it('shares preference filtering, pause and lifecycle updates', async () => {
     const s = setup(); await s.page([])
     await s.page([event(1,'dev.sonner_test',{testState:'running'})]); expect(s.sent).toEqual([])
-    s.controller.setPreferences({...defaults, preset:'all'})
+    s.controller.setPreferences({...defaults, events:{...defaults.events,progress:true}})
     await s.page([event(2,'runtime.started',{workspaceId:'w',resumeId:'r',taskId:'t',agent:'a',cause:{kind:'conversation',from:{kind:'session'}}})])
     const id=s.sent.at(-1)!.event.displayId
     await s.page([event(3,'runtime.stopped',{workspaceId:'w',resumeId:'r',taskId:'t',status:'done'})])

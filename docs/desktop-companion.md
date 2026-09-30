@@ -93,13 +93,14 @@ need native desktop interaction in addition to renderer captures.
 ## Product activity notifications
 
 Settings → Pet now has a desktop-local notification policy saved atomically in
-Electron userData `activity-notifications.json`. The official Important preset
-announces completion/Inbox, failure and action needed, groups News by source,
-and suppresses routine progress. Action only and All activity are available;
-per-event Show/Hide overrides survive preset changes and versioned default
-reference updates. Unknown event families remain silent until mapped. Restore
-notification defaults explicitly clears overrides; pause lasts one hour.
-Notification enablement/surface settings remain independent of pet visibility.
+Electron userData `activity-notifications.json`. Fresh installs start with explicit
+completion/Inbox, failure, action needed and News switches on, and routine
+progress off. Choices persist across restart and default changes. Previous
+preset-based profiles expand the selected preset and then apply Show/Hide
+choices, preserving enabled, pause, surface and privacy state. Unknown event
+families remain silent until mapped. Restore notification defaults populates
+the five event switches only; pause lasts one hour. Notification enablement
+and surface settings remain independent of pet visibility.
 The browser retains its existing activity notifications and explains that
 these machine-local preferences require the desktop app.
 

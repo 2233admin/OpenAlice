@@ -3,18 +3,17 @@ import type { NotificationInput } from './notification-queue.js'
 export const EVENT_CLASSES = ['completion', 'failure', 'action', 'news', 'progress'] as const
 export type EventClass = typeof EVENT_CLASSES[number]
 export interface ActivityPreferences {
-  version: 1
+  version: 2
   defaultsVersion: number
   enabled: boolean
-  preset: 'action' | 'important' | 'all'
-  overrides: Partial<Record<EventClass, 'show' | 'hide'>>
+  events: Record<EventClass, boolean>
   main: boolean
   pet: boolean
   brief: boolean
   pausedUntil: number
 }
 export const DEFAULT_ACTIVITY_PREFERENCES: ActivityPreferences = {
-  version: 1, defaultsVersion: 1, enabled: true, preset: 'important', overrides: {},
+  version: 2, defaultsVersion: 1, enabled: true, events: { completion: true, failure: true, action: true, news: true, progress: false },
   main: true, pet: true, brief: true, pausedUntil: 0,
 }
 export function eventClass(signal: Pick<AgentActivitySignal, 'kind' | 'failureKind'>): EventClass | null {
@@ -31,10 +30,7 @@ export function eventClass(signal: Pick<AgentActivitySignal, 'kind' | 'failureKi
 export function allowsActivity(prefs: ActivityPreferences, signal: AgentActivitySignal, now = Date.now()): boolean {
   const kind = eventClass(signal)
   if (!kind || !prefs.enabled || prefs.pausedUntil > now) return false
-  const override = prefs.overrides[kind]
-  if (override) return override === 'show'
-  return prefs.preset === 'all' || (prefs.preset === 'important' && kind !== 'progress')
-    || (prefs.preset === 'action' && (kind === 'action' || kind === 'failure'))
+  return prefs.events[kind]
 }
 export type ActivityContext = 'office' | 'inbox' | 'news'
 export type SerializedNotification = Omit<NotificationInput, 'action' | 'duration' | 'onDismiss'> & {

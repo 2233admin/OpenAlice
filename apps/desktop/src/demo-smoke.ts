@@ -121,9 +121,9 @@ export async function runDemoSmoke(win: BrowserWindow): Promise<void> {
   console.log('[electron-demo-smoke] PASS Pet settings import, preview, native playback, mute and reset')
   await win.webContents.executeJavaScript(`(async () => {
     const p=await window.openAlice.companion.activity.getPreferences();
-    if(p.preset!=='important'||!p.brief) throw new Error('Official notification defaults missing');
-    await window.openAlice.companion.activity.updatePreferences({overrides:{news:'hide'}});
-    if((await window.openAlice.companion.activity.getPreferences()).overrides.news!=='hide') throw new Error('Preference save failed');
+    if(!p.events.completion||!p.events.failure||!p.events.action||!p.events.news||p.events.progress||!p.brief) throw new Error('Official notification defaults missing');
+    await window.openAlice.companion.activity.updatePreferences({events:{...p.events,news:false}});
+    if((await window.openAlice.companion.activity.getPreferences()).events.news!==false) throw new Error('Preference save failed');
     await window.openAlice.companion.activity.resetPreferences();
   })()`)
   writeFileSync(join(app.getPath('userData'), 'notifications-settings.png'), (await win.webContents.capturePage()).toPNG())
