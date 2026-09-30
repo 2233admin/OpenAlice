@@ -25,7 +25,8 @@ export const defaultProcessController: ProcessController = {
       process.kill(pid, 0)
     } catch (error) {
       // Permission failure cannot establish that an owner has exited.
-      return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+      const code = (error as NodeJS.ErrnoException).code
+      return code !== 'ESRCH' && code !== 'ERR_OUT_OF_RANGE'
     }
     if (process.platform === 'linux') {
       try {

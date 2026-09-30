@@ -99,6 +99,8 @@ describe('process liveness', () => {
     for (const pid of [0, -1, 1.5, Number.NaN]) expect(defaultProcessController.isAlive(pid)).toBe(false)
     expect(signal).not.toHaveBeenCalled()
     expect(defaultProcessController.isAlive(42)).toBe(false)
+    signal.mockImplementation(() => { throw Object.assign(new RangeError('invalid pid'), { code: 'ERR_OUT_OF_RANGE' }) })
+    expect(defaultProcessController.isAlive(Number.MAX_SAFE_INTEGER)).toBe(false)
   })
 
   it.skipIf(process.platform !== 'linux')('only excludes an explicit zombie state, including names with parentheses', () => {
