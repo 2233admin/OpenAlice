@@ -48,6 +48,18 @@ describe('Supervisor Default authority', () => {
     expect(await readStartupTarget({ supervisorRoot: root })).toEqual({ machine: 'local', project: 'default' })
   })
 
+  it('uses both packaged and development Electron preferences regardless of which client migrates first', async () => {
+    const { root, save } = await fixture()
+    const packaged = join(root, 'OpenAlice', 'openalice-data-home.json')
+    const development = join(root, 'open-alice', 'openalice-data-home.json')
+    await mkdir(join(root, 'OpenAlice')); await mkdir(join(root, 'open-alice'))
+    const config = { schemaVersion: 2 as const, projects: { research: { home: join(root, 'research') } } }
+    await writeFile(development, JSON.stringify({ selectedHome: config.projects.research.home }))
+    expect((await migrateSupervisorDefault(root, config, save, packaged)).defaultTarget).toEqual({ machine: 'local', project: 'research' })
+    await writeFile(packaged, JSON.stringify({ selectedHome: '/unmapped' }))
+    expect((await migrateSupervisorDefault(root, config, save, development)).defaultTargetMigrationError).toContain('not mapped')
+  })
+
   it('preserves an unreachable remote choice rather than checking or falling back during migration', async () => {
     const { root, desktop, save } = await fixture()
     await writeFile(join(root, 'startup-target.json'), JSON.stringify({ schemaVersion: 1, target: { machine: 'offline', project: 'research' } }))

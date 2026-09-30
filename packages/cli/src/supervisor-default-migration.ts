@@ -1,7 +1,7 @@
 /** Supervisor-root migration, independent of project data/config journals.
  * Schema 3 is the durable idempotency marker; legacy files are retained. */
 import { readFile, copyFile, constants } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import type { SupervisorConfigDocument } from './supervisor-config.ts'
 import { parseDefaultTarget } from './supervisor-config.ts'
@@ -34,21 +34,26 @@ export async function migrateSupervisorDefault(root: string, config: SupervisorC
       const target = parseDefaultTarget(recent.target)
       if (target) candidates.push(target)
     }
-    const packagedPath = legacyDesktopPreferencePath()
-    const desktopPaths = desktopPath ? [desktopPath] : [packagedPath, join(packagedPath, '..', '..', 'open-alice', 'openalice-data-home.json')]
+    const selectedPath = desktopPath ?? legacyDesktopPreferencePath()
+    const folder = dirname(selectedPath)
+    // Development Electron uses package.name; packaged Electron uses productName.
+    // Both clients must see the same migration inputs, regardless of entry order.
+    const desktopPaths = ['OpenAlice', 'open-alice'].includes(basename(folder))
+      ? ['OpenAlice', 'open-alice'].map(name => join(dirname(folder), name, 'openalice-data-home.json'))
+      : [selectedPath]
     for (const path of desktopPaths) {
       const desktop = await readOptional(path) as { selectedHome?: unknown } | undefined
       if (desktop !== undefined) {
-      if (!desktop || typeof desktop !== 'object') throw new Error('Invalid desktop startup preference')
-      if (desktop.selectedHome != null) {
-        if (typeof desktop.selectedHome !== 'string') throw new Error('Invalid desktop data folder')
-        const matches = ['default', ...Object.keys(config.projects ?? {}).filter(key => key !== 'default')].filter(key => {
-          const home = config.projects?.[key]?.home ?? (key === 'default' ? config.defaults?.home ?? join(homedir(), '.openalice') : undefined)
-          return home && resolve(home) === resolve(desktop.selectedHome as string)
-        })
-        if (matches.length !== 1) throw new Error('The desktop data folder is not mapped to one registered AliceProject')
-        candidates.push({ machine: 'local', project: matches[0]! })
-      }
+        if (!desktop || typeof desktop !== 'object') throw new Error('Invalid desktop startup preference')
+        if (desktop.selectedHome != null) {
+          if (typeof desktop.selectedHome !== 'string') throw new Error('Invalid desktop data folder')
+          const matches = ['default', ...Object.keys(config.projects ?? {}).filter(key => key !== 'default')].filter(key => {
+            const home = config.projects?.[key]?.home ?? (key === 'default' ? config.defaults?.home ?? join(homedir(), '.openalice') : undefined)
+            return home && resolve(home) === resolve(desktop.selectedHome as string)
+          })
+          if (matches.length !== 1) throw new Error('The desktop data folder is not mapped to one registered AliceProject')
+          candidates.push({ machine: 'local', project: matches[0]! })
+        }
     }
     }
     if (config.defaultProject) candidates.push({ machine: 'local', project: config.defaultProject })
