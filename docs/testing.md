@@ -56,6 +56,54 @@ claim. Mapped evidence is not a run result; a green component check is not a
 native user journey. Catalog guards validate assertion/task references and
 central ownership. Metadata changes force collection-wide changed-test reruns.
 
+## Required local evidence and run receipts
+
+`pnpm test:critical --receipt artifacts/tests/critical-local.json` runs the
+`critical-local` gate declared in `tests/gates.json`. It resolves existing
+coverage rows rather than maintaining another list of test files. Its five
+bounded requirements cover broker-free Chat/restart, real local child failure
+and shutdown recovery, loopback approval HTTP, run-result integrity and
+complete packaged-Workspace receipt validation. These are source/local checks;
+they do not certify browser onboarding, a real agent login, native Dock/tray
+interaction, or a venue account.
+
+The gate runs its entire declared hermetic and integration evidence. It rejects
+owner/lane/group/path/changed filters and forwarded Vitest arguments. Each
+required assertion must appear exactly once and actually pass: missing,
+ambiguous, skipped and failed assertions all fail acceptance. Merely passing
+some other assertions in the same file is insufficient.
+
+Every actual `test:select` execution writes a JSON receipt. Use `--receipt` to
+choose a durable output location; otherwise the runner prints its temporary
+receipt path. JSON/list/explain/group/inventory modes remain data-only and do
+not write a run receipt. Receipts record source commit and index tree, dirty
+state, host/Node identity, selectors, per-invocation executed/passed/failed/
+skipped assertion counts, required evidence and unexecuted invocations. The
+index tree identifies staged content, not unstaged edits; dirty receipts must
+not be mistaken for clean-commit acceptance. `artifact: null` explicitly means
+source tests, not packaged bytes.
+
+All-skipped/empty execution, nonzero exits, spawn errors, missing reports,
+file/hook failures and incomplete required evidence fail closed. Changed-file
+runs report only the actual import-graph intersection, and fail when nothing
+executes. Runner-owned one-shot/report/output options cannot be overridden.
+Receipts retain assertion identities/statuses without raw stdout or failure
+messages. Console warnings remain diagnostics and are explicitly uncollected;
+the receipt does not turn a required failed check into an advisory warning.
+
+Temporary reporter files are removed before acceptance is written. Passing
+hooks establish only the test's cleanup assertions, not blanket native/venue
+cleanup. Packaged Workspace receipt validation separately requires every
+producer check, including `cleanupComplete`; an empty/truncated check object
+cannot pass.
+
+The dev PR clean-build job and the master/manual source-contract job invoke
+this gate and upload its receipt even on failure. The existing full-suite,
+native/platform and final artifact release gates remain separate. The gate
+always runs this bounded critical set; it does not pretend the static changed
+import graph establishes cross-process impact. Continue using owner/full-suite
+fallback for broader changes.
+
 ## Command Model
 
 Start with the narrowest command that can falsify the change, then escalate
@@ -64,6 +112,7 @@ when the dependency or ownership boundary is uncertain.
 | Namespace | Meaning |
 |---|---|
 | `pnpm test` | Complete default hermetic catalog across Node and UI. This is the deterministic full-suite backstop, not every test-like operation in the repository. |
+| `pnpm test:critical` | Entire immutable `critical-local` assertion gate across hermetic and deterministic integration evidence, with a run receipt. |
 | `pnpm test:changed` | Hermetic tests in Vitest's static changed-file dependency closure against `origin/dev`. |
 | `pnpm test:owner:*` | Complete hermetic inventory for one product owner. |
 | `pnpm test:integration:*` | Deterministic local product integration with isolated state; no public network, configured account, or trading write. |
@@ -119,7 +168,7 @@ pnpm test:select --owner ui --changed origin/dev
 pnpm test:select --owner uta --package @traderalice/uta-service
 pnpm test:select --lane integration --area workspace
 pnpm test:select --lane external-readonly --area market-data --explain
-pnpm test:select --owner alice --path src/server -- --reporter=verbose
+pnpm test:select --owner alice --path src/server/inbox-origin.spec.ts -- --testNamePattern=origin
 ```
 
 Selectors in one dimension are ORed; different dimensions are ANDed. For
@@ -134,7 +183,21 @@ pass.
 `--list`, `--explain`, and `--json` are dry-run modes. They enumerate catalog
 selection, side effects, prerequisites, and the planned invocation without
 loading a test module, probing credentials, or proving that those prerequisites
-exist. Arguments after `--` are forwarded to Vitest.
+exist. Arguments after `--` are forwarded to Vitest except runner-owned
+reporter/output and one-shot execution options, which are rejected. Focused
+name filters are development feedback, not acceptance for excluded assertions;
+required gates reject all forwarded arguments.
+
+Use the [[docs/development-workflow.md]]
+([feedback ladder](development-workflow.md#local-feedback-ladder)) for the
+development-loop versus cumulative-delivery decision. A combined
+`--scenario`, `--contract`, and `--owner` query is an intersection, not the
+union of those groups. Run affected protocol regressions separately when a
+scenario/owner filter would omit their evidence, with the appropriate lane or
+dedicated command. Unmapped owner-only tests may still cover affected behavior.
+Static changed imports cannot establish dynamic/registry/process impact;
+inspect those edges and expand explicitly. The required critical gate remains
+whole and its CI requirement is unchanged.
 
 Docker fixtures under `scripts/` are disposable installer and SSH test hosts;
 they are not supported deployment images. OpenAlice does not ship a backend
@@ -219,3 +282,13 @@ acceptance.
 Do not create a new Vitest project merely to obtain a product label. Add or
 change execution environments only when isolation or runtime behavior actually
 requires one.
+
+All runnable Vitest configs share `scripts/test-collection-inputs.mjs` metadata
+triggers, including deterministic integration and the explicit external/live
+lanes. A metadata-only `--changed` edit invalidates collection across the
+selected lane; it does not change that lane's side-effect authorization or make
+static import analysis complete for dynamic runtime dependencies.
+
+Post-merge Stage 1/2 grouping acceptance and its remaining product gaps are
+tracked in [[plans/test-system-grouping.md]]. Shutdown completion-drain tests
+also do not certify that every storage layer propagates disk write failures.

@@ -13,6 +13,7 @@ pnpm test:groups
 pnpm test:groups --scenario desktop-lifecycle --explain
 pnpm test:groups --contract alice-uta --json
 pnpm test:inventory --json
+pnpm test:critical --receipt artifacts/tests/critical-local.json
 pnpm test:select --scenario workspace-creation --lane integration
 pnpm test:select --scenario first-run --contract alice-uta --owner alice --explain
 pnpm test:select --contract ui-api
@@ -85,9 +86,24 @@ The initial matrix is a reviewed starting set of important behaviors, not an
 exhaustive catalog of all product behavior or every assertion in every leaf
 spec. P0/P1/P2 rank follow-up review and gap work; Stage 1 introduces no new
 CI policy, native acceptance receipt, broker run, or product coverage claim.
-Prioritize Stage 2 from the explicit gaps: broker-free first run, real
-conversation/restart recovery, native close/reopen/quit, approval/write
-idempotency, and required smoke result/cleanup semantics.
+Stage 2 adds bounded local Chat/restart, real child recovery/shutdown and
+loopback approval evidence, plus strict required-run and packaged receipt
+checks. The broader native close/reopen/quit, browser onboarding and venue
+requirements retain their explicit gaps.
+
+## Required acceptance
+
+`gates.json` names reviewed bounded requirements by group and row ID. The
+`critical-local` gate resolves their spec assertions from the coverage manifests
+and checks actual passing results. It cannot auto-run a dedicated Electron,
+Docker, external or paper command. Adding evidence to a required row changes
+its gate: keep its scope deliberate and verify the entire gate.
+
+`pnpm test:critical` rejects narrowing filters and all forwarded runner arguments.
+Generic scenario selection remains composable but is not equivalent to required
+acceptance. Actual run receipts are kept separate from `coverage.json`; a static
+mapping is never a run result. See [the testing guide](../docs/testing.md) for
+receipt identities, skips, failure and cleanup limits.
 
 ## Maintain evidence
 

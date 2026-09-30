@@ -10,7 +10,7 @@ export declare class WebRelay {
   }
   listen(): Promise<string>
   connect(machine: string, project: string, options?: { remember?: boolean }): Promise<void>
-  rememberCurrentSelection(): Promise<void>
+  rememberCurrentSelection(current?: () => boolean): Promise<void>
   planMachine(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string }): Promise<unknown>
   applyMachine(id: string): Promise<unknown>
   readonly machineOperation: unknown
@@ -25,8 +25,8 @@ export declare function inspectLocalMachine(): Promise<{ machine: { projects: Ar
 
 export declare function resolveLocalStartupHome(project: string): Promise<string>
 
-export declare function readStartupTarget(): Promise<{ machine: string; project: string } | null>
-export declare function writeStartupTarget(target: { machine: string; project: string } | null): Promise<void>
+export declare function readStartupTarget(options?: { legacyDesktopPreferencePath?: string }): Promise<{ machine: string; project: string } | null>
+export declare function writeStartupTarget(target: { machine: string; project: string } | null, options?: { current?: () => boolean }): Promise<void>
 
 export declare class ClientUpdateService {
   constructor(options?: { path?: string; kind?: 'cli' | 'desktop'; currentVersion?: string; discover?: () => Promise<import('@traderalice/update-lifecycle').ClientReleaseObservation> })

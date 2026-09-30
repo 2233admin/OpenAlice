@@ -92,8 +92,7 @@
       ],
       "platforms": [
         "macOS-arm64",
-        "macOS-x64",
-        "Windows-x64"
+        "macOS-x64"
       ],
       "artifact": "unsigned Electron package; demo uses the isolated demo runner"
     },
@@ -124,8 +123,7 @@
       ],
       "platforms": [
         "macOS-arm64",
-        "macOS-x64",
-        "Windows-x64"
+        "macOS-x64"
       ],
       "artifact": "unsigned Electron package; demo uses the isolated demo runner"
     },
@@ -140,8 +138,7 @@
       ],
       "platforms": [
         "macOS-arm64",
-        "macOS-x64",
-        "Windows-x64"
+        "macOS-x64"
       ],
       "artifact": "unsigned Electron package; demo uses the isolated demo runner"
     },

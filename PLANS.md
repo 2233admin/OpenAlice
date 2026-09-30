@@ -33,9 +33,11 @@ the durable truth after it changes. Git history is the archive.
   signatures and shared final-archive acceptance for #1670. Draft PR acceptance
   remains pending.
 
-- [[plans/test-system-grouping.md]] — Stage 1 is implemented and locally verified,
-  awaiting PR review: product scenario/protocol evidence groups and safe query
-  entry points. Stage 2 will fill agreed critical gaps and connect acceptance gates.
+- [[plans/unified-default-target.md]] — Unify Desktop/Web/TUI/CLI startup on one client-owned Default target, saved after successful user switches.
+
+- [[plans/test-system-grouping.md]] — Stage 1 merged as #1667. Stage 2 local
+  journeys, approval HTTP contracts and required receipt gates are implemented
+  for separate review; native/browser/venue gaps and baseline test failures remain explicit.
 
 - [[plans/compact-notifications.md]] — Approved compact type-specific pop-out
   notifications, bounded news/Inbox grouping and optional news thumbnails;

@@ -47,7 +47,36 @@
           "scope": "Static workflow checks; build/publication workflows are not executed by group discovery."
         }
       ],
-      "gap": "Stage 2 connects missing deterministic journey gates after measuring their runtime; release policy remains unchanged."
+      "gap": "Required local evidence runs in the existing source jobs; final artifact/platform gates and branch protection still require their own executed evidence."
+    },
+    {
+      "id": "required-run-truth",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "Actual Vitest reports can contain only skips, hook failures or omitted required assertions.",
+      "action": "Inspect executed reports and run an immutable named gate.",
+      "expected": "Only executed passing required assertions satisfy acceptance; missing, skipped, ambiguous or failed evidence blocks the gate.",
+      "evidence": [
+        {
+          "spec": "scripts/test-results.spec.ts",
+          "assertion": "rejects all-skipped, hook failure, nonzero and missing reports from real Vitest processes",
+          "level": "contract",
+          "scope": "Runs actual isolated nested Vitest fixtures; no external side effects."
+        },
+        {
+          "spec": "scripts/test-results.spec.ts",
+          "assertion": "fails required evidence omitted or skipped despite other passing assertions",
+          "level": "contract",
+          "scope": "Required row matching from actual normalized assertion statuses."
+        },
+        {
+          "spec": "scripts/test-results.spec.ts",
+          "assertion": "rejects attempts to narrow the required gate before execution",
+          "level": "contract",
+          "scope": "Subprocess CLI dry-run/rejections; no native or external runner."
+        }
+      ],
+      "gap": ""
     }
   ],
   "centralTests": [

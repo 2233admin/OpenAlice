@@ -187,7 +187,7 @@ describe('composable selection contract', () => {
 
 describe('risk and side-effect boundary contract', () => {
   it('keeps deterministic, external read-only, live-paper, and system specs distinct', () => {
-    expect(integrationIncludes).toHaveLength(2)
+    expect(integrationIncludes).toHaveLength(5)
     expect(externalReadonlyIncludes.length).toBeGreaterThan(2)
     expect(livePaperIncludes.length).toBeGreaterThan(0)
 

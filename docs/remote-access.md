@@ -950,3 +950,12 @@ behavior.
 - installing, pinning, downgrading, or repairing Agent Runtime executables on a
   remote host;
 - moving broker credentials, account state, or trading writes out of UTA.
+
+## Client startup Default
+
+The origin machine's Supervisor owns the complete Default Machine/project pair.
+Remote inventory and lifecycle commands do not choose it. The origin resolves
+implicit commands and forwards an explicit project; the remote machine's own
+Default is irrelevant. Project create/start/inspect do not set either Default.
+A failed remote restore stays detached even when a healthy local runtime is
+available. See [[docs/alice-project.md]] and [[docs/cli-supervisor.md]].

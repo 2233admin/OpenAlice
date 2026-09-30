@@ -1,0 +1,12 @@
+{
+  "critical-local": {
+    "description": "Bounded broker-free Chat, real local Session recovery, approval HTTP contracts and desktop receipt integrity. No native desktop or venue acceptance is implied.",
+    "requirements": [
+      { "group": "scenario:first-run", "requirement": "local-chat-restart" },
+      { "group": "scenario:conversation-recovery", "requirement": "local-child-recovery" },
+      { "group": "contract:alice-uta", "requirement": "local-approval-http" },
+      { "group": "contract:development-workflow", "requirement": "required-run-truth" },
+      { "group": "contract:desktop-ipc", "requirement": "complete-workspace-receipt" }
+    ]
+  }
+}

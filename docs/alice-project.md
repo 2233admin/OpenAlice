@@ -141,12 +141,12 @@ Load-bearing paths:
 ## Persistence and released compatibility
 
 The Supervisor registry lives outside every project home at the platform
-Supervisor root. Its canonical schema is version 2:
+Supervisor root. Its canonical schema is version 3:
 
 ```json
 {
-  "schemaVersion": 2,
-  "defaultProject": "research",
+  "schemaVersion": 3,
+  "defaultTarget": { "machine": "local", "project": "research" },
   "projects": {
     "research": {
       "name": "research",
@@ -157,8 +157,9 @@ Supervisor root. Its canonical schema is version 2:
 }
 ```
 
-The released version-1 `defaultInstance`/`instances` document is accepted only
-at this read boundary. The next successful write emits version 2. Deprecated
+Released version-1 and version-2 registries migrate once to version 3 under
+the Supervisor write lock. The old registry is preserved as
+`config.pre-default-target.json`. Deprecated
 `--instance` and `OPENALICE_INSTANCE` inputs remain CLI/environment aliases for
 released automation; current product copy and new integrations use
 `--project` and `OPENALICE_PROJECT`.
@@ -219,22 +220,29 @@ Machine / AliceProject launcher can add SSH machines, review their preparation,
 create projects in new or empty folders, and start stopped projects without
 implicit takeover. Workspace preparation remains asynchronous after app entry.
 
-The client remembers the last successfully opened location as **Recent**, stored
-outside project data under the local Supervisor root. It never silently changes
-to another project when Recent is unavailable. Electron opens a client-only
-HTTP relay shell for remote or unresolved Recent, with no local project lock or
-backend children. A registered local project selected for integrated execution
-retains native IPC and starts its own backend on launch; an already running CLI
-backend is attached through the relay. Automation's explicit `OPENALICE_HOME`
-remains authoritative and disposable smoke identities never overwrite Recent.
+The current machine's Supervisor owns one **Default** Machine/AliceProject pair
+in `config.json.defaultTarget`. `null` opens the chooser. Desktop, Web, TUI and
+CLI use this same authority. There is no independent Recent or local lifecycle
+default. Electron opens its client relay shell for a remote or unresolved
+Default without locking or starting a local project. A selected local project
+retains native IPC; an already running CLI backend attaches through the relay.
+Explicit home/project/environment overrides apply only to that invocation.
 
-Startup flow: check Recent → verify health and identity → open, or stay in the
-launcher with the reason. SSH addition tests access, reviews any CLI preparation,
-and saves only after approval succeeds; it does not start a default project.
-Project start/create then verifies the selected runtime before opening. Failed
-selection, probe or creation never changes Recent. A persistence failure after
-successful attachment keeps the live connection and reports that remembering
-failed. Desktop remembers only after the new page has loaded.
+Restore, reconnect, polling and inventory never change Default. A successful
+user switch saves after health and identity verification; Desktop also waits
+for replacement navigation. Cancel, close and superseding requests invalidate
+late completion. Persistence failure keeps the connection and reports that
+Default was not saved. Create, start and inspect alone do not select a project.
+`project use` is the explicit set-Default compatibility operation.
+
+The Supervisor migration examines the old startup pair, mapped Electron
+selectedHome, and old explicit local default. Consistent inputs are retained;
+conflicting, corrupt or unmapped choices produce a recoverable chooser error.
+Unreachable targets are preserved. Schema 3, including null, never rereads old
+files. The old files remain backups; no project data moves or deletion occur.
+An unmapped legacy home can be explicitly registered with the CLI before it
+is selected. The migration runs at the client root, independently of backend
+project journals; its inventory is in [[src/migrations/INDEX.md]].
 
 The launcher uses a two-column selector at desktop width and Machine → project
 drill-in on narrow screens. Back stays inside the same shell; header and footer
