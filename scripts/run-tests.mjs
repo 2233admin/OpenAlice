@@ -10,6 +10,8 @@ import {
   areasForTestFile,
   assertLivePaperAcknowledgement,
   collectWorkspacePackages,
+  collectRepositorySpecFiles,
+  collectTestCommands,
   laneSuiteNames,
   laneSuites,
   lanesForTestFile,
@@ -19,6 +21,12 @@ import {
   selectTestFiles,
   systemCommandSuites,
 } from './test-lanes.mjs'
+import {
+  contractSuiteNames, scenarioSuiteNames, coverageSummary, groupsForTestFile,
+  groupCommandIds, groupSpecFiles, requirementStatus, selectCoverageGroups,
+  validateCoverageGroups,
+} from './test-groups.mjs'
+import { validateTestCommands } from './test-commands.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDir, '..')
@@ -48,11 +56,15 @@ function parseArgs(argv) {
     areas: [],
     packages: [],
     paths: [],
+    scenarios: [],
+    contracts: [],
     changed: null,
     list: false,
     explain: false,
     json: false,
     help: false,
+    groups: false,
+    inventory: false,
     forward: [],
   }
 
@@ -66,6 +78,8 @@ function parseArgs(argv) {
     else if (arg === '--list') options.list = true
     else if (arg === '--explain') options.explain = true
     else if (arg === '--json') options.json = true
+    else if (arg === '--groups') options.groups = true
+    else if (arg === '--inventory') options.inventory = true
     else if (arg === '--changed') {
       const next = argv[index + 1]
       if (next && !next.startsWith('--')) {
@@ -76,6 +90,14 @@ function parseArgs(argv) {
       }
     } else if (arg.startsWith('--changed=')) {
       options.changed = arg.slice('--changed='.length) || 'origin/dev'
+    } else if (arg.startsWith('--scenario=')) addValues(options.scenarios, arg.slice('--scenario='.length), '--scenario')
+    else if (arg === '--scenario') {
+      addValues(options.scenarios, takeValue(argv, index, arg), arg)
+      index += 1
+    } else if (arg.startsWith('--contract=')) addValues(options.contracts, arg.slice('--contract='.length), '--contract')
+    else if (arg === '--contract') {
+      addValues(options.contracts, takeValue(argv, index, arg), arg)
+      index += 1
     } else if (arg.startsWith('--lane=')) addValues(options.lanes, arg.slice('--lane='.length), '--lane')
     else if (arg === '--lane') {
       addValues(options.lanes, takeValue(argv, index, arg), arg)
@@ -101,8 +123,9 @@ function parseArgs(argv) {
     }
   }
 
+  options.laneExplicit = options.lanes.length > 0
   if (options.lanes.length === 0) options.lanes.push('hermetic')
-  for (const key of ['lanes', 'owners', 'areas', 'packages', 'paths']) {
+  for (const key of ['lanes', 'owners', 'areas', 'packages', 'paths', 'scenarios', 'contracts']) {
     options[key] = [...new Set(options[key])]
   }
   return options
@@ -118,6 +141,8 @@ Selectors (repeatable; comma-separated values also work):
   --lane <name>       ${laneSuiteNames.join(', ')}
   --owner <name>      ${ownerSuiteNames.join(', ')}
   --area <name>       ${areaSuiteNames.join(', ')}
+  --scenario <name>   product scenario (see --groups)
+  --contract <name>   protocol/workflow boundary (see --groups)
   --package <name>    workspace package name
   --path <path|glob>  repo-relative test path, directory, or glob
   --changed [base]    intersect through Vitest's changed import graph (default: origin/dev)
@@ -129,6 +154,15 @@ Modes (selection only; test modules, credentials, and prerequisites are not prob
   --list              print candidate files
   --explain           print selection, side effects, prerequisites, and invocation plan
   --json              print the same dry-run plan as JSON
+  --groups            inspect coverage requirements, gaps, and dedicated evidence commands
+  --inventory         inspect every spec/manifest check and registered standalone acceptance
+
+Group inspection supports --scenario/--contract filters and --json/--explain.
+Inventory is complete and unfiltered. Both modes are read-only; they never
+execute the commands they describe. Mapped evidence is not a recorded run.
+
+Scenarios: ${scenarioSuiteNames.join(', ')}
+Contracts: ${contractSuiteNames.join(', ')}
 
 Lane boundaries:`)
   for (const [name, lane] of Object.entries(laneSuites)) {
@@ -154,6 +188,10 @@ Examples:
   pnpm test:select --owner ui
   pnpm test:select --owner uta --package @traderalice/uta-service
   pnpm test:select --lane integration --area workspace
+  pnpm test:select --scenario workspace-creation --lane integration
+  pnpm test:select --contract ui-api --explain
+  pnpm test:groups --scenario desktop-lifecycle --explain
+  pnpm test:inventory --json
   pnpm test:select --lane external-readonly --area market-data --explain
   pnpm test:select --owner alice --owner ui --changed origin/dev
 
@@ -220,7 +258,18 @@ function createInvocations(options, files) {
   return invocations
 }
 
-function createPlan(options, files) {
+function describeGroup(group, commands) {
+  const ids = groupCommandIds(group)
+  return {
+    ...group,
+    summary: coverageSummary(group),
+    specs: groupSpecFiles(group),
+    requirements: group.requirements.map((requirement) => ({ ...requirement, evidenceStatus: requirementStatus(requirement) })),
+    dedicatedCommands: commands.filter((command) => ids.includes(command.id)),
+  }
+}
+
+function createPlan(options, files, commands) {
   const selectedLanes = options.lanes.map((name) => ({ name, ...laneSuites[name] }))
   const executionBlockers = []
   if (options.lanes.includes('system')) {
@@ -240,6 +289,8 @@ function createPlan(options, files) {
       areas: options.areas,
       packages: options.packages,
       paths: options.paths,
+      scenarios: options.scenarios,
+      contracts: options.contracts,
       changed: options.changed,
       changedSemantics: options.changed
         ? 'candidate files are intersected at execution by Vitest static import analysis'
@@ -252,7 +303,10 @@ function createPlan(options, files) {
       lane: lanesForTestFile(path),
       owner: ownersForTestFile(path),
       areas: areasForTestFile(path),
+      groups: groupsForTestFile(path),
     })),
+    groups: (options.scenarios.length || options.contracts.length)
+      ? selectCoverageGroups(options).map((group) => describeGroup(group, commands)) : [],
     invocations: createInvocations(options, files),
     executionBlockers,
     note: 'Dry-run only: no tests ran and no credentials or prerequisites were probed.',
@@ -273,11 +327,64 @@ function printExplanation(plan) {
   for (const blocker of plan.executionBlockers) {
     console.log(`\nexecution blocker: ${blocker}`)
   }
+  if (plan.groups.length) printGroups(plan.groups, true)
   for (const candidate of plan.invocations) {
     const project = candidate.project ? ` project=${candidate.project}` : ''
     console.log(`\nwould run lane=${candidate.lane}${project}`)
     console.log(`  vitest ${candidate.args.join(' ')}`)
   }
+}
+
+function printGroups(groups, detailed) {
+  console.log('[test-select] evidence map only; mapped/partial do not mean tests ran or passed')
+  for (const group of groups) {
+    const summary = Object.entries(group.summary).map(([status, count]) => `${status}=${count}`).join(' ')
+    console.log(`\n${group.kind}:${group.name} — ${group.title} (${summary})`)
+    console.log(`  manifest: ${group.path}; owner: ${group.owner}`)
+    if (detailed) {
+      for (const requirement of group.requirements) {
+        console.log(`  ${requirement.priority} ${requirement.id} [${requirement.evidenceStatus}]: ${requirement.expected}`)
+        for (const evidence of requirement.evidence) {
+          console.log(`    ${evidence.level}: ${evidence.spec ?? evidence.command} — ${evidence.assertion}`)
+          console.log(`      scope: ${evidence.scope}`)
+        }
+        if (requirement.gap) console.log(`    gap: ${requirement.gap}`)
+      }
+    }
+    for (const command of group.dedicatedCommands) {
+      console.log(`  separate evidence command (never auto-run): ${command.invocation}`)
+      console.log(`    ${command.lane}; effects: ${command.sideEffects}`)
+      for (const prerequisite of command.prerequisites) console.log(`    prerequisite: ${prerequisite}`)
+    }
+  }
+}
+
+function inspectCatalog(options, specs, commands) {
+  if (options.groups && options.inventory) fail('choose --groups or --inventory')
+  if (options.laneExplicit || options.owners.length || options.areas.length || options.packages.length || options.paths.length || options.changed || options.forward.length) {
+    fail('inspection does not apply file/lane filters or Vitest arguments; use only --scenario/--contract with --groups')
+  }
+  if (options.inventory) {
+    if (options.scenarios.length || options.contracts.length) fail('--inventory is complete and unfiltered; use --groups for a group view')
+    const files = specs.map((path) => {
+      const groups = groupsForTestFile(path)
+      return { path, owner: ownersForTestFile(path), lane: lanesForTestFile(path), areas: areasForTestFile(path), groups, mapping: groups.length ? 'group-evidence' : 'owner-only' }
+    })
+    const result = { executed: false, files, commands, specCount: files.length, commandCount: commands.length, ownerOnlyCount: files.filter((file) => file.mapping === 'owner-only').length, note: 'Complete data-only inventory. Owner-only specs are accounted for; their product assertion mapping has not been inferred.' }
+    if (options.json) console.log(JSON.stringify(result, null, 2))
+    else {
+      console.log(`[test-select] inventory only: ${result.specCount} specs, ${result.commandCount} commands, ${result.ownerOnlyCount} owner-only specs`)
+      for (const file of files) console.log(`${file.path}\t${file.lane[0]}\t${file.owner[0]}\t${file.groups.join(',') || 'owner-only'}`)
+      for (const command of commands) {
+        console.log(`\n${command.id}\t${command.kind}\t${command.lane}\t${command.owner}\n  ${command.invocation}\n  effects: ${command.sideEffects}`)
+        for (const prerequisite of command.prerequisites) console.log(`  prerequisite: ${prerequisite}`)
+      }
+    }
+    return
+  }
+  const groups = selectCoverageGroups(options).map((group) => describeGroup(group, commands))
+  if (options.json) console.log(JSON.stringify({ executed: false, groups, note: 'Evidence map only. No tests ran; no prerequisites were probed.' }, null, 2))
+  else printGroups(groups, options.explain)
 }
 
 function main() {
@@ -287,8 +394,19 @@ function main() {
     return
   }
 
-  let files
+  let files, specs, commands
   try {
+    specs = collectRepositorySpecFiles(repoRoot)
+    commands = collectTestCommands(repoRoot)
+    validateTestCommands(repoRoot, commands, ownerSuiteNames, laneSuiteNames)
+    validateCoverageGroups(repoRoot, selectCoverageGroups(), specs, commands, {
+      owners: ownerSuiteNames, lanes: laneSuiteNames, areas: areaSuiteNames,
+      packages: collectWorkspacePackages(repoRoot).map((entry) => entry.name),
+    })
+    if (options.groups || options.inventory) {
+      inspectCatalog(options, specs, commands)
+      return
+    }
     files = selectTestFiles(repoRoot, options)
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error))
@@ -302,7 +420,7 @@ function main() {
     fail(`catalog ownership/lane invariant failed for: ${ambiguous.join(', ')}`)
   }
 
-  const plan = createPlan(options, files)
+  const plan = createPlan(options, files, commands)
   if (options.json) {
     console.log(JSON.stringify(plan, null, 2))
     return
@@ -330,6 +448,8 @@ function main() {
       fail(error instanceof Error ? error.message : String(error))
     }
   }
+
+  if (plan.groups.length) printGroups(plan.groups, true)
 
   const vitest = resolve(repoRoot, 'node_modules/vitest/vitest.mjs')
   for (const candidate of plan.invocations) {

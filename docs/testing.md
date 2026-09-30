@@ -10,6 +10,52 @@ The catalog and selector live in `scripts/test-lanes.mjs` and
 public commands describe product ownership and risk instead of exposing that
 internal topology.
 
+After a fresh install, the full suite's native CLI subprocess fixtures need
+the compiled `@traderalice/update-lifecycle` entry point:
+
+```bash
+pnpm -F @traderalice/update-lifecycle build
+pnpm test
+```
+
+Vitest aliases workspace packages to source in its own process. Real CLI
+children use package exports and do not inherit those aliases. This local
+build prerequisite does not grant any external or broker acceptance authority.
+
+## Product Evidence Groups
+
+Product journeys live under `tests/scenarios/<scenario>/`; protocol and
+cross-folder workflow requirements live under `tests/contracts/<boundary>/`.
+Each directory's `coverage.json` feeds the existing catalog with required
+behaviors, assertion/command evidence, priorities, fidelity, environment
+limits, and explicit gaps. Leaf unit/component specs remain with their code.
+See [[tests/README.md]] ([group catalog](../tests/README.md)) for the complete
+map and maintenance contract.
+
+```bash
+pnpm test:groups
+pnpm test:groups --scenario desktop-lifecycle --explain
+pnpm test:groups --contract alice-uta --json
+pnpm test:inventory --json
+pnpm test:select --scenario workspace-creation --lane integration
+pnpm test:select --scenario first-run --contract alice-uta --owner alice --explain
+```
+
+`--scenario` and `--contract` select referenced spec evidence and compose with
+existing dimensions: OR within a dimension, AND between dimensions. The lane
+still defaults to hermetic. Dedicated system/Electron/installer/paper commands
+are shown as additional evidence with their own prerequisites; the generic
+selector never executes them on behalf of a group. A group with no executable
+specs in the selected lane fails closed. Use `--groups` to inspect such a
+group's missing behaviors or argument-bearing dedicated commands.
+
+`test:groups` is a data-only view of requirements, including missing/partial
+evidence; `test:inventory` is the complete unfiltered spec and command inventory.
+An owner-only leaf spec is accounted for without inventing a product coverage
+claim. Mapped evidence is not a run result; a green component check is not a
+native user journey. Catalog guards validate assertion/task references and
+central ownership. Metadata changes force collection-wide changed-test reruns.
+
 ## Command Model
 
 Start with the narrowest command that can falsify the change, then escalate
@@ -26,6 +72,8 @@ when the dependency or ownership boundary is uncertain.
 | `pnpm test:external:*` | Explicit read-only access to public services, configured providers, or local TWS. |
 | `pnpm test:live:*` | Explicit demo/paper account acceptance that can submit, cancel, close, or otherwise mutate broker state. |
 | `pnpm test:select` | Composable catalog query and advanced Vitest entry point. |
+| `pnpm test:groups` | Data-only product scenario/protocol requirement and gap inspection. |
+| `pnpm test:inventory` | Complete data-only spec, manifest-check, and registered standalone acceptance inventory. |
 
 The owner suites are:
 
@@ -78,7 +126,7 @@ Selectors in one dimension are ORed; different dimensions are ANDed. For
 example, two `--owner` values select either owner, while `--owner uta
 --package @traderalice/uta-service` selects only the package portion of that
 owner. Supported dimensions are `--lane`, `--owner`, `--area`, `--package`,
-and repo-relative `--path`. `--changed [base]` intersects the candidates at
+repo-relative `--path`, `--scenario`, and `--contract`. `--changed [base]` intersects the candidates at
 execution using Vitest's static import graph. The default lane is `hermetic`,
 and a zero-file result fails closed rather than pretending that nothing was a
 pass.
@@ -149,7 +197,9 @@ acceptance.
    specs are hermetic; deterministic product journeys are integration; public
    reads are external; account writes are live; host/artifact journeys are
    system tests.
-2. Put the spec under exactly one owner root. Add a focused catalog include or
+2. Keep leaf specs under exactly one owner root. A central scenario/contract
+   spec instead declares exactly one owner/lane/area/package association in its
+   group's `centralTests` and an evidence row. Add a focused catalog include or
    exclusion in `scripts/test-lanes.mjs` when filename and location do not
    express the lane or named area unambiguously.
 3. Keep the default environment isolated. Never hide a public request,

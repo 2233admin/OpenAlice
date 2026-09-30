@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/test-system-grouping.md]] — Stage 1 is implemented and locally verified,
+  awaiting PR review: product scenario/protocol evidence groups and safe query
+  entry points. Stage 2 will fill agreed critical gaps and connect acceptance gates.
+
 - [[plans/update-lifecycle.md]] — Unify version inventory, backend probing, planning and durable update
   operations behind one lifecycle and UI hook; migrate real consumers and the
   rehearsal together, retiring duplicate paths while preserving owner engines.

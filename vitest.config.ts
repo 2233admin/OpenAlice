@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
+import { centralHermeticIncludes } from './scripts/test-lanes.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -11,6 +12,8 @@ const workspaceGlob = (pattern: string): string => (
 export const collectionWideTestInputs = [
   workspaceGlob('**/package.json'),
   workspaceGlob('**/{vitest,vite}.config.*'),
+  workspaceGlob('scripts/{test-lanes,test-groups,test-commands}.mjs'),
+  workspaceGlob('tests/**/*.json'),
 ]
 
 // Workspace packages are aliased directly to their `src/*.ts` entry points so
@@ -59,7 +62,7 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           setupFiles: ['./vitest.setup.ts'],
-          include: ['src/**/*.spec.*', 'packages/**/*.spec.*', 'services/**/*.spec.*', 'apps/**/*.spec.*', 'scripts/**/*.spec.*'],
+          include: ['src/**/*.spec.*', 'packages/**/*.spec.*', 'services/**/*.spec.*', 'apps/**/*.spec.*', 'scripts/**/*.spec.*', ...centralHermeticIncludes('node')],
           exclude: [
             '**/*.e2e.spec.*',
             '**/*.bbProvider.spec.*',
@@ -77,7 +80,7 @@ export default defineConfig({
           environment: 'jsdom',
           execArgv: ['--no-experimental-webstorage'],
           setupFiles: ['./vitest.setup.ts'],
-          include: ['ui/**/*.spec.*'],
+          include: ['ui/**/*.spec.*', ...centralHermeticIncludes('ui')],
         },
       },
     ],

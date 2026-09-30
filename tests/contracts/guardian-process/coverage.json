@@ -1,0 +1,53 @@
+{
+  "title": "Guardian ownership and child-process recovery",
+  "owner": "runtime-cli",
+  "guide": "docs/local-runtime.md",
+  "requirements": [
+    {
+      "id": "single-owner",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A runtime home has one live or stale Guardian owner.",
+      "action": "Acquire or explicitly take over its lock.",
+      "expected": "A live owner remains authoritative and only one replacement wins.",
+      "evidence": [
+        {
+          "spec": "packages/guardian-runtime/src/runtime-lock.spec.ts",
+          "assertion": "refuses a second live owner without takeover",
+          "level": "integration",
+          "scope": "Temporary lock state and real test-owned owner processes."
+        },
+        {
+          "spec": "packages/guardian-runtime/src/runtime-lock.spec.ts",
+          "assertion": "allows only one concurrent contender to replace a stale owner",
+          "level": "integration",
+          "scope": "Local process/lock contention; not every launcher/platform."
+        }
+      ],
+      "gap": "Compose source, packaged, and installed launchers under the same restart/cleanup acceptance."
+    },
+    {
+      "id": "recover-cleanup",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A test-owned child exits or an owner tree is retired.",
+      "action": "Recover services and release ports/processes.",
+      "expected": "Required services recover and no owned process/port remains.",
+      "evidence": [
+        {
+          "command": "open-alice#test:system:guardian",
+          "assertion": "runtime recovery smoke",
+          "level": "acceptance",
+          "scope": "Starts and kills test-owned Guardian trees."
+        },
+        {
+          "command": "open-alice#test:system:dev-stack",
+          "assertion": "development stack smoke",
+          "level": "acceptance",
+          "scope": "UTA restart/orphan-port subchecks are currently SOFT; green exit is not proof of those subchecks."
+        }
+      ],
+      "gap": "Stage 2 must distinguish required versus advisory subchecks and record individual failure/cleanup outcomes."
+    }
+  ]
+}

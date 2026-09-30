@@ -1,6 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 
+import { centralTestDefinitions, coverageGroups, groupSpecFiles, selectCoverageGroups } from './test-groups.mjs'
+import { collectTestCommands as collectCommands } from './test-commands.mjs'
+export { systemCommandSuites } from './test-commands.mjs'
+
 const slash = (value) => value.replaceAll('\\', '/')
 
 export const ownerSuites = {
@@ -56,10 +60,7 @@ export const ownerSuites = {
 
 export const ownerSuiteNames = Object.freeze(Object.keys(ownerSuites))
 
-export const integrationIncludes = [
-  'src/workspaces/workspace-creation.e2e.spec.ts',
-  'services/uta/src/domain/trading/__test__/e2e/uta-lifecycle.e2e.spec.ts',
-]
+export const integrationIncludes = centralTestDefinitions.filter((test) => test.lane === 'integration').map((test) => test.path)
 
 export const externalReadonlyIncludes = [
   'src/domain/market-data/__test__/e2e/market-data.e2e.spec.ts',
@@ -77,7 +78,6 @@ export const livePaperIncludes = [
 ]
 
 export const livePaperExcludes = [
-  'services/uta/src/domain/trading/__test__/e2e/uta-lifecycle.e2e.spec.ts',
   'services/uta/src/domain/trading/__test__/e2e/ccxt-hyperliquid-markets.e2e.spec.ts',
 ]
 
@@ -130,8 +130,9 @@ export const laneSuites = {
 export const laneSuiteNames = Object.freeze(Object.keys(laneSuites))
 
 const workflowContractIncludes = [
-  'scripts/development-test-contract.spec.ts',
+  'tests/contracts/development-workflow/development-test-contract.spec.ts',
   'scripts/test-lanes.spec.ts',
+  'scripts/test-groups.spec.ts',
   'scripts/classify-beta-release-prep.spec.mjs',
   'scripts/prepare-cli-neutral-inputs.spec.mjs',
   'scripts/ci-workflow.spec.ts',
@@ -242,40 +243,7 @@ export const areaSuites = {
 
 export const areaSuiteNames = Object.freeze(Object.keys(areaSuites))
 
-export const systemCommandSuites = {
-  'dev-stack': {
-    command: 'tsx scripts/guardian/smoke.ts',
-    sideEffects: 'starts a real local dev process tree and uses temporary state',
-    prerequisites: ['workspace dependencies installed'],
-  },
-  guardian: {
-    command: 'tsx scripts/guardian/runtime-recovery-smoke.ts',
-    sideEffects: 'starts and kills test-owned local Guardian process trees',
-    prerequisites: ['workspace dependencies installed'],
-  },
-  connector: {
-    command: 'node scripts/connector-service-smoke.mjs',
-    sideEffects: 'starts a test-owned local Connector process',
-    prerequisites: ['Connector build/runtime dependencies available'],
-  },
-  installer: {
-    command: 'node scripts/install-docker-smoke.mjs',
-    sideEffects: 'builds disposable Docker images and installs into containers',
-    prerequisites: ['Docker available'],
-  },
-  'installer:dev': {
-    command: 'node scripts/install-channel-smoke.mjs',
-    sideEffects: 'downloads the dev installer and uses disposable Docker images',
-    prerequisites: ['Docker and network access available'],
-  },
-  remote: {
-    command: 'node scripts/remote-ssh-smoke.mjs',
-    sideEffects: 'starts disposable Docker/SSH targets and copies an install payload',
-    prerequisites: ['Docker and a built/selected CLI payload'],
-  },
-}
-
-const collectionRoots = ['src', 'packages', 'services', 'apps', 'scripts', 'ui']
+const collectionRoots = ['src', 'packages', 'services', 'apps', 'scripts', 'ui', 'tests']
 const systemTestFiles = new Set()
 
 function isWithin(file, root) {
@@ -318,6 +286,8 @@ function matchesSuiteDefinition(file, suite) {
 
 export function isRiskLaneTest(file) {
   const normalized = slash(file)
+  const central = centralTestDefinitions.find((test) => test.path === normalized)
+  if (central) return central.lane !== 'hermetic'
   return normalized.includes('.e2e.spec.')
     || normalized.includes('.bbProvider.spec.')
     || normalized.includes('.live.spec.')
@@ -331,6 +301,8 @@ export function isHermeticDefaultTest(file) {
 
 export function lanesForTestFile(file) {
   const normalized = slash(file)
+  const central = centralTestDefinitions.find((test) => test.path === normalized)
+  if (central) return [central.lane]
   return [
     isHermeticDefaultTest(normalized) && 'hermetic',
     matchesAny(normalized, integrationIncludes) && 'integration',
@@ -344,13 +316,29 @@ export function lanesForTestFile(file) {
 
 export function ownersForTestFile(file) {
   const normalized = slash(file)
+  const central = centralTestDefinitions.find((test) => test.path === normalized)
+  if (central) return [central.owner]
   return ownerSuiteNames.filter((owner) => (
     ownerSuites[owner].roots.some((root) => isWithin(normalized, root))
   ))
 }
 
 export function areasForTestFile(file) {
-  return areaSuiteNames.filter((area) => matchesSuiteDefinition(file, areaSuites[area]))
+  const central = centralTestDefinitions.find((test) => test.path === slash(file))
+  return [...new Set([
+    ...areaSuiteNames.filter((area) => matchesSuiteDefinition(file, areaSuites[area])),
+    ...(central?.areas ?? []),
+  ])]
+}
+
+export function centralHermeticIncludes(project) {
+  return centralTestDefinitions.filter((test) => (
+    test.lane === 'hermetic' && ownerSuites[test.owner]?.project === project
+  )).map((test) => test.path)
+}
+
+export function collectTestCommands(repoRoot) {
+  return collectCommands(repoRoot, collectWorkspacePackages(repoRoot), (root) => ownersForTestFile(`${root}/catalog.spec.ts`)[0])
 }
 
 function walk(directory, output) {
@@ -411,6 +399,13 @@ export function selectTestFiles(repoRoot, selectors = {}) {
   const areas = selectors.areas ?? []
   const packages = selectors.packages ?? []
   const paths = (selectors.paths ?? []).map(normalizePathSelector)
+  selectCoverageGroups(selectors) // Validate both group dimensions even if the file intersection is empty.
+  const groupPaths = (kind, names) => new Set(coverageGroups
+    .filter((group) => group.kind === kind && names.includes(group.name)).flatMap(groupSpecFiles))
+  const scenarios = selectors.scenarios ?? []
+  const contracts = selectors.contracts ?? []
+  const scenarioPaths = groupPaths('scenario', scenarios)
+  const contractPaths = groupPaths('contract', contracts)
 
   for (const lane of lanes) {
     if (!laneSuites[lane]) throw new Error(`Unknown test lane: ${lane}`)
@@ -433,8 +428,11 @@ export function selectTestFiles(repoRoot, selectors = {}) {
     (lanes.length === 0 || lanesForTestFile(file).some((lane) => lanes.includes(lane)))
     && (owners.length === 0 || ownersForTestFile(file).some((owner) => owners.includes(owner)))
     && (areas.length === 0 || areasForTestFile(file).some((area) => areas.includes(area)))
-    && (packageRoots.length === 0 || packageRoots.some((root) => isWithin(file, root)))
+    && (packageRoots.length === 0 || packageRoots.some((root) => isWithin(file, root))
+      || packages.includes(centralTestDefinitions.find((test) => test.path === file)?.package))
     && (paths.length === 0 || paths.some((path) => matchesPathSelector(file, path)))
+    && (scenarios.length === 0 || scenarioPaths.has(file))
+    && (contracts.length === 0 || contractPaths.has(file))
   ))
 }
 

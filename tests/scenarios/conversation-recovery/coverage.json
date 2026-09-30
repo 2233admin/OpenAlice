@@ -1,0 +1,64 @@
+{
+  "title": "Conversation, interruption, and Session recovery",
+  "owner": "runtime-cli",
+  "guide": "docs/workspace-lifecycle.md",
+  "requirements": [
+    {
+      "id": "interrupt",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A displayed execution is active.",
+      "action": "Interrupt it, switch selection, and consume late responses.",
+      "expected": "Only the selected execution is affected; authoritative state is refreshed.",
+      "evidence": [
+        {
+          "spec": "ui/src/hooks/useSessionControl.spec.tsx",
+          "assertion": "binds interruption to the displayed execution and refreshes authoritative state",
+          "level": "component",
+          "scope": "Hook uses controlled fetch responses."
+        },
+        {
+          "spec": "ui/src/hooks/useSessionControl.spec.tsx",
+          "assertion": "drops late responses after selection changes and reports failures",
+          "level": "component",
+          "scope": "Hook race/error behavior; no native process."
+        }
+      ],
+      "gap": "No mapped browser-to-native-CLI interruption, reconnect, and resume journey."
+    },
+    {
+      "id": "resume-once",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A paused persisted Session has a native resume identity.",
+      "action": "Send concurrent resume requests.",
+      "expected": "The existing identity resumes with one launch.",
+      "evidence": [
+        {
+          "spec": "src/webui/routes/workspaces.spec.ts",
+          "assertion": "two simultaneous resumes spawn the agent exactly once",
+          "level": "contract",
+          "scope": "Concurrent Hono requests with stubbed Workspace service/spawn."
+        }
+      ],
+      "gap": "Actual child failure, process restart, and persisted Session reattachment are not proved by the route stub."
+    },
+    {
+      "id": "workspace-recovery",
+      "priority": "P1",
+      "review": "reviewed",
+      "initial": "A Workspace transition was interrupted.",
+      "action": "Reconcile an offboarding/restore operation.",
+      "expected": "The durable Workspace and handoff recover consistently.",
+      "evidence": [
+        {
+          "spec": "src/workspaces/workspace-lifecycle.spec.ts",
+          "assertion": "finishes an interrupted restore after the directory move",
+          "level": "integration",
+          "scope": "Real temporary filesystem with controlled runtime collaborators."
+        }
+      ],
+      "gap": "Native Session survival during app/Guardian interruption requires separate evidence."
+    }
+  ]
+}

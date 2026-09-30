@@ -1,0 +1,59 @@
+{
+  "title": "Close, Dock/tray reopen, and explicit quit",
+  "owner": "desktop",
+  "guide": "docs/managed-workspace-runtime.md",
+  "requirements": [
+    {
+      "id": "close-reopen",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "The app window and a Workspace task are active.",
+      "action": "Close the window and reopen via Dock/tray.",
+      "expected": "The same window/Session returns and the owned backend keeps running.",
+      "evidence": [
+        {
+          "spec": "apps/desktop/src/window-lifecycle.spec.ts",
+          "assertion": "hides an ordinary close without destroying the window or quitting the app",
+          "level": "unit",
+          "scope": "Fake BrowserWindow/App event emitters."
+        },
+        {
+          "spec": "apps/desktop/src/window-lifecycle.spec.ts",
+          "assertion": "restores the hidden window when the macOS Dock activates the app",
+          "level": "unit",
+          "scope": "Synthetic activate event; no real Dock."
+        },
+        {
+          "spec": "apps/desktop/src/window-lifecycle.spec.ts",
+          "assertion": "uses the same restoration path for the tray",
+          "level": "unit",
+          "scope": "Direct restoration helper; no native tray click."
+        }
+      ],
+      "gap": "Real macOS and Windows close/reopen with an active Session must be accepted separately."
+    },
+    {
+      "id": "explicit-quit",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "Explicit shutdown has started.",
+      "action": "Close or activate the window while resources are being released.",
+      "expected": "The app exits cleanly and activation cannot reopen it.",
+      "evidence": [
+        {
+          "spec": "apps/desktop/src/window-lifecycle.spec.ts",
+          "assertion": "allows the window to close when explicit app shutdown has started",
+          "level": "unit",
+          "scope": "Controlled quitting flag; no child-process cleanup."
+        },
+        {
+          "spec": "apps/desktop/src/window-lifecycle.spec.ts",
+          "assertion": "does not reopen a window during shutdown",
+          "level": "unit",
+          "scope": "Synthetic shutdown/activation race."
+        }
+      ],
+      "gap": "Owned PTY/service cleanup after native menu Quit and the close/quit race lack mapped native evidence."
+    }
+  ]
+}

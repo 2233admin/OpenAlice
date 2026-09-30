@@ -15,13 +15,13 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { initializeWorkspaceTemplateState } from './template-upgrade.js';
-import { aliceHarnessSourceVersion } from './alice-harness-assets.js';
-import { injectWorkspaceContext } from './context-injector.js';
-import type { TemplateMeta } from './template-registry.js';
-import { commitInitial } from './workspace-creator.js';
+import { initializeWorkspaceTemplateState } from '../../../src/workspaces/template-upgrade.js';
+import { aliceHarnessSourceVersion } from '../../../src/workspaces/alice-harness-assets.js';
+import { injectWorkspaceContext } from '../../../src/workspaces/context-injector.js';
+import type { TemplateMeta } from '../../../src/workspaces/template-registry.js';
+import { commitInitial } from '../../../src/workspaces/workspace-creator.js';
 
-const HERE = fileURLToPath(new URL('.', import.meta.url)); // src/workspaces/
+const HERE = fileURLToPath(new URL('../../../src/workspaces/', import.meta.url));
 const CHAT_DIR = join(HERE, 'templates', 'chat');
 const CHAT_FILES = join(CHAT_DIR, 'files');
 const CHAT_BOOTSTRAP = join(CHAT_DIR, 'bootstrap.mjs');

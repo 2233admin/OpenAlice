@@ -52,6 +52,8 @@
     "vendor:runtime": "node scripts/vendor-managed-runtime.mjs",
     "test": "vitest run",
     "test:select": "node scripts/run-tests.mjs",
+    "test:groups": "node scripts/run-tests.mjs --groups",
+    "test:inventory": "node scripts/run-tests.mjs --inventory",
     "test:changed": "node scripts/run-tests.mjs --changed origin/dev",
     "test:owner:alice": "node scripts/run-tests.mjs --owner alice",
     "test:owner:ui": "node scripts/run-tests.mjs --owner ui",

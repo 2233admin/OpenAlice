@@ -11,9 +11,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import Decimal from 'decimal.js'
-import { UnifiedTradingAccount } from '../../UnifiedTradingAccount.js'
-import { MockBroker } from '../../brokers/mock/index.js'
-import '../../contract-ext.js'
+import { UnifiedTradingAccount } from '../../../services/uta/src/domain/trading/UnifiedTradingAccount.js'
+import { MockBroker } from '../../../services/uta/src/domain/trading/brokers/mock/index.js'
+import '../../../services/uta/src/domain/trading/contract-ext.js'
 
 let broker: MockBroker
 let uta: UnifiedTradingAccount
