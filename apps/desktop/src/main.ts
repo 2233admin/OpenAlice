@@ -62,6 +62,7 @@ import { inspectPreviousUpdateAttempt, recordUpdateAttempt } from './update-atte
 import { childIsRunning, stopChild } from './child-shutdown.js'
 import { exitDesktopProcess } from './app-exit.js'
 import { createAppWindow } from './app-window.js'
+import { configureWindowLifecycle, showAppWindow } from './window-lifecycle.js'
 import type { CompanionHandle } from './companion.js'
 import { ClientUpdateService, WebRelay, readStartupTarget, writeStartupTarget, resolveLocalStartupHome, inspectLocalMachine } from './web-relay.js'
 
@@ -1128,11 +1129,7 @@ app.whenReady().then(async () => {
 
   const { window: win, companion } = createAppWindow(resolve(__dirname, 'preload.js'))
   createTray(win, companion)
-  win.on('close', event => {
-    if (appQuitting) return
-    event.preventDefault()
-    win.hide()
-  })
+  configureWindowLifecycle(app, win, () => appQuitting)
   const mayNavigate = (destination: string): boolean => {
     try {
       const url = new URL(destination)
@@ -1679,10 +1676,7 @@ function createTray(win: BrowserWindow, companion?: CompanionHandle): void {
   tray.setToolTip('OpenAlice')
 
   const show = () => {
-    if (win.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+    if (!appQuitting) showAppWindow(win)
   }
   const trayMenu = () => Menu.buildFromTemplate([
     { label: 'Show OpenAlice', click: show },
@@ -1704,5 +1698,6 @@ app.on('before-quit', (e) => {
 })
 
 app.on('window-all-closed', () => {
-  // The tray owns the explicit Quit action when no windows are visible.
+  // Closing a window never shuts down the runtime. The tray Quit action or
+  // macOS Cmd+Q/app menu owns explicit shutdown through before-quit.
 })
