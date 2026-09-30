@@ -91,7 +91,9 @@ describe('terminateProcessTree', () => {
     if (process.platform === 'linux') {
       try {
         const stat = readFileSync(`/proc/${childPid}/stat`, 'utf8')
-        expect(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0]).toBe('Z')
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/)
+        expect(fields[0]).toBe('Z')
+        expect(fields[17]).toBe('1')
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }

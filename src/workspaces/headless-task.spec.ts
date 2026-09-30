@@ -390,7 +390,9 @@ it('interrupts an uncooperative process tree and preserves partial output', asyn
     if (process.platform === 'linux') {
       try {
         const processStat = await readFile(`/proc/${descendant}/stat`, 'utf8');
-        expect(processStat.slice(processStat.lastIndexOf(')') + 2).split(' ')[0]).toBe('Z');
+        const fields = processStat.slice(processStat.lastIndexOf(')') + 2).trim().split(/\s+/);
+        expect(fields[0]).toBe('Z');
+        expect(fields[17]).toBe('1');
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
