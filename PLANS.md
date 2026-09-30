@@ -138,3 +138,4 @@ the durable truth after it changes. Git history is the archive.
   in `dev`; remaining work is the TypeScript CLI conversion, logs/Doctor/update
   UX, config check, registry deletion, authenticity-hardened updates, and
   release-gate N-1.
+- [[plans/companion-activity-notifications.md]] — Shared Journal notification preferences and background companion bubbles; Draft PR only, no release authority.

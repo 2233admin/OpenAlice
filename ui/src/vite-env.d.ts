@@ -47,6 +47,18 @@ interface Window {
       operation(): Promise<unknown>
     }
     readonly companion?: {
+      readonly activity?: {
+        getSignals(): Promise<import('../../apps/desktop/src/activity-projection').AgentActivitySignal[]>
+        onSignals(callback: (input: import('../../apps/desktop/src/activity-projection').AgentActivitySignal[]) => void): () => void
+        getPreferences(): Promise<import('../../apps/desktop/src/activity-policy').ActivityPreferences>
+        updatePreferences(input: Partial<import('../../apps/desktop/src/activity-policy').ActivityPreferences>): Promise<import('../../apps/desktop/src/activity-policy').ActivityPreferences>
+        resetPreferences(): Promise<import('../../apps/desktop/src/activity-policy').ActivityPreferences>
+        onPreferences(callback: (input: import('../../apps/desktop/src/activity-policy').ActivityPreferences) => void): () => void
+        onDisplay(callback: (input: import('../../apps/desktop/src/activity-controller').ActivityDisplay) => void): () => void
+        onOpen(callback: (context: string) => void): () => void
+        open(displayId: string): Promise<boolean>
+        dismiss(displayId: string): Promise<boolean>
+      }
       getSound(): Promise<PetSoundSettings>
       updateSound(settings: Partial<PetSoundSettings>): Promise<PetSoundSettings>
       resetSound(): Promise<PetSoundSettings>

@@ -142,6 +142,38 @@ const api = {
     operation: () => ipcRenderer.invoke('openalice:desktop-machine:operation'),
   },
   companion: {
+    activity: {
+      getSignals: () => ipcRenderer.invoke('openalice:activity:signals'),
+      onSignals: (callback: (input: unknown) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, input: unknown) => callback(input)
+        ipcRenderer.on('openalice:activity:signals', listener)
+        return () => ipcRenderer.removeListener('openalice:activity:signals', listener)
+      },
+      getPreferences: () => ipcRenderer.invoke('openalice:activity:preferences'),
+      updatePreferences: (input: unknown) => ipcRenderer.invoke('openalice:activity:update-preferences', input),
+      resetPreferences: () => ipcRenderer.invoke('openalice:activity:reset-preferences'),
+      open: (displayId: string) => ipcRenderer.invoke('openalice:activity:open', displayId),
+      dismiss: (displayId: string) => ipcRenderer.invoke('openalice:activity:dismiss', displayId),
+      onPreferences: (callback: (input: unknown) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, input: unknown) => callback(input)
+        ipcRenderer.on('openalice:activity:preferences-changed', listener)
+        return () => ipcRenderer.removeListener('openalice:activity:preferences-changed', listener)
+      },
+      onDisplay: (callback: (input: unknown) => void) => {
+        let active = true
+        const changed = new Set<string>()
+        const listener = (_event: Electron.IpcRendererEvent, input: { displayId: string }) => { changed.add(input.displayId); callback(input) }
+        ipcRenderer.on('openalice:activity:display', listener)
+        // Fetch after listener registration to close initial-render delivery gaps.
+        void ipcRenderer.invoke('openalice:activity:snapshot').then(events => { if (active) for (const event of events) if (!changed.has(event.displayId)) callback(event) }).catch(() => {})
+        return () => { active = false; ipcRenderer.removeListener('openalice:activity:display', listener) }
+      },
+      onOpen: (callback: (context: string) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, context: string) => callback(context)
+        ipcRenderer.on('openalice:activity:open', listener)
+        return () => ipcRenderer.removeListener('openalice:activity:open', listener)
+      },
+    },
     getSound: () => ipcRenderer.invoke('openalice:companion:sound:get'),
     updateSound: (settings: unknown) => ipcRenderer.invoke('openalice:companion:sound:update', settings),
     resetSound: () => ipcRenderer.invoke('openalice:companion:sound:reset'),

@@ -45,7 +45,11 @@ beforeEach(async () => {
   manager = new UTAManager(); manager.add(account)
   requests = 0; readonlyMode = false
   await listen()
-  client = createUTAClient({ baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 2_000 })
+  // Restart tests deliberately destroy the server's sockets. Keep each fixture
+  // request independent so global fetch cannot reuse a stale keep-alive socket.
+  client = createUTAClient({ baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 2_000,
+    fetch: (input, init) => fetch(input, { ...init, headers: { ...init?.headers, connection: 'close' } }),
+  })
   sdk = new UTAManagerSDK({ client, readonlyMutationReason: () => readonlyMode ? 'readonly mode' : undefined })
 })
 afterEach(async () => {
