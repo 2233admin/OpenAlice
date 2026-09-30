@@ -15,7 +15,7 @@ import { inspectMachineFleet, inspectRegisteredMachine, inspectLocalMachine, typ
 import { controlProject, validateProjectControl, type ProjectControlInput } from './project-control.ts'
 import { MachineManagement } from './machine-management.ts'
 import { readMachineRegistrySummary, requireMachineEnabled } from './machine-registry.ts'
-import { readStartupTarget, writeStartupTarget, type StartupTarget } from './startup-target.ts'
+import { readStartupTarget, writeStartupTarget, DefaultSelection, type StartupTarget } from './startup-target.ts'
 import { connectSsh, openBrowser, waitForOpenAlice } from './ssh-connect.mjs'
 
 type ActiveTarget = {
@@ -58,6 +58,7 @@ export interface WebRelayOptions {
 
 export class WebRelay {
   private target: ActiveTarget | null = null
+  private readonly defaultSelection = new DefaultSelection()
   private generation = 0
   private switching = false
   private projectOperation: Promise<void> | null = null
@@ -95,6 +96,7 @@ export class WebRelay {
       target: this.target && { machine: this.target.machine, machineName: this.target.machineName, project: this.target.project, projectName: this.target.projectName },
       switching: this.switching || this.projectOperation !== null,
       targetConnection: this.target ? this.targetConnection : null,
+      defaultSaveError: this.startupError,
     }
   }
 
@@ -108,12 +110,12 @@ export class WebRelay {
     }
   }
 
-  /** Recent is written only after a candidate passed health and identity checks.
+  /** Default is written only after a candidate passed health and identity checks.
    * Persistence failure must not tear down an otherwise working attachment. */
-  private async rememberSelection(machine: string, project: string): Promise<void> {
+  private async rememberSelection(machine: string, project: string, current: () => boolean = () => !this.closing): Promise<void> {
     this.startupError = null
-    try { await (this.options.writeStartup ?? writeStartupTarget)({ machine, project }) }
-    catch (error) { this.startupError = `Could not remember this location: ${error instanceof Error ? error.message : String(error)}` }
+    try { await (this.options.writeStartup ?? writeStartupTarget)({ machine, project }, { current }) }
+    catch (error) { this.startupError = `Connected, but Default was not saved: ${error instanceof Error ? error.message : String(error)}` }
   }
 
   setStartupError(error: unknown): void {
@@ -191,6 +193,7 @@ export class WebRelay {
 
   async close(): Promise<void> {
     this.closing = true
+    this.defaultSelection.cancel()
     this.clientUpdates.stop()
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
     this.target?.abort?.abort()
@@ -216,6 +219,8 @@ export class WebRelay {
   }
 
   disconnect(): void {
+    this.defaultSelection.cancel()
+    this.switching = false
     const previous = this.target
     if (!previous) return
     this.target = null
@@ -229,26 +234,38 @@ export class WebRelay {
     previous.abort?.abort()
   }
 
-  async connect(machineKey: string, projectKey: string, options: { remember?: boolean } = {}): Promise<void> {
-    await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false)
+  async connect(machineKey: string, projectKey: string, options: { remember?: boolean; signal?: AbortSignal } = {}): Promise<void> {
+    if (options.signal?.aborted) throw new Error('Selection cancelled.')
+    const cancel = () => this.defaultSelection.cancel()
+    options.signal?.addEventListener('abort', cancel, { once: true })
+    try { await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false) }
+    finally { options.signal?.removeEventListener('abort', cancel) }
   }
 
-  /** Desktop commits Recent only after its replacement window has loaded.
+  /** A --home/env invocation supplies its observed local identity; it never saves. */
+  async connectLocalInvocation(machine: MachineInventory, project: string): Promise<void> {
+    if (machine.key !== 'local') throw new Error('Invocation overrides must be local.')
+    await this.connectTarget('local', project, false, undefined, false, machine)
+  }
+
+  /** Desktop saves Default only after its replacement window has loaded.
    * The public HTTP path commits after verified attachment; reconnect never does. */
-  async rememberCurrentSelection(): Promise<void> {
+  async rememberCurrentSelection(current: () => boolean = () => true): Promise<void> {
     const selected = this.target
-    if (selected && this.targetConnection === 'healthy') await this.rememberSelection(selected.machine, selected.project)
+    const operation = this.defaultSelection.begin()
+    if (selected && this.targetConnection === 'healthy' && !this.closing) await this.rememberSelection(selected.machine, selected.project, () => current() && operation.current() && this.target === selected && !this.closing)
   }
 
-  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false): Promise<void> {
+  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false, localInvocation?: MachineInventory): Promise<void> {
     if (this.projectOperation) throw new Error('Wait for the project operation to finish.')
     if (this.machines.busy && !duringMachineOperation) throw new Error('Wait for the Machine operation to finish before switching locations.')
-    if (this.switching) throw new Error('Another connection switch is in progress.')
+    if (expectedTarget && this.switching) throw new Error('A user selection is in progress.')
+    const operation = this.defaultSelection.begin()
     this.switching = true
     this.announce()
     let candidateAbort: AbortController | undefined
     try {
-      const machine = await this.inspectSelection(machineKey)
+      const machine = localInvocation ?? await this.inspectSelection(machineKey)
       const project = machine.projects.find((entry) => entry.key === projectKey)
       if (!project) throw new Error(`AliceProject "${projectKey}" is not registered on ${machine.displayName}.`)
       if (!project.available || !project.runtime.webEndpoint) {
@@ -292,7 +309,7 @@ export class WebRelay {
       if (identityResponse.status === 401) {
         // A login-gated Runtime can still be selected. Reconfirm ownership
         // through the authenticated SSH inventory; the browser then logs in.
-        const refreshed = await this.inspectSelection(machineKey)
+        const refreshed = localInvocation ?? await this.inspectSelection(machineKey)
         const matching = refreshed.projects.find((entry) => entry.key === projectKey)
         if (matching?.id !== project.id || loopbackPort(matching.runtime.webEndpoint) !== port) {
           throw new Error('The selected Runtime changed while opening the connection.')
@@ -302,14 +319,14 @@ export class WebRelay {
         const identity = await identityResponse.json() as { project?: { id?: string } }
         if (identity.project?.id !== project.id) throw new Error('The Runtime answered for a different AliceProject; connection was not switched.')
       }
-      if (this.closing || (expectedTarget && this.target !== expectedTarget)) throw new Error('The selected location changed during recovery.')
+      if (!operation.current() || this.closing || (expectedTarget && this.target !== expectedTarget)) throw new Error('The selected location changed during recovery.')
       const previous = this.target
       this.target = { machine: machineKey, machineName: machine.displayName, project: projectKey, projectName: project.displayName, endpoint, inventory: { machine, project }, abort: candidateAbort }
       this.targetConnection = 'healthy'
       this.recoveryAttempts = 0
       if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
       this.recoveryTimer = null
-      if (remember) await this.rememberSelection(machineKey, projectKey)
+      if (remember) await this.rememberSelection(machineKey, projectKey, () => operation.current() && !this.closing)
       this.generation += 1
       this.announce()
       for (const socket of this.sockets) socket.destroy()
@@ -318,7 +335,7 @@ export class WebRelay {
       candidateAbort?.abort()
       throw error
     } finally {
-      this.switching = false
+      if (operation.current()) this.switching = false
       this.announce()
     }
   }
@@ -438,8 +455,15 @@ export class WebRelay {
         if (typeof input.machine !== 'string' || typeof input.project !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(input.machine) || !/^[a-z][a-z0-9_-]{0,63}$/.test(input.project)) {
           return json(res, 400, { error: 'Select a registered Machine and AliceProject.' })
         }
-        await this.connect(input.machine, input.project)
-        return json(res, 200, this.status)
+        const cancellation = new AbortController()
+        const cancelClosedRequest = () => { if (!res.writableEnded) cancellation.abort() }
+        res.once('close', cancelClosedRequest)
+        try {
+          await this.connect(input.machine, input.project, { signal: cancellation.signal })
+          return json(res, 200, this.status)
+        } finally {
+          res.removeListener('close', cancelClosedRequest)
+        }
       }
       if (url.pathname.startsWith('/relay/')) return json(res, 404, { error: 'Unknown relay route.' })
       if (url.pathname.startsWith('/api/') || url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) {
@@ -629,7 +653,7 @@ export async function runWebRelay(args: string[]): Promise<number> {
   const origin = await relay.listen()
   const startup = await relay.startupPreference()
   if (startup.target) {
-    await relay.connect(startup.target.machine, startup.target.project).catch((error: unknown) => {
+    await relay.connect(startup.target.machine, startup.target.project, { remember: false }).catch((error: unknown) => {
       relay.setStartupError(error)
       process.stderr.write(`Startup AliceProject unavailable: ${String(error)}\n`)
     })

@@ -965,7 +965,7 @@ export const en = {
       startupUnavailable: 'The startup location could not be checked.',
       machines: 'Machines',
       projectsOn: 'AliceProjects on {{machine}}',
-      startupDefault: "Recent",
+      startupDefault: 'Default',
       noStartupDefault: 'Choose a location on the next launch',
       rememberStartup: "Your last successfully opened AliceProject is remembered automatically.",
       openProject: 'Open {{name}}',

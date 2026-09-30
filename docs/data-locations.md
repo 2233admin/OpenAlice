@@ -119,41 +119,23 @@ The packaged and Electron-development app resolve a home before acquiring any
 Guardian lock, relocating legacy data, reading ports, running migrations, or
 starting a child process.
 
-Resolution precedence is:
+Selection uses the same client Supervisor `config.json.defaultTarget` as Web,
+TUI and CLI. Explicit `OPENALICE_HOME` is an invocation override. A null,
+unavailable or ambiguous migrated Default opens the existing project chooser;
+it never silently selects `~/.openalice`.
 
-1. explicit `OPENALICE_HOME` — authoritative and UI-locked;
-2. the desktop's saved selection;
-3. `~/.openalice`.
+**Settings → General → Data location** reveals the effective home and can open
+its folder. Switch projects through **Where Alice is working**. The independent
+recent-directory list and ask-on-startup policy are retired. Choosing another
+project after an existing-owner dialog returns to the shared chooser rather
+than writing a native directory preference.
 
-On a genuinely fresh install, the native startup prompt offers the default or
-another folder. Existing `~/.openalice` users continue without an upgrade
-prompt. An old packaged install with legacy data under Electron `userData`
-also continues through the existing default relocation path before selection
-is introduced.
-
-**Settings → General → Data location** shows the effective root and its source.
-The desktop can open the current folder, choose another folder and restart,
-reuse a recent folder, or ask which location to use on every startup. If a
-healthy development or CLI Server Runtime already owns the selected home,
-Electron's primary action is **Open in browser**: it probes the advertised
-loopback Web endpoint, opens that page, and quits without taking the lock.
-**Choose another data location** remains available when the home is not
-environment-locked. Dismissing the dialog keeps the existing AliceProject and
-quits the redundant desktop launch. Takeover stays an explicit, destructive
-secondary action.
-Electron-owned, stale, starting, unhealthy, and incompatible owners keep
-tailored recovery dialogs and never receive a misleading browser button.
-
-The launcher preference is machine-local metadata stored at:
-
-```text
-<Electron app.getPath("userData")>/openalice-data-home.json
-```
-
-It contains only the selected path, up to eight recent paths, and the startup
-prompt preference. It contains no account or provider secret. It must stay
-outside every selectable home because a home cannot reliably store the pointer
-that selects itself.
+The old `<Electron userData>/openalice-data-home.json` is read only as migration
+input. Its selectedHome must map to one registered local project. Conflicts,
+corruption or unmapped folders require explicit selection. The old file remains
+as a backup, and no project data is moved or deleted by selection migration.
+See [[docs/alice-project.md]] for save/cancel semantics and the Supervisor-root
+migration boundary.
 
 ## Browser, CLI, and Development Flow
 
