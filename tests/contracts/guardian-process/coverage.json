@@ -48,6 +48,52 @@
         }
       ],
       "gap": "Stage 2 must distinguish required versus advisory subchecks and record individual failure/cleanup outcomes."
+    },
+    {
+      "id": "controlled-stop-completion",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "The control socket disappears but Alice ownership can remain.",
+      "action": "Inspect status and stop through advertised capabilities.",
+      "expected": "Remaining writer lock prevents absent status; unsupported stop is refused.",
+      "evidence": [
+        {
+          "spec": "packages/cli/src/server-control.spec.mjs",
+          "assertion": "keeps shutdown non-absent while an Alice runtime lock is still active",
+          "level": "contract",
+          "scope": "Temporary FS, injected liveness."
+        },
+        {
+          "spec": "packages/cli/src/server-control.spec.mjs",
+          "assertion": "uses capability rather than launcher surface to reject an unsupported stop",
+          "level": "contract",
+          "scope": "Real local control socket and controlled status server; no owned Runtime process tree."
+        }
+      ],
+      "gap": "Actual owner tree/port disappearance remains dedicated process acceptance."
+    },
+    {
+      "id": "descendant-shutdown",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A wrapper owns a detached descendant.",
+      "action": "Terminate owner tree while wrapper can exit first.",
+      "expected": "Both process identities cease to be alive under current PID oracle.",
+      "evidence": [
+        {
+          "spec": "packages/guardian-runtime/src/process-control.spec.ts",
+          "assertion": "terminates descendants even when the package-manager-like wrapper exits first",
+          "level": "integration",
+          "scope": "Real Node subprocesses; OS reaper/zombie semantics are environment-sensitive."
+        },
+        {
+          "spec": "packages/guardian-runtime/src/restart-backoff.spec.ts",
+          "assertion": "cancels a pending recovery on stop",
+          "level": "unit",
+          "scope": "Fake timers; no real service."
+        }
+      ],
+      "gap": "Real Node child cleanup uses kill(pid, 0) as its liveness oracle; unreaped zombie PIDs may remain visible on hosts without a reaping init. Separate native process/port/lock completion, real service recovery, and multi-launcher contention remain unproved."
     }
   ]
 }
