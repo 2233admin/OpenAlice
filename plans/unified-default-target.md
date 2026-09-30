@@ -69,12 +69,15 @@ Checklist:
 - [x] Route entry points and successful switches; remove background writes.
 - [x] Focused tests, relevant typechecks, critical gate, broader full suite.
 - [x] Real available surfaces; explicitly report unavailable native acceptance.
-- [ ] Update owner docs; open Draft PR and record exact-head CI.
+- [x] Update owner docs; open Draft PR and record exact-head CI.
+  Draft: https://github.com/TraderAlice/OpenAlice/pull/1675. CI is pending;
+  native acceptance remains incomplete as listed below.
 
 ## Verification record
 
 - Focused selection/config/UI suite: 169 passed; root, CLI, UI and Desktop
-  typechecks, Desktop relay bundle build; critical gate 11/11 accepted.
+  typechecks, Desktop relay bundle build; critical gate 18/18 passed (7 hermetic + 11 integration),
+  15 required refs accepted.
 - Chromium demo Settings route exercised using existing visual language.
 - Full suite: 7,398 passed, 5 failed tests plus native PTY suite load failure.
   Four failures reproduced on dev in unaffected process-cleanup/installer
