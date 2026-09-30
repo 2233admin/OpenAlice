@@ -1,6 +1,6 @@
 import { SessionTakeoverProvider } from './hooks/useSessionTakeovers'
 import { SessionTakeoverDialogHost } from './components/workspace/SessionTakeoverDialog'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SessionDetailsDialogHost } from './components/workspace/SessionDetailsDialog'
 import { SessionBusyDialogHost } from './components/workspace/SessionBusyPanel'
@@ -62,11 +62,6 @@ function useMediaQuery(query: string): boolean {
 const useIsDesktop = () => useMediaQuery('(min-width: 768px)') // rail static
 const useHasRailText = () => useMediaQuery('(min-width: 960px)') // text rail allowed
 const useHasFullRail = () => useMediaQuery('(min-width: 1280px)') // full rail width
-const firstRunGuideEnabled = import.meta.env.VITE_OPENALICE_FIRST_RUN_GUIDE === '1'
-const FirstRunGuide = lazy(async () => {
-  const module = await import('./components/FirstRunGuide')
-  return { default: module.FirstRunGuide }
-})
 
 export function App() {
   return (
@@ -118,7 +113,6 @@ function AppShellContent() {
     }} />
   ) : null
   const mobilePageNavigation = useMobilePageNavigation()
-  const showFirstRunGuide = firstRunGuideEnabled && !location.pathname.startsWith('/design/')
 
   // When the rail becomes a static column, drop its mobile drawer state.
   useEffect(() => {
@@ -168,11 +162,6 @@ function AppShellContent() {
         </div>
         <UrlAdopter />
         <ActivityToasts />
-        {showFirstRunGuide && (
-          <Suspense fallback={null}>
-            <FirstRunGuide />
-          </Suspense>
-        )}
       </div>
     </div>
   )

@@ -132,17 +132,26 @@ force Add, Edit, Delete, or selection controls outside the viewport.
 
 ### Desktop data-location selection
 
-The desktop resolves the complete `OPENALICE_HOME` before acquiring runtime
-ownership or starting Alice/UTA. Fresh installs can choose a folder at startup;
-**Settings → General → Data location** can switch with a full restart, reopen a
-recent location, or ask on every launch. A duplicate-owner dialog can choose a
-different home instead of stopping the live instance.
+The desktop opens its client shell before selecting a project. Its Supervisor
+registry remembers the last successfully opened Machine/AliceProject as Recent.
+An unavailable Recent shows the startup selector without silently falling back
+or acquiring another project's Guardian lock. Choosing a stopped local project
+relaunches in integrated mode; a remote target uses the relay and never starts a
+local backend. An owned local Recent starts normally in integrated mode on the
+next launch. See [[docs/cli-supervisor.md]] for the shared client contract.
 
-This launcher preference is stored under Electron `userData`, not inside the
-selected OpenAlice home and not inside portable `data/`. `OPENALICE_HOME` and
-`AQ_LAUNCHER_ROOT` environment overrides lock the desktop selector. Switching
-never copies or moves data. Follow [[docs/data-locations.md]] for precedence,
-concurrent-instance semantics, missing-drive behavior, and verification.
+The older Electron data-location preference only controls local data relocation;
+it is not the cross-machine startup default. `OPENALICE_HOME` remains an explicit
+automation override. Follow [[docs/data-locations.md]] for environment precedence,
+concurrent-instance semantics and relocation verification.
+
+`pnpm electron:smoke:startup` validates no-Recent and unavailable-Recent startup
+against the built desktop bundle. Pass `--app-path <packaged executable>` to
+exercise the unsigned package. Both cases isolate the Supervisor, global state
+and Electron profile, assert the client-only IPC boundary and absence of local
+runtime ownership, then stop the private process group and remove test state.
+The fresh-user `electron:smoke:onboarding` gate retains real asynchronous Workspace
+and credential readiness checks; it no longer expects the retired wizard.
 
 ## Current Platform Payloads
 

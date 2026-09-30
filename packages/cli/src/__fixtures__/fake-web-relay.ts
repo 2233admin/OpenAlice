@@ -6,7 +6,9 @@ export function fakeWebRelay(): WebRelay {
   return {
     originUrl: 'http://127.0.0.1:45454',
     get status() { return state },
-    activeSelection: null,
+    get activeSelection() { return state.target ? { machine: { key: state.target.machine }, project: { key: state.target.project }, endpoint: 'http://127.0.0.1:47331' } : null },
+    startupPreference: async () => ({ target: null, error: null }),
+    setStartupError: () => {},
     listen: async () => 'http://127.0.0.1:45454',
     connect: async (machine: string, project: string) => {
       state.generation += 1

@@ -32,7 +32,6 @@ export function UrlAdopter() {
             race a redirect and replace the default entry during startup. */}
         <Route path="/" element={<AdoptStatic spec={{ kind: 'quick-start', params: {} }} />} />
         <Route path="/quick-start" element={<AdoptStatic spec={{ kind: 'quick-start', params: {} }} />} />
-        <Route path="/onboarding" element={<AdoptStatic spec={{ kind: 'onboarding', params: {} }} />} />
         <Route path="/design/:project" element={<AdoptDesignProject />} />
 
         {/* Activities */}
@@ -520,7 +519,6 @@ function specToSection(spec: ViewSpec): ActivitySection {
     case 'market-board':
     case 'market-detail':      return 'market'
     case 'settings':
-    case 'onboarding':         return 'settings'
     case 'design-project':
     case 'dev':                return 'settings'
   }

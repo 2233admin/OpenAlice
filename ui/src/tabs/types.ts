@@ -17,7 +17,7 @@ export type WorkspaceSource = 'chat' | 'auto-quant' | 'prediction'
 export type FileViewerSource = WorkspaceSource | 'tracked'
 
 /** One source of truth for the Developer section and its Settings URL contract. */
-export const DEV_TABS = ['upgrade-rehearsal', 'frontend', 'tools', 'onboarding', 'snapshots', 'logs', 'runs', 'api', 'simulator'] as const
+export const DEV_TABS = ['upgrade-rehearsal', 'frontend', 'tools', 'snapshots', 'logs', 'runs', 'api', 'simulator'] as const
 export type DevTab = typeof DEV_TABS[number]
 
 export function isDevTab(value: string): value is DevTab {
@@ -46,7 +46,6 @@ export type ViewSpec =
   | { kind: 'market-detail';  params: { assetClass: 'equity' | 'crypto' | 'currency' | 'commodity'; symbol: string; source?: string } }
   | { kind: 'settings';       params: { category: 'general' | 'language' | 'appearance' | 'pet' | 'activity-bar' | 'visibility' | 'ai-provider' | 'workspace-injection' | 'agent-runtimes' | 'agent-permissions' | 'tools' | 'trading' | 'issues' | 'connectors' | 'mcp' | 'market-data' | 'news-collector' | 'beta' } }
   | { kind: 'uta-detail';     params: { id: string } }
-  | { kind: 'onboarding';     params: Record<string, never> }
   | { kind: 'design-project'; params: { project: string } }
   | { kind: 'dev';            params: { tab: DevTab } }
   | { kind: 'inbox';               params: Record<string, never> }

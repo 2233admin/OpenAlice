@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface RelayProject {
   key: string
   id: string
+  home?: string
   displayName: string
   available: boolean
   runtime: { class: string; state: string; webEndpoint: string | null }
@@ -28,6 +29,11 @@ export interface RelayStatus {
   targetConnection?: 'healthy' | 'reconnecting' | 'unavailable' | null
 }
 
+export interface RelayStartupPreference {
+  target: { machine: string; project: string } | null
+  error: string | null
+}
+
 async function relayJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/relay/v1/${path}`, { ...init, cache: 'no-store' })
   if (!response.ok) {
@@ -46,26 +52,32 @@ export function reconnectRelayTarget(): Promise<RelayStatus> {
 }
 
 export function useRelayConnection(initial: RelayStatus | null = null) {
-  const desktop = window.openAlice?.runtime ? window.openAlice.desktopConnection : undefined
+  const discoveryGeneration = useRef(0)
+  const desktop = window.openAlice?.desktopConnection
   const [status, setStatus] = useState<RelayStatus | null>(initial)
   const [fleet, setFleet] = useState<RelayMachine[]>([])
+  const [startup, setStartup] = useState<RelayStartupPreference | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
+    const generation = ++discoveryGeneration.current
     setLoading(true)
     setError(null)
     try {
-      const [nextStatus, inventory] = await Promise.all([
+      const [nextStatus, inventory, preference] = await Promise.all([
         desktop ? desktop.status() : relayJson<RelayStatus>('status'),
         desktop ? desktop.fleet() : relayJson<{ machines: RelayMachine[] }>('fleet'),
+        desktop ? desktop.startupTarget() : relayJson<RelayStartupPreference>('startup-target'),
       ])
+      if (generation !== discoveryGeneration.current) return
       setStatus(nextStatus)
       setFleet(inventory.machines)
+      setStartup(preference)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally { setLoading(false) }
+      if (generation === discoveryGeneration.current) setError(cause instanceof Error ? cause.message : String(cause))
+    } finally { if (generation === discoveryGeneration.current) setLoading(false) }
   }, [desktop])
 
   const connect = useCallback(async (machine: string, project: string) => {
@@ -89,15 +101,28 @@ export function useRelayConnection(initial: RelayStatus | null = null) {
     } finally { setBusy(false) }
   }, [desktop])
 
+  const controlProject = useCallback(async (input: { machine: string; project: string; action: 'create' | 'start'; home?: string }) => {
+    setBusy(true)
+    setError(null)
+    try {
+      if (desktop) await desktop.controlProject(input)
+      else await relayJson('projects/control', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+      await refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      throw cause
+    } finally { setBusy(false) }
+  }, [desktop, refresh])
+
   useEffect(() => {
-    let alive = true
-    void (desktop ? desktop.status() : relayJson<RelayStatus>('status')).then((next) => {
-      if (alive) setStatus(next)
+    const generation = ++discoveryGeneration.current
+    if (!initial) void (desktop ? desktop.status() : relayJson<RelayStatus>('status')).then((next) => {
+      if (generation === discoveryGeneration.current) setStatus(next)
     }).catch(() => undefined)
-    return () => { alive = false }
+    return () => { discoveryGeneration.current++ }
   }, [desktop])
 
-  return { status, fleet, loading, busy, error, refresh, connect }
+  return { status, fleet, startup, loading, busy, error, refresh, connect, controlProject }
 }
 
 /** All tabs must retire their backend caches and sockets on a target switch. */

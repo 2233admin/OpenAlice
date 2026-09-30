@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto'
-
 export const DESKTOP_PACKAGED_SMOKE_ARGS = new Set([
   '--skip-build',
   '--skip-pack',
@@ -72,20 +70,17 @@ export function buildDesktopPackagedSmokePlan(argv, env = process.env, opts = {}
     warnings.push('[desktop-smoke] --keep-package has no effect with --skip-pack; reused packages are never deleted')
   }
   if (onboarding && skipBuild) {
-    warnings.push('[desktop-smoke] --onboarding with --skip-build assumes ui/dist was already built with first-run guide flags')
+    warnings.push('[desktop-smoke] --onboarding with --skip-build assumes ui/dist was built for the fresh-user smoke')
   }
   if (onboarding && skipPack) {
-    warnings.push('[desktop-smoke] --onboarding with --skip-pack assumes the packaged app already contains that onboarding-enabled ui/dist')
+    warnings.push('[desktop-smoke] --onboarding with --skip-pack assumes the packaged app contains the fresh-user smoke UI')
   }
 
   const tempData = onboarding || tradingMode || workspaceAcceptance || tempDataFlag
   const realData = !tempData
-  const storageSuffix = env['VITE_OPENALICE_ONBOARDING_STORAGE_SUFFIX']?.trim() || opts.randomUUID?.() || randomUUID()
   const onboardingBuildEnv = onboarding ? {
-    VITE_OPENALICE_FIRST_RUN_GUIDE: '1',
     VITE_OPENALICE_ONBOARDING_TEST: '1',
     VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
-    VITE_OPENALICE_ONBOARDING_STORAGE_SUFFIX: storageSuffix,
   } : {}
   const onboardingLaunchEnv = onboarding ? {
     ...onboardingBuildEnv,

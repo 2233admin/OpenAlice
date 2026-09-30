@@ -1,3 +1,4 @@
+import { runRemoteProjectCommand } from './project-control.ts'
 import { PROJECT_WORKSPACES, PROJECT_WORKSPACE_LABELS, type ProjectWorkspace } from './project-workspaces.ts'
 import { spawn } from 'node:child_process'
 import {
@@ -614,12 +615,26 @@ export async function runSupervisorTui(
   const webRelay = dependencies.webRelay === undefined ? new WebRelay() : dependencies.webRelay
   if (webRelay) {
     await webRelay.listen()
-    if (activeTarget) {
+    const explicit = hasExplicitProjectOrHomeSelection(launchFlags, dependencies.env ?? process.env)
+      || dependencies.resolveContext !== undefined || dependencies.machineConfig !== undefined || dependencies.projectConfig !== undefined
+    const startup = explicit && activeTarget
+      ? { target: { machine: 'local', project: activeTarget.projectKey }, error: null }
+      : await webRelay.startupPreference()
+    activeTarget = null
+    if (startup.error) diagnostic = startup.error
+    if (startup.target) {
       try {
-        await webRelay.connect('local', activeTarget.projectKey)
+        await webRelay.connect(startup.target.machine, startup.target.project)
+        const selection = webRelay.activeSelection
+        if (selection?.machine.key === 'local') {
+          context = await resolveContext({ ...launchFlags, project: selection.project.key })
+          services = createServices(dependencies, context)
+          runtime = await services.inspect({ homeRoot: context.home, waitMs: 2_000 })
+          activeTarget = localSupervisorTarget(context, runtime)
+        } else if (selection) activeTarget = remoteSupervisorTarget(selection.machine, selection.project, selection.endpoint, webRelay.originUrl)
       } catch (error) {
         diagnostic = safeError(error)
-        activeTarget = null
+        webRelay.setStartupError(error)
       }
     }
   }
@@ -1089,7 +1104,7 @@ export async function runSupervisorTui(
     const current = (await loadMachines()).machines.find((entry) => entry.key === machine.key)
     if (!current) throw new Error(`Machine "${machine.key}" is no longer registered.`)
     requireMachineEnabled(current)
-    return (dependencies.startRemoteProject ?? runRemoteProjectStart)(current, projectKey)
+    return (dependencies.startRemoteProject ?? ((machine, project) => runRemoteProjectCommand(machine, ['up', '--project', project, '--wait', '30'])))(current, projectKey)
   }
   const probeTarget = dependencies.probeTarget
     ?? ((endpoint) => probeOpenAlice(endpoint, { timeoutMs: 1_500 }))
@@ -6409,30 +6424,6 @@ function remoteHomesOverlap(left: string, right: string): boolean {
     || (!rightRelative.startsWith('../') && rightRelative !== '..')
 }
 
-async function runRemoteProjectStart(
-  machine: RegisteredMachine,
-  projectKey: string,
-): Promise<void> {
-  if (!/^[a-z][a-z0-9_-]{0,31}$/u.test(projectKey)) throw new Error('Invalid remote AliceProject key.')
-  const command = `set -eu
-cli=$(command -v openalice 2>/dev/null || { [ ! -x "$HOME/.openalice/bin/openalice" ] || printf '%s\\n' "$HOME/.openalice/bin/openalice"; })
-[ -n "$cli" ] || exit 127
-exec "$cli" up --project ${projectKey} --wait 30`
-  const child = spawn('ssh', buildRemoteSshArgs({
-    destination: machine.sshTarget,
-    sshPort: machine.sshPort ?? null,
-    identityFile: machine.identityFile ?? null,
-  }, command), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
-  let stderr = ''
-  child.stderr?.on('data', (chunk) => { stderr = `${stderr}${String(chunk)}`.slice(-4_096) })
-  await new Promise<void>((resolvePromise, reject) => {
-    child.once('error', reject)
-    child.once('exit', (code, signal) => {
-      if (code === 0) resolvePromise()
-      else reject(new Error(`Remote start failed ${signal ? `with ${signal}` : `with code ${code ?? 'unknown'}`}${stderr.trim() ? `: ${stderr.trim()}` : ''}`))
-    })
-  })
-}
 
 function alignLocalFleetProject(
   machines: MachineInventory[],

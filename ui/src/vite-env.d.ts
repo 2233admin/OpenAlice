@@ -6,11 +6,9 @@ interface ImportMetaEnv {
   readonly VITE_DEMO_MODE?: string
   readonly VITE_OPENALICE_DEV_RELAY?: string
   readonly VITE_OPENALICE_DEV_BACKEND_PORT?: string
-  readonly VITE_OPENALICE_FIRST_RUN_GUIDE?: string
   readonly VITE_OPENALICE_ONBOARDING_TEST?: string
   readonly VITE_OPENALICE_CREDENTIAL_TEST_MODE?: string
   readonly VITE_OPENALICE_ONBOARDING_AI_BASE_URL?: string
-  readonly VITE_OPENALICE_ONBOARDING_STORAGE_SUFFIX?: string
 }
 
 interface ImportMeta {
@@ -39,6 +37,8 @@ interface Window {
         issue: { message: string } | null
       }> }>
       connect(machine: string, project: string): Promise<unknown>
+      startupTarget(): Promise<{ target: { machine: string; project: string } | null; error: string | null }>
+      controlProject(input: { machine: string; project: string; action: 'create' | 'start'; home?: string }): Promise<void>
       returnIntegrated(): Promise<void>
     }
     readonly desktopMachine?: {

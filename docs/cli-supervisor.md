@@ -68,6 +68,15 @@ the same GUI without a TUI. `--remote` remains for plan/status/stop controls;
 its former direct browser attach is retired. `--machine` re-enters an ordinary
 CLI command on a selected enabled profile.
 
+Startup selection uses the client-owned **Recent** Machine/AliceProject pair
+in `Supervisor/startup-target.json`. Only successful verified attachment changes
+it; selecting, probing, creating or failing to connect does not. Missing or
+unavailable Recent leaves the relay detached and serves the full-window launcher,
+including Add SSH, reviewed machine preparation, project creation and explicit
+Start and open. There is no silent local fallback. Explicit `--project`/`--home`
+CLI invocations remain deliberate local selections. Registry `project use`
+controls the machine's lifecycle default, not the client's cross-machine Recent.
+
 The normal TUI starts a local relay in the same CLI process. TUI selection and
 Settings → General → Where Alice is working operate one current Machine/AliceProject target;
 opening Web from the TUI uses that relay's stable loopback origin, including
@@ -82,8 +91,8 @@ window to a main-process relay for a separated connection.
 | Command | Contract |
 |---|---|
 | `create alice-project` | Register a named complete home. Interactive or `--yes` with `--name`, `--home`, and optional `--product trader\|nano`. Product is immutable birth (Trader default; Nano never starts UTA). TUI create remains Trader-equivalent. |
-| `project list` | Print registered AliceProjects and the remembered bare-start default. `--json` emits the registry summary. |
-| `project use <key>` | Record that AliceProject as the next bare-start default. Does not start, stop, or copy another project. |
+| `project list` | Print registered AliceProjects and the local lifecycle default. `--json` emits the registry summary. |
+| `project use <key>` | Record that AliceProject as the local lifecycle default. Does not start, stop, or copy another project. |
 | `machine list` | Print saved Machine profiles by opaque id, label, target, and enabled state. `--json` emits a versioned secret-free summary. |
 | `machine add` | Prepare the selected remote Server, then atomically save its SSH profile. Non-interactive mutation requires `--yes`. |
 | `machine rename/enable/disable/remove` | Mutate local profile metadata after explicit confirmation; remove never deletes remote data. |

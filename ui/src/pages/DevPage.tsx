@@ -10,7 +10,6 @@ import { AutomationPage } from './AutomationPage'
 import { UpgradeRehearsalPage } from './UpgradeRehearsalPage'
 import { SimulatorPage } from './SimulatorPage'
 import { FrontendLabPage } from './FrontendLabPage'
-import { OnboardingDesignPage } from './OnboardingDesignPage'
 import {
   toolsApi,
   type ToolInfo,
@@ -31,7 +30,6 @@ const TAB_TITLE_KEYS = {
   'upgrade-rehearsal': 'dev.upgradeRehearsal',
   frontend: 'dev.frontend',
   tools: 'common.tools',
-  onboarding: 'dev.onboarding',
   snapshots: 'dev.snapshots',
   logs: 'common.logs',
   runs: 'automation.runs',
@@ -63,7 +61,6 @@ export function DevPage({ spec }: DevPageProps) {
         {tab === 'tools' && <ToolsTab />}
         {tab === 'upgrade-rehearsal' && <UpgradeRehearsalPage />}
         {tab === 'frontend' && <FrontendLabPage />}
-        {tab === 'onboarding' && <OnboardingDesignPage />}
         {tab === 'snapshots' && <SnapshotsTab />}
         {tab === 'logs' && <LogsPage />}
         {tab === 'simulator' && <SimulatorPage />}

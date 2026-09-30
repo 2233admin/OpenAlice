@@ -51,7 +51,7 @@ describe('shared lifecycle Machine controls', () => {
     })
     const { result } = renderHook(() => [useUpdateLifecycle().machines, useUpdateLifecycle().machines], { wrapper })
     await act(async () => { await result.current[0].probe({ mode: 'upgrade', machineKey: 'cloud' }) })
-    let first!: Promise<void>
+    let first!: Promise<{ machineKey: string }>
     await act(async () => {
       first = result.current[0].apply()
       expect(result.current[1].apply()).toBe(first)
@@ -78,6 +78,21 @@ describe('shared lifecycle Machine controls', () => {
     expect(result.current.plan).toBeNull()
     expect(result.current.probing).toBe(false)
     expect(result.current.operationError).toBeNull()
+  })
+
+  it('requires a fresh reviewed plan after an application fails', async () => {
+    vi.mocked(fetch).mockImplementation(async path => {
+      if (path === '/relay/v1/machines/operation') return { ok: true, json: async () => null } as Response
+      if (path === '/relay/v1/machines/plan') return { ok: true, json: async () => preview } as Response
+      return { ok: false, status: 502, json: async () => ({ error: 'Remote connection dropped' }) } as Response
+    })
+    const { result } = renderHook(() => useUpdateLifecycle().machines, { wrapper })
+    await act(async () => { await result.current.probe({ mode: 'upgrade', machineKey: 'cloud' }) })
+    await act(async () => { await expect(result.current.apply()).rejects.toThrow('dropped') })
+    expect(result.current.plan).toBeNull()
+    expect(result.current.operationError).toContain('dropped')
+    await expect(result.current.apply()).rejects.toThrow('reviewed')
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === '/relay/v1/machines/apply')).toHaveLength(1)
   })
 
   it('exposes a probe error without retaining an older approval', async () => {

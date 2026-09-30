@@ -199,6 +199,6 @@ export class MachineManagement {
     if (input.profile.identityFile !== undefined) argv.push('--identity', input.profile.identityFile)
     if (input.project) argv.push('--home', input.project.home)
     const options = parseRemoteArgs(argv)
-    return { ...options, batchMode: true, planOnly }
+    return { ...options, batchMode: true, planOnly, machineOnly: input.mode === 'add' }
   }
 }
