@@ -989,6 +989,9 @@ jobs:
           name: cli-package-channels
           path: dist/release-cli-packages
 
+      - name: Verify final CLI archives before beta or stable publication
+        run: node scripts/verify-cli-release.mjs dist/release-cli
+
       - name: Stage GitHub-safe AUR metadata asset
         if: needs.release.outputs.channel == 'stable'
         run: >-

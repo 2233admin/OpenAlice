@@ -1,3 +1,5 @@
+import { fixtureMachO } from './fixtures/macho.mjs'
+import { pinnedBunVersion } from './bun-toolchain.mjs'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import {
@@ -190,7 +192,7 @@ async function fixture(options = {}) {
     const executable = join(releaseRoot, 'bin', cliExecutableName(platform))
     await mkdir(join(releaseRoot, 'bin'), { recursive: true })
     await mkdir(join(releaseRoot, 'share/openalice'), { recursive: true })
-    await writeFile(executable, `#!/bin/sh\nprintf '${version}\\n'\n`)
+    await writeFile(executable, platform === 'darwin' ? fixtureMachO(arch, version) : `#!/bin/sh\nprintf '${version}\\n'\n`)
     await chmod(executable, 0o755)
     const resource = join(releaseRoot, 'share/openalice/fixture.txt')
     const license = join(releaseRoot, 'LICENSE')
@@ -204,7 +206,7 @@ async function fixture(options = {}) {
       version,
       platform,
       arch,
-      bunVersion: '1.4.0',
+      bunVersion: pinnedBunVersion(),
       executable: `bin/${cliExecutableName(platform)}`,
       resourceRoot: 'share/openalice',
       files: [
@@ -215,6 +217,7 @@ async function fixture(options = {}) {
       ],
     }
     release.contentIdentity = bunReleaseContentIdentity(release)
+    for (const entry of release.files) if (entry.type === 'file') await chmod(join(releaseRoot, entry.path), entry.mode)
     await writeFile(join(releaseRoot, 'release.json'), JSON.stringify(release))
     const archive = join(input, `${releaseName}.tar.gz`)
     await execFileAsync('tar', ['-czf', archive, '-C', root, releaseName])

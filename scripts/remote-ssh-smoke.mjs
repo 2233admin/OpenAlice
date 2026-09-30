@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { pinnedBunVersion } from './bun-toolchain.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { Writable } from 'node:stream'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -67,6 +68,7 @@ try {
     run('docker', [
       'build',
       '--file', 'scripts/remote-smoke/Dockerfile',
+      '--build-arg', `BUN_VERSION=${pinnedBunVersion()}`,
       '--tag', image,
       '.',
     ], { cwd: repoRoot, inherit: true })

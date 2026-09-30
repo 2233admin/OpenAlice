@@ -1,3 +1,5 @@
+import { fixtureMachO } from './fixtures/macho.mjs'
+import { pinnedBunVersion } from './bun-toolchain.mjs'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -5,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   preparePreviousCliReleaseArchives,
@@ -13,6 +15,12 @@ import {
 } from './cli-release-fixture.mjs'
 import { cliExecutableName } from '../packages/cli/src/release-targets.mjs'
 import { bunReleaseContentIdentity } from './bun-release-content-identity.mjs'
+
+vi.mock('./sign-cli-macos.mjs', async () => {
+  const { readFileSync, writeFileSync } = await import('node:fs')
+  const { rehashFixtureMachO } = await import('./fixtures/macho.mjs')
+  return { signCliMacOS: (path) => writeFileSync(path, rehashFixtureMachO(readFileSync(path))) }
+})
 
 const execFileAsync = promisify(execFile)
 const temporaryPaths = []
@@ -82,7 +90,7 @@ async function fixture() {
     const packagePath = join(releaseRoot, 'share/openalice/package.json')
     await mkdir(join(releaseRoot, 'bin'), { recursive: true })
     await mkdir(join(releaseRoot, 'share/openalice'), { recursive: true })
-    await writeFile(executablePath, `#!/bin/sh\nprintf '${version}\\n'\n`)
+    await writeFile(executablePath, platform === 'darwin' ? fixtureMachO(arch, version) : `#!/bin/sh\nprintf '${version}\\n'\n`)
     await chmod(executablePath, 0o755)
     await writeFile(packagePath, `${JSON.stringify({ version })}\n`)
     const release = {
@@ -91,7 +99,7 @@ async function fixture() {
       version,
       platform,
       arch,
-      bunVersion: '1.4.0',
+      bunVersion: pinnedBunVersion(),
       executable: `bin/${cliExecutableName(platform)}`,
       resourceRoot: 'share/openalice',
       files: [
@@ -100,6 +108,7 @@ async function fixture() {
       ],
     }
     release.contentIdentity = bunReleaseContentIdentity(release)
+    for (const entry of release.files) if (entry.type === 'file') await chmod(join(releaseRoot, entry.path), entry.mode)
     await writeFile(join(releaseRoot, 'release.json'), `${JSON.stringify(release, null, 2)}\n`)
     const archive = join(input, `${releaseName}.tar.gz`)
     await execFileAsync('tar', ['-czf', archive, '-C', root, releaseName])

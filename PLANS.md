@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/cli-artifact-signature.md]] — Bun compiler pin, final macOS ad-hoc
+  signatures and shared final-archive acceptance for #1670. Draft PR acceptance
+  remains pending.
+
 - [[plans/unified-default-target.md]] — Unify Desktop/Web/TUI/CLI startup on one client-owned Default target, saved after successful user switches.
 
 - [[plans/test-system-grouping.md]] — Stage 1 merged as #1667. Stage 2 local
