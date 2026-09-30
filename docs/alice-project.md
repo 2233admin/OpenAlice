@@ -238,8 +238,11 @@ failed. Desktop remembers only after the new page has loaded.
 
 The launcher uses a two-column selector at desktop width and Machine → project
 drill-in on narrow screens. Back stays inside the same shell; header and footer
-remain reachable while the content scrolls. Async checks show indeterminate
-loading or the controller's real stage rather than invented percentages. The
+stay fixed inside the viewport. The chooser fills the remaining height; only
+long Machine/project lists scroll within their columns. Forms/reviews have a
+separate bounded scroller for small windows or an on-screen keyboard. Async
+checks show indeterminate loading or the controller's real stage rather than
+invented percentages. The
 shared `useMachineControls` and `useRelayConnection` hooks consume client control
 APIs; project-owned UI mounts only after attachment. No project file/PT Y IPC
 is exposed from the detached Electron shell.
