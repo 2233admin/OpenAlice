@@ -235,6 +235,40 @@ the same changes as implementation. Remove this plan and its [[PLANS.md]]
 entry only when the agreed Stage 2 scope is accepted and durable instructions
 are in the owner guide.
 
+### Guardian liveness follow-up
+The lifecycle classification selection exposed a real distinction between an
+executing descendant and an exited Linux zombie. The bounded fix keeps the
+positive signal probe, excludes only an explicit procfs `Z` state, and retains
+live status on unreadable/malformed procfs or permission errors. It neither
+extends shutdown budgets nor skips real cleanup assertions. The OS still owns
+reaping orphaned PID entries.
+
+The real subprocess fixture now waits for the child's IPC readiness before
+signaling. Both graceful and SIGTERM-ignoring detached descendants are tested;
+the forced branch asserts the saved descendant PID reaches SIGKILL after its
+wrapper exits. An independent procfs/absent-PID assertion excludes live survivors.
+Unit checks preserve sleeping/stopped/uninterruptible states and fail shutdown
+when a retained live descendant survives both signal phases. The headless
+interruption fixture uses the same independent OS exit distinction, retaining
+its partial-output and interruption assertions.
+
+Evidence so far: Guardian package ten files /69 tests passed (2.53 seconds);
+real cleanup two files /27 tests passed (6.24 seconds); root/Guardian typechecks
+passed; real `pnpm test:system:guardian` passed healthy conflict/graceful takeover,
+crashed-lock recovery, and stubborn-owner forced takeover, including the actual
+`pnpm dev` conflict path. Complete hermetic backstop: 877 files passed /four failed /one skipped;
+7,498 assertions passed /24 failed /five skipped, in 444.75 seconds. The four
+failing files are Desktop smoke process-group cleanup, CLI install mode fixture,
+Supervisor PTY (21 cases), and the Supervisor mock fixed independently in #1677.
+The package/headless process failures are resolved; npm packaging passes with
+the supported writable `npm_config_cache` prerequisite. PTY fixture/output
+failures remain unresolved, not uniformly attributed to the host. Expanded
+Guardian evidence paths: six files /65 assertions passed (2.71 seconds); whole
+critical gate passed 18 assertions with all required references and an accepted
+clean-commit receipt. Native Windows/macOS/Bun/Electron acceptance and independent
+service-port release remain unverified; a zombie distinction is not native
+resource or init-reaping acceptance.
+
 ## Progress
 
 - 2026-09-30: Completed the read-only audit and agreed the direction of product
@@ -291,30 +325,3 @@ commit rather than treating a green bounded gate as complete product coverage:
 
 This checklist is prepared for post-merge review. Neither merge nor release is
 performed by this follow-up.
-
-### Guardian liveness follow-up
-
-The lifecycle classification selection exposed a real distinction between an
-executing descendant and an exited Linux zombie. The bounded fix keeps the
-positive signal probe, excludes only an explicit procfs `Z` state, and retains
-live status on unreadable/malformed procfs or permission errors. It neither
-extends shutdown budgets nor skips real cleanup assertions. The OS still owns
-reaping orphaned PID entries.
-
-The real subprocess fixture now waits for the child's IPC readiness before
-signaling. Both graceful and SIGTERM-ignoring detached descendants are tested;
-the forced branch asserts the saved descendant PID reaches SIGKILL after its
-wrapper exits. An independent procfs/absent-PID assertion excludes live survivors.
-Unit checks preserve sleeping/stopped/uninterruptible states and fail shutdown
-when a retained live descendant survives both signal phases. The headless
-interruption fixture uses the same independent OS exit distinction, retaining
-its partial-output and interruption assertions.
-
-Evidence so far: Guardian package ten files /69 tests passed (2.53 seconds);
-real cleanup two files /27 tests passed (6.24 seconds); root/Guardian typechecks
-passed; real `pnpm test:system:guardian` passed healthy conflict/graceful takeover,
-crashed-lock recovery, and stubborn-owner forced takeover, including the actual
-`pnpm dev` conflict path. Complete hermetic backstop is recorded in the Draft PR
-once finished. Native Windows/macOS/Bun/Electron acceptance and independent
-service-port release remain unverified; a zombie distinction is not native
-resource or init-reaping acceptance.
