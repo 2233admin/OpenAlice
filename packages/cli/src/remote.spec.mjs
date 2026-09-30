@@ -175,6 +175,27 @@ describe('OpenAlice managed remote connector', () => {
     expect(conflict.blocker).toContain('Re-run with --takeover')
   })
 
+  it('adding a machine prepares only its CLI without taking over or starting any project', async () => {
+    const options = { ...parseRemoteArgs(['host', '--yes', '--no-open']), machineOnly: true }
+    const remote = compatibleRemote({ class: 'owned_elsewhere', owner: { surface: 'electron', pid: 99 } })
+    const plan = createRemotePlan(options, remote)
+    expect(plan.blocker).toBe('')
+    expect(plan.startServer).toBe(false)
+    expect(plan.restartServer).toBe(false)
+    expect(plan.mutations).toEqual([])
+    const runCommand = vi.fn()
+    const connectTunnel = vi.fn()
+    await expect(connectRemote(options, {
+      probeRemote: async () => remote, runCommand, connectTunnel, stdout: { write: vi.fn() },
+    })).resolves.toBe(0)
+    expect(runCommand).not.toHaveBeenCalled()
+    expect(connectTunnel).not.toHaveBeenCalled()
+    const missing = createRemotePlan(options, { ...remote, cliPath: null, cliCompatible: false })
+    expect(missing.installCli).toBe(true)
+    expect(missing.startServer).toBe(false)
+    expect(missing.mutations).toEqual(['install remote OpenAlice CLI'])
+  })
+
   it('reuses a healthy compatible Runtime without mutation', () => {
     const plan = createRemotePlan(parseRemoteArgs(['host']), compatibleRemote())
     expect(plan.mutations).toEqual([])

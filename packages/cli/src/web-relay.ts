@@ -1,5 +1,8 @@
 import { ClientUpdateService } from './client-updates.ts'
 export { ClientUpdateService } from './client-updates.ts'
+export { readStartupTarget, writeStartupTarget, validateStartupTarget } from './startup-target.ts'
+export { inspectLocalMachine } from './machine-inventory.ts'
+export { resolveLocalStartupHome } from './project-control.ts'
 /** One local browser relay owns exactly one active Machine/AliceProject. */
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
@@ -9,8 +12,10 @@ import { extname, join, resolve, sep } from 'node:path'
 
 import { isBunStandalone, resolveBunResourceRoot } from './bun-standalone.mjs'
 import { inspectMachineFleet, inspectRegisteredMachine, inspectLocalMachine, type MachineInventory } from './machine-inventory.ts'
+import { controlProject, validateProjectControl, type ProjectControlInput } from './project-control.ts'
 import { MachineManagement } from './machine-management.ts'
 import { readMachineRegistrySummary, requireMachineEnabled } from './machine-registry.ts'
+import { readStartupTarget, writeStartupTarget, type StartupTarget } from './startup-target.ts'
 import { connectSsh, openBrowser, waitForOpenAlice } from './ssh-connect.mjs'
 
 type ActiveTarget = {
@@ -42,9 +47,12 @@ export interface WebRelayOptions {
   inspectLocal?: typeof inspectLocalMachine
   inspectRegistered?: typeof inspectRegisteredMachine
   readRegistry?: typeof readMachineRegistrySummary
+  readStartup?: typeof readStartupTarget
+  writeStartup?: typeof writeStartupTarget
   connect?: typeof connectSsh
   waitReady?: typeof waitForOpenAlice
   clientUpdates?: ClientUpdateService
+  projectControl?: typeof controlProject
   machineManagement?: MachineManagement
 }
 
@@ -52,6 +60,7 @@ export class WebRelay {
   private target: ActiveTarget | null = null
   private generation = 0
   private switching = false
+  private projectOperation: Promise<void> | null = null
   private targetConnection: 'healthy' | 'reconnecting' | 'unavailable' = 'healthy'
   private recovery: Promise<void> | null = null
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -65,6 +74,7 @@ export class WebRelay {
   private readonly clientUpdates: ClientUpdateService
   private readonly machines: MachineManagement
   private origin = ''
+  private startupError: string | null = null
   private readonly devUi: URL | null
 
   constructor(options: WebRelayOptions = {}) {
@@ -83,20 +93,57 @@ export class WebRelay {
       schemaVersion: 1,
       generation: this.generation,
       target: this.target && { machine: this.target.machine, machineName: this.target.machineName, project: this.target.project, projectName: this.target.projectName },
-      switching: this.switching,
+      switching: this.switching || this.projectOperation !== null,
       targetConnection: this.target ? this.targetConnection : null,
     }
   }
 
   get originUrl(): string { return this.origin }
 
+  async startupPreference(): Promise<{ target: StartupTarget | null; error: string | null }> {
+    try {
+      return { target: await (this.options.readStartup ?? readStartupTarget)(), error: this.startupError }
+    } catch (error) {
+      return { target: null, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /** Recent is written only after a candidate passed health and identity checks.
+   * Persistence failure must not tear down an otherwise working attachment. */
+  private async rememberSelection(machine: string, project: string): Promise<void> {
+    this.startupError = null
+    try { await (this.options.writeStartup ?? writeStartupTarget)({ machine, project }) }
+    catch (error) { this.startupError = `Could not remember this location: ${error instanceof Error ? error.message : String(error)}` }
+  }
+
+  setStartupError(error: unknown): void {
+    this.startupError = error instanceof Error ? error.message : String(error)
+  }
+
+  async controlProject(input: unknown): Promise<void> {
+    if (this.projectOperation || this.switching || this.machines.busy) throw new Error('Wait for the current location operation to finish.')
+    const value: ProjectControlInput = validateProjectControl(input)
+    // Resolve the registered destination before executing, never arbitrary SSH.
+    const machine = await this.inspectSelection(value.machine)
+    if (value.action === 'start' && !machine.projects.some(project => project.key === value.project)) throw new Error('This AliceProject is no longer registered.')
+    if (this.projectOperation || this.switching || this.machines.busy) throw new Error('Wait for the current location operation to finish.')
+    const operation = Promise.resolve().then(() => (this.options.projectControl ?? controlProject)(value))
+    this.projectOperation = operation
+    this.announce()
+    try { await operation }
+    finally { this.projectOperation = null; this.announce() }
+  }
+
   get machineOperationBusy(): boolean { return this.machines.busy }
   get machineOperation() { return this.machines.currentOperation }
 
-  planMachine(input: Parameters<MachineManagement['plan']>[0]) { return this.machines.plan(input) }
+  planMachine(input: Parameters<MachineManagement['plan']>[0]) {
+    if (this.projectOperation || this.switching) throw new Error('Wait for the current location operation to finish.')
+    return this.machines.plan(input)
+  }
 
   async applyMachine(id: string) {
-    if (this.switching) throw new Error('Wait for the location switch to finish before applying a Machine plan.')
+    if (this.switching || this.projectOperation) throw new Error('Wait for the location operation to finish before applying a Machine plan.')
     const selected = this.target
     return this.machines.apply(id, async ({ machineKey }) => {
       if (!selected || this.target !== selected || selected.machine !== machineKey) return
@@ -182,11 +229,19 @@ export class WebRelay {
     previous.abort?.abort()
   }
 
-  async connect(machineKey: string, projectKey: string): Promise<void> {
-    return this.connectTarget(machineKey, projectKey, false)
+  async connect(machineKey: string, projectKey: string, options: { remember?: boolean } = {}): Promise<void> {
+    await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false)
   }
 
-  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget): Promise<void> {
+  /** Desktop commits Recent only after its replacement window has loaded.
+   * The public HTTP path commits after verified attachment; reconnect never does. */
+  async rememberCurrentSelection(): Promise<void> {
+    const selected = this.target
+    if (selected && this.targetConnection === 'healthy') await this.rememberSelection(selected.machine, selected.project)
+  }
+
+  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false): Promise<void> {
+    if (this.projectOperation) throw new Error('Wait for the project operation to finish.')
     if (this.machines.busy && !duringMachineOperation) throw new Error('Wait for the Machine operation to finish before switching locations.')
     if (this.switching) throw new Error('Another connection switch is in progress.')
     this.switching = true
@@ -254,6 +309,7 @@ export class WebRelay {
       this.recoveryAttempts = 0
       if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
       this.recoveryTimer = null
+      if (remember) await this.rememberSelection(machineKey, projectKey)
       this.generation += 1
       this.announce()
       for (const socket of this.sockets) socket.destroy()
@@ -343,6 +399,7 @@ export class WebRelay {
       if (url.pathname === '/relay/v1/updates/check' && req.method === 'POST') return json(res, 200, await this.clientUpdates.check())
       if (url.pathname === '/relay/v1/updates/preferences' && req.method === 'PUT') return json(res, 200, await this.clientUpdates.savePreferences(await readJsonBody(req)))
       if (url.pathname === '/relay/v1/status' && req.method === 'GET') return json(res, 200, this.status)
+      if (url.pathname === '/relay/v1/startup-target' && req.method === 'GET') return json(res, 200, await this.startupPreference())
       if (url.pathname === '/relay/v1/reconnect' && req.method === 'POST') {
         if (!this.target) return json(res, 503, { error: 'No AliceProject is selected.' })
         if (this.machines.busy) return json(res, 409, { error: 'Wait for the Machine operation to finish.' })
@@ -371,6 +428,10 @@ export class WebRelay {
         this.subscribers.add(res)
         req.on('close', () => this.subscribers.delete(res))
         return
+      }
+      if (url.pathname === '/relay/v1/projects/control' && req.method === 'POST') {
+        await this.controlProject(await readJsonBody(req))
+        return json(res, 200, this.status)
       }
       if (url.pathname === '/relay/v1/connect' && req.method === 'POST') {
         const input = await readJsonBody(req) as { machine?: unknown; project?: unknown }
@@ -566,10 +627,13 @@ export async function runWebRelay(args: string[]): Promise<number> {
   }
   const relay = new WebRelay({ port })
   const origin = await relay.listen()
-  const local = (await inspectLocalMachine()).machine
-  const first = local?.projects.find((project) => project.key === local.defaultProject && project.runtime.webEndpoint)
-    ?? local?.projects.find((project) => project.runtime.webEndpoint)
-  if (first) await relay.connect('local', first.key).catch((error: unknown) => process.stderr.write(`Local Runtime unavailable: ${String(error)}\n`))
+  const startup = await relay.startupPreference()
+  if (startup.target) {
+    await relay.connect(startup.target.machine, startup.target.project).catch((error: unknown) => {
+      relay.setStartupError(error)
+      process.stderr.write(`Startup AliceProject unavailable: ${String(error)}\n`)
+    })
+  }
   process.stdout.write(`OpenAlice relay: ${origin}\n`)
   if (open) await openBrowser(`${origin}/settings`)
   await new Promise<void>((done) => {

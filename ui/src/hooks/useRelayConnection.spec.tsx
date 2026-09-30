@@ -28,6 +28,24 @@ describe('useRelayConnection transport', () => {
     expect(result.current.error).toBeNull()
   })
 
+  it('ignores a late inventory response after a newer refresh completes', async () => {
+    let finish!: (value: { machines: typeof fleet.machines }) => void
+    const old = new Promise<{ machines: typeof fleet.machines }>(resolve => { finish = resolve })
+    let calls = 0
+    const bridge = {
+      status: vi.fn().mockResolvedValue(status), startupTarget: vi.fn().mockResolvedValue({ target: null, error: null }),
+      fleet: vi.fn(() => ++calls === 1 ? old : Promise.resolve(fleet)),
+    }
+    Object.defineProperty(window, 'openAlice', { value: { desktopConnection: bridge }, configurable: true })
+    const { result } = renderHook(() => useRelayConnection(status))
+    let first!: Promise<void>
+    act(() => { first = result.current.refresh() })
+    await act(async () => { await result.current.refresh() })
+    await act(async () => { finish({ machines: [] }); await first })
+    expect(result.current.fleet).toEqual(fleet.machines)
+    expect(result.current.loading).toBe(false)
+  })
+
   it('reports inventory failures while keeping the last confirmed target', async () => {
     const fetchMock = vi.fn(async (url: string) => url.endsWith('/status')
       ? new Response(JSON.stringify({ schemaVersion: 1, generation: 1, target: { machine: 'local', project: 'default' }, switching: false }), { status: 200 })
@@ -42,7 +60,7 @@ describe('useRelayConnection transport', () => {
   })
 
   it('uses Electron controls while integrated, without issuing relay HTTP requests', async () => {
-    const bridge = { status: vi.fn().mockResolvedValue(status), fleet: vi.fn().mockResolvedValue(fleet), connect: vi.fn().mockResolvedValue(status), returnIntegrated: vi.fn() }
+    const bridge = { status: vi.fn().mockResolvedValue(status), fleet: vi.fn().mockResolvedValue(fleet), startupTarget: vi.fn().mockResolvedValue({ target: null, error: null }), connect: vi.fn().mockResolvedValue(status), returnIntegrated: vi.fn() }
     Object.defineProperty(window, 'openAlice', { value: { runtime: { info: vi.fn() }, desktopConnection: bridge }, configurable: true })
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
@@ -55,19 +73,16 @@ describe('useRelayConnection transport', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('uses relay HTTP in a separated Electron window', async () => {
-    const bridge = { status: vi.fn(), fleet: vi.fn(), connect: vi.fn(), returnIntegrated: vi.fn() }
+  it('retains client control IPC in a separated Electron window without project runtime IPC', async () => {
+    const bridge = { status: vi.fn().mockResolvedValue(status), fleet: vi.fn().mockResolvedValue(fleet), startupTarget: vi.fn().mockResolvedValue({ target: { machine: 'cloud', project: 'main' }, error: null }), connect: vi.fn(), returnIntegrated: vi.fn() }
     Object.defineProperty(window, 'openAlice', { value: { desktopConnection: bridge }, configurable: true })
-    const fetch = vi.fn().mockImplementation(async (path: string) => ({
-      ok: true,
-      json: async () => path.endsWith('/status') ? status : fleet,
-    }))
+    const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
     const { result } = renderHook(() => useRelayConnection())
-
     await act(async () => { await result.current.refresh() })
-    await waitFor(() => expect(result.current.fleet).toEqual(fleet.machines))
-    expect(fetch).toHaveBeenCalledWith('/relay/v1/fleet', expect.objectContaining({ cache: 'no-store' }))
-    expect(bridge.fleet).not.toHaveBeenCalled()
+    expect(result.current.fleet).toEqual(fleet.machines)
+    expect(result.current.startup?.target).toEqual({ machine: 'cloud', project: 'main' })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(window.openAlice?.runtime).toBeUndefined()
   })
 })

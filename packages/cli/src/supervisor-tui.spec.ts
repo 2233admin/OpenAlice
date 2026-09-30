@@ -3727,7 +3727,7 @@ describe('Supervisor TUI screen', () => {
     const address = backend.address()
     if (!address || typeof address === 'string') throw new Error('Missing test backend port')
     const endpoint = `http://127.0.0.1:${address.port}`
-    const relay = new WebRelay({ inspectLocal: async () => ({ machine: {
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null, inspectLocal: async () => ({ machine: {
       key: 'local', displayName: 'This computer', projects: [{
         key: context.project, id: context.aliceProject.id,
         displayName: context.aliceProject.displayName, available: true,

@@ -131,7 +131,9 @@ const api = {
   desktopConnection: {
     status: () => ipcRenderer.invoke('openalice:desktop-connection:status'),
     fleet: () => ipcRenderer.invoke('openalice:desktop-connection:fleet'),
+    startupTarget: () => ipcRenderer.invoke('openalice:desktop-connection:startup-target'),
     connect: (machine: string, project: string) => ipcRenderer.invoke('openalice:desktop-connection:connect', machine, project),
+    controlProject: (input: unknown) => ipcRenderer.invoke('openalice:desktop-connection:project-control', input),
     returnIntegrated: () => ipcRenderer.invoke('openalice:desktop-connection:return-integrated'),
   },
   desktopMachine: {

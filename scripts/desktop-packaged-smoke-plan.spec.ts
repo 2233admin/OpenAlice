@@ -31,10 +31,8 @@ describe('buildDesktopPackagedSmokePlan', () => {
       tempData: true,
     })
     expect(plan.buildEnv).toMatchObject({
-      VITE_OPENALICE_FIRST_RUN_GUIDE: '1',
       VITE_OPENALICE_ONBOARDING_TEST: '1',
       VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
-      VITE_OPENALICE_ONBOARDING_STORAGE_SUFFIX: 'fixed-onboarding',
     })
     expect(plan.launchEnv).toMatchObject({
       OPENALICE_ONBOARDING_TEST: '1',

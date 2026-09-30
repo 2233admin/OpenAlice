@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/startup-location-guide.md]] — Retire the legacy first-run wizard and
+  introduce a client-owned Machine / AliceProject startup choice shared by
+  browser relay and Electron, with an explicit unavailable-default recovery path.
+
 - [[plans/update-lifecycle.md]] — Unify version inventory, backend probing, planning and durable update
   operations behind one lifecycle and UI hook; migrate real consumers and the
   rehearsal together, retiring duplicate paths while preserving owner engines.

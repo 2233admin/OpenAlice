@@ -33,7 +33,6 @@ import { ConnectorStatusPage } from '../pages/ConnectorStatusPage'
 import { MarketDataPage } from '../pages/MarketDataPage'
 import { NewsCollectorPage } from '../pages/NewsCollectorPage'
 import { UTADetailPage } from '../pages/UTADetailPage'
-import { OnboardingDesignPage } from '../pages/OnboardingDesignPage'
 import { DesignProjectPage } from '../pages/DesignProjectPage'
 import { DevPage } from '../pages/DevPage'
 import { InboxPage } from '../pages/InboxPage'
@@ -339,13 +338,6 @@ const utaDetailModule: ViewModule<'uta-detail'> = {
   ),
 }
 
-const onboardingModule: ViewModule<'onboarding'> = {
-  kind: 'onboarding',
-  title: () => 'Onboarding',
-  toUrl: () => '/onboarding',
-  Component: () => <OnboardingDesignPage />,
-}
-
 const designProjectModule: ViewModule<'design-project'> = {
   kind: 'design-project',
   title: (spec) => getDesignProject(spec.params.project)?.title ?? `Design: ${spec.params.project}`,
@@ -357,7 +349,6 @@ const devTabTitle: Record<Extract<ViewSpec, { kind: 'dev' }>['params']['tab'], s
   'upgrade-rehearsal': 'Upgrade rehearsal',
   frontend: 'Frontend',
   tools: 'Tools',
-  onboarding: 'Onboarding',
   snapshots: 'Snapshots',
   logs: 'Logs',
   runs: 'Runs',
@@ -611,7 +602,6 @@ const VIEWS = {
   'market-detail': marketDetailModule,
   settings: settingsModule,
   'uta-detail': utaDetailModule,
-  onboarding: onboardingModule,
   'design-project': designProjectModule,
   dev: devModule,
   inbox: inboxModule,

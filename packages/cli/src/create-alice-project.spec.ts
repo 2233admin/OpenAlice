@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -64,4 +64,16 @@ describe('openalice create alice-project', () => {
 it('keeps creation selection fixed to the three default Workspaces', () => {
   expect(parseCreateAliceProjectArgs([])).not.toHaveProperty('workspaces')
   expect(() => parseCreateAliceProjectArgs(['--workspaces', 'none'])).toThrow('Unknown option')
+})
+
+it('refuses to initialize a non-empty GUI destination before consulting the registry', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'create-protected-'))
+  temporary.push(home)
+  await writeFile(join(home, 'existing.txt'), 'keep me')
+  let resolved = false
+  await expect(runCreateAliceProjectCommand(['--name', 'research', '--home', home, '--yes', '--require-empty'], {
+    resolveContext: async () => { resolved = true; throw new Error('must not resolve') },
+  })).rejects.toThrow('new or empty')
+  expect(resolved).toBe(false)
+  expect(await readFile(join(home, 'existing.txt'), 'utf8')).toBe('keep me')
 })

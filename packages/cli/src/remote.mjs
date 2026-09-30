@@ -327,6 +327,12 @@ export async function connectRemote(options, dependencies = {}) {
       throw startError
     }
   }
+  if (options.machineOnly) {
+    dependencies.onProgress?.('verifying')
+    if (!remote.cliPath || !remote.cliCompatible) throw new Error('The remote OpenAlice CLI is not ready after preparation.')
+    stdout.write('OpenAlice CLI is ready. No AliceProject was started.\n')
+    return 0
+  }
   if (!isRemoteRuntimeAttachable(remote.status)) {
     throw new Error(`Remote OpenAlice Server is not ready after apply (${remote.status?.class ?? 'no status'})`)
   }
@@ -482,7 +488,7 @@ export function createRemotePlan(options, remote, install = {}) {
   let restartServer = false
   let restartOwner = null
   const status = remote.status
-  const reusableExternalRuntime = isRemoteRuntimeAttachable(status)
+  const reusableExternalRuntime = !options.machineOnly && isRemoteRuntimeAttachable(status)
     && !options.appDir
     && status?.provider?.kind !== 'bun'
   const cliMatchesLocal = remoteCliMatchesRelease(remote, {
@@ -518,6 +524,10 @@ export function createRemotePlan(options, remote, install = {}) {
     blocker = `${options.appDir} exists but is not an OpenAlice source checkout. Choose another --app-dir or move the existing path.`
   }
 
+  // GUI Machine registration prepares only the CLI installation. Project
+  // ownership/start/restart are separate reviewed operations. In particular,
+  // a default project occupied by Electron must not block registering a host.
+  if (!options.machineOnly) {
   const detectedRuntimePort = remoteRuntimePort(status)
   const runningRuntimeMismatch = remoteRuntimeMustMatchPlan(options, remote)
     && !runningRuntimeMatchesPlan(options, remote)
@@ -576,6 +586,8 @@ export function createRemotePlan(options, remote, install = {}) {
       restartServer = true
       mutations.push('restart remote OpenAlice Server')
     }
+  }
+
   }
 
   if (!blocker && startServer && !nativeRuntimeExpected) {

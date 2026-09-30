@@ -85,15 +85,14 @@ A missing request leaves older homes unchanged. Chat does not pin a Harness vers
 
 A prepared Workspace may still need an Agent or credentials before its first
 Session; the normal launch controls own that readiness, independently of setup.
-The first-run guide offers an explicit Pi provider connection action. Saving a
+Users configure AI providers and Agent Runtimes from the ordinary Settings and
+Chat surfaces; no full-screen first-run wizard gates the product. Saving a
 compatible provider binds it to an unconfigured Chat's interactive defaults;
-existing runtime choices and headless defaults are preserved. The guide stays
-on the confirmed AI-ready step until the user continues. Its page layer sits
-below the shared credential/UTA dialogs so these remain visible and operable.
-Packaged onboarding smoke uses isolated Pi state, the local mock provider, and
-the same Chat birth request. It first verifies the renderer is available, then
-waits for Chat's asynchronous preparation before checking provider binding;
-other default Workspaces do not gate Chat onboarding.
+existing runtime choices and headless defaults are preserved. Packaged
+fresh-user smoke uses isolated Pi state and the same Chat birth request. It
+first verifies the renderer is available, then waits for Chat's asynchronous
+preparation and checks Agent readiness; other default Workspaces do not gate
+Chat startup.
 
 Create a named project from the CLI:
 
@@ -211,3 +210,20 @@ loading, error, retry, and transport selection and has unit coverage.
 - browser and Electron show the same secret-free identity shape;
 - `Workspace` is never renamed or overloaded to mean AliceProject;
 - Guardian `instanceId` is process identity, not product hierarchy.
+
+## Client startup selection
+
+The legacy language/AI/broker first-run wizard is retired. Client startup now
+selects where Alice works before mounting any project-owned UI. The two-column
+Machine / AliceProject launcher can add SSH machines, review their preparation,
+create projects in new or empty folders, and start stopped projects without
+implicit takeover. Workspace preparation remains asynchronous after app entry.
+
+The client remembers the last successfully opened location as **Recent**, stored
+outside project data under the local Supervisor root. It never silently changes
+to another project when Recent is unavailable. Electron opens a client-only
+HTTP relay shell for remote or unresolved Recent, with no local project lock or
+backend children. A registered local project selected for integrated execution
+retains native IPC and starts its own backend on launch; an already running CLI
+backend is attached through the relay. Automation's explicit `OPENALICE_HOME`
+remains authoritative and disposable smoke identities never overwrite Recent.

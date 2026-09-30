@@ -52,6 +52,56 @@ async function withHost(origin: string, path: string, host: string): Promise<{ s
 }
 
 describe('WebRelay', () => {
+  it('records Recent only after identity verification and keeps attachment if persistence fails', async () => {
+    const runtime = await backend('expected-id', 'working')
+    openedBackends.push(runtime.server)
+    let recent: { machine: string; project: string } | null = { machine: 'cloud', project: 'old' }
+    let id = 'wrong-id'
+    const write = vi.fn(async (value) => { recent = value })
+    const relay = new WebRelay({ readStartup: async () => recent, writeStartup: write,
+      inspectLocal: async () => ({ machine: { key: 'local', displayName: 'Local', projects: [{ key: 'main', id, displayName: 'Main', available: true, runtime: { webEndpoint: `http://127.0.0.1:${runtime.port}` } }] } }) as never,
+      waitReady: async () => undefined,
+    })
+    openedRelays.push(relay)
+    await relay.listen()
+    await expect(relay.connect('local', 'main')).rejects.toThrow('different AliceProject')
+    expect(relay.status.target).toBeNull()
+    expect(recent).toEqual({ machine: 'cloud', project: 'old' })
+    expect(write).not.toHaveBeenCalled()
+    id = 'expected-id'
+    await relay.connect('local', 'main', { remember: false })
+    expect(write).not.toHaveBeenCalled()
+    await relay.rememberCurrentSelection()
+    expect(recent).toEqual({ machine: 'local', project: 'main' })
+    write.mockRejectedValueOnce(new Error('Disk is read-only'))
+    await expect(relay.connect('local', 'main')).resolves.toBeUndefined()
+    expect(relay.status.target?.project).toBe('main')
+    expect((await relay.startupPreference()).error).toContain('Disk is read-only')
+  })
+
+  it('serializes project mutations with switching and machine preparation', async () => {
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    const control = vi.fn(async () => pending)
+    const relay = new WebRelay({ readStartup: async () => null, writeStartup: async () => undefined,
+      projectControl: control,
+      inspectLocal: async () => ({ machine: { key: 'local', displayName: 'Local', projects: [{ key: 'main' }] } }) as never,
+    })
+    openedRelays.push(relay)
+    const operation = relay.controlProject({ machine: 'local', project: 'main', action: 'start' })
+    await vi.waitFor(() => expect(control).toHaveBeenCalledOnce())
+    expect(relay.status.switching).toBe(true)
+    await expect(relay.controlProject({ machine: 'local', project: 'main', action: 'start' })).rejects.toThrow('Wait')
+    await expect(relay.connect('local', 'main')).rejects.toThrow('Wait')
+    await expect(relay.applyMachine('plan')).rejects.toThrow('Wait')
+    expect(() => relay.planMachine({ mode: 'add', sshTarget: 'host', label: 'Host' })).toThrow('Wait')
+    finish()
+    await operation
+    expect(relay.status.switching).toBe(false)
+    await expect(relay.controlProject({ machine: 'local', project: 'missing', action: 'start' })).rejects.toThrow('no longer registered')
+    expect(control).toHaveBeenCalledOnce()
+  })
+
   it('serves Vite assets and HMR through the relay while APIs follow its selected Runtime', async () => {
     const runtime = await backend('dev-id', 'development')
     openedBackends.push(runtime.server)
@@ -67,7 +117,7 @@ describe('WebRelay', () => {
     openedBackends.push(ui)
     const address = ui.address()
     if (!address || typeof address === 'string') throw new Error('Missing Vite fixture port')
-    const relay = new WebRelay({
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null,
       uiOrigin: `http://127.0.0.1:${address.port}`,
       inspectLocal: async () => ({ machine: { key: 'local', displayName: 'This computer', projects: [{
         key: 'dev', id: 'dev-id', displayName: 'Development', available: true,
@@ -108,7 +158,7 @@ describe('WebRelay', () => {
         } finally { busy = false }
       },
     } as unknown as MachineManagement
-    const relay = new WebRelay({
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null,
       machineManagement,
       readRegistry: async () => ({ defaultMachine: 'local', machines: [{ key: 'cloud', sshTarget: 'cloud-host', enabled: true }] }) as never,
       inspectRegistered: async () => ({
@@ -143,7 +193,7 @@ describe('WebRelay', () => {
     const after = await backend('cloud-id', 'healthy forward')
     openedBackends.push(after.server)
     let attempts = 0
-    const relay = new WebRelay({
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null,
       readRegistry: async () => ({ defaultMachine: 'local', machines: [{ key: 'cloud', sshTarget: 'cloud-host', enabled: true }] }) as never,
       inspectRegistered: async () => ({
         key: 'cloud', displayName: 'Cloud', connection: 'online', capabilities: { openTunnel: true },
@@ -173,7 +223,7 @@ describe('WebRelay', () => {
     openedBackends.push(runtime.server)
     let attempts = 0
     let exitFirstTunnel: (() => void) | null = null
-    const relay = new WebRelay({
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null,
       readRegistry: async () => ({ defaultMachine: 'local', machines: [{ key: 'cloud', sshTarget: 'cloud-host', enabled: true }] }) as never,
       inspectRegistered: async () => ({
         key: 'cloud', displayName: 'Cloud', connection: 'online', capabilities: { openTunnel: true },
@@ -203,7 +253,7 @@ describe('WebRelay', () => {
 
   it('shares the selected target and disconnection events with a local presenter', async () => {
     const a = await backend('a-id', 'A')
-    const relay = new WebRelay({ inspectLocal: async () => ({ machine: {
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null, inspectLocal: async () => ({ machine: {
       key: 'local', displayName: 'This computer', projects: [{
         key: 'a', id: 'a-id', displayName: 'A', available: true,
         runtime: { webEndpoint: `http://127.0.0.1:${a.port}` },
@@ -227,7 +277,7 @@ describe('WebRelay', () => {
     const a = await backend('a-id', 'A')
     const b = await backend('b-id', 'B')
     const ports = { a: a.port, b: b.port }
-    const relay = new WebRelay({
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null,
       inspectLocal: async () => ({ machine: {
         key: 'local', displayName: 'This computer', projects: Object.entries(ports).map(([key, port]) => ({
           key, id: `${key}-id`, displayName: key, available: true,
@@ -257,7 +307,7 @@ describe('WebRelay', () => {
   it('keeps the active target when the candidate Runtime identity differs', async () => {
     const a = await backend('a-id', 'A')
     const b = await backend('wrong-id', 'B')
-    const relay = new WebRelay({
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null,
       inspectLocal: async () => ({ machine: {
         key: 'local', displayName: 'This computer', projects: [
           { key: 'a', id: 'a-id', displayName: 'A', available: true, runtime: { webEndpoint: `http://127.0.0.1:${a.port}` } },
@@ -277,7 +327,7 @@ describe('WebRelay', () => {
   it('forwards WebSocket frames and closes the old socket on switch', async () => {
     const a = await backend('a-id', 'A')
     const b = await backend('b-id', 'B')
-    const relay = new WebRelay({ inspectLocal: async () => ({ machine: {
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null, inspectLocal: async () => ({ machine: {
       key: 'local', displayName: 'This computer', projects: [
         { key: 'a', id: 'a-id', displayName: 'A', available: true, runtime: { webEndpoint: `http://127.0.0.1:${a.port}` } },
         { key: 'b', id: 'b-id', displayName: 'B', available: true, runtime: { webEndpoint: `http://127.0.0.1:${b.port}` } },
@@ -300,7 +350,7 @@ describe('WebRelay', () => {
   it('namespaces backend cookies so a session from one target is never sent to another', async () => {
     const a = await backend('a-id', 'A')
     const b = await backend('b-id', 'B')
-    const relay = new WebRelay({ inspectLocal: async () => ({ machine: {
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null, inspectLocal: async () => ({ machine: {
       key: 'local', displayName: 'This computer', projects: [
         { key: 'a', id: 'a-id', displayName: 'A', available: true, runtime: { webEndpoint: `http://127.0.0.1:${a.port}` } },
         { key: 'b', id: 'b-id', displayName: 'B', available: true, runtime: { webEndpoint: `http://127.0.0.1:${b.port}` } },
@@ -322,7 +372,7 @@ describe('WebRelay', () => {
   it('accepts a login-gated Runtime after SSH inventory reconfirms its owner', async () => {
     const a = await backend('a-id', 'A', true)
     let inspections = 0
-    const relay = new WebRelay({ inspectLocal: async () => {
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null, inspectLocal: async () => {
       inspections += 1
       return { machine: { key: 'local', displayName: 'This computer', projects: [{
         key: 'a', id: 'a-id', displayName: 'A', available: true,
@@ -339,7 +389,7 @@ describe('WebRelay', () => {
 
   it('forwards only opaque Surface hosts to the selected Runtime, not to relay controls', async () => {
     const a = await backend('a-id', 'A')
-    const relay = new WebRelay({ inspectLocal: async () => ({ machine: { key: 'local', displayName: 'This computer', projects: [{
+    const relay = new WebRelay({ writeStartup: async () => undefined, readStartup: async () => null, inspectLocal: async () => ({ machine: { key: 'local', displayName: 'This computer', projects: [{
       key: 'a', id: 'a-id', displayName: 'A', available: true, runtime: { webEndpoint: `http://127.0.0.1:${a.port}` },
     }] } }) as never })
     const origin = await relay.listen()

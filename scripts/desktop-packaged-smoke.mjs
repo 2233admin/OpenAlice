@@ -50,8 +50,8 @@ Options:
   --keep-package Keep the temporary package output created by this run
   --temp-data    Use isolated temporary data/workspace/global stores
   --real-data    Use real data explicitly (default; kept for compatibility)
-  --onboarding   Build with first-run guide enabled, use temp data, run an
-                 automated renderer onboarding smoke, then exit
+  --onboarding   Use temp data and run an automated fresh-user renderer smoke,
+                 then exit
   --trading-mode Use temp data, exercise lite -> readonly -> lite UTA lifecycle,
                  then exit
   --workspace-acceptance
@@ -258,6 +258,8 @@ async function main() {
       env.OPENALICE_UTA_PORT = String(await getAvailablePort())
     }
     if (!realData && smokeHome && smokeWorkspaces && smokeGlobal) {
+      env.OPENALICE_ELECTRON_SMOKE_USER_DATA = join(smokeRoot, 'electron-profile')
+      env.OPENALICE_SUPERVISOR_HOME = join(smokeRoot, 'supervisor')
       env.OPENALICE_HOME = smokeHome
       env.AQ_LAUNCHER_ROOT = smokeWorkspaces
       env.OPENALICE_GLOBAL_DIR = smokeGlobal

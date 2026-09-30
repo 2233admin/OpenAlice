@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises'
 import { PROJECT_WORKSPACES } from './project-workspaces.ts'
 /**
  * `openalice create alice-project` — interactive or scripted AliceProject birth.
@@ -34,6 +35,7 @@ Options:
   --name <key>       Project key (lowercase, not "default")
   --home <path>      Complete OPENALICE_HOME for this project
   --product <kind>   trader (default) or nano
+  --require-empty    Reject an existing non-empty home (GUI creation safety)
   --yes              Non-interactive; requires --name and --home
 `
 }
@@ -43,12 +45,14 @@ export interface CreateAliceProjectOptions {
   home?: string
   product?: AliceProjectProduct
   yes?: boolean
+  requireEmpty?: boolean
 }
 
 export function parseCreateAliceProjectArgs(argv: string[]): CreateAliceProjectOptions {
   const options: CreateAliceProjectOptions = {}
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
+    if (arg === '--require-empty') { options.requireEmpty = true; continue }
     if (arg === '--yes' || arg === '-y') {
       options.yes = true
       continue
@@ -129,6 +133,10 @@ export async function runCreateAliceProjectCommand(
     }
   }
 
+  if (options.requireEmpty) {
+    const entries = await readdir(home).catch(error => { if (error.code === 'ENOENT') return []; throw error })
+    if (entries.some(entry => !['.DS_Store', 'Thumbs.db', 'desktop.ini'].includes(entry))) throw usageError('Choose a new or empty data folder.')
+  }
   const context = await (io.resolveContext ?? (() => resolveStoredLaunchContext({})))()
   await createSupervisorAliceProject(context, name, home, {
     product,
@@ -140,7 +148,7 @@ export async function runCreateAliceProjectCommand(
     `Created AliceProject ${name} (${product === 'nano' ? 'NanoAlice' : 'TraderAlice'}).\n`
     + `Home: ${home}\n`
     + `Workspaces: ${workspaces.join(', ')}. Prepared after the app opens; no Agent is launched.\n`
-    + `Selected as the next bare-start default. Start with: openalice up --project ${name}\n`,
+    + `Selected as the local lifecycle default. Start with: openalice up --project ${name}\n`,
   )
   return 0
 }

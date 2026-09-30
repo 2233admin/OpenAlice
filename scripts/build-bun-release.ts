@@ -465,9 +465,19 @@ printf '%s\\n' "${'$'}1" > "${'$'}OPENALICE_SMOKE_OPEN_RECEIPT"
     })
     await waitForHttp(`${relayUrl}/settings`, 15_000)
     browserOpenUrl = (await waitForFileText(openReceipt, 5_000)).trim()
-    const relayStatus = await fetchJson(`${relayUrl}/relay/v1/status`) as { target?: { machine?: string; project?: string } }
-    if (browserOpenUrl !== `${relayUrl}/settings` || relayStatus.target?.machine !== 'local') {
-      throw new Error(`compiled CLI did not open its local WebRelay: ${JSON.stringify(relayStatus)} / ${browserOpenUrl}`)
+    const initialRelay = await fetchJson(`${relayUrl}/relay/v1/status`) as { target?: unknown }
+    if (browserOpenUrl !== `${relayUrl}/settings` || initialRelay.target) {
+      throw new Error(`compiled CLI did not open its unselected startup shell: ${JSON.stringify(initialRelay)} / ${browserOpenUrl}`)
+    }
+    // Fresh clients have no Recent. Exercise the same explicit selection as
+    // the GUI instead of reviving the retired silent-local-fallback contract.
+    const relayStatus = await fetchJson(`${relayUrl}/relay/v1/connect`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: relayUrl },
+      body: JSON.stringify({ machine: 'local', project: 'default' }),
+    }) as { target?: { machine?: string; project?: string } }
+    const recent = await fetchJson(`${relayUrl}/relay/v1/startup-target`) as { target?: { machine?: string; project?: string } }
+    if (relayStatus.target?.machine !== 'local' || recent.target?.project !== 'default') {
+      throw new Error(`compiled CLI did not attach and remember the selected project: ${JSON.stringify({ relayStatus, recent })}`)
     }
     const inventory = await fetchJson(`${baseUrl}/api/workspaces/agents`) as {
       agents?: Array<{ id?: string; installed?: boolean }>
