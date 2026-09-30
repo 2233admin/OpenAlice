@@ -1,3 +1,4 @@
+import { collectionWideTestInputs } from './scripts/test-collection-inputs.mjs'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 
@@ -25,6 +26,7 @@ export default {
     alias: workspaceAliases,
   },
   test: {
+    forceRerunTriggers: collectionWideTestInputs(__dirname),
     include: integrationIncludes,
     setupFiles: ['./vitest.setup.ts'],
     testTimeout: 60_000,

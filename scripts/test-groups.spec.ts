@@ -180,3 +180,11 @@ describe('complete data-only task inventory', () => {
     expect(selector('--inventory', '--scenario', 'first-run').status).toBe(2)
   })
 })
+
+
+it('reports only the platforms supported by packaged macOS smoke modes', () => {
+  for (const id of ['open-alice#electron:smoke:packaged', 'open-alice#electron:smoke:onboarding', 'open-alice#electron:smoke:trading-mode']) {
+    expect(commands.find(command => command.id === id)?.platforms).toEqual(['macOS-arm64', 'macOS-x64'])
+  }
+  expect(commands.find(command => command.id === 'open-alice#electron:smoke:workspace')?.platforms).toContain('Windows-x64')
+})

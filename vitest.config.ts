@@ -1,20 +1,10 @@
 import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
+import { collectionWideTestInputs } from './scripts/test-collection-inputs.mjs'
 import { centralHermeticIncludes } from './scripts/test-lanes.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-
-const workspaceGlob = (pattern: string): string => (
-  resolve(__dirname, pattern).replaceAll('\\', '/')
-)
-
-export const collectionWideTestInputs = [
-  workspaceGlob('**/package.json'),
-  workspaceGlob('**/{vitest,vite}.config.*'),
-  workspaceGlob('scripts/{test-lanes,test-groups,test-commands,test-results}.mjs'),
-  workspaceGlob('tests/**/*.json'),
-]
 
 // Workspace packages are aliased directly to their `src/*.ts` entry points so
 // vitest doesn't need them pre-built into `dist/`. Vite's import-analysis
@@ -45,7 +35,7 @@ export default defineConfig({
     // inputs must invalidate every project. Vitest compares changed files as
     // absolute paths, so relative defaults do not match this workspace; keep
     // absolute, slash-normalized globs explicit for every platform.
-    forceRerunTriggers: collectionWideTestInputs,
+    forceRerunTriggers: collectionWideTestInputs(__dirname),
     // The Node suite includes installer, PTY, and Guardian specs that spawn
     // their own process trees. CPU-relative worker counts scale contention
     // back up on larger development hosts, while two workers still saturate a

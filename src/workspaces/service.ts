@@ -3419,15 +3419,18 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     scheduleScanner.stop();
     stopInboxActivity?.();
     disposal = (async () => {
-      await harnessSurfaces.dispose();
-      await executionManager.stopAll('plugin-shutdown');
-      await scheduleScanner.waitForDispatches();
-      await Promise.allSettled(headlessDispatchAdmissions);
-      // A stopped child is not a settled dispatch: task/Issue/conversation and
-      // delivery journals finish in the continuation after process exit.
-      await Promise.allSettled(headlessDispatchCompletions);
-      if (headlessDispatchCompletionErrors.length) throw new AggregateError(headlessDispatchCompletionErrors, 'Headless dispatch persistence failed during shutdown');
-      transcriptWatcher.disposeAll();
+      try {
+        await harnessSurfaces.dispose();
+        await executionManager.stopAll('plugin-shutdown');
+        await scheduleScanner.waitForDispatches();
+        await Promise.allSettled(headlessDispatchAdmissions);
+        // A stopped child is not a settled dispatch: task/Issue/conversation and
+        // delivery journals finish in the continuation after process exit.
+        await Promise.allSettled(headlessDispatchCompletions);
+        if (headlessDispatchCompletionErrors.length) throw new AggregateError(headlessDispatchCompletionErrors, 'Headless dispatch persistence failed during shutdown');
+      } finally {
+        transcriptWatcher.disposeAll();
+      }
     })();
     return disposal;
   };

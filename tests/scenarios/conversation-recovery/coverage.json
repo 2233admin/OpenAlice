@@ -85,6 +85,12 @@
           "assertion": "waits for terminal dispatch persistence before dispose resolves",
           "level": "integration",
           "scope": "Real service and child; deliberately delayed task persistence proves concurrent dispose callers wait for completion and shutdown rejects new dispatch."
+        },
+        {
+          "spec": "tests/scenarios/conversation-recovery/session-recovery.e2e.spec.ts",
+          "assertion": "cleans transcript watchers after rejected completion and shares the failed disposal",
+          "level": "integration",
+          "scope": "Real service/child and filesystem watchers; injected completion rejection and one watcher close failure. Verifies cleanup and shared AggregateError, not propagation of every disk write failure."
         }
       ],
       "gap": ""

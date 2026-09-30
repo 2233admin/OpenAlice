@@ -88,3 +88,52 @@ it('interrupts through HTTP, requires explicit release, and rejects an old execu
   expect(() => process.kill(newExecution.pid!, 0)).toThrow()
   await expect(conversation.ask({ target: { kind: 'resume', resumeId: offered.resumeId }, prompt: 'late', source: { kind: 'human' } })).rejects.toThrow()
 }, 45_000)
+
+it('cleans transcript watchers after rejected completion and shares the failed disposal', async () => {
+  const { journey: activeJourney, chat, conversation } = await setup()
+  activeJourney.fixture('setInterval(()=>{},1000)')
+  const offered = await conversation.ask({ target: { kind: 'workspace', workspaceId: chat.id }, agent: 'codex', prompt: 'hold', source: { kind: 'human' } })
+  if (offered.status === 'unavailable') throw new Error(JSON.stringify(offered))
+  await vi.waitFor(() => expect(activeJourney.service.executions.current(offered.resumeId)?.phase).toBe('running'))
+  const { join } = await import('node:path')
+  const { watch } = await import('node:fs')
+  const { mkdir } = await import('node:fs/promises')
+  // Real filesystem watchers, with one resource's close failing. disposeAll
+  // must still close the other resource and empty its registry.
+  const directory = join(activeJourney.root, 'review-transcripts')
+  await mkdir(directory)
+  const first = watch(directory)
+  const second = watch(directory)
+  const originalClose = first.close.bind(first)
+  const closeFailure = vi.spyOn(first, 'close').mockImplementation(() => { throw new Error('injected close failure') })
+  const secondClose = vi.spyOn(second, 'close')
+  // register() uses node:fs.watch; seed exactly its owned resource shape to
+  // avoid launching a native paid CLI solely to obtain transcript discovery.
+  const entries = (activeJourney.service.transcriptWatcher as unknown as { entries: Map<string, unknown> }).entries
+  entries.set('first', { watcher: first, pending: [] })
+  entries.set('second', { watcher: second, pending: [] })
+  const cleanup = vi.spyOn(activeJourney.service.transcriptWatcher, 'disposeAll')
+  const failure = new Error('injected terminal completion rejection')
+  vi.spyOn(activeJourney.service.headlessTasks, 'complete').mockRejectedValue(failure)
+  try {
+    const disposal = activeJourney.service.dispose('rejected-completion')
+    expect(activeJourney.service.dispose('concurrent-quit')).toBe(disposal)
+    await expect(disposal).rejects.toMatchObject({
+      name: 'AggregateError', message: 'Headless dispatch persistence failed during shutdown', errors: [failure],
+    })
+    expect(cleanup).toHaveBeenCalledOnce()
+    expect(closeFailure).toHaveBeenCalledOnce()
+    expect(secondClose).toHaveBeenCalledOnce()
+    expect(entries.size).toBe(0)
+    expect(activeJourney.service.dispose('retry-quit')).toBe(disposal)
+    await expect(disposal).rejects.toBeInstanceOf(AggregateError)
+    expect(cleanup).toHaveBeenCalledOnce()
+  } finally {
+    originalClose(); second.close()
+    // The helper normally awaits disposal; the deliberately rejected shared
+    // promise has already been asserted, so allow its environment cleanup.
+    const failedJourney = activeJourney
+    journey = undefined
+    await failedJourney.close().catch(error => { if (!(error instanceof AggregateError)) throw error })
+  }
+}, 45_000)

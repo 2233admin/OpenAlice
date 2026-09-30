@@ -268,3 +268,13 @@ acceptance.
 Do not create a new Vitest project merely to obtain a product label. Add or
 change execution environments only when isolation or runtime behavior actually
 requires one.
+
+All runnable Vitest configs share `scripts/test-collection-inputs.mjs` metadata
+triggers, including deterministic integration and the explicit external/live
+lanes. A metadata-only `--changed` edit invalidates collection across the
+selected lane; it does not change that lane's side-effect authorization or make
+static import analysis complete for dynamic runtime dependencies.
+
+Post-merge Stage 1/2 grouping acceptance and its remaining product gaps are
+tracked in [[plans/test-system-grouping.md]]. Shutdown completion-drain tests
+also do not certify that every storage layer propagates disk write failures.

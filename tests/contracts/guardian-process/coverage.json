@@ -15,16 +15,16 @@
           "spec": "packages/guardian-runtime/src/runtime-lock.spec.ts",
           "assertion": "refuses a second live owner without takeover",
           "level": "integration",
-          "scope": "Temporary lock state and real test-owned owner processes."
+          "scope": "Real temporary filesystem lock state with FakeProcesses liveness/signals; no OS owner processes."
         },
         {
           "spec": "packages/guardian-runtime/src/runtime-lock.spec.ts",
           "assertion": "allows only one concurrent contender to replace a stale owner",
           "level": "integration",
-          "scope": "Local process/lock contention; not every launcher/platform."
+          "scope": "Concurrent in-process lock contenders with real filesystem writes and FakeProcesses; no OS process contention."
         }
       ],
-      "gap": "Compose source, packaged, and installed launchers under the same restart/cleanup acceptance."
+      "gap": "Real multi-process owner contention is not proved by these FakeProcesses specs. Compose source, packaged, and installed launchers under the same restart/cleanup acceptance."
     },
     {
       "id": "recover-cleanup",

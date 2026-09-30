@@ -255,3 +255,39 @@ are in the owner guide.
   native/browser/venue gaps; full-suite failures are recorded above rather than
   counted as green acceptance. Synchronized with the accepted #1667 merge;
   delivery targets current dev in a new review PR.
+
+## Maintainer review cleanup and post-merge acceptance checklist
+
+PR #1672 follow-up keeps rejected shutdown completion visible as the existing
+AggregateError while closing transcript resources in a finally block. Its
+regression covers concurrent/repeated disposal and a watcher close failure.
+This is a completion-drain guarantee, not a storage durability certification:
+HeadlessTaskRegistry and AgentConversationLog still warn and swallow some disk
+write errors, and the dispatch catch can absorb failures after terminal status.
+Those preexisting storage behaviors are outside this bounded cleanup.
+
+All runnable Vitest configurations now share absolute collection metadata
+triggers. Metadata-only changed selection has an executable Git/Vitest
+regression; it does not imply that dynamic product dependencies are completely
+represented by the static import graph. Guardian lock spec evidence explicitly
+uses FakeProcesses with real filesystem state; real multi-process contention
+and platform/launcher composition remain a separate acceptance gap. Packaged,
+onboarding and trading-mode smoke commands currently support macOS only;
+Workspace artifact acceptance retains its separate Windows support.
+
+After the maintainer merges Stage 2, use this checklist against the merged
+commit rather than treating a green bounded gate as complete product coverage:
+
+| Question | Repeatable check / evidence | Acceptance limit |
+| --- | --- | --- |
+| Can tests be navigated by product scenario and protocol boundary? | `pnpm test:select --groups --json`; `--scenario conversation-recovery --json`; `--contract alice-uta --json` | Catalog/dry-run output proves discoverability, not behavior. |
+| Do owner, lane, package and changed selectors compose? | `pnpm test:contract:workflow`; `scripts/test-collection-inputs.spec.ts` | Includes metadata-only changed collection; dynamic dependencies still need explicit selection. |
+| Does the critical local set actually run? | `pnpm test:critical --receipt artifacts/tests/critical-local.json` | Require accepted=true and every required reference uniquely passed at the exact merged commit. |
+| Are local journeys and fault paths covered? | `pnpm test:integration`; delayed/rejected shutdown, Session crash/recovery, HTTP interruption and mock-paper approval tests | Controlled Node agents and MockBroker; no paid native agent or real venue acceptance. |
+| Can skipped, omitted, ambiguous or failed evidence pass? | `scripts/test-results.spec.ts`; `scripts/workspace-acceptance-receipt.spec.ts` | Real Vitest report fixtures and receipt validation; native/venue cleanup is not inferred. |
+| Does CI enforce the required evidence? | Exact-head dev PR Clean Build result and uploaded critical receipt; source CI workflow contract tests | Check the actual commit and receipt, not a prior head's green status. |
+| What remains uncovered? | `pnpm test:select --groups --json`; native/system/external/live command prerequisites and coverage row scopes | Preserve browser/PTY, native desktop, Docker/SSH, multi-process Guardian, provider and paper-venue gaps. |
+| Is the complete hermetic suite healthy? | `pnpm test`, separately from the required gate | Record failures and compare baselines; do not classify a bounded gate as the full suite. |
+
+This checklist is prepared for post-merge review. Neither merge nor release is
+performed by this follow-up.
