@@ -12,6 +12,11 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const cleanupPids = new Set<number>()
 
+function processStat(state: string, threads = '1', name = 'worker (alice)'): string {
+  // Fields after comm: state (3), num_threads (20), starttime (22).
+  return `42 (${name}) ${[state, ...Array(16).fill('0'), threads, '0', '12345', '0'].join(' ')}`
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   vi.mocked(readFileSync).mockReset()
@@ -40,11 +45,13 @@ describe('terminateProcessTree', () => {
   // Windows taskkill /T owns tree termination, rather than POSIX TERM handlers.
   it.each(process.platform === 'win32' ? [false] : [false, true])('terminates descendants even when the package-manager-like wrapper exits first (ignore TERM: %s)', async (ignoreTerm) => {
     const childProgram = [
+      "if(process.platform==='linux')process.title='worker) Z 1 x'",
       ignoreTerm ? "process.on('SIGTERM',()=>{})" : "process.on('SIGTERM',()=>process.exit(0))",
       "process.send('ready')",
       "setInterval(()=>{},1000)",
     ].join(';')
     const wrapperProgram = [
+      "if(process.platform==='linux')process.title='worker) Z 1 x'",
       "const{spawn}=require('node:child_process')",
       `const child=spawn(process.execPath,['-e',${JSON.stringify(childProgram)}],{stdio:['ignore','ignore','ignore','ipc'],detached:true})`,
       "child.once('message',()=>console.log(child.pid))",
@@ -61,6 +68,11 @@ describe('terminateProcessTree', () => {
     expect(Number.isInteger(childPid)).toBe(true)
     cleanupPids.add(childPid)
 
+    if (process.platform === 'linux') {
+      for (const pid of [wrapper.pid, childPid]) {
+        expect(readFileSync(`/proc/${pid}/stat`, 'utf8')).toContain('(worker) Z 1 x)')
+      }
+    }
     expect(defaultProcessController.isAlive(childPid)).toBe(true)
     const wrapperExited = once(wrapper, 'exit')
     const signalTree = vi.spyOn(defaultProcessController, 'signalTree')
@@ -110,13 +122,40 @@ describe('process liveness', () => {
   it.skipIf(process.platform !== 'linux')('only excludes an explicit zombie state, including names with parentheses', () => {
     vi.spyOn(process, 'kill').mockReturnValue(true)
     for (const state of ['R', 'S', 'D', 'T', 't', 'I', 'Z']) {
-      vi.mocked(readFileSync).mockReturnValue(`42 (worker (alice)) ${state} 1 0 0`)
+      vi.mocked(readFileSync).mockReturnValue(processStat(state))
       expect(defaultProcessController.isAlive(42)).toBe(state !== 'Z')
     }
     vi.mocked(readFileSync).mockReturnValue('42 malformed Z')
     expect(defaultProcessController.isAlive(42)).toBe(true)
     vi.mocked(readFileSync).mockImplementation(() => { throw new Error('restricted procfs') })
     expect(defaultProcessController.isAlive(42)).toBe(true)
+  })
+
+  it.skipIf(process.platform !== 'linux')('keeps adversarial live process names authoritative through forced termination', async () => {
+    vi.spyOn(process, 'kill').mockReturnValue(true)
+    vi.mocked(readFileSync).mockReturnValue(processStat('S', '1', 'worker) Z 1 x'))
+    expect(defaultProcessController.isAlive(42)).toBe(true)
+    const signalTree = vi.fn(async (_pid: number, _signal: NodeJS.Signals) => [42])
+    await expect(terminateProcessTree(42, { gracefulMs: 0, forceMs: 0,
+      controller: { ...defaultProcessController, signalTree },
+    })).rejects.toThrow('survivors: 42')
+    expect(signalTree.mock.calls.map((call) => call[1])).toEqual(['SIGTERM', 'SIGKILL'])
+  })
+
+  it.skipIf(process.platform !== 'linux')('keeps a zombie leader alive while workers or unknown thread counts remain', async () => {
+    vi.spyOn(process, 'kill').mockReturnValue(true)
+    for (const threads of ['2', '8', '0', '-1', 'unknown']) {
+      vi.mocked(readFileSync).mockReturnValue(processStat('Z', threads))
+      expect(defaultProcessController.isAlive(42)).toBe(true)
+    }
+    vi.mocked(readFileSync).mockReturnValue('42 (leader) Z 1 0 0')
+    expect(defaultProcessController.isAlive(42)).toBe(true)
+    vi.mocked(readFileSync).mockReturnValue(processStat('Z', '2'))
+    const signalTree = vi.fn(async (_pid: number, _signal: NodeJS.Signals) => [42])
+    await expect(terminateProcessTree(42, { gracefulMs: 0, forceMs: 0,
+      controller: { ...defaultProcessController, signalTree },
+    })).rejects.toThrow('survivors: 42')
+    expect(signalTree.mock.calls.map((call) => call[1])).toEqual(['SIGTERM', 'SIGKILL'])
   })
 
   it('still rejects a live descendant after both signal phases', async () => {

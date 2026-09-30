@@ -269,6 +269,33 @@ clean-commit receipt. Native Windows/macOS/Bun/Electron acceptance and independe
 service-port release remain unverified; a zombie distinction is not native
 resource or init-reaping acceptance.
 
+### Independent review: process-name and thread-group safety
+
+Review reproduced two unsafe false-exit decisions in the initial zombie probe:
+`42 (worker) Z 1 x) S 1 0 0` let a regex backtrack into legal comm text, and
+an exited pthread leader (`Z`, thread count two) still had a sleeping/running
+worker that continued output and ignored TERM. Both synthetic regressions fail
+against prior head `8676b8c6`; no full-suite rerun is used to diagnose them.
+
+The bounded correction parses fields only after the final comm parenthesis and
+requires `state=Z` plus `num_threads=1` for exit. Linux's thread count includes
+the retained zombie leader; a live worker makes the count at least two. At the
+single-thread snapshot the only task is already exited, so no task remains
+able to create another worker. This avoids treating an empty, unreadable or
+racing task-directory scan as proof of exit: no directory scan is used, and
+missing/invalid counts remain live. Ordinary PID reuse remains governed by the
+existing ownership identity checks, not a new claim from this parser.
+
+Automated checks use synthetic leader/thread-count snapshots (including unknown
+counts), preserve TERM/KILL failure for live roots, and name real Node wrappers
+and descendants `worker) Z 1 x` through `process.title`. Independent OS assertions
+confirm those names and actual cleanup. An isolated, optional `cc -pthread`
+diagnostic reproduced leader Z /worker S with continuing output; after the
+correction it remains live through TERM and receives KILL, then the parent
+reaps it in finally. The native diagnostic does not become a compiler dependency
+of cross-platform tests. Guardian package: ten files /71 tests passed (2.61s).
+Existing force/grace periods remain unchanged, and native/platform gaps stay open.
+
 ## Progress
 
 - 2026-09-30: Completed the read-only audit and agreed the direction of product
