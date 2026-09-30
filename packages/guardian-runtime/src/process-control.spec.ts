@@ -37,7 +37,8 @@ describe('normalizeProcessExitCode', () => {
 })
 
 describe('terminateProcessTree', () => {
-  it.each([false, true])('terminates descendants even when the package-manager-like wrapper exits first (ignore TERM: %s)', async (ignoreTerm) => {
+  // Windows taskkill /T owns tree termination, rather than POSIX TERM handlers.
+  it.each(process.platform === 'win32' ? [false] : [false, true])('terminates descendants even when the package-manager-like wrapper exits first (ignore TERM: %s)', async (ignoreTerm) => {
     const childProgram = [
       ignoreTerm ? "process.on('SIGTERM',()=>{})" : "process.on('SIGTERM',()=>process.exit(0))",
       "process.send('ready')",
@@ -66,8 +67,11 @@ describe('terminateProcessTree', () => {
 
     await terminateProcessTree(wrapper.pid, { gracefulMs: 2_000, forceMs: 2_000 })
     await wrapperExited
-    expect(signalTree.mock.calls.map((call) => call[1])).toEqual(ignoreTerm ? ['SIGTERM', 'SIGKILL'] : ['SIGTERM'])
-    if (ignoreTerm) expect(signalTree.mock.calls[1]?.[2]).toContain(childPid)
+    expect(signalTree.mock.calls[0]?.[1]).toBe('SIGTERM')
+    if (process.platform !== 'win32') {
+      expect(signalTree.mock.calls.map((call) => call[1])).toEqual(ignoreTerm ? ['SIGTERM', 'SIGKILL'] : ['SIGTERM'])
+      if (ignoreTerm) expect(signalTree.mock.calls[1]?.[2]).toContain(childPid)
+    }
 
     expect(defaultProcessController.isAlive(wrapper.pid)).toBe(false)
     // Independent OS oracle: an existing Linux PID must be an exited zombie,
