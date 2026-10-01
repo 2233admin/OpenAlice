@@ -102,7 +102,6 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, 
       latestVersion: checkedRelease.version, releaseNotesUrl: releaseUrlFor(checkedRelease.version) }
   } }
 
-  ipcMain.removeHandler('openalice:updater:install-and-restart')
   const install = async (expectedVersion?: string, parentOperationId?: string) => {
     if (expectedVersion !== undefined && expectedVersion !== downloadedVersion) throw new Error('The downloaded update changed; review the current release before installing')
     if (!downloadedVersion) throw new Error('No downloaded update is ready to install.')
@@ -140,7 +139,6 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, 
       throw normalized
     }
   }
-  ipcMain.handle('openalice:updater:install-and-restart', (_event, expectedVersion?: string) => install(expectedVersion))
 
   ipcMain.removeHandler('openalice:updater:open-release')
   ipcMain.handle('openalice:updater:open-release', async (_event, version: unknown) => {

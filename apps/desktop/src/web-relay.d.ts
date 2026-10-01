@@ -57,7 +57,6 @@ export declare class UpdateControlService {
   status(): Promise<import('@traderalice/update-lifecycle').UpdateOperation | null>
   review(selection: { client: boolean; backend: boolean; projectUnits: string[] }): Promise<import('@traderalice/update-lifecycle').UpdatePlan>
   approve(plan: import('@traderalice/update-lifecycle').UpdatePlan, fingerprint: string): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
-  assertNativeInstall(version: string, parentOperationId?: string): Promise<void>
   abandon(): Promise<void>
   resume(): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
 }

@@ -61,18 +61,6 @@ export class UpdateControlService {
     }
   }
   async status(): Promise<UpdateOperation | null> { return (await this.recovery()).operation }
-  /** Called at native handoff entry, including direct desktop IPC requests. */
-  async assertNativeInstall(version: string, parentOperationId?: string): Promise<void> {
-    const parent = await this.journal.read()
-    if (parentOperationId) {
-      if (parent?.id !== parentOperationId || parent.inFlight !== 'client:activate'
-        || !parent.plan.proposals.some(p => p.unit.id === 'client' && p.fingerprint === version)) {
-        throw new Error('Native installation does not match the approved parent operation')
-      }
-    } else if (parent && parent.phase !== 'succeeded') {
-      throw new Error('Resume or abandon the unfinished coordinated update before installing another release')
-    }
-  }
   async review(selection: UpdateSelection): Promise<UpdatePlan> {
     if (!selection || !Array.isArray(selection.projectUnits) || selection.projectUnits.length > 100) throw new Error('Invalid update selection')
     const proposals: UpdateProposal[] = []

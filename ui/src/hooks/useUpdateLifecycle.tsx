@@ -292,7 +292,13 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     if (!updater || !nativeReady) return Promise.reject(new Error('No downloaded client update is ready'))
     setNativeInstalling(true)
     setNativeError(null)
-    const flight = Promise.resolve().then(async () => { await updater.installAndRestart(nativeReady.version) }).catch((cause: unknown) => {
+    const flight = Promise.resolve().then(async () => {
+      const plan = await review({ client: true, backend: false, projectUnits: [] })
+      if (plan.proposals.find(proposal => proposal.unit.id === 'client')?.unit.desired?.version !== nativeReady.version) {
+        throw new Error('The downloaded update changed; review the current release before installing')
+      }
+      await approve(plan)
+    }).catch((cause: unknown) => {
       nativeInstallFlight.current = null
       setNativeInstalling(false)
       setNativeError(cause instanceof Error ? cause.message : String(cause))
@@ -300,7 +306,7 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     })
     nativeInstallFlight.current = flight
     return flight
-  }, [nativeReady])
+  }, [nativeReady, review, approve])
 
   const openClientRelease = useCallback(async (version?: string) => {
     const updater = window.openAlice?.updater

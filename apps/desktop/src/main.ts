@@ -531,7 +531,6 @@ function configureDesktopUpdates(win: BrowserWindow, updateAttemptPath: string):
   let updateStoppedServices = false
   const nativeUpdates = configureAutoUpdate(win, {
     executeInstall: async (version, prepare, handoff, parentOperationId) => {
-      await control.assertNativeInstall(version, parentOperationId)
       const result = await lifecycle.install(version, prepare, handoff, parentOperationId)
       if (['failed', 'blocked', 'recovery'].includes(result.phase)) throw new Error(result.error ?? 'Desktop update requires recovery')
     },

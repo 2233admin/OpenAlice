@@ -62,6 +62,14 @@ source. Workspace dependencies and the build graph must build it before CLI/UI
 consumers. Shared identity and selection tests live beside the package; network,
 installer and native-update tests stay with their effect owners.
 
+Release publication uses the same policy in the existing asset preparation
+script. Stable/beta release intent must move forward; mirror repair targets the
+exact active version. The publication workflow is serialized and records the
+observed channel-head digest. After immutable uploads, it re-reads the object
+store and validates both that digest and eligibility before writing any mutable
+native feed, installer alias or manifest. A changed observation requires a fresh
+run. Dev publication remains commit/payload-based in its existing owner.
+
 ## Exact activation evidence
 
 `verifyReleaseEvidence` compares the approved target with an installed or active
@@ -134,7 +142,10 @@ auto-apply policy; candidate visibility is not permission to merge.
 
 The sole public React hook is `useUpdateLifecycle`. Its provider owns the
 native status subscription, client install command and Machine plan/progress
-state. Settings, desktop prompt and Machine controls subscribe to it; there is
+state. App-only and coordinated installation both enter the existing control
+service through review, approve and resume. There is no direct native-install
+IPC or preload method. Settings, desktop prompt and Machine controls subscribe
+to it; there is
 no `useMachineManagement` or nullable companion lifecycle hook. Shared chrome
 can request the same hook's optional preview mode. Connection/fleet CRUD still
 belongs to the connection owner. Source repository discovery also uses the

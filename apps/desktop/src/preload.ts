@@ -217,7 +217,6 @@ const api = {
       updaterListeners.add(cb)
       return () => updaterListeners.delete(cb)
     },
-    installAndRestart: (version?: string) => ipcRenderer.invoke('openalice:updater:install-and-restart', version),
     openRelease: (version?: string) => ipcRenderer.invoke('openalice:updater:open-release', version),
   },
   workspace: {

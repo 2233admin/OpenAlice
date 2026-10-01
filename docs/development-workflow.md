@@ -376,7 +376,7 @@ manually from `master`, choose the `release` operation, and supply both the
 channel and tag:
 `beta` accepts `vX.Y.Z-beta` or `vX.Y.Z-beta.N`; `stable` accepts only
 `vX.Y.Z`. The workflow rejects an existing tag, a channel/tag mismatch, or a
-version that disagrees with either the root or `packages/cli` package. It binds
+version that disagrees with the root product manifest. It binds
 the accepted candidates and eventual tag to the dispatch commit SHA.
 
 Version-prep gates are defined in [CI Feedback Lanes](#ci-feedback-lanes).

@@ -61,10 +61,7 @@ async function coordinatedFixture() {
     },
     client: {
       current: () => version, downloaded: () => '1.1.0', ready: async () => true,
-      install: async (target, parent) => {
-        await control.assertNativeInstall(target, parent)
-        return native.install(target, prepare, handoff, parent)
-      },
+      install: (target, parent) => native.install(target, prepare, handoff, parent),
       recovery: { status: () => native.snapshot(), resume: () => native.resume(async () => true), abandon: () => native.journal.abandon() },
     },
   }
@@ -89,14 +86,14 @@ it('routes completed project history plus failed native activation to the native
   expect(await f.native.snapshot()).toBeNull()
   expect((await restarted.status())?.id).toBe(parent.id)
 })
-it('routes unfinished project work ahead of completed native history and blocks unrelated native installation', async () => {
+it('routes unfinished project work ahead of completed native history and rejects a new approval', async () => {
   const f = await coordinatedFixture()
   await f.native.install('1.1.0', f.prepare, async () => {})
   f.setVersion('1.1.0')
   expect((await f.native.resume(async () => true))?.phase).toBe('succeeded')
   const parent = await f.approve(false)
   expect((await f.control.status())?.id).toBe(parent.id)
-  await expect(f.control.assertNativeInstall('1.2.0')).rejects.toThrow('unfinished coordinated')
+  await expect(f.approve(true)).rejects.toThrow('unfinished update')
   await f.control.abandon()
   expect((await f.native.snapshot())?.phase).toBe('succeeded')
   expect((await f.control.resume()).phase).toBe('succeeded')
@@ -120,12 +117,11 @@ it('keeps a linked native child with its parent through restart and exact activa
 })
 it('abandons a linked parent and child together without discarding an unrelated pending receipt', async () => {
   const f = await coordinatedFixture()
-  const parent = await f.approve(true)
+  await f.approve(true)
   await f.control.resume()
   await f.control.abandon()
   expect(await f.control.status()).toBeNull()
   expect(await f.native.snapshot()).toBeNull()
-  await expect(f.control.assertNativeInstall('1.1.0', parent.id)).rejects.toThrow('approved parent')
 
   const another = await f.approve(true)
   // Independent exact-version requests are not evidence of parentage.

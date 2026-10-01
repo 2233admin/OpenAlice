@@ -1,83 +1,51 @@
 # Version Lifecycle Convergence
 
-Status: In progress; identity/provenance convergence implemented first, with
-cross-surface acceptance and the remaining construction steps pending.
+Status: In progress. One Draft PR (#1724); artifact/system acceptance and the
+remaining authority audit are pending. No release publication or merge acceptance.
 
-Progress: backend, CLI, and Guardian now share product identity through the
-existing update-lifecycle Node entry. Backend provenance parsing delegates to
-the shared parser moved from the CLI. Source CLI fallback reports development;
-desktop relay and CLI feasibility builds read root identity. The unused UI
-version define is removed. Product-package metadata generation is now converged (see below); missing
-packaged-provenance handling and artifact acceptance keep step 1 open.
+## Current implementation and evidence
 
-Verified for this increment: shared package build; root and CLI typechecks;
-78 focused tests; direct backend/CLI imports after changing cwd to
-`apps/desktop` both report root `0.94.1`, with source channel `development`.
-Native artifacts, full-suite evidence, and remaining plan steps are pending.
+- Identity: backend, CLI and Guardian share the existing product build value or
+  known root manifest; cwd search and fake product versions are removed. Desktop
+  relay/CLI packaging derive root identity; the private CLI package no longer
+  authors a version. CLI/backend share the shipped provenance parser. Source
+  execution reports development. Missing packaged-provenance handling is pending.
+- Workspace: the existing managed-template owner supplies shared eligibility to
+  discovery, review and locked apply. Private ordering and equality-only decisions
+  are removed. Unknown versions stay unknown; equal-version Skill projection
+  remains fingerprint-driven. Real disposable Git/tool acceptance passes 38 cases,
+  including rejected downgrade without mutation and forward beta-to-stable apply.
+- Discovery: backend, CLI, relay, native desktop and UI retain shared status/reason.
+  Native download follows shared eligibility; handoff retains the exact target.
+  Duplicate native wire types are removed. Failed discovery cannot authorize
+  an update from cached observations. The shipped `hasUpdate` field is a projection.
+- Execution/recovery: App-only and coordinated installs use the existing control
+  service's review/approve/resume entry. Direct native-install IPC, preload and
+  demo handlers are deleted, as is the redundant `assertNativeInstall` check.
+  Status/resume/abandon/startup select the same unfinished owner. Native children
+  retain parent operation IDs; matching versions do not imply parentage.
+- Publication: release preparation, candidate validation, native feed names and
+  predecessor ordering use shared pure policy. Private parsers and manual root/CLI
+  synchronization are removed. The existing serialized publisher checks forward
+  release or exact-head mirror intent and re-reads the observed head before any
+  mutable write. Bootstrap Bash/PowerShell grammar parity remains pending.
 
-Workspace increment: the existing managed-template manager now owns a shared
-precedence decision for discovery, plans and locked apply. List/check/tool/UI
-consumers use it; equal-version changed content remains a blocker, while Skill
-projection remains fingerprint-driven. Missing template versions no longer
-become `0.0.0`; no invented creation baseline is written. Coordinated plans
-retain the same owner blockers, including current/unknown targets.
+Whole-branch checks at `00e1b82c`, before the publication and App-entry changes:
+complete suite 896 passed files / 7,638 passed tests (1 file / 8 tests skipped);
+critical gate accepted all 15 required assertions; real Guardian ownership,
+takeover, crash and forced-recovery smoke passed. Root, CLI, desktop, UI and
+integration typechecks passed. Earlier real demo Settings exercised owner review;
+the complete UI owner suite passed 357 files / 2,062 tests. Source CLI/backend
+imports from the desktop cwd both reported root `0.94.1` and source ownership.
 
-Verified so far: real disposable Git transactions reject stable-to-beta,
-newer-to-older and post-preview target downgrades without changing files, HEAD
-or baseline; the actual Workspace tool rejects the same targets. A beta-to-stable
-peer upgrade is exercised through that tool. Shared UI review refuses an older
-backend that supplies no eligibility rather than reconstructing it. Root, UI and
-integration TypeScript checks passed; the demo Settings route opened the actual
-Chat review. The complete UI owner suite passed (357 files, 2,062 tests), and the real
-Workspace transaction suite passed all 38 tests, including the forward peer
-upgrade and rejected downgrades. Full product/artifact acceptance is still
-pending; this does not complete the plan.
-
-Discovery increment: CLI, backend, relay and native adapters now preserve the
-shared status/reason. Native transport events pass the shared channel/precedence
-policy before download, and handoff rechecks the exact target. The duplicate
-native wire unions are replaced by their existing shared contract. Settings and
-demo retain blocked/failed/unknown distinctions; failed refreshes do not expose
-new update actions from retained observations. The shipped backend `hasUpdate`
-field remains a projection, not another decision owner.
-
-Verification: root, CLI, desktop, UI and integration typechecks; 150 focused
-adapter/HTTP/UI tests; actual demo Settings and App details. A full suite run
-reported 894 passed files and two failed files (12 assertions): remote fixtures
-implicitly assumed source execution was installed stable, and a broker-pack
-artifact fixture omitted its product manifest. Those fixtures now declare their
-actual provenance; a source remote regression asserts installation is blocked.
-Both files then passed all 78 tests. A fresh full suite and native artifact
-acceptance remain required before completion.
-
-Recovery increment: desktop status/resume/abandon and startup now delegate to
-one selection inside the existing control service. Completed coordination history
-cannot mask pending native activation. The native proposal's existing reference
-records its parent operation ID; equal targets do not imply parentage. Related
-receipts recover together, unrelated receipts remain independent, and entry guards
-reject new approval/activation while another operation owns the effect.
-
-Production control service plus native lifecycle and disposable file journals
-exercise completed-Project/failed-native ordering, the reverse ordering, linked
-parent/child restart, exact-target mismatch, abandonment, and independent same-target
-receipts. The focused control/native adapter suite passes 27 tests. Packaged restart
-acceptance and the refreshed full suite remain outstanding.
-
-Metadata/validation increment: the CLI source package is private and no longer
-authors a product version. Existing public npm/native packaging derives its
-metadata from the root; Windows preview and PTY fixtures also read that identity.
-The shared pure release functions moved intact into a dependency-free source
-entry, re-exported by the same package. Beta preparation and candidate validation
-now consume it; private parsing/comparison and root/CLI synchronization checks
-are removed. Trusted-base classifiers copy that source with the script before
-installing dependencies. The root manifest alone defines version-only release prep.
-
-Verified: shared build and root/CLI typechecks; 104 workflow contract tests;
-32 candidate/classifier tests (including invalid beta numbers and leading zeros);
-5 existing public-package assembly tests. A real Node 22 subprocess ran the
-classifier from a temporary tree containing only it and the shared policy, with
-no package install. Publication-time forward-head validation and final artifact
-acceptance remain pending.
+Latest entry/publication verification: 93 tests across the six native/control/UI
+and release suites passed. Publication tests execute the production upload shell
+against local object-store transport; changed-head failures write no mutable
+feeds/aliases. Desktop, CLI, UI and integration typechecks, full Electron build,
+and real source Electron startup (missing/unavailable Recent) passed. Existing
+user Electron was left running. Packaged restart, integrated/separated artifacts,
+installer/playground and disposable SSH acceptance remain pending; source startup
+is not artifact acceptance. Refresh whole-branch gates after the remaining edits.
 
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),
@@ -108,7 +76,7 @@ but several entry points bypass it or discard its result. The audit reproduced:
   rejects them. Additional release gates prevent treating this as evidence of
   a malformed public release.
 
-The native journal routing defect remains in current code; #1717 owns its
+The initial audit also identified native journal routing; #1717 owns its
 production-service reproduction. Native discovery bypass and missing forward
 channel-head publication validation are source-inspection findings, not proof
 of a real native downgrade or public feed rollback.

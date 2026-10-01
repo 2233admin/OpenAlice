@@ -111,7 +111,6 @@ interface Window {
     readonly updater?: {
       getStatus(): Promise<import('@traderalice/update-lifecycle').NativeUpdaterStatus | null>
       onStatus(cb: (status: import('@traderalice/update-lifecycle').NativeUpdaterStatus) => void): () => void
-      installAndRestart(version?: string): Promise<unknown>
       openRelease(version?: string): Promise<unknown>
     }
     readonly workspace?: {
