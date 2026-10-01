@@ -35,9 +35,9 @@ the durable truth after it changes. Git history is the archive.
 
 - [[plans/unified-default-target.md]] — Unify Desktop/Web/TUI/CLI startup on one client-owned Default target, saved after successful user switches.
 
-- [[plans/test-system-grouping.md]] — Stage 1 merged as #1667. Stage 2 local
-  journeys, approval HTTP contracts and required receipt gates are implemented
-  for separate review; native/browser/venue gaps and baseline test failures remain explicit.
+- [[plans/test-system-grouping.md]] — Grouping/critical local gates merged as
+  #1667/#1672; bounded startup-to-exit lifecycle evidence mappings are in a
+  separate Draft increment. Native/browser/venue gaps remain explicit.
 
 - [[plans/compact-notifications.md]] — Approved compact type-specific pop-out
   notifications, bounded news/Inbox grouping and optional news thumbnails;

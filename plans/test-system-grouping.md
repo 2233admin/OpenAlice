@@ -1,7 +1,7 @@
 # Test system grouping and product coverage
 
-Status: Stage 1 accepted and merged as PR #1667. Stage 2's bounded local
-coverage and gates are implemented for a separate maintainer review PR;
+Status: Stage 1 accepted as PR #1667 and bounded Stage 2 accepted as PR #1672.
+The lifecycle classification pilot below is a separate Draft PR increment;
 native desktop, browser onboarding and real paper-venue acceptance remain open.
 Audit baseline: `dev` at `b7dbe2af15626534d2784b8ccaee361bcf7e05b4` on
 2026-09-30. Stage 2 incorporates notification integration at
@@ -298,6 +298,118 @@ Existing force/grace periods remain unchanged, and native/platform gaps stay ope
 
 ## Progress
 
+### Lifecycle classification pilot: mapping increment
+
+The read-only report used the `b6165812` snapshot. This implementation starts
+from current `dev` at `1a8bec87` (including #1669, #1673 and #1676) and reviews
+the actual referenced assertions again. The authorized first increment adds
+eight requirement rows, reusing existing tests only:
+
+- `startup-project-selection`: Default migration/explicit override and verified
+  attachment/cancellation, including unavailable remote Default preservation.
+- `desktop-lifecycle`: selected-Home startup, existing-owner browser handoff,
+  request retirement, and graceful/forced child exit plus app-exit fallback.
+- `guardian-process`: capability/remaining-lock stop completion and real Node
+  descendant cleanup plus cancellation of scheduled recovery on stop.
+
+No spec moves, new assertions, test deletion, owner/lane/package reassignment,
+runner/config changes or runtime refactor belong to this increment. The existing
+`critical-local` requirement set remains unchanged and must run whole.
+Native chooser, Dock/tray/menu Quit, actual SSH, real service recovery and
+complete native process/port/lock cleanup remain explicit gaps. A fake child
+signal test, a real control socket and a real OS descendant are separate claims;
+none substitutes for the others. `kill(pid, 0)` can still see an unreaped zombie
+on a host without a reaping init; preserve that environment limit rather than
+removing the descendant assertion. Installer umask fixtures are outside this
+mapping increment and are not modified.
+
+Before/after data-only selection on this source base:
+
+| Query | Before | After | Limit |
+| --- | ---: | ---: | --- |
+| `--scenario startup-project-selection` | Not registered | 4 files | Real temporary FS/loopback fixtures, FakeTui; no native multi-client journey |
+| `--scenario desktop-lifecycle` | 1 file | 6 files | Includes the same IPC spec as `desktop-ipc`, without duplicating collection |
+| `--contract guardian-process` | 1 file | 4 files | Dedicated system commands remain separate |
+| Complete spec inventory | 909 files | 909 files | Owner, lane, areas and command inventory unchanged |
+| Owner-only inventory | 882 files | 871 files | Eleven newly mapped existing files, not eleven new tests |
+
+Representative change-scope feedback must still inspect cumulative impact:
+window callback work can start from its one path; shared Default work needs the
+startup scenario plus Desktop/IPC evidence; descendant/stop work needs the
+Guardian contract independently, not a Desktop-scenario AND Guardian-contract
+intersection. Metadata cannot make the static import graph complete for child
+process or native paths.
+
+Verification on this increment (Linux x64, Node 24.19.0, pnpm 11.19.0):
+
+- `pnpm test:contract:workflow`: twelve files / 108 assertions passed.
+- `pnpm test:select --scenario startup-project-selection,desktop-lifecycle`:
+  ten files, 143 assertions passed / one failed. The failure is the newly
+  discoverable existing `keeps an unavailable remote Default detached across
+  healthy local polls` fixture: its injected pi-tui object lacks #1669's
+  `isKeyRelease`, so the finally-block `q` cleanup throws. The same failure
+  reproduces in an unmodified detached `1a8bec87` worktree. It is not suppressed
+  or removed from the map; that group receipt has `accepted: false`.
+- `pnpm test:select --contract guardian-process`: four files, 31 assertions
+  passed / one failed. The descendant termination fixture leaves a zombie PID
+  reparented to this container's PID 1 (`tail`, not a reaping init). `ps` showed
+  the reported survivor in `Zs` state. The same process failure reproduces in
+  the unmodified base worktree; its receipt is also `accepted: false`.
+- `pnpm test:critical` ran whole: eighteen assertions passed (seven hermetic,
+  eleven integration), all fifteen required references passed and the receipt
+  has `accepted: true`. No required row or filter was changed.
+- Root, UI, CLI, Guardian and central-spec/guard typechecks passed. The UI
+  required building its existing Connector protocol declarations; native CLI
+  children required the documented update-lifecycle build.
+- Data-only scope probes: startup with Runtime/CLI owner = four; Desktop with
+  Desktop owner = six; Desktop plus desktop-ipc = one shared IPC file; startup
+  plus guardian-process = zero (expected exit 2); window-only path = one.
+  Desktop changed dry-run = 24 candidates, not an executed import-graph closure.
+  Existing file/owner/lane/area inventory and command inventory compare equal;
+  all referenced assertion fragments and documentation links resolve.
+- Complete hermetic backstop (`pnpm test`): 882 files, 874 passed / seven
+  failed / one skipped; 7,522 assertions, 7,490 passed / 27 failed / five skipped.
+  The seven failing files are `scripts/desktop-smoke-process.spec.mjs`,
+  `scripts/pack-cli-npm-packages.spec.mjs`, `src/workspaces/headless-task.spec.ts`,
+  `packages/guardian-runtime/src/process-control.spec.ts`, and CLI
+  `install.spec.mjs`, `supervisor-tui.pty.spec.ts`, `supervisor-tui.spec.ts`.
+  Process-cleanup failures report surviving PIDs; the mapped Guardian failure
+  has the confirmed zombie reproduction above. npm pack cannot create this
+  host's default `/home/agent/.npm/_cacache`. The installer mode fixture runs
+  under umask `0077`: its initial HTML already has mode `0600`, so changing it
+  to `0600` does not create the intended mismatch. The PTY file accounts for
+  21 failures, with `/fixture` mkdir errors, timeouts and output mismatches;
+  these remain unresolved and are not all attributed to the environment.
+  No failures were filtered away or repaired in this increment.
+- Native Electron/system/SSH/installer or broker acceptance lanes were not run:
+  no implementation/runner changed and their explicit evidence gaps remain.
+  The hermetic installer fixture above is distinct from native installer
+  acceptance. The mapping does not claim new native acceptance or a green
+  complete suite.
+
+The initial dependency install could not download from GitHub via direct Node
+fetch or Node headers from nodejs.org. Local dependency links were installed
+with lifecycle scripts disabled; node-pty was then built successfully using
+matching Node headers from the Node binary npm package. Local Git uses dugite's
+supported `LOCAL_GIT_DIRECTORY=/usr/local` and
+`GIT_EXEC_PATH=/usr/local/libexec/git-core` overrides. No test assertion was
+skipped for these prerequisites. Isolated base diagnostics disable pnpm's
+dependency auto-reinstall (`pnpm_config_verify_deps_before_run=false`) when
+sharing the installed dependencies; name filtering there is diagnostic only.
+
+The existing Supervisor fixture defect is deferred from this metadata-only
+scope; retain its reproduction in the Draft PR rather than broadening this
+increment into a runtime or fixture repair.
+
+#### Authorized lifecycle validation follow-up
+
+The subsequent bounded continuation fixes the Supervisor test's injected
+pi-tui shape by supplying the existing real `isKeyRelease` function, matching
+the other fixtures and #1669's input contract. No behavior assertion changes.
+Startup plus Desktop now pass all 144 assertions in ten files (3.01 seconds;
+previously 143 passed / one failed). Guardian process liveness and inspected
+mapping omissions are investigated separately; native gaps stay explicit.
+
 - 2026-09-30: Completed the read-only audit and agreed the direction of product
   scenario/protocol boundary grouping. Proposed the two-stage sequence above.
 - 2026-09-30: Implemented and locally verified Stage 1 on
@@ -352,3 +464,54 @@ commit rather than treating a green bounded gate as complete product coverage:
 
 This checklist is prepared for post-merge review. Neither merge nor release is
 performed by this follow-up.
+
+#### Assertion-level omissions and duplication audit
+
+The lifecycle follow-up adds two previously owner-only files to bounded groups:
+`lifecycle-command.spec.mjs` supports explicit registered-home dispatch as well
+as browserless readiness presentation; `lifecycle.spec.mjs` supports the core
+starting-to-running/ownership transition. Startup now selects five files,
+Desktop six, Guardian six; total inventory stays 909 and owner-only drops from
+871 to 869 (13 mapped files over the original 882 baseline). File reuse across
+scenario/protocol groups still does not duplicate execution.
+
+The same inspected files now describe independent safety claims that file-level
+selection already ran: Default writer serialization/concurrent config retention,
+live-owner stale heartbeat, PID reuse, forced takeover, and capped retry/reset.
+Fake timer recovery is not promoted to real service recovery. Core readiness,
+CLI presentation, real control sockets, and OS descendant termination remain
+separate evidence levels.
+
+| Inspected overlap | Distinct claims retained | Decision |
+| --- | --- | --- |
+| Default resolver, config writers, Web relay, TUI | Explicit override; durable serialization; verified request cancellation; polling does not attach fallback | Keep all layers and races; cross-reference files |
+| CLI lifecycle core and command presentation | Actual orchestration with injected child/status; dispatched named Home and output/browser boundary | Map both; neither replaces real launcher smoke |
+| Runtime lock tests | Live heartbeat authority; PID reuse protection; forced takeover; contender serialization | Different ownership safety invariants; retain |
+| Desktop close/Dock/tray | Close hides; Dock event restores; tray helper restores; quitting suppresses activation | Different entry paths/state transitions; retain |
+| Desktop fake-child and Guardian real-child shutdown | Signal/timer decision; actual descendant execution stops after wrapper exit | Different fidelity; retain |
+| Relay cancellation tests | Late verification cannot commit; cancelling old request cannot cancel replacement | Different race outcomes; retain |
+
+No same-layer duplicate in these inspected clusters has a demonstrated identical
+behavior/precondition/failure oracle; no assertion or test is deleted. PTY input,
+pointer/render and terminal-specific regression work must also select
+`packages/cli/src/supervisor-tui.pty.spec.ts` explicitly (or the Runtime/CLI
+owner); its known fixture/path and transcript failures are not certified by the
+bounded mock/HTTP startup selection. This remains a separate terminal surface,
+not native Desktop or SSH acceptance.
+
+Reproduce independent scope probes:
+`pnpm test:select --scenario startup-project-selection --owner runtime-cli --list --explain`;
+`pnpm test:select --contract guardian-process --owner runtime-cli --list --explain`;
+`pnpm test:select --scenario desktop-lifecycle --contract desktop-ipc --list --explain`.
+Startup and Guardian intersect on the shared command-presentation file only;
+that intersection omits the core, lock, and real descendant evidence. Run the
+whole affected protocol separately. Metadata does not repair static import
+closure across native processes.
+
+Expanded mapping validation: workflow 12 files /108 assertions passed;
+startup plus Desktop 11 files /157 assertions passed (2.86 seconds). Data-only
+owner/intersection probes returned startup five, Guardian six, IPC one, and
+startup/Guardian intersection one. Inventory confirms 909 specs, 70 commands,
+869 owner-only entries. Guardian selection still needs the separate process
+liveness fix in Draft #1678; that PR verifies the same six mapped paths against
+its fixed source. Drafts are intentionally independent, with neither merged.

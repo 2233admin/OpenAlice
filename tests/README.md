@@ -17,6 +17,7 @@ pnpm test:critical --receipt artifacts/tests/critical-local.json
 pnpm test:select --scenario workspace-creation --lane integration
 pnpm test:select --scenario first-run --contract alice-uta --owner alice --explain
 pnpm test:select --contract ui-api
+pnpm test:select --scenario startup-project-selection --explain
 ```
 
 `--scenario` and `--contract` OR values within their own dimension and AND
@@ -46,12 +47,13 @@ does not authorize invoking the entire workflow.
 | Group | Product behavior | Responsible owner |
 | --- | --- | --- |
 | [first-run](scenarios/first-run/coverage.json) | Initialization, login, and broker-free Chat | Alice |
+| [startup-project-selection](scenarios/startup-project-selection/coverage.json) | Shared Default migration, explicit overrides, and verified/cancelled Project selection | Runtime/CLI |
 | [workspace-creation](scenarios/workspace-creation/coverage.json) | Bootstrap, injection, and source ancestry | Runtime/CLI |
 | [conversation-recovery](scenarios/conversation-recovery/coverage.json) | Interrupt, resume, and durable Session recovery | Runtime/CLI |
 | [scheduling-delivery](scenarios/scheduling-delivery/coverage.json) | Occurrence claims, retries, and observable CLI side effects | Runtime/CLI |
 | [trading-approval](scenarios/trading-approval/coverage.json) | Staging, approval, lifecycle, precision, and venue baseline | UTA |
 | [connector-delivery](scenarios/connector-delivery/coverage.json) | Inbox projection, replay, and adapter recovery | Connector |
-| [desktop-lifecycle](scenarios/desktop-lifecycle/coverage.json) | Close, Dock/tray reopen, and explicit quit | Desktop |
+| [desktop-lifecycle](scenarios/desktop-lifecycle/coverage.json) | Startup Home/owner handoff, request retirement, close/reopen, and explicit quit | Desktop |
 | [update-recovery](scenarios/update-recovery/coverage.json) | Persisted state, N-1 app/CLI artifacts, and restart | Desktop |
 
 ## Boundaries
@@ -92,6 +94,20 @@ checks. The broader native close/reopen/quit, browser onboarding and venue
 requirements retain their explicit gaps.
 
 ## Required acceptance
+
+The bounded startup/lifecycle pilot references existing leaf assertions without
+moving files or changing their owner/lane. `startup-project-selection` separates
+shared Default persistence from verified attachment; `desktop-lifecycle` also
+maps controller, dialog, IPC retirement and shutdown helpers; `guardian-process`
+includes capability/remaining-lock stop completion and real descendant cleanup.
+Fake Electron callbacks, local socket fixtures and real Node children remain
+distinct evidence levels. They do not establish native chooser/Dock/tray/menu
+behavior, a real SSH connection, or complete Runtime process/port cleanup.
+
+To inspect both Desktop and Guardian evidence, query them separately: a scenario
+plus a contract is an intersection, not a union. Their default hermetic
+selections do not execute the listed system or Electron commands. Keep
+`critical-local` whole; this pilot does not change its required rows.
 
 `gates.json` names reviewed bounded requirements by group and row ID. The
 `critical-local` gate resolves their spec assertions from the coverage manifests
