@@ -97,3 +97,11 @@ The failure scenario follows the avatar blue dot through Settings Overview to
 Auto Quant preparation; Retry simulates recovery without creating real files.
 The preparing scenario stays quiet. These fixtures exercise UI guidance and
 recovery only, not a live Workspace clone or native packaging.
+
+## Update overview walkthrough
+
+Open `/settings?updates=ready` in the browser demo to exercise the three-object
+overview, the collapsed default Harness details, and one-step Alice Project
+review/apply/completion. The fixture updates only in-memory Chat content. The
+ordinary demo retains the Quant active-work blocker for the disabled-apply path.
+No real installation, Workspace file, or remote Machine is updated.

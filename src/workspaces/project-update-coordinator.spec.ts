@@ -28,4 +28,23 @@ describe('project inventory evidence', () => {
     await coordinator.inventorySnapshot(true)
     expect(current).toHaveBeenCalledTimes(2)
   })
+  it('plans only requested content without reading unrelated Workspaces or layers', async () => {
+    const current = vi.fn(async (workspace: { id: string }) => {
+      if (workspace.id !== 'default-chat') throw new Error('Unrelated Workspace was read')
+      return '1'
+    })
+    const injected = vi.fn(async () => { throw new Error('Unselected layer was read') })
+    const service = {
+      registry: { list: () => ['default-chat', 'old-chat'].map(id => ({ id, dir: `/fixture/${id}`, template: 'chat' })) },
+      templates: { get: () => ({ upgradeStrategy: 'managed-context', version: '2' }) },
+      templateUpgrades: { currentVersion: current, plan: async () => ({ planDigest: 'exact', toVersion: '2', blockers: [], summary: { conflicts: 0 } }) },
+      aliceHarnessUpgrades: { currentVersion: injected },
+    }
+    const coordinator = new ProjectUpdateCoordinator(service as unknown as WorkspaceService, '/unused')
+    const plan = await coordinator.plan(['template:default-chat'])
+    expect(plan.proposals.map(proposal => proposal.unit.id)).toEqual(['template:default-chat'])
+    expect(current).toHaveBeenCalledOnce()
+    expect(injected).not.toHaveBeenCalled()
+  })
+
 })

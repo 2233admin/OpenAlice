@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ updates: {} as any, workspaces: [] as any[], openAgentConfig: vi.fn(), install: vi.fn(async () => {}), probe: vi.fn(async () => {}), generation: 0, setup: null as any }))
+const mocks = vi.hoisted(() => ({ updates: {} as any, openAgentConfig: vi.fn(), install: vi.fn(async () => {}), probe: vi.fn(async () => {}), generation: 0, setup: null as any }))
 vi.mock('../../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => mocks.updates }))
 vi.mock('../../hooks/useProjectWorkspaceSetup', async importOriginal => ({ ...await importOriginal<any>(), useSharedProjectWorkspaceSetup: () => mocks.setup }))
 vi.mock('../../hooks/useAliceProject', () => ({ useAliceProject: () => ({ project: { displayName: 'Main Cloud' } }) }))
-vi.mock('../../contexts/workspaces-context', () => ({ useWorkspaces: () => ({ workspaces: mocks.workspaces, openAgentConfig: mocks.openAgentConfig, hasLoaded: true }) }))
+vi.mock('../../contexts/workspaces-context', () => ({ useWorkspaces: () => ({ openAgentConfig: mocks.openAgentConfig, refresh: vi.fn(async () => {}) }) }))
 vi.mock('../../auth/backendConnection', () => ({ getBackendConnection: () => ({ kind: 'local' }) }))
 vi.mock('../../auth/AuthContext', () => ({ useBackendRecoverySignal: () => ({ backendUnavailable: false, backendRecoveryGeneration: mocks.generation }) }))
 import '../../i18n'
@@ -13,151 +13,83 @@ import { i18n } from '../../i18n'
 import { WorkspacePlanStore } from '../../lib/updates/workspacePlans'
 import { VersionOverviewSection } from './VersionOverviewSection'
 beforeAll(async () => { await i18n.changeLanguage('en') })
-beforeEach(() => {
-  mocks.generation = 0
-  mocks.setup = null
-  mocks.workspaces = [{ id: 'aq', tag: 'Quant', template: 'auto-quant-v2', currentVersion: '0.8.31', upgradeAvailable: { from: '0.8.31', to: '0.8.32' } }]
+beforeEach(async () => {
+  mocks.generation = 0; mocks.setup = null
+  const workspacePlans = new WorkspacePlanStore()
+  await workspacePlans.replace({ kind: 'template', workspaceId: 'chat' }, { workspaceId: 'chat', template: 'chat', strategy: 'managed-context', fromVersion: '1', toVersion: '2', planDigest: 'exact', blocked: false, blockers: [], files: [], summary: { ready: 1, conflicts: 0, unchanged: 0, preserved: 0 } } as any)
   mocks.updates = {
-    machines: { status: { target: { machine: 'cloud', machineName: 'Railway Linux', project: 'main-cloud' } }, plan: null, operation: null, probe: mocks.probe, clearPlan: vi.fn(), applying: false },
+    machines: { status: { target: { machine: 'cloud', machineName: 'Railway Linux', project: 'main-cloud' } }, plan: null, operation: null, probe: mocks.probe, applying: false },
     client: { kind: 'cli', currentVersion: '0.94.1', discovery: { value: { status: 'current', channel: 'stable' } } },
     versionInfo: { current: '0.93.1', latest: '0.94.1', hasUpdate: true, channel: 'stable', updateAuthority: 'cli' },
-    workspacePlans: new WorkspacePlanStore(), workspaceStates: [], availableCount: 2,
-    guidance: { app: false, backend: true, workspaceIds: ['aq'], needsAttentionWorkspaceIds: [], availableCount: 2, needsAttentionCount: 0 },
+    workspacePlans, workspaceStates: [],
+    projectWorkspaces: [{ kind: 'chat', label: 'Chat', loaded: true, workspace: { id: 'chat', tag: 'my-chat', template: 'chat', currentVersion: '1' } }, { kind: 'auto-quant', label: 'Quant', loaded: true, workspace: null }, { kind: 'auto-prediction', label: 'Prediction', loaded: true, workspace: null }],
     installClient: mocks.install, refresh: vi.fn(async () => {}), openClientRelease: vi.fn(async () => {}),
+    review: vi.fn(async () => ({ id: 'project-review', proposals: [{ unit: { id: 'template:chat', desired: { version: '2' } }, fingerprint: 'exact' }], steps: [], blockers: [], fingerprint: 'exact' })),
+    approve: vi.fn(async () => {}), resume: vi.fn(async () => {}), abandon: vi.fn(async () => {}),
   }
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); Reflect.deleteProperty(window, 'openAlice') })
-it('keeps three identities separate and project content has its own versions', () => {
+it('shows three parent objects with optional read-only default content, without selection or a chooser', () => {
   render(<VersionOverviewSection />)
-  expect(screen.getByRole('heading', { name: 'App' })).toBeTruthy()
-  expect(screen.getByRole('heading', { name: 'Backend' })).toBeTruthy()
-  expect(screen.getByRole('heading', { name: 'AliceProject' })).toBeTruthy()
-  expect(screen.getByText('v0.8.31')).toBeTruthy()
-  expect(screen.getByText('v0.8.32')).toBeTruthy()
-  expect(screen.getByText('Main Cloud')).toBeTruthy()
+  expect(screen.getAllByRole('heading', { level: 3 }).map(node => node.textContent)).toEqual(['App', 'Backend', 'Alice Project'])
+  expect(screen.queryByText('my-chat · Default')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Project details' }))
+  expect(screen.getByText('my-chat · Default')).toBeTruthy()
+  expect(screen.getByText('Quant')).toBeTruthy()
+  expect(screen.getByText('Prediction')).toBeTruthy()
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Review updates' })).toBeNull()
+  expect(mocks.updates.review).not.toHaveBeenCalled()
 })
-it('traces an update from the overview summary to its Workspace row', () => {
+it('prepares the project directly, then requires one explicit update action', async () => {
   render(<VersionOverviewSection />)
-  const target = screen.getByRole('button', { name: 'AliceProject / Quant' })
-  fireEvent.click(target)
-  expect(document.activeElement?.id).toBe('settings-version-workspace-aq')
+  fireEvent.click(within(document.getElementById('settings-version-project')!).getByRole('button', { name: 'View update' }))
+  await waitFor(() => expect(mocks.updates.review).toHaveBeenCalledWith({ client: false, backend: false, projectUnits: ['template:chat'] }))
+  const apply = await screen.findByRole('button', { name: 'Update Alice Project' })
+  await waitFor(() => expect(apply.hasAttribute('disabled')).toBe(false))
+  expect(mocks.updates.approve).not.toHaveBeenCalled()
+  fireEvent.click(apply)
+  await waitFor(() => expect(mocks.updates.approve).toHaveBeenCalledOnce())
+  expect(mocks.openAgentConfig).not.toHaveBeenCalled()
 })
-it('moves details to review in one focus scope without installing', async () => {
-  render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'Backend · Details' }))
-  expect(await screen.findByRole('dialog')).toBeTruthy()
-  expect(screen.getByText('Not reported separately')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Back to updates' }))
-  expect(screen.getAllByRole('dialog')).toHaveLength(1)
-  expect(mocks.install).not.toHaveBeenCalled()
+it('keeps a stale review response from approving a changed default', async () => {
+  let finish!: (value: unknown) => void
+  mocks.updates.review.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { rerender } = render(<VersionOverviewSection />)
+  fireEvent.click(within(document.getElementById('settings-version-project')!).getByRole('button', { name: 'View update' }))
+  mocks.updates.projectWorkspaces[0] = { ...mocks.updates.projectWorkspaces[0], workspace: null }
+  rerender(<VersionOverviewSection />)
+  finish({ blockers: [], fingerprint: 'stale' })
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Update Alice Project' }).hasAttribute('disabled')).toBe(true))
+  expect(mocks.updates.approve).not.toHaveBeenCalled()
 })
-it('requires review and explicit confirmation before native restart', async () => {
+it('opens native confirmation directly, without a second review step', async () => {
   mocks.updates.nativeReady = { phase: 'downloaded', version: '0.94.2' }
   render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'App · Details' }))
-  fireEvent.click((await screen.findByRole('dialog')).querySelector('button:last-child')!)
+  fireEvent.click(within(document.getElementById('settings-version-app')!).getByRole('button', { name: 'View update' }))
   expect(mocks.install).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Restart and update' }))
   await waitFor(() => expect(mocks.install).toHaveBeenCalledOnce())
-  expect(screen.getAllByRole('dialog')).toHaveLength(1)
 })
-it('hands Workspace review to the existing merge owner without applying', () => {
-  render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: /Quant.*v0.8.31/ }))
-  expect(mocks.openAgentConfig).toHaveBeenCalledWith('aq', undefined, 'template')
-  expect(mocks.install).not.toHaveBeenCalled()
-})
-it('does not label a failed check as current', () => {
-  mocks.updates.clientError = 'feed offline'
-  mocks.updates.versionError = 'probe offline'
+it('does not label failed checks as current', () => {
+  mocks.updates.clientError = 'feed offline'; mocks.updates.versionError = 'probe offline'
   render(<VersionOverviewSection />)
   expect(screen.getAllByText('Update check failed')).toHaveLength(2)
-  expect(screen.queryByText('Up to date')).toBeNull()
 })
-
-it('offers concrete preparation recovery even before any Workspace exists', async () => {
-  mocks.workspaces = []
-  mocks.setup = { setup: { phase: 'complete', pending: ['auto-quant'], errors: { 'auto-quant': 'Clone unavailable' } }, error: null, busy: false, retry: vi.fn() }
-  const { rerender } = render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'AliceProject / Auto Quant' }))
-  expect(document.activeElement?.id).toBe('settings-version-setup-auto-quant')
+it('retains setup recovery inside project details without inventing a default', () => {
+  mocks.setup = { setup: { phase: 'complete', pending: ['auto-quant'], errors: { 'auto-quant': 'Clone unavailable' } }, busy: false, retry: vi.fn() }
+  render(<VersionOverviewSection />)
+  expect(within(document.getElementById('settings-version-project')!).getByText('Needs attention')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Project details' }))
   expect(screen.getByText('Clone unavailable')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(mocks.setup.retry).toHaveBeenCalledOnce()
-  expect(mocks.openAgentConfig).not.toHaveBeenCalled()
-  mocks.setup.busy = true
-  rerender(<VersionOverviewSection />)
-  expect(screen.getByRole('button', { name: 'Preparing…' }).hasAttribute('disabled')).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'AliceProject · Details' }))
-  expect(await screen.findByRole('dialog')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Back to updates' }))
-  fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  mocks.setup = { ...mocks.setup, busy: false, setup: { phase: 'complete', pending: [] } }
-  rerender(<VersionOverviewSection />)
-  expect(screen.queryByText('Clone unavailable')).toBeNull()
-  expect(screen.queryByRole('button', { name: 'AliceProject / Auto Quant' })).toBeNull()
 })
-it('keeps loading and preparation quiet, but exposes status-read failures', () => {
-  mocks.workspaces = []
-  mocks.setup = { setup: null, error: null, busy: false, retry: vi.fn() }
-  const { rerender } = render(<VersionOverviewSection />)
-  expect(screen.queryByText(/Preparation failed/)).toBeNull()
-  mocks.setup.setup = { phase: 'preparing', pending: ['chat'], errors: { chat: 'previous attempt' } }
-  rerender(<VersionOverviewSection />)
-  expect(screen.queryByText('previous attempt')).toBeNull()
-  mocks.setup.error = 'Status unavailable'
-  rerender(<VersionOverviewSection />)
-  expect(screen.getByText('Status unavailable')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'AliceProject / Workspace preparation' }))
-  expect(document.activeElement?.id).toBe('settings-version-setup-status')
-})
-it('opens the sole Workspace update directly from Review updates', () => {
-  mocks.updates.guidance.backend = false
-  mocks.updates.guidance.availableCount = 1
-  mocks.updates.availableCount = 1
+it('keeps recovery reachable even when no new update is available', () => {
+  mocks.updates.projectWorkspaces = []
+  mocks.updates.operation = { id: 'pending', phase: 'blocked', error: 'Reconnect the approved target', completed: {}, plan: { steps: [] } }
   render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'Review updates' }))
-  expect(mocks.openAgentConfig).toHaveBeenCalledWith('aq', undefined, 'template')
-  expect(screen.queryByRole('dialog')).toBeNull()
-  expect(mocks.probe).not.toHaveBeenCalled()
-})
-it('keeps exact Workspace targets in a multi-update review', () => {
-  render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'Review updates' }))
-  expect(screen.getByRole('dialog').textContent).toContain('Quant')
-  const quant = within(screen.getByRole('dialog')).getByText('Quant', { selector: 'p.font-medium' }).parentElement!.parentElement!
-  fireEvent.click(quant.querySelector('button')!)
-  expect(mocks.openAgentConfig).toHaveBeenCalledWith('aq', undefined, 'template')
-})
-
-it('keeps coordinated recovery visible instead of bypassing a pending operation', () => {
-  mocks.updates.guidance.backend = false
-  mocks.updates.guidance.availableCount = 1
-  mocks.updates.availableCount = 1
-  mocks.updates.operation = { phase: 'blocked', error: 'Reconnect the approved target', completed: {}, plan: { steps: [] } }
-  mocks.updates.resume = vi.fn()
-  mocks.updates.abandon = vi.fn()
-  render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'Review updates' }))
+  fireEvent.click(screen.getByRole('button', { name: 'View progress' }))
   expect(screen.getByRole('dialog').textContent).toContain('Reconnect the approved target')
-  expect(mocks.openAgentConfig).not.toHaveBeenCalled()
   expect(mocks.updates.resume).not.toHaveBeenCalled()
-})
-
-it('keeps preparation recovery alongside a sole direct update target', () => {
-  mocks.setup = { setup: { phase: 'complete', pending: ['auto-quant'], errors: { 'auto-quant': 'Clone unavailable' } }, error: null, busy: false, retry: vi.fn() }
-  mocks.updates.guidance.backend = false
-  mocks.updates.guidance.availableCount = 1
-  mocks.updates.guidance.setupCount = 1
-  mocks.updates.availableCount = 1
-  render(<VersionOverviewSection />)
-  fireEvent.click(screen.getByRole('button', { name: 'AliceProject / Auto Quant' }))
-  expect(document.activeElement?.id).toBe('settings-version-setup-auto-quant')
-  fireEvent.click(screen.getByRole('button', { name: 'Review updates' }))
-  expect(mocks.openAgentConfig).toHaveBeenCalledWith('aq', undefined, 'template')
-  expect(screen.queryByRole('dialog')).toBeNull()
-  expect(screen.getByText('Clone unavailable')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(mocks.setup.retry).toHaveBeenCalledOnce()
 })
