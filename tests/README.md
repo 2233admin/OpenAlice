@@ -156,3 +156,12 @@ for the full verification ladder and side-effect boundaries.
 Central TypeScript specs and the catalog guard have an explicit typecheck
 because the root `src/` typecheck does not include their new locations:
 `pnpm exec tsc -p tests/tsconfig.json`.
+
+The bounded lifecycle follow-up registers the existing Supervisor PTY file in
+`startup-project-selection`, installer integrity in `update-recovery`, and terminal
+settings saves in `persisted-state`. These are executable mappings in the existing
+selector, not an inventory-only classification. Named assertions limit claims;
+file-granular selection still runs all cases in each selected file. Real terminal
+interaction, synthetic Runtime success, loopback protocol identity and native
+artifact acceptance remain separate evidence. Physical PTY splitting is proposed
+in the active plan and requires its own collection/ownership review.

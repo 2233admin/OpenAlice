@@ -71,6 +71,29 @@
         }
       ],
       "gap": "Each supported native manager/platform still needs its own executed artifact receipt."
+    },
+    {
+      "id": "installer-immutable-release",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A native release archive is installed or an existing release may be damaged.",
+      "action": "Reinstall, activate the next release, or recover activation.",
+      "expected": "Only content-and-mode-identical immutable releases are reused; old releases remain available for rollback.",
+      "evidence": [
+        {
+          "spec": "packages/cli/src/install.spec.mjs",
+          "assertion": "reuses only a content-and-mode-identical installed release",
+          "level": "integration",
+          "scope": "Actual shell installer, local archive/filesystem and synthetic native executable; Linux/macOS only. No network, shipped artifact, package manager or release publication."
+        },
+        {
+          "spec": "packages/cli/src/install.spec.mjs",
+          "assertion": "updates by activating a new immutable release while retaining rollback state",
+          "level": "integration",
+          "scope": "Actual shell installer, local archive/filesystem and synthetic native executable; Linux/macOS only. No network, shipped artifact, package manager or release publication."
+        }
+      ],
+      "gap": "Real signed/downloaded artifacts, native macOS/Windows and installer Docker acceptance require their dedicated commands. Mode corruption is independent of process umask."
     }
   ]
 }

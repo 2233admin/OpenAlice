@@ -2097,6 +2097,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     const closedSpine = '╰─ [ / ] Commands  ›  [ q ] Detach ──────────╯'
     const transcript = await new Promise<string>((resolve, reject) => {
       let output = ''
+      let detaching = false
       let opened = false
       let closingAt = -1
       const timeout = setTimeout(() => {
@@ -2113,7 +2114,8 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
           child.write('\u001b[<35;6;30M')
           child.write('\u001b[<0;6;30M')
           child.write('\u001b[<35;1;4M')
-        } else if (closingAt >= 0 && output.slice(closingAt).includes(closedSpine)) {
+        } else if (!detaching && closingAt >= 0 && output.slice(closingAt).includes(closedSpine)) {
+          detaching = true
           child.write('q')
         }
       })
@@ -2359,6 +2361,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     let expandedFleet = ''
     const transcript = await new Promise<string>((resolve, reject) => {
       let output = ''
+      let detaching = false
       let openedFleet = false
       let hoveredSixth = false
       let clickedSixth = false
@@ -2378,7 +2381,8 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
         } else if (!clickedSixth && output.includes('» Local Project 6')) {
           clickedSixth = true
           child.write('\u001b[<0;70;11M')
-        } else if (clickedSixth && output.includes('AliceProjects · This computer · 6/6')) {
+        } else if (!detaching && clickedSixth && output.includes('AliceProjects · This computer · 6/6')) {
+          detaching = true
           child.write('q')
         }
       })

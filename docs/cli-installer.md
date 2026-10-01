@@ -684,3 +684,9 @@ verify its SHA-256 sidecar and unpack into a new temporary directory. Run
 installation and user home intact; use a separate OPENALICE_HOME for startup
 and PTY checks. No machine-wide Gatekeeper/TCC changes or user-side re-signing
 are part of acceptance.
+
+Installer integrity fixtures explicitly set the archived file mode and corrupt
+it relative to the extracted original mode. This keeps the mutation observable
+under both umask 0022 and 0077; chmod to a fixed 0600 can otherwise be a no-op.
+The subsequent content-corruption check remains independent. These local shell
+fixtures prove immutable release validation, not signed native artifact acceptance.

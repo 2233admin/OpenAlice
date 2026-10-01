@@ -936,28 +936,33 @@ presenting its filesystem path as a second product concept.
 
 The `i` AliceProject overlay reads the same atomic registry, always shows the
 implicit `default`, and adds every configured named project. Selecting one
-switches the live Supervisor view and records it as the next bare-start
-default; it does not stop, move, copy, or delete another project. Creating an
+verifies and attaches its Runtime, then records it as the next bare-start
+Default only after successful connection; it does not stop, move, copy, or delete another project. Creating an
 AliceProject collects a validated lowercase key and separate complete home
-inside the TUI, rejects equal or nested registered homes, and selects the new
-entry atomically. The final Workspaces step reviews Chat, Auto Quant, and Auto
+inside the TUI, rejects equal or nested registered homes, without changing Default before successful connection. The final Workspaces step reviews Chat, Auto Quant, and Auto
 Prediction, then starts the selected project. The app opens first and prepares
 those durable instances asynchronously; Agent Sessions remain stopped. Failed
 preparation can be retried from Quick Start. The CLI records the same three
 defaults for the next app activation. See [[docs/alice-project.md]]. An existing target must be empty or recognizable as an
 OpenAlice complete home; an unrelated non-empty directory is rejected. A new
 target is created and canonicalized when registered, so a later missing
-registered Home is never silently recreated. A bare TUI launch falls back to
-the first available project, keeps the unavailable registry entry intact,
-and shows a persistent notice directing the user to `i AliceProjects`; selecting
-the displayed fallback repairs the remembered default. An explicit
-environment/flag selection still fails instead of falling back because
-automation must never run against a different Home. The suggested Home is a
+registered Home is never silently recreated. An unavailable remembered Default
+leaves the Runtime detached and presents an available local context for recovery;
+that presentation is neither attachment nor a replacement Default. The notice
+directs the user to `i AliceProjects`; a failed connection preserves the remembered
+Default. An explicit environment/flag selection still fails rather than targeting
+a different Home because automation must never run against a different Home. The suggested Home is a
 sibling such as
 `~/.openalice-research` and remains editable before creation. A session whose
 project or complete home came from `OPENALICE_PROJECT`,
 `OPENALICE_HOME`, `--project`, or `--home` shows the registry read-only
 instead of pretending that a lower-priority selection can win.
+
+Internal startup, picker and post-save context selection preserve ordinary
+machine-config provenance. Only actual CLI/environment overrides lock the picker;
+a `null` Default does not prevent saving Setup. Runtime endpoint liveness and
+registered Home availability are independent: a running endpoint cannot turn an
+explicitly missing Home into an available registry entry.
 
 The registry appears as an AliceProject Switchboard rather than the underlying
 selection widget. Its map identifies current, bare-start default, available,

@@ -42,6 +42,29 @@
         }
       ],
       "gap": "Map all shipped persisted formats incrementally; this representative dossier is not the whole data catalog."
+    },
+    {
+      "id": "supervisor-settings-preserve-default",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A TUI edits Project or Machine settings while the shared Default may be null.",
+      "action": "Validate and persist settings through the terminal.",
+      "expected": "Actual settings change without inventing an explicit CLI override or changing Default; successful writes report accurately.",
+      "evidence": [
+        {
+          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "assertion": "edits and persists selected-AliceProject settings inside the TUI",
+          "level": "integration",
+          "scope": "Real Node CLI/PTY and isolated config files; no native Electron or broker."
+        },
+        {
+          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "assertion": "switches setup scope and persists machine defaults inside the TUI",
+          "level": "integration",
+          "scope": "Real Node CLI/PTY and isolated config files; no native Electron or broker."
+        }
+      ],
+      "gap": "Platform-specific installed clients and interrupted filesystem writes are not proved by these terminal assertions."
     }
   ]
 }

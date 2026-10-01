@@ -301,3 +301,20 @@ static import analysis complete for dynamic runtime dependencies.
 Post-merge Stage 1/2 grouping acceptance and its remaining product gaps are
 tracked in [[plans/test-system-grouping.md]]. Shutdown completion-drain tests
 also do not certify that every storage layer propagates disk write failures.
+
+## Bounded lifecycle selections
+
+`pnpm test:select --scenario startup-project-selection` includes real Supervisor
+PTY input, rendering, project switching and detached recovery alongside component
+and loopback protocol evidence. `--scenario update-recovery --path
+packages/cli/src/install.spec.mjs` selects immutable installer integrity fixtures.
+`--contract persisted-state --path packages/cli/src/supervisor-tui.pty.spec.ts`
+selects real terminal settings persistence. Append `--list --explain` for a dry run.
+
+Coverage manifests name exact claims, but generic selection executes entire spec
+files. The current mixed PTY file executes all 60 cases; it is not copied into
+every group. Synthetic Runtime relay success does not establish real backend
+identity verification; the separately mapped loopback WebRelay tests do. Fixture
+HOME is caller-owned and real-CLI cases clear inherited Home/Project overrides.
+Native installed launchers, Windows/macOS terminals, real SSH, native Electron
+and signed installer artifacts retain explicit acceptance gaps.
