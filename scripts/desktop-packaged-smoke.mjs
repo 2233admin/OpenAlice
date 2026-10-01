@@ -11,7 +11,7 @@ import {
   createTemporaryDesktopPackageArtifact,
   DEFAULT_DESKTOP_PACKAGE_ROOT,
 } from './desktop-package-artifact.mjs'
-import { buildDesktopPackagedSmokePlan } from './desktop-packaged-smoke-plan.mjs'
+import { buildDesktopPackagedSmokePlan, desktopSmokeStateEnv } from './desktop-packaged-smoke-plan.mjs'
 import { runPnpmSync } from './pnpm-command.mjs'
 import { packagedElectronExecutable } from './smoke-packaged-toolchain.mjs'
 import { spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
@@ -163,7 +163,7 @@ async function main() {
   }
   for (const warning of plan.warnings) console.warn(warning)
 
-  if (process.platform !== 'darwin' && !workspaceAcceptance) {
+  if (process.platform !== 'darwin' && !workspaceAcceptance && !onboarding) {
     console.error('[desktop-smoke] packaged .app smoke currently runs on macOS only')
     return { code: 1, signal: null }
   }
@@ -258,12 +258,8 @@ async function main() {
       env.OPENALICE_UTA_PORT = String(await getAvailablePort())
     }
     if (!realData && smokeHome && smokeWorkspaces && smokeGlobal) {
-      env.OPENALICE_ELECTRON_SMOKE_USER_DATA = join(smokeRoot, 'electron-profile')
-      env.OPENALICE_SUPERVISOR_HOME = join(smokeRoot, 'supervisor')
-      env.OPENALICE_HOME = smokeHome
-      env.AQ_LAUNCHER_ROOT = smokeWorkspaces
-      env.OPENALICE_GLOBAL_DIR = smokeGlobal
-      if (onboarding) env.PI_CODING_AGENT_DIR = join(smokeRoot, 'pi-agent')
+      Object.assign(env, desktopSmokeStateEnv(smokeRoot))
+      mkdirSync(env.HOME, { recursive: true })
     }
 
     if (workspaceAcceptance) {
@@ -312,6 +308,10 @@ async function main() {
     appStopped = true
     signalToRaise = exit.requestedSignal
     finalCode = exit.timedOut ? 1 : exit.code ?? (exit.signal ? 1 : 0)
+
+    if (onboarding && finalCode === 0 && (aiMock.stats.credentialTests < 1 || aiMock.stats.readinessTurns < 2)) {
+      throw new Error('onboarding mock did not observe credential test, configured readiness and first Chat reply')
+    }
 
     if (workspaceAcceptance) {
       if (!existsSync(receiptPath)) {

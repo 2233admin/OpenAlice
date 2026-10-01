@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 export const DESKTOP_PACKAGED_SMOKE_ARGS = new Set([
   '--skip-build',
   '--skip-pack',
@@ -80,12 +82,12 @@ export function buildDesktopPackagedSmokePlan(argv, env = process.env, opts = {}
   const tempData = !realData
   const onboardingBuildEnv = onboarding ? {
     VITE_OPENALICE_ONBOARDING_TEST: '1',
-    VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
+    VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'http',
   } : {}
   const onboardingLaunchEnv = onboarding ? {
     ...onboardingBuildEnv,
     OPENALICE_ONBOARDING_TEST: '1',
-    OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
+    OPENALICE_CREDENTIAL_TEST_MODE: 'http',
     OPENALICE_AGENT_RUNTIME_INSTALLS: 'only:pi',
     OPENALICE_MCP_ENABLED: '0',
     OPENALICE_ELECTRON_SMOKE_ONBOARDING: '1',
@@ -131,5 +133,22 @@ export function buildDesktopPackagedSmokePlan(argv, env = process.env, opts = {}
       ...workspaceAcceptanceLaunchEnv,
     },
     unsetLaunchEnv,
+  }
+}
+
+/** Every temporary smoke owns native agent state, including inherited overrides. */
+export function desktopSmokeStateEnv(root) {
+  return {
+    HOME: join(root, 'os-home'),
+    USERPROFILE: join(root, 'os-home'),
+    XDG_CONFIG_HOME: join(root, 'config'),
+    XDG_CACHE_HOME: join(root, 'cache'),
+    XDG_DATA_HOME: join(root, 'data'),
+    OPENALICE_ELECTRON_SMOKE_USER_DATA: join(root, 'electron-profile'),
+    OPENALICE_SUPERVISOR_HOME: join(root, 'supervisor'),
+    OPENALICE_HOME: join(root, 'home'),
+    AQ_LAUNCHER_ROOT: join(root, 'workspaces'),
+    OPENALICE_GLOBAL_DIR: join(root, 'global'),
+    PI_CODING_AGENT_DIR: join(root, 'pi-agent'),
   }
 }
