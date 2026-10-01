@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { ClientUpdatePreferences, ClientUpdateSnapshot } from '@traderalice/update-lifecycle'
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
@@ -6,6 +6,7 @@ import { api } from '../api'
 import { useMachineControls } from './useMachineControls'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
 import { useWorkspaces } from '../contexts/workspaces-context'
+import { WorkspacePlanStore, workspacePlanIsCurrent, workspacePlanRequest } from '../lib/updates/workspacePlans'
 import { selectWorkspaceUpdateGuidance, type UpdateGuidance } from '../lib/updates/guidance'
 
 export interface UpdatePreferences {
@@ -46,6 +47,7 @@ export interface UpdateLifecycle {
   nativeError: string | null
   installClient(): Promise<void>
   openClientRelease(version?: string): Promise<void>
+  workspacePlans: WorkspacePlanStore
   workspaceStates: WorkspaceUpdateState[]
   checking: boolean
   error: string | null
@@ -107,8 +109,14 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     clearClient() // Retire any status read started before the policy write.
     await checkClient(async () => saved)
   }, [checkClient, clearClient])
-  const { workspaces, refresh: refreshWorkspaces } = useWorkspaces()
+  const { workspaces, hasLoaded, refresh: refreshWorkspaces } = useWorkspaces()
   const { backendUnavailable, backendRecoveryGeneration } = useBackendRecoverySignal()
+  const workspacePlans = useMemo(() => new WorkspacePlanStore(!backendUnavailable), [backendRecoveryGeneration, backendUnavailable])
+  const planRevision = useSyncExternalStore(workspacePlans.subscribe, workspacePlans.getSnapshot, workspacePlans.getSnapshot)
+  useEffect(() => { if (!backendUnavailable) workspacePlans.activate(); return workspacePlans.retire }, [workspacePlans, backendUnavailable])
+  useEffect(() => { workspacePlans.reconcile(workspaces, hasLoaded) }, [workspacePlans, workspaces, hasLoaded])
+  const workspaceInventory = useRef(workspaces)
+  workspaceInventory.current = workspaces
   const [preferences, setPreferences] = useState<UpdatePreferences | null>(null)
   const discovery = useDiscoverySnapshot<VersionInfo>(`${backendRecoveryGeneration}:${backendUnavailable}`)
   const { value: versionInfo, error: versionError, check: checkVersion, clear: clearVersion } = discovery
@@ -133,6 +141,7 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   }, [scope])
   const updatesSupported = useRef<boolean | null>(null)
   const observedWorkspaceUpdates = useRef(new Set<string>())
+  const observedPlansLoaded = useRef(false)
 
   const load = useCallback(async (force = false) => {
     if (backendUnavailable || !isCurrent()) return
@@ -154,6 +163,12 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       setUpdatesUnsupported(false)
       setPreferences(snapshot.preferences)
       setWorkspaceStates(snapshot.workspaces)
+      const inventory = workspaceInventory.current
+      const observed = selectWorkspaceUpdateGuidance(inventory, snapshot.workspaces, snapshot.preferences)
+      // Inventory may have already prefetched a candidate before the first
+      // status response. Initial discovery joins it; later polls refresh it.
+      workspacePlans.refreshObserved(inventory, [...observed.workspaceIds, ...observed.needsAttentionWorkspaceIds], force || observedPlansLoaded.current)
+      observedPlansLoaded.current = true
       let refreshedWorkspace = false
       for (const state of snapshot.workspaces) {
         if (state.phase !== 'updated') continue
@@ -183,13 +198,14 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       // Discovery retains the last observation alongside its error.
     }
     finally { if (force && isCurrent()) setChecking(false) }
-  }, [backendUnavailable, refreshWorkspaces, checkVersion, isCurrent])
+  }, [backendUnavailable, refreshWorkspaces, checkVersion, isCurrent, workspacePlans])
 
   useEffect(() => {
     setChecking(false)
     setError(null)
     updatesSupported.current = null
     observedWorkspaceUpdates.current.clear()
+    observedPlansLoaded.current = false
     setPreferences(null)
     setWorkspaceStates([])
     setUpdatesUnsupported(false)
@@ -281,24 +297,53 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
 
   }, [load, isCurrent, backendUnavailable])
 
+  useEffect(() => {
+    const observed = selectWorkspaceUpdateGuidance(workspaces, workspaceStates, preferences)
+    for (const workspace of workspaces) if ([...observed.workspaceIds, ...observed.needsAttentionWorkspaceIds].includes(workspace.id)) {
+      void workspacePlans.ensure(workspacePlanRequest(workspace))
+    }
+  }, [workspacePlans, workspaces, workspaceStates, preferences])
+
+  useEffect(() => { machines.clearPlan() }, [backendRecoveryGeneration, backendUnavailable, machines.clearPlan])
+  useEffect(() => {
+    const target = machines.status?.target
+    if (!backendUnavailable && versionInfo?.hasUpdate && target && target.machine !== 'local' && !machines.applying && machines.operation?.phase !== 'running') {
+      void machines.probe({ mode: 'upgrade', machineKey: target.machine, projectKey: target.project }, { force: true }).catch(() => undefined)
+    }
+  }, [versionInfo, backendUnavailable, machines.status?.target?.machine, machines.status?.target?.project, machines.probe])
+
   const guidance = useMemo<UpdateGuidance>(() => {
     const app = client?.discovery.value?.status === 'available'
       || ['available', 'downloaded'].includes(nativeStatus?.phase ?? '')
     const backend = Boolean(versionInfo?.hasUpdate)
-    const project = selectWorkspaceUpdateGuidance(workspaces, workspaceStates, preferences)
+    const projected = workspaces.map(workspace => {
+      const plan = workspacePlans.peek(workspacePlanRequest(workspace))
+      return plan ? { ...workspace, upgradeAvailable: workspacePlanIsCurrent(plan) ? null : { ...workspace.upgradeAvailable, to: plan.toVersion } } : workspace
+    })
+    const observations = workspaces.flatMap<Parameters<typeof selectWorkspaceUpdateGuidance>[1][number]>(workspace => {
+      const state = workspaceStates.find(item => item.workspaceId === workspace.id)
+      const plan = workspacePlans.peek(workspacePlanRequest(workspace))
+      // A running/failed policy command remains an owner observation. Otherwise
+      // the current shared preview supplies the same candidate as its review.
+      if (!plan || state?.phase === 'checking' || state?.phase === 'applying' || state?.phase === 'failed') return state ? [state] : []
+      return [{ workspaceId: workspace.id, toVersion: plan.toVersion,
+        phase: workspacePlanIsCurrent(plan) ? 'current' as const : plan.blocked ? 'blocked' as const : 'available' as const,
+        reason: plan.blockers.join(',') }]
+    })
+    const project = selectWorkspaceUpdateGuidance(projected, observations, preferences)
     return {
       app, backend, ...project,
       availableCount: Number(app) + Number(backend) + project.workspaceIds.length,
       needsAttentionCount: project.needsAttentionWorkspaceIds.length,
     }
-  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences])
+  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences, workspacePlans, planRevision])
   const availableCount = guidance.availableCount
 
   const value = useMemo<UpdateLifecycle>(() => ({
     client, clientError: clientTransportError ?? client?.discovery.error ?? null, saveClientPreferences,
-    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking: checking || clientDiscovery.checking || Boolean(client?.discovery.checking), error, versionError, updatesUnsupported, availableCount, guidance,
+    machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspacePlans, workspaceStates, checking: checking || clientDiscovery.checking || Boolean(client?.discovery.checking), error, versionError, updatesUnsupported, availableCount, guidance,
     refresh: async () => { await Promise.all([load(true), refreshClient(true)]) }, savePreferences,
-  }), [client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, guidance, load, savePreferences])
+  }), [client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, guidance, load, savePreferences, workspacePlans, planRevision])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 

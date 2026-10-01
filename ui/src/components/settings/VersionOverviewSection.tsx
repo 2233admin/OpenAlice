@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { MachineUpgradeDialog } from './MachineUpgradeDialog'
 import { claimUpgradeDialog, shouldRestoreUpgradeDialog } from './upgrade-dialog-owner'
 import { UpdateGuidanceBadge } from './UpdateGuidanceBadge'
+import { workspacePlanIsCurrent, workspacePlanRequest } from '../../lib/updates/workspacePlans'
 import { VERSION_OVERVIEW_ID } from '../../lib/updates/focusVersionOverview'
 
 const UI_VERSION = typeof __OPENALICE_UI_VERSION__ === 'string' ? __OPENALICE_UI_VERSION__ : 'development'
@@ -44,9 +45,10 @@ export function VersionOverviewSection() {
   const backendBusy = machines.applying || machines.operation?.phase === 'running'
   const workspaceRows = workspaces.filter(workspace => ['chat', 'auto-quant-v2', 'auto-prediction'].includes(workspace.template ?? '')).map(workspace => {
     const state = updates.workspaceStates.find(item => item.workspaceId === workspace.id)
+    const plan = updates.workspacePlans.peek(workspacePlanRequest(workspace))
     const applied = state?.phase === 'updated'
-    return { workspace, state, current: applied ? state.toVersion : state?.fromVersion ?? workspace.currentVersion ?? workspace.upgradeAvailable?.from,
-      candidate: applied ? undefined : state?.toVersion ? state.toVersion : workspace.upgradeAvailable?.to }
+    return { workspace, state, current: plan?.fromVersion ?? (applied ? state.toVersion : state?.fromVersion ?? workspace.currentVersion ?? workspace.upgradeAvailable?.from),
+      candidate: plan ? (workspacePlanIsCurrent(plan) ? undefined : plan.toVersion) : applied ? undefined : state?.toVersion ? state.toVersion : workspace.upgradeAvailable?.to }
   })
   const guidance = updates.guidance
   const workspaceNames = new Map(workspaceRows.map(({ workspace }) => [workspace.id, workspace.displayName || workspace.tag]))
@@ -71,18 +73,29 @@ export function VersionOverviewSection() {
     if (!backendBusy && !nativeBusy) setView(null)
   }, [backendRecoveryGeneration]) // eslint-disable-line react-hooks/exhaustive-deps
   const open = (next: View) => { setLocalError(null); setView(next) }
-  const reviewBackend = () => {
+  const reviewBackend = (force = false) => {
     if (!remote || !target) return
     claimUpgradeDialog('about')
-    machines.clearPlan()
     open('backend-review')
-    void machines.probe({ mode: 'upgrade', machineKey: target.machine, projectKey: target.project }).catch(() => undefined)
+    void machines.probe({ mode: 'upgrade', machineKey: target.machine, projectKey: target.project }, { force }).catch(() => undefined)
   }
   const openWorkspace = (id: string) => {
     setView(null)
     // Close this focus scope before handing off to the existing content merge
     // review. Repository conflicts require its file-level approval UI.
     openAgentConfig(id, undefined, 'template')
+  }
+  const reviewUpdates = () => {
+    const targets = [
+      ...(guidance.app ? ['app'] : []), ...(guidance.backend ? ['backend'] : []),
+      ...guidance.workspaceIds.map(id => `workspace-${id}`),
+    ]
+    if (targets.length !== 1) { open('review'); return }
+    const selected = targets[0]
+    if (selected.startsWith('workspace-')) openWorkspace(selected.slice('workspace-'.length))
+    else if (selected === 'app' || integrated) open(updates.nativeReady ? 'native-review' : 'app')
+    else if (remote) reviewBackend()
+    else open('backend')
   }
   const appStatus = updates.clientError || updates.nativeError ? text('checkFailed')
     : nativeStatus?.phase === 'downloading' ? text('downloading')
@@ -122,7 +135,7 @@ export function VersionOverviewSection() {
     <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
       <RefreshCw className={`size-5 shrink-0 text-primary ${updates.checking ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden/>
       <div className="min-w-0 flex-1"><p className="text-sm font-medium">{updates.availableCount ? t('settings.versions.updateCount', { count: updates.availableCount }) : text('summary')}</p><p className="mt-1 text-xs text-muted-foreground">{integrated ? text('integrated') : text('separated')}</p>{guidanceTargets.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{guidanceTargets.map(target => <button key={target.id} type="button" onClick={() => focusTarget(target.id)} className={`max-w-full truncate rounded-md border px-2 py-1 text-xs focus-visible:outline-primary ${target.attention ? 'border-warning/35 text-warning hover:bg-warning/10' : 'border-primary/25 text-primary hover:bg-primary/10'}`}>{target.label}</button>)}</div>}</div>
-      <Button onClick={() => open('review')}>{text('review')}</Button>
+      <Button onClick={reviewUpdates}>{text('review')}</Button>
     </div>
     <div className="space-y-4">
       {card('app', <Monitor className="size-5"/>, window.openAlice?.updater ? text('desktop') : text('browser'), version(appVersion), appStatus,
@@ -130,15 +143,16 @@ export function VersionOverviewSection() {
       {card('backend', <Server className="size-5"/>, `${machineName} · ${backendUnavailable ? text('offline') : text('connected')}`, version(backend?.current), integrated ? text('integrated') : backendStatus)}
       {card('project', <Folder className="size-5"/>, projectName, '', t('settings.versions.componentCount', { count: workspaceRows.length }), workspaceList)}
     </div>
-    {view === 'backend-review' ? <MachineUpgradeDialog open plan={machines.plan?.mode === 'upgrade' ? machines.plan : null} operation={machines.operation} busy={machines.applying} error={machines.operationError} onClose={() => { setView(null); machines.clearPlan() }} onApply={() => { void machines.apply().then(() => updates.refresh()).catch(() => undefined) }} onRetry={reviewBackend}/> : <Dialog open={view !== null} onOpenChange={next => { if (!next && !nativeBusy) setView(null) }}>
+    {view === 'backend-review' ? <MachineUpgradeDialog open plan={machines.plan?.mode === 'upgrade' ? machines.plan : null} operation={machines.operation} busy={machines.applying} checking={machines.probing} error={machines.operationError} onClose={() => setView(null)} onApply={() => { void machines.apply().then(() => updates.refresh()).catch(() => undefined) }} onRetry={() => reviewBackend(true)}/> : <Dialog open={view !== null} onOpenChange={next => { if (!next && !nativeBusy) setView(null) }}>
       <DialogContent showCloseButton={!nativeBusy} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0" style={{ width: 'calc(100vw - 2rem)', maxWidth: 880 }}>
         <div className="border-b border-border px-6 py-5 pr-14"><DialogTitle className="text-xl">{text(view === 'review' ? 'review' : view === 'native-review' ? 'reviewApp' : view === 'native-progress' ? 'appProgress' : `${view === 'backend' ? 'backend' : view === 'project' ? 'project' : 'app'}Details`)}</DialogTitle><DialogDescription className="mt-2">{text(view === 'review' ? 'reviewDescription' : view === 'native-review' ? 'restartNote' : view === 'native-progress' ? 'handoffNote' : 'detailsDescription')}</DialogDescription></div>
         <div className="min-h-0 overflow-y-auto p-6">
           {view === 'review' && <div className="space-y-3">
             <p className="mb-4 rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">{text('ownerReview')}</p>
             <ReviewRow title={text('app')} detail={`${version(appVersion)} · ${appStatus}`} label={updates.nativeReady ? text('review') : text('details')} onClick={() => open(updates.nativeReady ? 'native-review' : 'app')}/>
-            <ReviewRow title={text('backend')} detail={`${machineName} · ${backendStatus}`} label={text('review')} onClick={integrated ? () => open('app') : remote ? reviewBackend : () => open('backend')}/>
-            <ReviewRow title={text('project')} detail={projectName} label={text('details')} onClick={() => open('project')}/>
+            <ReviewRow title={text('backend')} detail={`${machineName} · ${backendStatus}`} label={text('review')} onClick={integrated ? () => open('app') : remote ? () => reviewBackend() : () => open('backend')}/>
+            {workspaceRows.filter(({ workspace }) => guidance.workspaceIds.includes(workspace.id) || guidance.needsAttentionWorkspaceIds.includes(workspace.id)).map(({ workspace, current, candidate }) => <ReviewRow key={workspace.id} title={workspace.displayName || workspace.tag} detail={`${version(current)} → ${version(candidate)}`} label={text('review')} onClick={() => openWorkspace(workspace.id)}/>)}
+            {!guidance.workspaceIds.length && !guidance.needsAttentionWorkspaceIds.length && <ReviewRow title={text('project')} detail={projectName} label={text('details')} onClick={() => open('project')}/>}
           </div>}
           {(view === 'app' || view === 'backend') && <>
             <div className="mb-6 flex flex-wrap items-center gap-3"><span className="text-3xl font-semibold tabular-nums">{version(view === 'app' ? appVersion : backend?.current)}</span><span className="rounded-full border border-border px-3 py-1 text-xs">{view === 'app' ? updates.client?.discovery.value?.channel ?? '—' : backend?.channel ?? '—'}</span></div>
@@ -159,7 +173,7 @@ export function VersionOverviewSection() {
             {!nativeBusy && view !== 'review' && <Button variant="ghost" onClick={() => open('review')}>{text('back')}</Button>}
             {view === 'app' && <Button variant="outline" onClick={() => { void updates.openClientRelease(appCandidate).catch(error => setLocalError(String(error))) }}><ExternalLink className="size-4"/>{t('settings.about.viewReleases')}</Button>}
             {view === 'app' && updates.nativeReady && <Button onClick={() => open('native-review')}>{text('review')}</Button>}
-            {view === 'backend' && remote && <Button disabled={machines.probing || backendBusy} onClick={reviewBackend}>{text('review')}</Button>}
+            {view === 'backend' && remote && <Button disabled={machines.probing || backendBusy} onClick={() => reviewBackend()}>{text('review')}</Button>}
             {view === 'native-review' && <Button disabled={!updates.nativeReady || nativeBusy} onClick={() => { setView('native-progress'); void updates.installClient().catch(() => undefined) }}>{t('settings.about.installAndRestart')}</Button>}
             {view === 'review' && <Button variant="outline" onClick={() => setView(null)}>{text('close')}</Button>}
           </div>

@@ -65,15 +65,13 @@ const useHasFullRail = () => useMediaQuery('(min-width: 1280px)') // full rail w
 
 export function App() {
   return (
-    <WorkspacesProvider>
-      <UpdateLifecycleProvider>
-        <SessionTakeoverProvider>
-          <AppShell />
-          <SessionTakeoverDialogHost />
-          <SessionBusyDialogHost />
-          <SessionDetailsDialogHost />
-        </SessionTakeoverProvider>
-      </UpdateLifecycleProvider>
+    <WorkspacesProvider renderContent={content => <UpdateLifecycleProvider>{content}</UpdateLifecycleProvider>}>
+      <SessionTakeoverProvider>
+        <AppShell />
+        <SessionTakeoverDialogHost />
+        <SessionBusyDialogHost />
+        <SessionDetailsDialogHost />
+      </SessionTakeoverProvider>
     </WorkspacesProvider>
   )
 }

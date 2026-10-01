@@ -20,11 +20,12 @@ function stageIndex(stage: MachineOperation['stage']): number {
   return 0
 }
 
-export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClose, onApply, onRetry }: {
+export function MachineUpgradeDialog({ open, plan, operation, busy, checking = false, error, onClose, onApply, onRetry }: {
   open: boolean
   plan: MachinePlan | null
   operation: MachineOperation | null
   busy: boolean
+  checking?: boolean
   error: string | null
   onClose: () => void
   onApply: () => void
@@ -80,8 +81,8 @@ export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClo
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-secondary/20 px-5 py-4 sm:px-7">
         {working ? <span className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />Update in progress · controls are paused</span> : <>
           <Button variant="outline" onClick={onClose}>{progress ? 'Close' : 'Cancel'}</Button>
-          {failure && <Button onClick={onRetry}>Review again</Button>}
-          {!progress && plan && !plan.blocker && plan.actions.length > 0 && <Button onClick={() => { setApprovedPlanId(plan.id); onApply() }}>Approve update</Button>}
+          {failure && <Button disabled={checking} onClick={onRetry}>Review again</Button>}
+          {!progress && plan && !plan.blocker && plan.actions.length > 0 && <Button disabled={checking || !!failure} onClick={() => { setApprovedPlanId(plan.id); onApply() }}>Approve update</Button>}
         </>}
       </div>
     </DialogContent>

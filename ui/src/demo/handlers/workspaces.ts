@@ -41,6 +41,7 @@ import type {
 } from '../../components/workspace/api'
 
 import type { TakeoverRequest } from '../../hooks/useSessionTakeovers'
+import { demoHarnessSourceCandidate } from './updates'
 const demoTakeoverPreview = typeof location !== 'undefined' && new URLSearchParams(location.search).has('takeover')
 let demoTakeover: TakeoverRequest | null = null
 let demoTakeoverSeconds = 60
@@ -808,6 +809,24 @@ export const workspacesHandlers = [
     } })
   }),
   http.post('/api/workspaces/:id/alice-harness-upgrade', () => HttpResponse.json({ error: 'demo_read_only', message: 'This recorded preview does not modify Workspace files.' }, { status: 409 })),
+  http.get('/api/workspaces/:id/source-upgrade', ({ params }) => {
+    const workspace = demoWorkspaces.find(candidate => candidate.id === String(params.id))
+    if (!workspace) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    if (!workspace.harnessSource) return HttpResponse.json({ error: 'unsupported', message: 'This Workspace does not have a source receipt.' }, { status: 400 })
+    const candidate = workspace.id === DEMO_AUTO_QUANT_WORKSPACE_ID ? demoHarnessSourceCandidate : null
+    const blockers = candidate ? ['active_runtime'] : []
+    return HttpResponse.json({ plan: {
+      workspaceId: workspace.id, template: workspace.template, strategy: 'source-merge',
+      fromVersion: workspace.harnessSource.version, fromCommit: workspace.harnessSource.commit,
+      toVersion: candidate?.toVersion ?? workspace.harnessSource.version,
+      toCommit: candidate?.toCommit ?? workspace.harnessSource.commit,
+      verified: candidate?.verified ?? true, protocolCompatible: true, manifestVersion: 1,
+      planDigest: `demo-source-${workspace.id}`, blocked: blockers.length > 0, blockers,
+      activity: { busy: blockers.length > 0, sessions: [], headless: [] },
+      changedPaths: candidate ? ['harness.json', 'studio/server.ts'] : [], conflictedPaths: [],
+    } })
+  }),
+  http.post('/api/workspaces/:id/source-upgrade', () => HttpResponse.json({ error: 'demo_read_only', message: 'This recorded preview does not modify Workspace files.' }, { status: 409 })),
   http.get('/api/workspaces/:id/template-upgrade', ({ params }) => {
     const workspace = demoWorkspaces.find((candidate) => candidate.id === String(params.id))
     if (!workspace) return HttpResponse.json({ error: 'not_found' }, { status: 404 })

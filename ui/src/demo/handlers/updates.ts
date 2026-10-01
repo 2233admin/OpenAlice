@@ -8,10 +8,14 @@ let preferences = {
 }
 // Deliberately blocked by the seeded running Quant Session. Toggling auto
 // application does not make the observable upstream release disappear.
+export const demoHarnessSourceCandidate = {
+  fromVersion: 'v0.8.31', toVersion: 'v0.8.32', verified: false,
+  toCommit: 'b'.repeat(40),
+}
 const snapshot = () => ({ preferences, workspaces: [{
   workspaceId: DEMO_AUTO_QUANT_WORKSPACE_ID, template: 'auto-quant-v2',
   phase: preferences.autoUpdateAutoQuant ? 'blocked' : 'available',
-  fromVersion: 'v0.8.31', toVersion: 'v0.8.32', verified: false,
+  fromVersion: demoHarnessSourceCandidate.fromVersion, toVersion: demoHarnessSourceCandidate.toVersion, verified: demoHarnessSourceCandidate.verified,
   checkedAt: new Date().toISOString(),
   ...(preferences.autoUpdateAutoQuant ? { reason: 'active_runtime' } : {}),
 }] })

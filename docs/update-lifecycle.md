@@ -95,6 +95,43 @@ can request the same hook's optional preview mode. Connection/fleet CRUD still
 belongs to the connection owner. Source repository discovery also uses the
 shared cache primitive rather than an independent promise/expiry implementation.
 
+### Shared review plans
+
+The same provider owns the Workspace preview inventory used by the overview and
+the existing template/source review panels. Read-only candidate discovery
+prefetches the primary plan. Opening or reopening a review reuses that exact
+observation; it does not request another preview. The first status response
+joins an inventory prefetch. Subsequent automatic checks and explicit refreshes
+update the same resource and coalesce concurrent requests.
+
+Each backend recovery generation owns a fresh inventory. Workspace identity,
+template versus source versus Alice Harness layer, and skill/action projection
+form separate keys. A changed template baseline, source receipt or candidate,
+removal, successful apply, and backend retirement invalidate affected entries.
+An already-open review observes invalidation. A retired response cannot restore
+an old plan, including when switching away and back. Relay target switches
+already reload the renderer; no module-global plan survives that boundary.
+
+Failed reads retain the last successful preview alongside the error and disable
+application. Reopening retains the error instead of silently retrying. A
+backend apply rejection containing a revised plan replaces the shared digest;
+template conflict choices reset when that digest or scope changes. Existing
+backend digest, activity, transaction and exact-target checks remain approval
+authority. Scoped Alice Harness/skill plans do not become whole-template update
+evidence. Source identity includes its commit even when version labels match.
+
+Remote Machine review likewise shares its pending or settled target/project
+plan. Automatic discovery and explicit retries refresh it; closing the overview
+review keeps it. Refreshing or failed discovery blocks approval synchronously,
+even before React commits the new loading state. The native owner still enforces
+plan expiry and single use. A fresh review also retries operation-status reads.
+
+Review updates opens the sole actionable target directly. Multiple updates
+retain a chooser with exact Workspace targets. The Workspace modal host sits
+under the same lifecycle provider as the shell; it uses the existing modal and
+button primitives and retains its keyboard/focus and narrow-screen behavior.
+Attention presentation and backend update engines are separate workstreams.
+
 ## Current migration boundary
 
 Native SSH Runtime updates and rehearsal release stages now use the same
