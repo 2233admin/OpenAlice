@@ -33,8 +33,6 @@ the durable truth after it changes. Git history is the archive.
   signatures and shared final-archive acceptance for #1670. Draft PR acceptance
   remains pending.
 
-- [[plans/unified-default-target.md]] — Unify Desktop/Web/TUI/CLI startup on one client-owned Default target, saved after successful user switches.
-
 - [[plans/test-system-grouping.md]] — Grouping/critical local gates merged as
   #1667/#1672; bounded startup-to-exit lifecycle evidence mappings are in a
   separate Draft increment. Native/browser/venue gaps remain explicit.

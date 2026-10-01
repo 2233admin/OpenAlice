@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { useRelayConnection } from './useRelayConnection'
+import { monitorRelayGeneration, useRelayConnection } from './useRelayConnection'
 
 const status = { schemaVersion: 1 as const, generation: 0, target: { machine: 'local', project: '@electron-current' }, switching: false }
 const fleet = { machines: [{ key: 'local', displayName: 'This computer', connection: 'local', projects: [], issue: null }] }
@@ -16,6 +16,46 @@ afterEach(() => {
 })
 
 describe('useRelayConnection transport', () => {
+  it('waits for selection completion before reloading and reloads each old renderer once', () => {
+    const reload = vi.fn()
+    const dispatchEvent = vi.fn()
+    vi.stubGlobal('window', { location: { reload }, dispatchEvent })
+    const close = vi.fn()
+    let events!: { onmessage: ((message: { data: string }) => void) | null }
+    vi.stubGlobal('EventSource', class {
+      onmessage = null
+      close = close
+      constructor() { events = this }
+    })
+    monitorRelayGeneration(status)
+    const next = { ...status, generation: 1 }
+    events.onmessage?.({ data: JSON.stringify({ ...next, switching: true }) })
+    expect(reload).not.toHaveBeenCalled()
+    events.onmessage?.({ data: JSON.stringify(next) })
+    events.onmessage?.({ data: JSON.stringify(next) })
+    expect(reload).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+    expect(dispatchEvent).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the committed Default without letting an older inventory overwrite it', async () => {
+    let finish!: (value: typeof fleet) => void
+    const pendingFleet = new Promise<typeof fleet>(resolve => { finish = resolve })
+    const saved = { target: { machine: 'cloud', project: 'main' }, error: null }
+    const bridge = { status: vi.fn().mockResolvedValue({ ...status, switching: true }), fleet: vi.fn(() => pendingFleet),
+      startupTarget: vi.fn().mockResolvedValueOnce({ target: null, error: 'Legacy startup choices conflict' }).mockResolvedValue(saved) }
+    Object.defineProperty(window, 'openAlice', { value: { desktopConnection: bridge }, configurable: true })
+    const { result } = renderHook(() => useRelayConnection(status))
+    let refresh!: Promise<void>
+    act(() => { refresh = result.current.refresh() })
+    await act(async () => { window.dispatchEvent(new CustomEvent('openalice:relay-settled', { detail: status })) })
+    expect(result.current.startup).toEqual(saved)
+    expect(result.current.status?.switching).toBe(false)
+    await act(async () => { finish(fleet); await refresh })
+    expect(result.current.startup).toEqual(saved)
+    expect(result.current.status?.switching).toBe(false)
+  })
+
   it('does not invalidate a child inventory refresh during provider mounting', async () => {
     const bridge = { status: vi.fn().mockResolvedValue(status), fleet: vi.fn().mockResolvedValue(fleet),
       startupTarget: vi.fn().mockResolvedValue({ target: null, error: null }) }

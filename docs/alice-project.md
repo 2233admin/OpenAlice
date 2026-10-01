@@ -230,8 +230,14 @@ Explicit home/project/environment overrides apply only to that invocation.
 
 Restore, reconnect, polling and inventory never change Default. A successful
 user switch saves after health and identity verification; Desktop also waits
-for replacement navigation. Cancel, close and superseding requests invalidate
-late completion. Persistence failure keeps the connection and reports that
+for replacement navigation. Relay owns this entire selection operation: Desktop
+supplies its presentation callback instead of saving a second time after
+`connect`. The generation remains switching until presentation and persistence
+finish. Renderers ignore intermediate generations, then older tabs reload once;
+a replacement renderer refreshes Default after completion without navigating
+again. Browser connect responses do not issue a second navigation alongside the
+generation observer. Cancel, close and superseding requests invalidate late
+completion. Persistence failure keeps the connection and reports that
 Default was not saved. Create, start and inspect alone do not select a project.
 `project use` is the explicit set-Default compatibility operation.
 
