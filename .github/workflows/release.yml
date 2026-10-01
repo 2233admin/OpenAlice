@@ -124,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # full history for git-cliff
+          fetch-depth: 0 # full history for release tag validation and channel selection
 
       - name: Validate release intent and version authority
         id: plan
@@ -216,26 +216,20 @@ jobs:
           RELEASE_VERIFIER_SHA: ${{ inputs.desktop-verifier-sha }}
         run: node scripts/select-release-verifier.mjs
 
-      - name: Install git-cliff
-        if: steps.plan.outputs.created == 'true'
-        uses: kenji-miyake/setup-git-cliff@v2
-
       - name: Generate release notes
         if: steps.plan.outputs.created == 'true'
-        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.plan.outputs.previous_tag }}
+          SOURCE_SHA: ${{ steps.plan.outputs.source_sha }}
         run: |
-          # Generate notes for this version only (since last tag).
-          # --tag labels the about-to-be-created version: git-cliff runs
-          # BEFORE the tag exists (it's created only after candidate acceptance), so without
-          # this the section header falls back to "[Unreleased]" instead of
-          # the version. See cliff.toml's `{% if version %}` template.
-          TAG="${{ steps.plan.outputs.tag }}"
-          LAST_TAG="${{ steps.plan.outputs.previous_tag }}"
-          if [ -z "$LAST_TAG" ]; then
-            git-cliff --tag "$TAG" --output notes.md
-          else
-            git-cliff "$LAST_TAG"..HEAD --tag "$TAG" --output notes.md
-          fi
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$RELEASE_TAG" \
+            -f target_commitish="$SOURCE_SHA" \
+            -f previous_tag_name="$PREVIOUS_TAG" \
+            --jq '.body' > notes.md
 
       - name: Preserve release notes for gated publication
         if: steps.plan.outputs.created == 'true'
