@@ -42,18 +42,20 @@ cleanup claims rather than skipping failures or widening waits.
 - [x] Register named PTY startup/selection assertions and installer immutable
   release assertions in existing manifests. Verify actual selector file closure
   and keep mocked lifecycle/real terminal/native artifact evidence distinct.
-- [ ] Repair Desktop smoke group liveness conservatively; independently verify
+- [x] Repair Desktop smoke group liveness conservatively; independently verify
   live TERM-ignoring members, zombie leaders with workers and exited zombies.
-- [ ] Run scoped feedback and required final gates; retain native platform gaps;
+- [x] Run scoped feedback and required final gates; retain native platform gaps;
   publish bounded Draft PRs and check exact-head CI. No merge/release authority.
 
-Physical organization is a separate proposed follow-up: split the mixed
-60-case PTY file into real startup/selection/recovery journey specs under
-`tests/scenarios/startup-project-selection/` and CLI-owned terminal presentation
-specs, with one shared support fixture directory. Central specs require explicit
-`centralTests` owner/lane definitions; protocol manifests cross-reference rather
-than copy them. Do not mass-move files or alter collection before that bounded
-split is confirmed. Current registrations immediately execute existing files.
+Physical organization is now authorized and implemented as a separate increment
+on the CLI repair: three real startup/selection/recovery specs under
+`tests/scenarios/startup-project-selection/` and one CLI-owned terminal presentation
+spec. One shared support module owns fixture paths and cleanup hooks. All 53 test
+blocks (60 expanded cases) are conserved; one path expression changes for
+relocation. Three central hermetic specs declare Runtime/CLI ownership, platform
+area and CLI package association once. Protocol manifests cross-reference them
+without copying tests. The Kitty input claim belongs to native-platform rather
+than forcing the whole presentation file into startup selection.
 
 Stage 1 makes the test system navigable and its missing evidence visible.
 Stage 2 supplies and enforces evidence for the highest-risk missing behaviors.
@@ -560,4 +562,55 @@ unchanged dev product code and pass after repair. Installer selection passes
 0022. Two terminal exit guards prevent repeated quit writes after descriptor
 closure; those two targeted cases pass. No test deletion or timeout increase.
 The earlier Draft/failed-suite paragraphs above are historical snapshots, not
-current PR or gate status. Final required gates and Draft CI remain pending.
+current PR or gate status. Final source gate results and exact-head CI are recorded below and in the Draft PRs.
+
+### Physical PTY organization verification
+
+Four files preserve the 60 collected full test names exactly once: startup 10,
+project selection 9, exit/recovery 12, terminal presentation 29. Normalized test
+block hashes also preserve all 53 source blocks, changing only the one relocated
+fixture path expression. Actual startup selection now runs 8 files /169 tests
+(12.92s), including 31 journey PTY cases; presentation separately passes 29
+(16.74s). This removes unrelated presentation work from startup without claiming
+less terminal coverage. Catalog guards pass 29 tests and central typecheck passes.
+CLI package association selects all three central files; persisted-state selects
+the settings/selection file. Shared support imports all four, while product
+subprocesses remain a dynamic boundary requiring explicit owner/scenario surface
+selection. No merge/release. Combined full-suite and initial exact-head CI passed; refreshed final CI is recorded in the Draft PRs.
+
+### Bounded repair completion and review
+
+Implementation is reviewable in Draft [#1682](https://github.com/TraderAlice/OpenAlice/pull/1682)
+(CLI fixtures/product/evidence), [#1683](https://github.com/TraderAlice/OpenAlice/pull/1683)
+(Desktop group completion), and [#1684](https://github.com/TraderAlice/OpenAlice/pull/1684)
+(physical PTY organization, depends on #1682's commits). No merge/release.
+
+- Runtime/CLI owner: 195 files, 1954 passed, two existing exclusions (61.71s).
+- Whole critical gate: accepted receipt, all 15 required references /18 expanded
+  tests; workflow contracts 12 files /108 passed. Root, CLI, UI and central
+  typechecks passed. No gate narrowing.
+- Combined repair + physical organization backstop at local commit `95243a51`:
+  884 files passed, one existing excluded file; 7540 tests passed, five existing
+  exclusions, zero failures (362.65s). Writable npm cache and installed dugite
+  Git are environment prerequisites. The first temporary-worktree attempt had
+  incomplete workspace dependency links, was aborted, and is not acceptance.
+- Guardian 6 files /67 passed; Desktop 7 files /36 passed. Independent Linux
+  pthread diagnostic retained the Z leader with live workers through TERM,
+  then required SIGKILL and reaped the managed child. Compiler is not a test
+  dependency. Stable single-thread zombies mean execution stopped, not init reaping.
+- Dev subsequently advanced to `a8c9f705` (#1685 notification cleanup). Feature
+  branches integrate that non-conflicting base; the two notification specs plus
+  Desktop process tests passed 24 cases. The complete backstop above deliberately
+  names its older source snapshot; refreshed exact-head CI is recorded in each PR.
+- Representative static related selection for `supervisor-tui.ts` passes 127
+  tests in three files but misses spawned PTY consumers. Explicit startup
+  selection covers 169 tests in eight files; native-platform presentation
+  selects one file /29 tests; CLI package selection preserves all four PTY files
+  among 80 specs. Collection-wide metadata changes invalidate changed selection
+  to 885 hermetic candidates. Do not substitute static imports for process coupling.
+
+The bounded lifecycle failures are repaired without skipped assertions, wider
+shutdown budgets or demonstrably redundant test deletion. Native Electron is
+unavailable here because its install-script binary is absent; Windows/macOS
+terminals, native Quit/Dock/tray, installed signed artifacts and actual SSH
+remain explicitly unaccepted. Broader grouping/native work keeps this plan active.

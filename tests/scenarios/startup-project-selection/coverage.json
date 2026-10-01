@@ -2,7 +2,35 @@
   "title": "Shared Default migration and verified AliceProject selection",
   "owner": "runtime-cli",
   "guide": "docs/alice-project.md",
-  "centralTests": [],
+  "centralTests": [
+    {
+      "path": "tests/scenarios/startup-project-selection/supervisor-startup.pty.spec.ts",
+      "owner": "runtime-cli",
+      "lane": "hermetic",
+      "areas": [
+        "platform"
+      ],
+      "package": "@traderalice/openalice-cli"
+    },
+    {
+      "path": "tests/scenarios/startup-project-selection/supervisor-project-selection.pty.spec.ts",
+      "owner": "runtime-cli",
+      "lane": "hermetic",
+      "areas": [
+        "platform"
+      ],
+      "package": "@traderalice/openalice-cli"
+    },
+    {
+      "path": "tests/scenarios/startup-project-selection/supervisor-recovery.pty.spec.ts",
+      "owner": "runtime-cli",
+      "lane": "hermetic",
+      "areas": [
+        "platform"
+      ],
+      "package": "@traderalice/openalice-cli"
+    }
+  ],
   "requirements": [
     {
       "id": "default-migration",
@@ -101,37 +129,31 @@
       "expected": "Explicit overrides remain read-only; ordinary selection stays editable; failed Default never silently attaches local; detach restores terminal without stopping the Runtime.",
       "evidence": [
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
-          "assertion": "keeps the session alive after Kitty Esc release and accepts bracketed command-search paste",
-          "level": "integration",
-          "scope": "Real node-pty and terminal negotiation; fake lifecycle/relay; no installed binary."
-        },
-        {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-startup.pty.spec.ts",
           "assertion": "shows a truthful Launch Flight Recorder while starting a local Runtime",
           "level": "integration",
           "scope": "Real terminal, synthetic inspect/start/open boundary; no actual Runtime process."
         },
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-recovery.pty.spec.ts",
           "assertion": "recovers from a failed local launch through Retry-or-Back guidance",
           "level": "integration",
           "scope": "Real terminal and injected failing startup, unchanged Runtime ownership."
         },
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-project-selection.pty.spec.ts",
           "assertion": "shows CLI-selected AliceProjects as read-only instead of pretending to switch them",
           "level": "integration",
           "scope": "Actual Node CLI subprocess and temporary Supervisor filesystem; no shipped binary."
         },
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-project-selection.pty.spec.ts",
           "assertion": "creates, selects, remembers, and switches named AliceProjects inside the TUI",
           "level": "integration",
           "scope": "Real terminal and config files, synthetic successful Runtime/relay verification."
         },
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-recovery.pty.spec.ts",
           "assertion": "keeps an unavailable remembered Default detached while the Project picker offers recovery",
           "level": "integration",
           "scope": "Actual CLI subprocess, migrated temporary config, and failed real local verification. Invalid saved Default remains unchanged; no implicit successful attachment."
@@ -149,7 +171,7 @@
           "scope": "Injected live inspection and unavailable local inventory; preserves distinct liveness and Home availability."
         }
       ],
-      "gap": "Windows PTY, installed CLI, real SSH/native Runtime and shared Desktop/Web chooser acceptance remain separate. File selection runs all 60 PTY cases; these records claim only the named assertions."
+      "gap": "Windows PTY, installed CLI, real SSH/native Runtime and shared Desktop/Web chooser acceptance remain separate. Startup selection executes 31 journey cases in three PTY specs; the 29 terminal presentation cases are separately mapped to native-platform. These records claim only the named assertions."
     }
   ]
 }

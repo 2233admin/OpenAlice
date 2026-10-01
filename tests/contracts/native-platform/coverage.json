@@ -48,6 +48,23 @@
         }
       ],
       "gap": "Record native macOS arm64/x64 and Windows receipts separately; discovery is not acceptance."
+    },
+    {
+      "id": "supervisor-terminal-input",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "A POSIX Supervisor terminal emits Kitty key-release or bracketed-paste input.",
+      "action": "Dismiss the palette, keep the session alive and paste a command search.",
+      "expected": "Release input does not quit and bracketed search is accepted.",
+      "evidence": [
+        {
+          "spec": "packages/cli/src/supervisor-terminal-presentation.pty.spec.ts",
+          "assertion": "keeps the session alive after Kitty Esc release and accepts bracketed command-search paste",
+          "level": "integration",
+          "scope": "Real node-pty and terminal negotiation; fake lifecycle/relay; no installed binary."
+        }
+      ],
+      "gap": "Real POSIX node-pty with caller-owned fixtures; native Windows terminal and installed cross-platform acceptance remain separate."
     }
   ]
 }
