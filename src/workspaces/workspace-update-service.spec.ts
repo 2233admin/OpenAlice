@@ -89,7 +89,8 @@ it('coalesces checks and does not apply a retained candidate after failed discov
   expect(svc.sourceUpgrades.latest).toHaveBeenCalledOnce()
   svc.sourceUpgrades.latest.mockRejectedValueOnce(new Error('upstream offline'))
   await updates.refreshAndApplyPolicy()
-  expect(updates.list()).toMatchObject([{ phase: 'failed', toVersion: '1.3.0', reason: 'upstream offline' }])
+  expect(updates.list()).toMatchObject([{ phase: 'failed', failureStage: 'check', reason: 'upstream offline' }])
+  expect(updates.list()[0].toVersion).toBeUndefined()
   expect(svc.sourceUpgrades.apply).not.toHaveBeenCalled()
 })
 

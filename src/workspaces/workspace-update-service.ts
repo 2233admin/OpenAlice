@@ -133,7 +133,7 @@ export class WorkspaceUpdateService {
         })
       } catch (error) {
         this.states.set(workspace.id, {
-          ...prior, ...base, phase: 'failed', failureStage: 'check', checkedAt: new Date().toISOString(),
+          ...base, fromVersion: prior?.fromVersion, phase: 'failed', failureStage: 'check', checkedAt: new Date().toISOString(),
           reason: error instanceof Error ? error.message : String(error),
         })
       }

@@ -21,7 +21,7 @@ export function useWorkspacePlan(request: WorkspacePlanRequest) {
   return {
     plan: enabled ? snapshot.value?.plan ?? null : null, loading: enabled ? snapshot.checking : observation?.phase === 'checking' || checking || !preferences,
     current: sourceObserved && (observation?.phase === 'current' || observation?.phase === 'updated'),
-    error: enabled ? snapshot.error ?? snapshot.value?.error ?? null : observation?.phase === 'failed' ? observation.reason ?? null : discoveryError ?? (!observation && preferences ? 'Workspace update status is unavailable.' : null), unsupported: snapshot.value?.unsupported ?? false,
+    error: enabled ? (observation ? discoveryError : null) ?? snapshot.error ?? snapshot.value?.error ?? null : observation?.phase === 'failed' ? observation.reason ?? null : discoveryError ?? (!observation && preferences ? 'Workspace update status is unavailable.' : null), unsupported: snapshot.value?.unsupported ?? false,
     refresh: async () => { if (sourceObserved) await refresh(); else await workspacePlans.refresh(request) },
     replace: (plan: NonNullable<typeof snapshot.value>['plan']) => plan ? workspacePlans.replace(request, plan) : Promise.resolve(),
     invalidate: () => workspacePlans.invalidateWorkspace(request.workspaceId),

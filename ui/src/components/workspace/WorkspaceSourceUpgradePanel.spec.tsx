@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkspacePlanStore } from '../../lib/updates/workspacePlans'
 let planStore: WorkspacePlanStore
+let discoveryError: string | null = null
 let observations: import('../../hooks/useUpdateLifecycle').WorkspaceUpdateState[] = []
 vi.mock('../../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({
   workspacePlans: planStore, workspaceStates: observations, projectWorkspaces: [],
-  checking: false, preferences: {}, error: null, refresh: vi.fn(),
+  checking: false, preferences: {}, error: discoveryError, refresh: vi.fn(),
 }) }))
 
 import { i18n } from '../../i18n'
@@ -41,6 +42,7 @@ const plan = {
 }
 
 beforeEach(async () => {
+  discoveryError = null
   observations = []
   planStore = new WorkspacePlanStore()
   await i18n.changeLanguage('en')
@@ -110,9 +112,13 @@ it('shows a current observation without requesting an upgrade plan', async () =>
 
 it('reviews the observed target instead of rediscovering latest', async () => {
   observations = [{ workspaceId: 'aq-1', template: 'auto-quant-v2', phase: 'available', checkedAt: 'now', fromVersion: plan.fromVersion, toVersion: plan.toVersion }]
-  render(<WorkspaceSourceUpgradePanel wsId="aq-1" onWorkspaceChanged={vi.fn()} />)
+  const view = render(<WorkspaceSourceUpgradePanel wsId="aq-1" onWorkspaceChanged={vi.fn()} />)
   await screen.findByText('studio/server.ts')
   expect(api.getHarnessSourceUpgradePlan).toHaveBeenCalledWith('aq-1', plan.toVersion)
+  discoveryError = 'Update check failed: HTTP 503'
+  view.rerender(<WorkspaceSourceUpgradePanel wsId="aq-1" onWorkspaceChanged={vi.fn()} />)
+  expect(screen.getByText(discoveryError)).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'I understand — apply unverified upgrade' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 it('replaces a stale source digest with the backend conflict plan without another GET', async () => {
