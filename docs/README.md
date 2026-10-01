@@ -92,9 +92,6 @@ guide, also without vendoring third-party code.
 - When code and a guide disagree, verify the runtime and update the guide in the
   same change.
 - Do not copy an owner guide back into `AGENTS.md`; add or update its wikilink.
-- Keep OpenAlice operating and release rules in this repository. Do not mirror
-  them into personal/global assistant skills or maintain a second external
-  test runner; update the owning guide and repository commands together.
 - Do not leave executable instructions in a retired guide. Keep a short
   tombstone when old external links need a destination.
 - Prefer self-describing code/catalogs over copied provider, event, or route

@@ -614,11 +614,7 @@ back to `dev` immediately so a later promotion cannot revert it.
 
 ### Release completion evidence
 
-A readiness assessment is read-only. Promotion, version preparation, workflow
-dispatch and publication require the maintainer's release instruction; a local
-acceptance result alone does not authorize them.
-
-Before reporting a release complete, record:
+Release completion requires evidence of:
 
 - the requested channel/tag, dispatch SHA, matching root/CLI product versions,
   and accepted native candidate receipts;
