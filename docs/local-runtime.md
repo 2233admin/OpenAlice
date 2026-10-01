@@ -24,6 +24,19 @@ their existing process ownership, health, restart, lock, signal, and shutdown
 semantics. Bun changes the shipped executable and resource provider, not those
 boundaries.
 
+On Linux, Guardian's positive PID probe also checks `/proc/<pid>/stat`. It
+parses fields after the final `)` of the process name, which may itself contain
+parentheses or text resembling state fields. A `Z` thread-group leader alone
+does not prove exit: worker threads can still run. Only `Z` with exactly one
+remaining thread establishes that the sole zombie cannot execute or create
+another worker. Multiple, missing or invalid thread counts remain live, as do
+sleeping, stopped and uninterruptible tasks. Unreadable procfs or a
+permission-denied signal probe cannot establish exit. Shutdown still retains
+descendant PIDs across wrapper exit,
+forces live survivors after the grace period, and reports survivors after the
+force period. This proves execution stopped, not that an external init reaped
+all PID entries or that native service ports/locks were independently accepted.
+
 The browser, API, authentication, Workspace WebSocket, and terminal share one
 verified loopback origin. No public domain, hosted Studio protocol, or SSH
 transport is required for local use.

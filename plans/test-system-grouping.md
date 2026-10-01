@@ -235,6 +235,67 @@ the same changes as implementation. Remove this plan and its [[PLANS.md]]
 entry only when the agreed Stage 2 scope is accepted and durable instructions
 are in the owner guide.
 
+### Guardian liveness follow-up
+The lifecycle classification selection exposed a real distinction between an
+executing descendant and an exited Linux zombie. The bounded fix keeps the
+positive signal probe, excludes only an explicit procfs `Z` state, and retains
+live status on unreadable/malformed procfs or permission errors. It neither
+extends shutdown budgets nor skips real cleanup assertions. The OS still owns
+reaping orphaned PID entries.
+
+The real subprocess fixture now waits for the child's IPC readiness before
+signaling. Both graceful and SIGTERM-ignoring detached descendants are tested;
+the forced branch asserts the saved descendant PID reaches SIGKILL after its
+wrapper exits. An independent procfs/absent-PID assertion excludes live survivors.
+Unit checks preserve sleeping/stopped/uninterruptible states and fail shutdown
+when a retained live descendant survives both signal phases. The headless
+interruption fixture uses the same independent OS exit distinction, retaining
+its partial-output and interruption assertions.
+
+Evidence so far: Guardian package ten files /69 tests passed (2.53 seconds);
+real cleanup two files /27 tests passed (6.24 seconds); root/Guardian typechecks
+passed; real `pnpm test:system:guardian` passed healthy conflict/graceful takeover,
+crashed-lock recovery, and stubborn-owner forced takeover, including the actual
+`pnpm dev` conflict path. Complete hermetic backstop: 877 files passed /four failed /one skipped;
+7,498 assertions passed /24 failed /five skipped, in 444.75 seconds. The four
+failing files are Desktop smoke process-group cleanup, CLI install mode fixture,
+Supervisor PTY (21 cases), and the Supervisor mock fixed independently in #1677.
+The package/headless process failures are resolved; npm packaging passes with
+the supported writable `npm_config_cache` prerequisite. PTY fixture/output
+failures remain unresolved, not uniformly attributed to the host. Expanded
+Guardian evidence paths: six files /65 assertions passed (2.71 seconds); whole
+critical gate passed 18 assertions with all required references and an accepted
+clean-commit receipt. Native Windows/macOS/Bun/Electron acceptance and independent
+service-port release remain unverified; a zombie distinction is not native
+resource or init-reaping acceptance.
+
+### Independent review: process-name and thread-group safety
+
+Review reproduced two unsafe false-exit decisions in the initial zombie probe:
+`42 (worker) Z 1 x) S 1 0 0` let a regex backtrack into legal comm text, and
+an exited pthread leader (`Z`, thread count two) still had a sleeping/running
+worker that continued output and ignored TERM. Both synthetic regressions fail
+against prior head `8676b8c6`; no full-suite rerun is used to diagnose them.
+
+The bounded correction parses fields only after the final comm parenthesis and
+requires `state=Z` plus `num_threads=1` for exit. Linux's thread count includes
+the retained zombie leader; a live worker makes the count at least two. At the
+single-thread snapshot the only task is already exited, so no task remains
+able to create another worker. This avoids treating an empty, unreadable or
+racing task-directory scan as proof of exit: no directory scan is used, and
+missing/invalid counts remain live. Ordinary PID reuse remains governed by the
+existing ownership identity checks, not a new claim from this parser.
+
+Automated checks use synthetic leader/thread-count snapshots (including unknown
+counts), preserve TERM/KILL failure for live roots, and name real Node wrappers
+and descendants `worker) Z 1 x` through `process.title`. Independent OS assertions
+confirm those names and actual cleanup. An isolated, optional `cc -pthread`
+diagnostic reproduced leader Z /worker S with continuing output; after the
+correction it remains live through TERM and receives KILL, then the parent
+reaps it in finally. The native diagnostic does not become a compiler dependency
+of cross-platform tests. Guardian package: ten files /71 tests passed (2.61s).
+Existing force/grace periods remain unchanged, and native/platform gaps stay open.
+
 ## Progress
 
 ### Lifecycle classification pilot: mapping increment
