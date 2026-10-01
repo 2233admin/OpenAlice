@@ -22,4 +22,17 @@ describe('companion notification IPC',()=>{
     expect(()=>open({...event,senderFrame:{}},'anything')).toThrow('Unauthorized')
     pet.emit('closed');expect(handlers.size).toBe(0)
   })
+  it('ignores destroyed owner state during transitions and pet retirement',()=>{
+    vi.useFakeTimers();state.home=mkdtempSync(join(tmpdir(),'oa-ipc-'))
+    const owner=windowStub(),pet=windowStub()
+    installCompanionActivity(owner as never,pet as never)
+    owner.isDestroyed=()=>true
+    owner.isVisible=()=>{throw new Error('Object has been destroyed')}
+    owner.isMinimized=()=>{throw new Error('Object has been destroyed')}
+    expect(()=>owner.emit('hide')).not.toThrow()
+    pet.isDestroyed=()=>true
+    expect(()=>pet.emit('closed')).not.toThrow()
+    expect(handlers.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })
