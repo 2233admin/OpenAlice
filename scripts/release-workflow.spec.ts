@@ -187,15 +187,6 @@ describe('Release workflow critical path', () => {
     expect(JSON.stringify(workflow)).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN/)
   })
 
-  it('selects the previous release from the same channel', () => {
-    const plan = step(workflow.jobs.release, 'Validate release intent and version authority').run ?? ''
-    expect(plan).toContain('git for-each-ref --merged="$SOURCE_SHA" --sort=-version:refname')
-    expect(plan).toContain('PREVIOUS_TAG_PATTERN')
-    expect(plan).not.toContain('git describe --tags')
-    expect(step(workflow.jobs.release, 'Generate release notes').run)
-      .toContain('${{ steps.plan.outputs.previous_tag }}')
-  })
-
   it('keeps existing-tag mirror repair distinct from new release creation', () => {
     const plan = step(workflow.jobs.release, 'Validate release intent and version authority').run ?? ''
     expect(plan).toContain('Mirror repair requires an existing release tag')

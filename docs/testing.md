@@ -14,12 +14,13 @@ After a fresh install, the full suite's native CLI subprocess fixtures need
 the compiled `@traderalice/update-lifecycle` entry point:
 
 ```bash
-pnpm -F @traderalice/update-lifecycle build
+pnpm --filter @traderalice/update-lifecycle... build
 pnpm test
 ```
 
 Vitest aliases workspace packages to source in its own process. Real CLI
-children use package exports and do not inherit those aliases. This local
+children use package exports and do not inherit those aliases. Build the
+package's dependencies too: its Node entry imports Guardian runtime. This local
 build prerequisite does not grant any external or broker acceptance authority.
 
 ## Product Evidence Groups
@@ -264,6 +265,26 @@ must never silently turn a package's ordinary `test` into external or trading
 acceptance.
 
 ## Adding or Moving a Test
+
+Before adding an assertion, name the user-visible failure or boundary invariant
+it can detect. Prefer extending the existing test that owns that behavior over
+creating another file with the same fixture and mocks. Keep distinct failure,
+retry, authorization and persistence cases even when setup is shared.
+
+Test observable results rather than copying implementation: CSS declarations,
+utility class names, decorative text and versioned asset filenames are usually
+poor contracts. Layout, hit targets, cascade and reduced motion need a rendered
+browser check. Asset tests can instead follow the production manifest and check
+that files exist with the dimensions/format required by their consumer. Static
+checks remain appropriate when source is the actual contract, such as release
+authority or forbidden dependency boundaries.
+
+When pruning, record what stops being asserted and why, what useful behavior
+remains covered, and any real surface gap. Do not delete a test merely because
+it is slow, flaky, large, owner-only or currently failing. A focused mutation
+can establish whether a supposedly covered regression actually fails the test;
+restore the mutation before accepting the change. Test counts and line coverage
+are inventory signals, not product acceptance.
 
 1. Decide its side-effect lane before choosing a filename. Ordinary isolated
    specs are hermetic; deterministic product journeys are integration; public
