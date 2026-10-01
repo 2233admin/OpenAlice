@@ -49,6 +49,7 @@ export function ActivityBarUtilityMenu({
   const [menuOpen, setMenuOpen] = useState(false)
   const companion = useDesktopCompanion(menuOpen)
   const guidance = useUpdateLifecycle({ optional: true })?.guidance
+  const setupCount = guidance?.setupCount ?? 0
   const updateCount = guidance?.availableCount ?? 0
   const needsAttentionCount = guidance?.needsAttentionCount ?? 0
   const warningLabel = [
@@ -82,7 +83,7 @@ export function ActivityBarUtilityMenu({
         {!compactRail && (
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{t('nav.yourAlice')}</span>
         )}
-        {updateCount > 0 && <span role="status" aria-label={t('nav.updatesAvailable', { count: updateCount })}
+        {(updateCount > 0 || setupCount > 0) && <span role="status" aria-label={[updateCount > 0 ? t('nav.updatesAvailable', { count: updateCount }) : '', setupCount > 0 ? t('projectSetup.title') : ''].filter(Boolean).join('; ')}
           className={`size-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_var(--sidebar)] ${compactRail ? 'absolute -right-0.5 -top-0.5' : ''}`} />}
         {warningLabel && (
           <span
@@ -118,7 +119,7 @@ export function ActivityBarUtilityMenu({
         >
           <Settings size={15} strokeWidth={1.75} aria-hidden />
           <span className="flex-1">{t('nav.item.settings')}</span>
-          <UpdateGuidanceBadge count={updateCount} />
+          <UpdateGuidanceBadge count={updateCount} setupCount={setupCount} />
           <UpdateGuidanceBadge count={needsAttentionCount} tone="attention" />
         </DropdownMenuItem>
         <DropdownMenuItem

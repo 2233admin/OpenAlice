@@ -3,6 +3,7 @@ import type { ClientUpdatePreferences, ClientUpdateSnapshot } from '@traderalice
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
+import { projectSetupFailures, useSharedProjectWorkspaceSetup } from './useProjectWorkspaceSetup'
 import { useMachineControls } from './useMachineControls'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
 import { useWorkspaces } from '../contexts/workspaces-context'
@@ -76,6 +77,7 @@ class UnsupportedUpdatesError extends Error {}
 
 export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const machines = useMachineControls()
+  const projectSetup = useSharedProjectWorkspaceSetup()
   const clientDiscovery = useDiscoverySnapshot<ClientUpdateSnapshot | null>('client-host')
   const { value: client, error: clientTransportError, check: checkClient, clear: clearClient } = clientDiscovery
   const refreshClient = useCallback(async (force = false) => {
@@ -290,8 +292,9 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       app, backend, ...project,
       availableCount: Number(app) + Number(backend) + project.workspaceIds.length,
       needsAttentionCount: project.needsAttentionWorkspaceIds.length,
+      setupCount: projectSetupFailures(projectSetup?.setup ?? null, projectSetup?.error ?? null).length,
     }
-  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences])
+  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences, projectSetup])
   const availableCount = guidance.availableCount
 
   const value = useMemo<UpdateLifecycle>(() => ({

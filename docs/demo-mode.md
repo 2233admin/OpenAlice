@@ -89,3 +89,11 @@ Replies distinguish illustrative analysis and proposed work from actual market
 reads, saved files, scheduled jobs or backtests. Unrecognized prompts retain the
 existing simulated conversation/permission flow. Browser and Electron resolve
 the same fixtures through their normal demo transports.
+
+## Workspace preparation recovery
+
+Browser demo accepts `?workspaceSetup=failed`, `preparing`, or `read-error`.
+The failure scenario follows the avatar blue dot through Settings Overview to
+Auto Quant preparation; Retry simulates recovery without creating real files.
+The preparing scenario stays quiet. These fixtures exercise UI guidance and
+recovery only, not a live Workspace clone or native packaging.

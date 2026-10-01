@@ -1,4 +1,5 @@
 export interface UpdateGuidance {
+  setupCount?: number
   app: boolean
   backend: boolean
   workspaceIds: readonly string[]

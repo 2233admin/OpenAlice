@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ updates: {} as any, workspaces: [] as any[], openAgentConfig: vi.fn(), install: vi.fn(async () => {}), probe: vi.fn(async () => {}), generation: 0 }))
+const mocks = vi.hoisted(() => ({ updates: {} as any, workspaces: [] as any[], openAgentConfig: vi.fn(), install: vi.fn(async () => {}), probe: vi.fn(async () => {}), generation: 0, setup: null as any }))
 vi.mock('../../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => mocks.updates }))
+vi.mock('../../hooks/useProjectWorkspaceSetup', async importOriginal => ({ ...await importOriginal<any>(), useSharedProjectWorkspaceSetup: () => mocks.setup }))
 vi.mock('../../hooks/useAliceProject', () => ({ useAliceProject: () => ({ project: { displayName: 'Main Cloud' } }) }))
 vi.mock('../../contexts/workspaces-context', () => ({ useWorkspaces: () => ({ workspaces: mocks.workspaces, openAgentConfig: mocks.openAgentConfig, hasLoaded: true }) }))
 vi.mock('../../auth/backendConnection', () => ({ getBackendConnection: () => ({ kind: 'local' }) }))
@@ -13,6 +14,7 @@ import { VersionOverviewSection } from './VersionOverviewSection'
 beforeAll(async () => { await i18n.changeLanguage('en') })
 beforeEach(() => {
   mocks.generation = 0
+  mocks.setup = null
   mocks.workspaces = [{ id: 'aq', tag: 'Quant', template: 'auto-quant-v2', currentVersion: '0.8.31', upgradeAvailable: { from: '0.8.31', to: '0.8.32' } }]
   mocks.updates = {
     machines: { status: { target: { machine: 'cloud', machineName: 'Railway Linux', project: 'main-cloud' } }, plan: null, operation: null, probe: mocks.probe, clearPlan: vi.fn(), applying: false },
@@ -70,4 +72,42 @@ it('does not label a failed check as current', () => {
   render(<VersionOverviewSection />)
   expect(screen.getAllByText('Update check failed')).toHaveLength(2)
   expect(screen.queryByText('Up to date')).toBeNull()
+})
+
+it('offers concrete preparation recovery even before any Workspace exists', async () => {
+  mocks.workspaces = []
+  mocks.setup = { setup: { phase: 'complete', pending: ['auto-quant'], errors: { 'auto-quant': 'Clone unavailable' } }, error: null, busy: false, retry: vi.fn() }
+  const { rerender } = render(<VersionOverviewSection />)
+  fireEvent.click(screen.getByRole('button', { name: 'AliceProject / Auto Quant' }))
+  expect(document.activeElement?.id).toBe('settings-version-setup-auto-quant')
+  expect(screen.getByText('Clone unavailable')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  expect(mocks.setup.retry).toHaveBeenCalledOnce()
+  expect(mocks.openAgentConfig).not.toHaveBeenCalled()
+  mocks.setup.busy = true
+  rerender(<VersionOverviewSection />)
+  expect(screen.getByRole('button', { name: 'Preparing…' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'AliceProject · Details' }))
+  expect(await screen.findByRole('dialog')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Back to updates' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  mocks.setup = { ...mocks.setup, busy: false, setup: { phase: 'complete', pending: [] } }
+  rerender(<VersionOverviewSection />)
+  expect(screen.queryByText('Clone unavailable')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'AliceProject / Auto Quant' })).toBeNull()
+})
+it('keeps loading and preparation quiet, but exposes status-read failures', () => {
+  mocks.workspaces = []
+  mocks.setup = { setup: null, error: null, busy: false, retry: vi.fn() }
+  const { rerender } = render(<VersionOverviewSection />)
+  expect(screen.queryByText(/Preparation failed/)).toBeNull()
+  mocks.setup.setup = { phase: 'preparing', pending: ['chat'], errors: { chat: 'previous attempt' } }
+  rerender(<VersionOverviewSection />)
+  expect(screen.queryByText('previous attempt')).toBeNull()
+  mocks.setup.error = 'Status unavailable'
+  rerender(<VersionOverviewSection />)
+  expect(screen.getByText('Status unavailable')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'AliceProject / Workspace preparation' }))
+  expect(document.activeElement?.id).toBe('settings-version-setup-status')
 })

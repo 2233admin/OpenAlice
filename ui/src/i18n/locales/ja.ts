@@ -266,7 +266,7 @@ export const ja: Resources = {
     noReadme: "このワークスペースにはまだ README.md がありません。目的や内容の概要をエージェントに作成してもらえます。",
     noGuide: "Harness ガイドはありません。",
   },
-  projectSetup: { connectPi: 'Chat 用に Pi の AI プロバイダーを設定', title: '準備が必要なワークスペースがあります', description: 'プロジェクトは作成済みです。残りの準備を再試行するか、準備済みのワークスペースを利用できます。', pending: '準備待ち', preparing: '準備中…' },
+  projectSetup: { status: 'ワークスペースの準備状況', setupFailed: '準備に失敗しました', connectPi: 'Chat 用に Pi の AI プロバイダーを設定', title: '準備が必要なワークスペースがあります', description: 'プロジェクトは作成済みです。残りの準備を再試行するか、準備済みのワークスペースを利用できます。', pending: '準備待ち', preparing: '準備中…' },
   quickStart: { chooseHarness: 'Harness を選択' },
   pet: {
     title: 'ペット', sound: 'クリック音',

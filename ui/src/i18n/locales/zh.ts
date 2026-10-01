@@ -270,7 +270,7 @@ export const zh: Resources = {
     noReadme: "此工作区还没有 README.md。你可以让 Agent 撰写一份说明，介绍它的用途和内容。",
     noGuide: "暂无 Harness 指南。",
   },
-  projectSetup: { connectPi: '为 Chat 配置 Pi 的 AI 提供方', title: '部分工作区尚未准备完成', description: '项目已创建。可以重试准备剩余工作区，也可以先使用已就绪的工作区。', pending: '等待准备', preparing: '正在准备…' },
+  projectSetup: { status: '工作区准备状态', setupFailed: '准备失败', connectPi: '为 Chat 配置 Pi 的 AI 提供方', title: '部分工作区尚未准备完成', description: '项目已创建。可以重试准备剩余工作区，也可以先使用已就绪的工作区。', pending: '等待准备', preparing: '正在准备…' },
   quickStart: { chooseHarness: '选择 Harness' },
   pet: {
     title: '桌宠', sound: '点击音效',

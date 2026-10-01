@@ -3,6 +3,7 @@ import { ArrowRight, ChevronRight, ExternalLink, Folder, Info, LoaderCircle, Mon
 import { useTranslation } from 'react-i18next'
 import type { Resources } from '../../i18n/locales/en'
 import { useUpdateLifecycle } from '../../hooks/useUpdateLifecycle'
+import { projectSetupFailures, useSharedProjectWorkspaceSetup } from '../../hooks/useProjectWorkspaceSetup'
 import { useAliceProject } from '../../hooks/useAliceProject'
 import { useWorkspaces } from '../../contexts/workspaces-context'
 import { getBackendConnection } from '../../auth/backendConnection'
@@ -25,6 +26,9 @@ export function VersionOverviewSection() {
   const { t } = useTranslation()
   const text = (key: keyof Resources['settings']['versions']) => t(`settings.versions.${key}`)
   const updates = useUpdateLifecycle()
+  const projectSetup = useSharedProjectWorkspaceSetup()
+  const setupFailures = projectSetupFailures(projectSetup?.setup ?? null, projectSetup?.error ?? null)
+  const setupLabel = (kind: string) => kind === 'chat' ? 'Chat' : kind === 'auto-quant' ? 'Auto Quant' : kind === 'auto-prediction' ? 'Auto Prediction' : t('projectSetup.status')
   const { machines, nativeStatus } = updates
   const { project } = useAliceProject()
   const { workspaces, openAgentConfig, listError, hasLoaded } = useWorkspaces()
@@ -51,6 +55,7 @@ export function VersionOverviewSection() {
   const guidance = updates.guidance
   const workspaceNames = new Map(workspaceRows.map(({ workspace }) => [workspace.id, workspace.displayName || workspace.tag]))
   const guidanceTargets = [
+    ...setupFailures.map(({ kind }) => ({ id: `setup-${kind}`, label: `${text('project')} / ${setupLabel(kind)}`, attention: false })),
     ...(guidance.app ? [{ id: 'app', label: text('app'), attention: false }] : []),
     ...(guidance.backend ? [{ id: 'backend', label: text('backend'), attention: false }] : []),
     ...guidance.workspaceIds.map(id => ({ id: `workspace-${id}`, label: `${text('project')} / ${workspaceNames.get(id) ?? id}`, attention: false })),
@@ -97,7 +102,7 @@ export function VersionOverviewSection() {
   const card = (kind: 'app' | 'backend' | 'project', icon: ReactNode, subtitle: string, identity: string, status: string, children?: ReactNode) => <section id={`settings-version-${kind}`} tabIndex={-1} className="min-w-0 scroll-mt-5 rounded-xl border border-border/70 bg-secondary/25 outline-none focus:border-primary/50 focus:bg-primary/5">
     <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 p-5 sm:gap-x-4 sm:p-6">
       <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary" aria-hidden>{icon}</div>
-      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-semibold">{text(kind)}</h3><UpdateGuidanceBadge count={kind === 'app' ? Number(guidance.app) : kind === 'backend' ? Number(guidance.backend) : guidance.workspaceIds.length} /><UpdateGuidanceBadge count={kind === 'project' ? guidance.needsAttentionWorkspaceIds.length : 0} tone="attention" /></div><p className="mt-1 break-words text-xs text-muted-foreground">{subtitle}</p></div>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-semibold">{text(kind)}</h3><UpdateGuidanceBadge count={kind === 'app' ? Number(guidance.app) : kind === 'backend' ? Number(guidance.backend) : guidance.workspaceIds.length} setupCount={kind === 'project' ? setupFailures.length : 0} /><UpdateGuidanceBadge count={kind === 'project' ? guidance.needsAttentionWorkspaceIds.length : 0} tone="attention" /></div><p className="mt-1 break-words text-xs text-muted-foreground">{subtitle}</p></div>
       <Button className="col-start-3 row-start-1" variant="ghost" size="sm" aria-label={`${text(kind)} · ${text('details')}`} onClick={() => open(kind)}>{text('details')}<ChevronRight className="size-4" /></Button>
       <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
         {identity && <p className="break-all font-mono text-sm tabular-nums">{identity}</p>}
@@ -106,6 +111,13 @@ export function VersionOverviewSection() {
     </div>{children}
   </section>
   const workspaceList = <div className="mx-5 mb-5 divide-y divide-border/60 rounded-lg border border-border/60 sm:mx-6">
+    {setupFailures.map(({ kind, reason }) => <section key={kind} id={`settings-version-setup-${kind}`} tabIndex={-1} aria-label={setupLabel(kind)} className="scroll-mt-5 px-4 py-3 focus:bg-primary/5 focus:outline-primary">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-medium">{setupLabel(kind)} · {t('projectSetup.setupFailed')}</p>
+        <Button variant="outline" size="sm" disabled={projectSetup?.busy} onClick={() => { void projectSetup?.retry() }}>{projectSetup?.busy ? t('projectSetup.preparing') : t('common.retry')}</Button>
+      </div>
+      <p className="mt-2 break-words text-xs text-muted-foreground">{reason}</p>
+    </section>)}
     {workspaceRows.map(({ workspace, state, current, candidate }) => <button key={workspace.id} id={`settings-version-workspace-${workspace.id}`} type="button" onClick={() => openWorkspace(workspace.id)} className="grid w-full min-w-0 scroll-mt-5 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3 text-left hover:bg-secondary/60 focus:bg-primary/5 focus:outline-primary">
       <div className="min-w-0"><p className="truncate text-sm font-medium" title={workspace.displayName || workspace.tag}>{workspace.displayName || workspace.tag}</p><p className="mt-1 text-xs text-muted-foreground">{workspace.template === 'chat' ? text('bundled') : text('independent')}</p></div>
       <ChevronRight className="col-start-2 row-start-1 size-4 shrink-0 self-center text-muted-foreground" aria-hidden />
@@ -115,7 +127,7 @@ export function VersionOverviewSection() {
         <span className={`ml-auto ${guidance.workspaceIds.includes(workspace.id) ? 'font-medium text-primary' : guidance.needsAttentionWorkspaceIds.includes(workspace.id) ? 'font-medium text-warning' : 'text-muted-foreground'}`}>{state?.phase === 'applying' ? text('updating') : state?.phase === 'blocked' ? guidance.needsAttentionWorkspaceIds.includes(workspace.id) ? text('needsAttention') : text('waiting') : state?.phase === 'failed' ? text('needsAttention') : candidate ? text('available') : state?.phase === 'current' || state?.phase === 'updated' ? text('current') : text('unknown')}</span>
       </div>
     </button>)}
-    {!workspaceRows.length && <p className="p-4 text-sm text-muted-foreground">{listError || (!hasLoaded ? text('loading') : text('noWorkspaces'))}</p>}
+    {!workspaceRows.length && !setupFailures.length && <p className="p-4 text-sm text-muted-foreground">{listError || (!hasLoaded ? text('loading') : text('noWorkspaces'))}</p>}
   </div>
   return <section className="border-t border-border/60 py-7">
     <h2 id={VERSION_OVERVIEW_ID} tabIndex={-1} className="mb-5 w-fit scroll-mt-5 rounded-sm text-lg font-semibold outline-none focus-visible:[box-shadow:var(--oa-focus-shadow)]">{text('title')}</h2>
