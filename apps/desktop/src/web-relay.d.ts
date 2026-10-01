@@ -45,11 +45,19 @@ export declare class UpdateControlService {
     scope(): string
     project(path: string, body?: unknown): Promise<unknown>
     backend?: { plan(): Promise<unknown>; apply(id: string): Promise<unknown> }
-    client?: { current(): string; downloaded(): string | null; install(version: string): Promise<unknown>; ready(): Promise<boolean> }
+    client?: {
+      current(): string; downloaded(): string | null; install(version: string, parentOperationId: string): Promise<unknown>; ready(): Promise<boolean>
+      recovery?: {
+        status(): Promise<import('@traderalice/update-lifecycle').UpdateOperation | null>
+        resume(): Promise<import('@traderalice/update-lifecycle').UpdateOperation | null>
+        abandon(): Promise<void>
+      }
+    }
   })
   status(): Promise<import('@traderalice/update-lifecycle').UpdateOperation | null>
   review(selection: { client: boolean; backend: boolean; projectUnits: string[] }): Promise<import('@traderalice/update-lifecycle').UpdatePlan>
   approve(plan: import('@traderalice/update-lifecycle').UpdatePlan, fingerprint: string): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
+  assertNativeInstall(version: string, parentOperationId?: string): Promise<void>
   abandon(): Promise<void>
   resume(): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
 }

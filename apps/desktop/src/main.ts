@@ -528,15 +528,11 @@ function configureDesktopUpdates(win: BrowserWindow, updateAttemptPath: string):
     }
     return true
   }
-  const resume = () => { void lifecycle.resume(ready).then(async result => { if (result?.phase === 'succeeded') await inspectPreviousUpdateAttempt(updateAttemptPath, CLI_VERSION) }).catch(error => console.warn('[updater] recovery:', error)) }
-  win.webContents.on('did-finish-load', resume)
-  resume()
-  ipcMain.removeHandler('openalice:updates:operation')
-  ipcMain.handle('openalice:updates:operation', () => lifecycle.snapshot())
   let updateStoppedServices = false
   const nativeUpdates = configureAutoUpdate(win, {
-    executeInstall: async (version, prepare, handoff) => {
-      const result = await lifecycle.install(version, prepare, handoff)
+    executeInstall: async (version, prepare, handoff, parentOperationId) => {
+      await control.assertNativeInstall(version, parentOperationId)
+      const result = await lifecycle.install(version, prepare, handoff, parentOperationId)
       if (['failed', 'blocked', 'recovery'].includes(result.phase)) throw new Error(result.error ?? 'Desktop update requires recovery')
     },
     beforeInstall: async (version, report) => {
@@ -587,16 +583,23 @@ function configureDesktopUpdates(win: BrowserWindow, updateAttemptPath: string):
       return response.json()
     },
     backend: { plan: () => { const target = desktopRelay?.status.target; if (!target || target.machine === 'local') throw new Error('This backend updates with its installation owner'); return desktopRelay!.planMachine({ mode: 'upgrade', machineKey: target.machine, projectKey: target.project }) }, apply: id => desktopRelay!.applyMachine(id) },
-    client: { current: () => CLI_VERSION, downloaded: nativeUpdates.downloaded, install: nativeUpdates.install, ready },
+    client: { current: () => CLI_VERSION, downloaded: nativeUpdates.downloaded, install: nativeUpdates.install, ready,
+      recovery: { status: () => lifecycle.snapshot(), resume: () => lifecycle.resume(ready), abandon: () => lifecycle.journal.abandon() } },
   })
-  ipcMain.handle('openalice:updates:abandon', async () => {
-    if (await control.status()) await control.abandon()
-    else await lifecycle.journal.abandon()
-  })
-  ipcMain.handle('openalice:updates:status', async () => await control.status() ?? await lifecycle.snapshot())
+  const resume = () => {
+    void control.status().then(current => current ? control.resume() : null).then(async result => {
+      if (result?.phase === 'succeeded') await inspectPreviousUpdateAttempt(updateAttemptPath, CLI_VERSION)
+    }).catch(error => console.warn('[updates] recovery:', error))
+  }
+  win.webContents.on('did-finish-load', resume)
+  resume()
+  ipcMain.removeHandler('openalice:updates:operation')
+  ipcMain.handle('openalice:updates:operation', () => control.status())
+  ipcMain.handle('openalice:updates:abandon', () => control.abandon())
+  ipcMain.handle('openalice:updates:status', () => control.status())
   ipcMain.handle('openalice:updates:review', (_event, selection) => control.review(selection))
   ipcMain.handle('openalice:updates:approve', (_event, plan, fingerprint) => control.approve(plan, fingerprint))
-  ipcMain.handle('openalice:updates:resume', () => { void control.status().then(current => current ? control.resume() : lifecycle.resume(ready)).catch(error => console.warn('[updates] continuation failed:', error)); return { accepted: true } })
+  ipcMain.handle('openalice:updates:resume', () => { resume(); return { accepted: true } })
   const clientUpdates = new ClientUpdateService({
     kind: 'desktop',
     path: join(app.getPath('userData'), 'client-updates.json'),

@@ -15,12 +15,12 @@ export interface AutoUpdateHooks {
     version: string,
     report: (stage: Exclude<UpdaterInstallStage, 'preparing' | 'handing-off'>) => void,
   ) => Promise<void>
-  executeInstall?: (version: string, prepare: () => Promise<void>, handoff: () => Promise<void>) => Promise<void>
+  executeInstall?: (version: string, prepare: () => Promise<void>, handoff: () => Promise<void>, parentOperationId?: string) => Promise<void>
   onInstallHandoff?: (version: string) => Promise<void> | void
   onInstallFailure?: (error: Error) => Promise<void> | void
 }
 
-export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, currentVersion: string): { discover(): Promise<ClientReleaseObservation>; install(expectedVersion?: string): Promise<{ ok: boolean }>; downloaded(): string | null } {
+export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, currentVersion: string): { discover(): Promise<ClientReleaseObservation>; install(expectedVersion?: string, parentOperationId?: string): Promise<{ ok: boolean }>; downloaded(): string | null } {
   let downloadedVersion: string | null = null
   let availableVersion: string | null = null
   let checkedRelease: { version: string; decision: ReleaseDecision } | null = null
@@ -92,7 +92,7 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, 
   ipcMain.removeHandler('openalice:updater:get-status')
   ipcMain.handle('openalice:updater:get-status', () => latestStatus)
 
-  const controls = { install: (expectedVersion?: string) => install(expectedVersion), downloaded: () => downloadedVersion, discover: async (): Promise<ClientReleaseObservation> => {
+  const controls = { install: (expectedVersion?: string, parentOperationId?: string) => install(expectedVersion, parentOperationId), downloaded: () => downloadedVersion, discover: async (): Promise<ClientReleaseObservation> => {
     const result = await checkForUpdates()
     const base = { currentVersion, channel: !app.isPackaged ? 'dev' : channel ?? 'custom' }
     if (!result.supported) return { ...base, status: 'unsupported', message: result.reason }
@@ -103,7 +103,7 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, 
   } }
 
   ipcMain.removeHandler('openalice:updater:install-and-restart')
-  const install = async (expectedVersion?: string) => {
+  const install = async (expectedVersion?: string, parentOperationId?: string) => {
     if (expectedVersion !== undefined && expectedVersion !== downloadedVersion) throw new Error('The downloaded update changed; review the current release before installing')
     if (!downloadedVersion) throw new Error('No downloaded update is ready to install.')
     if ((latestStatus?.phase === 'error' && !installFailureHandled) || select(downloadedVersion).status !== 'available') throw new Error('The downloaded release is not eligible for installation. Check updates again.')
@@ -130,7 +130,7 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks, 
       if (downloadedVersion !== version) throw new Error('The approved native payload changed during handoff')
       autoUpdater.quitAndInstall(true, true)
       }
-      if (hooks.executeInstall) await hooks.executeInstall(version, prepare, handoff)
+      if (hooks.executeInstall) await hooks.executeInstall(version, prepare, handoff, parentOperationId)
       else { await prepare(); await handoff() }
       return { ok: true }
     } catch (error) {

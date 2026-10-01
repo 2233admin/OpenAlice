@@ -222,8 +222,9 @@ traces. It saves the in-flight stage before each effect. Lost outcomes are
 reconciled with owner receipts; unknown outcomes cannot be blindly replayed.
 `FileUpdateJournal` serializes each host scope using the existing Guardian lock,
 validates its saved graph, and writes private atomic receipts. Explicitly ending
-a plan archives the coordination record; it does not roll back files or erase
-child-owner receipts. These journals are new state, not a migration of a shipped
+a plan archives its coordination record; it does not roll back files. Native
+child receipts linked to that parent are archived with it; unrelated and remote
+owner receipts remain intact. These journals are new state, not a migration of a shipped
 persisted format.
 
 The local `UpdateControlService` composes backend, project and native owners.
@@ -235,6 +236,15 @@ target session in memory only; after a host restart, the browser must supply
 its authenticated session again. Cookie namespaces prevent cross-target reuse.
 A newer publication cannot replace an approved
 artifact. The native updater retains signature/download/handoff ownership.
+
+The same local control service selects recovery for status, resume and abandon.
+An unfinished native receipt takes precedence over completed coordinated history.
+A native child records the exact parent operation ID in its existing proposal
+reference; matching versions alone do not establish parentage. Linked native
+recovery runs before parent reconciliation. Unrelated unfinished receipts remain
+independent and prevent a new approval or native activation from replacing them.
+Startup uses this same selector. Recovery observes exact activation and readiness;
+it does not repeat an uncertain installer handoff.
 
 `WorkspaceUpdateService.coordinator` owns project inventory and child operations.
 Inventory includes managed templates, independent source tags, injected Alice

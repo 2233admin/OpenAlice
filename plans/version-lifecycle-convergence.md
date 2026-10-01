@@ -50,6 +50,19 @@ actual provenance; a source remote regression asserts installation is blocked.
 Both files then passed all 78 tests. A fresh full suite and native artifact
 acceptance remain required before completion.
 
+Recovery increment: desktop status/resume/abandon and startup now delegate to
+one selection inside the existing control service. Completed coordination history
+cannot mask pending native activation. The native proposal's existing reference
+records its parent operation ID; equal targets do not imply parentage. Related
+receipts recover together, unrelated receipts remain independent, and entry guards
+reject new approval/activation while another operation owns the effect.
+
+Production control service plus native lifecycle and disposable file journals
+exercise completed-Project/failed-native ordering, the reverse ordering, linked
+parent/child restart, exact-target mismatch, abandonment, and independent same-target
+receipts. The focused control/native adapter suite passes 27 tests. Packaged restart
+acceptance and the refreshed full suite remain outstanding.
+
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),
 [#1706](https://github.com/TraderAlice/OpenAlice/issues/1706), and
