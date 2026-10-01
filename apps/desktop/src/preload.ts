@@ -139,6 +139,7 @@ const api = {
   desktopMachine: {
     plan: (input: unknown) => ipcRenderer.invoke('openalice:desktop-machine:plan', input),
     apply: (id: string) => ipcRenderer.invoke('openalice:desktop-machine:apply', id),
+    abandon: () => ipcRenderer.invoke('openalice:updates:abandon'),
     operation: () => ipcRenderer.invoke('openalice:desktop-machine:operation'),
   },
   companion: {
@@ -211,6 +212,11 @@ const api = {
     openCurrent: () => ipcRenderer.invoke('openalice:data-home:open-current'),
   },
   clientUpdates: {
+    abandon: () => ipcRenderer.invoke('openalice:updates:abandon'),
+    operation: () => ipcRenderer.invoke('openalice:updates:status'),
+    review: (selection: unknown) => ipcRenderer.invoke('openalice:updates:review', selection),
+    approve: (plan: unknown, fingerprint: string) => ipcRenderer.invoke('openalice:updates:approve', plan, fingerprint),
+    resume: () => ipcRenderer.invoke('openalice:updates:resume'),
     status: () => ipcRenderer.invoke('openalice:client-updates:status'),
     check: () => ipcRenderer.invoke('openalice:client-updates:check'),
     activate: () => ipcRenderer.invoke('openalice:client-updates:activate'),
@@ -222,7 +228,7 @@ const api = {
       updaterListeners.add(cb)
       return () => updaterListeners.delete(cb)
     },
-    installAndRestart: () => ipcRenderer.invoke('openalice:updater:install-and-restart'),
+    installAndRestart: (version?: string) => ipcRenderer.invoke('openalice:updater:install-and-restart', version),
     openRelease: (version?: string) => ipcRenderer.invoke('openalice:updater:open-release', version),
   },
   workspace: {

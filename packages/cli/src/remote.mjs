@@ -897,6 +897,7 @@ export function createRemotePlan(options, remote, install = {}) {
     repositoryUrl,
     lifecycle,
     activeVersion: remoteActiveRelease(remote)?.version ?? null,
+    observed: { installed: remote.installSource ? runtimeRelease(remote.installSource, remote.cliContentIdentity) : remote.cliVersion ? { version: remote.cliVersion } : null, active: remoteActiveRelease(remote) },
     mutations,
     blocker,
   }

@@ -22,6 +22,7 @@ async function backend(id: string, label: string, protectedIdentity = false): Pr
     else if (req.url === '/api/auth/status') res.end(JSON.stringify({ authed: true, tokenConfigured: false }))
     else if (req.url === '/api/who') res.end(JSON.stringify({ label, cookie: req.headers.cookie ?? null }))
     else if (req.url === '/surface-check') res.end(JSON.stringify({ host: req.headers.host }))
+    else if (req.url === '/api/updates/plan') { res.statusCode = 401; res.end(JSON.stringify({ error: 'auth-fixture', received: req.headers.cookie ?? null })) }
     else if (req.url === '/api/login-mock') { res.setHeader('set-cookie', 'alice_session=secret; HttpOnly; Path=/'); res.end('{}') }
     else res.end('{}')
   })
@@ -422,9 +423,15 @@ describe('WebRelay', () => {
     expect(cookie).toContain('alice_5_local_1_a_alice_session=secret')
     const aReply = await (await fetch(`${origin}/api/who`, { headers: { cookie: cookie! } })).json()
     expect(aReply.cookie).toBe('alice_session=secret')
+    const review = await fetch(`${origin}/relay/v1/updates/review`, { method: 'POST', headers: { origin, cookie: cookie!, 'content-type': 'application/json' }, body: JSON.stringify({ client: false, backend: false, projectUnits: ['template:fixture'] }) })
+    expect(await review.text()).toContain('alice_session=secret')
+
     await relay.connect('local', 'b')
     const bReply = await (await fetch(`${origin}/api/who`, { headers: { cookie: cookie! } })).json()
     expect(bReply.cookie).toBeNull()
+    const otherReview = await fetch(`${origin}/relay/v1/updates/review`, { method: 'POST', headers: { origin, cookie: cookie!, 'content-type': 'application/json' }, body: JSON.stringify({ client: false, backend: false, projectUnits: ['template:fixture'] }) })
+    expect(await otherReview.text()).not.toContain('alice_session=secret')
+
   })
 
   it('accepts a login-gated Runtime after SSH inventory reconfirms its owner', async () => {

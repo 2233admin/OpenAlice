@@ -29,11 +29,12 @@ export interface AutoUpdateHooks {
     version: string,
     report: (stage: Exclude<UpdaterInstallStage, 'preparing' | 'handing-off'>) => void,
   ) => Promise<void>
+  executeInstall?: (version: string, prepare: () => Promise<void>, handoff: () => Promise<void>) => Promise<void>
   onInstallHandoff?: (version: string) => Promise<void> | void
   onInstallFailure?: (error: Error) => Promise<void> | void
 }
 
-export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks): { discover(): Promise<ClientReleaseObservation> } {
+export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks): { discover(): Promise<ClientReleaseObservation>; install(expectedVersion?: string): Promise<{ ok: boolean }>; downloaded(): string | null } {
   let downloadedVersion: string | null = null
   let availableVersion: string | null = null
   let checkedRelease: { version: string; available: boolean } | null = null
@@ -98,7 +99,7 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
   ipcMain.removeHandler('openalice:updater:get-status')
   ipcMain.handle('openalice:updater:get-status', () => latestStatus)
 
-  const controls = { discover: async (): Promise<ClientReleaseObservation> => {
+  const controls = { install: (expectedVersion?: string) => install(expectedVersion), downloaded: () => downloadedVersion, discover: async (): Promise<ClientReleaseObservation> => {
     const result = await checkForUpdates()
     const base = { currentVersion: app.getVersion(), channel: app.getVersion().includes('-') ? 'beta' : 'stable' }
     if (!result.supported) return { ...base, status: 'unsupported', message: result.reason }
@@ -109,7 +110,8 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
   } }
 
   ipcMain.removeHandler('openalice:updater:install-and-restart')
-  ipcMain.handle('openalice:updater:install-and-restart', async () => {
+  const install = async (expectedVersion?: string) => {
+    if (expectedVersion !== undefined && expectedVersion !== downloadedVersion) throw new Error('The downloaded update changed; review the current release before installing')
     if (!downloadedVersion) throw new Error('No downloaded update is ready to install.')
     if (installInProgress) return { ok: true }
     installInProgress = true
@@ -120,14 +122,20 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
       // Give the renderer one paint before managed services begin shutting
       // down. Without this yield the last visible frame is still the button.
       await new Promise((resolve) => setTimeout(resolve, 150))
+      const prepare = async () => {
       await hooks.beforeInstall(version, (stage) => {
         sendStatus({ phase: 'installing', version, stage })
       })
+      }
+      const handoff = async () => {
       sendStatus({ phase: 'installing', version, stage: 'handing-off' })
       await hooks.onInstallHandoff?.(version)
       // Assisted NSIS updates must be silent or they stop on the installer UI
       // after Electron exits. Force-run restarts the updated app on success.
       autoUpdater.quitAndInstall(true, true)
+      }
+      if (hooks.executeInstall) await hooks.executeInstall(version, prepare, handoff)
+      else { await prepare(); await handoff() }
       return { ok: true }
     } catch (error) {
       const normalized = error instanceof Error ? error : new Error(String(error))
@@ -135,7 +143,8 @@ export function configureAutoUpdate(win: BrowserWindow, hooks: AutoUpdateHooks):
       installInProgress = false
       throw normalized
     }
-  })
+  }
+  ipcMain.handle('openalice:updater:install-and-restart', (_event, expectedVersion?: string) => install(expectedVersion))
 
   ipcMain.removeHandler('openalice:updater:open-release')
   ipcMain.handle('openalice:updater:open-release', async (_event, version: unknown) => {

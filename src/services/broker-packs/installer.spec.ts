@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { resolve, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as tar from 'tar'
 
@@ -286,7 +286,9 @@ describe('broker-pack installer', () => {
     await expect(getBrokerPackLocalStatus('ccxt')).resolves.toMatchObject({ installed: false, source: 'missing' })
 
     const { brokerPackEngineRoot } = await import('../../core/broker-packs.js')
-    expect(await readdir(brokerPackEngineRoot('ccxt'))).toEqual([])
+    expect(await readdir(brokerPackEngineRoot('ccxt'))).toEqual(['update-operations'])
+    const receipts = await readdir(join(brokerPackEngineRoot('ccxt'), 'update-operations'))
+    expect(JSON.parse(await readFile(join(brokerPackEngineRoot('ccxt'), 'update-operations', receipts[0]!), 'utf8')).phase).toBe('recovery')
   })
 
   it('keeps the previous active release when a repair download fails validation', async () => {

@@ -678,6 +678,25 @@ export const ja: Resources = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "この計画を終了して再確認",
+      "title": "まとめて更新",
+      "description": "更新対象を確認します。進行状況はこのコンピューターに保存され、再起動後も続行できます。ファイルの競合はワークスペースで確認してください。",
+      "client": "このアプリ",
+      "backend": "選択中のリモートバックエンド",
+      "review": "選択した更新を確認",
+      "approve": "承認して開始",
+      "resume": "保存した更新を続行",
+      "phase": {
+        "approved": "承認済み",
+        "running": "更新中",
+        "waiting": "再起動または準備完了待ち",
+        "blocked": "問題の解決待ち",
+        "failed": "更新に失敗",
+        "recovery": "担当機能での復旧が必要",
+        "succeeded": "完了"
+      }
+    },
     title: '設定',
     group: {
       general: '一般',

@@ -8,6 +8,23 @@ Related guides: [[docs/project-structure.md]],
 [[docs/model-semantics-and-runtime-injection.md]], and
 [[docs/development-workflow.md]].
 
+## Update readiness and acceptance
+
+[[docs/update-lifecycle.md]] owns coordinated update semantics. Electron keeps
+its native installer and local `userData/update-operations/` receipt; the relay
+or desktop control plane persists a composed plan under `update-control/`.
+A native handoff is complete only when the exact approved app version starts,
+the renderer is ready, and the required integrated Alice service reports that
+version. A separated client verifies its local shell; backend readiness belongs
+to the selected Runtime. No Workspace Agent or Studio is started for this check.
+
+`electron:smoke:workspace` seeds a durable native handoff, then starts a new
+unsigned packaged process and checks real readiness through preload. It also
+checks the shared Skills inventory. `scripts/desktop-startup-smoke.mjs` accepts
+`--app-path <executable> --connected-home <disposable-running-project>` to prove
+packaged separated inventory without taking local project ownership. Native
+signature/notarization and Windows installer replacement remain release gates.
+
 ## Product Contract
 
 A packaged OpenAlice install must be able to open a Workspace on a fresh

@@ -1,3 +1,4 @@
+import { ProjectUpdateCoordinator } from './project-update-coordinator.js'
 import { readUpdatePreferences, type UpdatePreferences } from '../core/update-preferences.js'
 import { readHarnessSource } from './harness-source.js'
 import type { WorkspaceService } from './service.js'
@@ -31,7 +32,10 @@ export class WorkspaceUpdateService {
   private policyFlight: Promise<void> | null = null
   private stopped = false
 
-  constructor(private readonly service: Pick<WorkspaceService, 'registry' | 'sourceUpgrades'>) {}
+  readonly coordinator: ProjectUpdateCoordinator
+  constructor(private readonly service: Pick<WorkspaceService, 'registry' | 'sourceUpgrades'> & Partial<Pick<WorkspaceService, 'templates' | 'templateUpgrades' | 'aliceHarnessUpgrades'>>) {
+    this.coordinator = new ProjectUpdateCoordinator(service as WorkspaceService)
+  }
 
   list(): readonly WorkspaceUpdateState[] { return [...this.states.values()] }
 

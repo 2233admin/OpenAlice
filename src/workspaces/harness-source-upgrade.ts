@@ -1,3 +1,5 @@
+import { recordOwnerUpdate, projectUpdateUnit } from '@traderalice/update-lifecycle'
+import { FileUpdateJournal } from '@traderalice/update-lifecycle/node'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -190,6 +192,11 @@ export class HarnessSourceUpgradeManager {
         preparedAt: new Date().toISOString(),
       }
       await atomicWriteJson(join(workspace.dir, JOURNAL_REL), journal)
+      const unit = projectUpdateUnit(`source:${workspace.id}`, 'source', workspace.dir, { version: receipt.version, commit: receipt.commit }, { version: target.version, commit: target.commit });
+      return await recordOwnerUpdate({
+        journal: new FileUpdateJournal(join((await runGit(workspace.dir, ['rev-parse', '--absolute-git-dir'])).trim(), 'openalice-updates'), unit.id),
+        unit, fingerprint: plan.planDigest, id: plan.planDigest, receipt: result => result.commit,
+        apply: async () => {
       try {
         await runGit(workspace.dir, [
           '-c', 'user.email=launcher@local',
@@ -205,7 +212,7 @@ export class HarnessSourceUpgradeManager {
         await runGit(workspace.dir, [
           '-c', 'user.email=launcher@local',
           '-c', 'user.name=OpenAlice',
-          'commit', '-q', '-m', `harness(${template.name}): upgrade ${receipt.version} -> ${target.version}`,
+          'commit', '-q', '-m', `harness(${template.name}): upgrade ${receipt.version} -> ${target.version}\n\nOpenAlice-Source-Upgrade: ${plan.planDigest}`,
         ])
         const commit = (await runGit(workspace.dir, ['rev-parse', 'HEAD'])).trim()
         await rm(join(workspace.dir, JOURNAL_REL), { force: true })
@@ -221,6 +228,8 @@ export class HarnessSourceUpgradeManager {
         await this.recoverWorkspace(workspace)
         throw err
       }
+        },
+      })
     } finally {
       lease.release()
     }
