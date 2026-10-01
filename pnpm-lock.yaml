@@ -201,6 +201,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 0.83.0
         version: 0.83.0
+      '@traderalice/guardian-runtime':
+        specifier: workspace:*
+        version: link:../guardian-runtime
       '@traderalice/update-lifecycle':
         specifier: workspace:*
         version: link:../update-lifecycle

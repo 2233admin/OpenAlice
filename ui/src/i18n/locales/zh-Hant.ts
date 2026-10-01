@@ -950,7 +950,7 @@ export const zhHant: Resources = {
       sshTarget: 'SSH 目標', label: '機器名稱', sshPort: 'SSH 連接埠', identityFile: '本機 SSH 金鑰路徑', optional: '選填',
       probing: '正在檢查 SSH 和遠端執行環境…', sshNote: '使用本機的 OpenSSH 設定。', probe: '探測機器',
       finding: '正在檢查已儲存的機器…', current: '目前', health: '健康狀態與安裝', update: '檢查更新',
-      updateDescription: '與本機 OpenAlice 版本比較，並預覽安全的更新計畫。', checkUpdate: '探測並預覽',
+      updateDescription: '檢查此機器的更新通道，預覽安裝與啟用計畫。', checkUpdate: '探測並預覽',
       review: '確認機器變更計畫', runtime: '執行環境', plannedActions: '預計執行', noChanges: '無需變更遠端',
       deferred: '此執行環境可以繼續使用，但無法安全地啟用更新。',
       restartNotice: '遠端執行環境重新啟動期間，執行中的工作階段可能中斷。',

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MachineUpgradeDialog } from './MachineUpgradeDialog'
 import type { MachinePlan, MachineOperation } from '../../lib/updates/machine-types'
-const plan: MachinePlan = { id: 'p1', mode: 'upgrade', machine: { key: 'cloud', label: 'Cloud', sshTarget: 'example.test' }, project: null, platform: 'linux', installedVersion: '1.0.0', targetVersion: '1.1.0', runtime: 'running', actions: ['Restart backend'], blocker: null, deferredUpdate: false, expiresAt: '2099-01-01' }
+const plan: MachinePlan = { id: 'p1', mode: 'upgrade', machine: { key: 'cloud', label: 'Cloud', sshTarget: 'example.test' }, project: null, platform: 'linux', activeVersion: '1.0.0', installedVersion: '1.0.0', targetVersion: '1.1.0', runtime: 'running', actions: ['Restart backend'], blocker: null, deferredUpdate: false, expiresAt: '2099-01-01' }
 const operation: MachineOperation = { id: 'o1', planId: 'p1', mode: 'upgrade', phase: 'running', stage: 'restarting', startedAt: '2026-09-29', error: null }
 afterEach(cleanup)
 it('shows probe loading without exposing an approval button', () => {

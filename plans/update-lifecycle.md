@@ -619,3 +619,68 @@ UI typecheck passed. Demo Settings at a narrow desktop width and 390px mobile
 width showed one Chat update across the breadcrumb, while AQ remained an
 automatic wait. Keyboard entry from the avatar focused Versions & updates;
 the summary focused the exact Chat row. No installation command was invoked.
+
+
+## 2026-10-01 native remote activation and rehearsal convergence
+
+Authorized after the real stable-installed/beta-running incident. The shared
+comparison was correct, while SSH required exact client provenance and only
+restarted in the same transaction that installed bytes. Rehearsal had a separate
+planner and could not detect either production failure.
+
+This increment carries native SSH release selection, activation-only planning,
+and evidence-checked stage receipts through the shared core. The simulator uses
+that core for client/backend release stages; native SSH writes private atomic
+receipts and resumes the same target after controller loss. GUI updates discover
+the remote installation's own channel. Existing installer, Guardian and package
+manager ownership remain intact. Shared installation changes are serialized per
+SSH profile on this client; remote ownership remains authoritative.
+
+The existing review dialog keeps its interaction/focus primitives and responsive
+grid. It now displays running, installed and target values rather than treating
+an installed release as the active one. No new navigation or approval surface.
+
+- [x] Reproduce stable installed / beta active in the real planner and record
+  parity with a selectable rehearsal fixture.
+- [x] Reuse shared target selection and stage transitions; activation without
+  reinstall, owner replacement rejection, and no implicit channel downgrade.
+- [x] Persist approved target/home/owner and resume installed/stopped/active
+  states; include GUI relay reconnection before successful completion.
+- [x] Run full hermetic/type/critical gates, real browser rehearsal and native
+  SSH/Electron package acceptance; results and baseline failures recorded below.
+
+Acceptance on macOS ARM64, with a disposable Linux ARM64 SSH host:
+
+- Root, UI, CLI, shared-package and desktop typechecks passed. Focused production,
+  rehearsal and inventory regressions passed; the complete UI owner suite passed
+  (359 files / 2,063 tests). The required critical receipt
+  reports `acceptance=true`.
+- Full hermetic run: 884 files / 7,556 tests passed; six pre-existing fixture
+  failures remain in three files (four preference-isolation failures, #1686;
+  two Darwin synthetic executable failures, #1687). One file / eight tests were
+  skipped. This is a recorded baseline limitation, not a green full-suite claim.
+- Real browser rehearsal approved stable-installed/beta-active, reloaded after
+  activation, then completed verification and reconnection with no install stage.
+- Electron build, PTY smoke, unsigned packaged Workspace acceptance (all twelve
+  checks), clean installer smoke and Guardian recovery smoke passed.
+- The complete SSH lane passed registration, native start, inventory, relay,
+  reconnect, structured stop and real TUI/project transfer. Its published-release
+  extension installed `0.94.1-beta.2`, kept that process alive while installing
+  `0.94.1`, activated without reinstalling, interrupted relay restoration, then
+  recovered over actual SSH/HTTP without a second restart. No user remote was
+  modified. Native Linux x64 remains covered by identity fixtures, not this
+  machine's ARM64 artifact execution.
+
+Real acceptance also exposed missing explicit home selection on a fresh host,
+an unset-default inventory envelope rejected by its own consumer, and a dev
+archive reuse error. Those are repaired here with regressions. The Docker build
+now includes the pure desktop activity modules imported by the shared UI; smoke
+assertions preserve the actual pre-transfer default rather than assuming one.
+The GUI keeps stopped projects selectable for activation recovery. Reloading
+Settings exposed a provider-mount generation race that stranded Machine
+discovery in loading; a failing regression reproduced it before the fix.
+
+This does not mark the full plan complete: native desktop self-update and
+Workspace content still have owner-specific operations, and a durable operation
+spanning all units remains future work. The native SSH/rehearsal slice is shared;
+source-checkout preparation and explicit takeover keep their distinct contract.

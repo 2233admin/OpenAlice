@@ -943,7 +943,7 @@ export const ja: Resources = {
       sshTarget: 'SSH 接続先', label: 'マシン名', sshPort: 'SSH ポート', identityFile: 'ローカル SSH 鍵のパス', optional: '任意',
       probing: 'SSH とリモートランタイムを確認中…', sshNote: 'このコンピューターの OpenSSH 設定を使用します。', probe: 'マシンを調査',
       finding: '保存済みマシンを確認中…', current: '現在', health: '稼働状況とインストール', update: '更新を確認',
-      updateDescription: 'ローカルの OpenAlice と比較し、安全な更新計画を確認します。', checkUpdate: '調査して確認',
+      updateDescription: 'このマシンの更新チャンネルを確認し、インストールと有効化の計画を確認します。', checkUpdate: '調査して確認',
       review: 'マシンの変更計画', runtime: 'ランタイム', plannedActions: '予定される操作', noChanges: 'リモートの変更なし',
       deferred: 'このランタイムは再利用できますが、更新を安全に有効化できません。',
       restartNotice: 'リモートランタイムの再起動中、実行中のセッションが切断される場合があります。',

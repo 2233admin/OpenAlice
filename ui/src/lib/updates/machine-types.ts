@@ -4,6 +4,7 @@ export interface MachinePlan {
   machine: { key: string | null; label: string; sshTarget: string }
   project: { key: string; displayName: string } | null
   platform: string
+  activeVersion: string | null
   installedVersion: string
   targetVersion: string
   runtime: string

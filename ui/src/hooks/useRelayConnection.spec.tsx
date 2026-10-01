@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useRelayConnection } from './useRelayConnection'
@@ -15,6 +16,18 @@ afterEach(() => {
 })
 
 describe('useRelayConnection transport', () => {
+  it('does not invalidate a child inventory refresh during provider mounting', async () => {
+    const bridge = { status: vi.fn().mockResolvedValue(status), fleet: vi.fn().mockResolvedValue(fleet),
+      startupTarget: vi.fn().mockResolvedValue({ target: null, error: null }) }
+    Object.defineProperty(window, 'openAlice', { value: { desktopConnection: bridge }, configurable: true })
+    function Child({ connection }: { connection: ReturnType<typeof useRelayConnection> }) {
+      useEffect(() => { void connection.refresh() }, [connection.refresh])
+      return <output>{connection.loading ? 'checking' : connection.fleet.length}</output>
+    }
+    function Provider() { return <Child connection={useRelayConnection(status)} /> }
+    render(<Provider />)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('1'))
+  })
   it('loads the selected target and inventory together', async () => {
     const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/status')
       ? { schemaVersion: 1, generation: 3, target: { machine: 'local', project: 'default' }, switching: false }

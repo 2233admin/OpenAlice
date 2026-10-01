@@ -97,9 +97,30 @@ shared cache primitive rather than an independent promise/expiry implementation.
 
 ## Current migration boundary
 
-Project/SSH orchestration and operation journals still need migration into the
-shared coordinator; the rehearsal execution reducer is still separate. Local client policy and host discovery now have separate authority; terminal
-passive notices still need convergence with that resource.
+Native SSH Runtime updates and rehearsal release stages now use the same
+`planRuntimeUpdate` and `transitionRuntimeOperation` contract. The planner
+separates installed, active and target identity, retains newer installations,
+and plans activation without installation when bytes are already present.
+The SSH adapter validates target-local provenance, control compatibility and
+owner identity; the rehearsal supplies explicit fixture evidence. Its publication,
+client restart presentation and Workspace-content scenarios remain adapters,
+not production compatibility evidence.
+
+Native remote execution records its approved target, selected project home,
+original owner and stage receipts in `<remote-targets.json>.updates/` on the
+controlling client. The existing process-identity lock serializes controllers on
+that client per SSH profile. A new controller probes actual state, preserves the
+recorded target, requires fresh plan consent for remaining mutations, and only
+performs unfinished installation/activation/reconnect work. An unrelated owner
+or changed installed target blocks recovery. Remote Guardian ownership and the
+installer transaction remain their own authorities; this is not a distributed
+fleet lock. Receipt writes are atomic, private, and contain no credentials.
+The version-1 journal is new state, not a migration of an existing shipped shape.
+
+Local client policy and host discovery have separate authority. Native desktop
+self-update and Workspace operations retain their owner engines; a durable
+operation spanning those units and SSH is still outside this increment.
+Terminal passive notices also still need convergence with discovery.
 Do not infer full lifecycle or real installation acceptance from discovery or
 IPC-mock tests. Advance the canonical plan rather than introduce another public
 hook or independent request-ordering rule.
