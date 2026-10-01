@@ -247,7 +247,7 @@ async function main() {
       join(homedir(), '.local', 'bin'),
     ].filter(Boolean)
     const env = {
-      ...process.env,
+      ...(smokeRoot ? desktopSmokeStateEnv(smokeRoot, process.env) : process.env),
       ...plan.launchEnv,
       PATH: [process.env['PATH'], ...pathAdditions].filter(Boolean).join(delimiter),
       OPENALICE_EXTRA_AGENT_PATH: pathAdditions.join(delimiter),
@@ -258,7 +258,6 @@ async function main() {
       env.OPENALICE_UTA_PORT = String(await getAvailablePort())
     }
     if (!realData && smokeHome && smokeWorkspaces && smokeGlobal) {
-      Object.assign(env, desktopSmokeStateEnv(smokeRoot))
       mkdirSync(env.HOME, { recursive: true })
     }
 

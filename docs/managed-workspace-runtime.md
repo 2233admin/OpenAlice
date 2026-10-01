@@ -176,10 +176,19 @@ provider, and Save. It reads back the saved credential, binds it to Chat, requir
 readiness failure or an exit-zero process without the expected reply fails the gate.
 The mock also requires observed credential-test and native reply requests.
 
-Every temporary packaged smoke (including interactive and Workspace modes) owns
-OS-home/XDG, Pi, OpenAlice, Supervisor, global, and Electron state beneath its smoke
-root; inherited `PI_CODING_AGENT_DIR` never wins over that boundary. The sentinel
-regression invokes the real Pi trust writer against a disposable inherited parent.
+Every temporary packaged smoke (including interactive and Workspace modes) constructs
+its child environment from a host-plumbing allowlist, isolated roots and explicit
+runner flags. Ambient provider keys, tokens, endpoints and native config overrides
+are not inherited; a native missing-login probe cannot use the caller's provider
+authentication. Build/install subprocesses retain their normal tool environment.
+Temporary app launches own OS-home/XDG, Pi, OpenAlice, Supervisor, global, and
+Electron roots beneath their smoke root. The shared environment owner overrides the known Codex, Claude, Cursor and Grok directory variables and
+clears OMP profile selectors. Independent `PI_CODING_AGENT_SESSION_DIR` is cleared
+so Pi and its adapter use the same default session layout under the isolated Pi
+root. The sentinel integration verifies the real spawn environment, Pi trust writer
+and session-title lookup against a disposable inherited parent. Native reply/session
+persistence is validated with managed Pi; this does not certify every third-party
+CLI's optional external configuration, plugins or arbitrary path overrides.
 Onboarding can run with an unsigned Linux package; this does not replace macOS ARM
 packaging, signing, or notarization acceptance.
 
