@@ -3,6 +3,7 @@ import type { UpdateUnit, UpdatePlan, UpdateOperation, ClientUpdatePreferences, 
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
+import { projectSetupFailures, useSharedProjectWorkspaceSetup } from './useProjectWorkspaceSetup'
 import { useMachineControls } from './useMachineControls'
 import { useBackendRecoverySignal } from '../auth/AuthContext'
 import { useWorkspaces } from '../contexts/workspaces-context'
@@ -86,6 +87,7 @@ class UnsupportedUpdatesError extends Error {}
 
 export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const machines = useMachineControls()
+  const projectSetup = useSharedProjectWorkspaceSetup()
   const [inventoryError, setInventoryError] = useState<string | null>(null)
   const [inventoryCheckedAt, setInventoryCheckedAt] = useState<number | null>(null)
   const [inventory, setInventory] = useState<UpdateUnit[]>([])
@@ -374,8 +376,9 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       app, backend, ...project,
       availableCount: Number(app) + Number(backend) + project.workspaceIds.length,
       needsAttentionCount: project.needsAttentionWorkspaceIds.length,
+      setupCount: projectSetupFailures(projectSetup?.setup ?? null, projectSetup?.error ?? null).length,
     }
-  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences, workspacePlans, planRevision])
+  }, [client, nativeStatus, versionInfo, workspaceStates, workspaces, preferences, projectSetup, workspacePlans, planRevision])
   const availableCount = guidance.availableCount
 
   const value = useMemo<UpdateLifecycle>(() => ({

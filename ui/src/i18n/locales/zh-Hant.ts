@@ -274,7 +274,7 @@ export const zhHant: Resources = {
     noReadme: "此工作區還沒有 README.md。你可以讓 Agent 撰寫一份說明，介紹它的用途和內容。",
     noGuide: "暫無 Harness 指南。",
   },
-  projectSetup: { connectPi: '為 Chat 設定 Pi 的 AI 提供方', title: '部分工作區尚未準備完成', description: '專案已建立。可以重試準備剩餘工作區，也可以先使用已就緒的工作區。', pending: '等待準備', preparing: '正在準備…' },
+  projectSetup: { status: '工作區準備狀態', setupFailed: '準備失敗', connectPi: '為 Chat 設定 Pi 的 AI 提供方', title: '部分工作區尚未準備完成', description: '專案已建立。可以重試準備剩餘工作區，也可以先使用已就緒的工作區。', pending: '等待準備', preparing: '正在準備…' },
   quickStart: { chooseHarness: '選擇 Harness' },
   pet: {
     title: '桌寵', sound: '點擊音效',

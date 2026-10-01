@@ -7,12 +7,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { VersionInfo } from '../api/types'
 
 const mocks = vi.hoisted(() => ({
+  projectSetup: null as { setup: { phase: 'complete'; pending: string[]; errors?: Record<string, string> }; error: string | null } | null,
   getVersion: vi.fn(), currentVersion: vi.fn(), checkVersion: vi.fn(),
   workspaces: [] as { id: string; template?: string; upgradeAvailable?: { to: string } }[],
   backendUnavailable: false,
   backendRecoveryGeneration: 0,
   refreshWorkspaces: vi.fn(async () => undefined),
 }))
+vi.mock('./useProjectWorkspaceSetup', async importOriginal => ({ ...await importOriginal<any>(), useSharedProjectWorkspaceSetup: () => mocks.projectSetup }))
 vi.mock('./useRelayConnection', () => ({ useRelayConnection: () => ({ refresh: async () => undefined }) }))
 vi.mock('../api', () => ({ api: { version: {
   get: mocks.getVersion, current: mocks.currentVersion, check: mocks.checkVersion,
@@ -42,6 +44,7 @@ const workspacePreview = {
 
 beforeEach(() => {
   mocks.workspaces = []
+  mocks.projectSetup = null
   mocks.backendUnavailable = false
   mocks.backendRecoveryGeneration = 0
   mocks.getVersion.mockResolvedValue(version)
@@ -299,4 +302,18 @@ it('retains local client policy across backend switches and checks while the bac
   expect(result.current.client?.currentVersion).toBe('0.94.1')
   expect(requests).toHaveBeenCalledWith('/relay/v1/updates/check', expect.objectContaining({ method: 'POST' }))
   expect(result.current.versionInfo).toBeNull()
+})
+
+it('projects setup recovery independently of update candidates and clears it after recovery', async () => {
+  mocks.getVersion.mockResolvedValue({ ...version, hasUpdate: false, latest: null })
+  mocks.projectSetup = { setup: { phase: 'complete', pending: ['auto-quant'], errors: { 'auto-quant': 'clone failed' } }, error: null }
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
+  const { result, rerender } = renderHook(useUpdateLifecycle, { wrapper })
+  await waitFor(() => expect(result.current.preferences).toEqual(preferences))
+  expect(result.current.guidance.setupCount).toBe(1)
+  expect(result.current.guidance.availableCount).toBe(0)
+  expect(result.current.guidance.needsAttentionCount).toBe(0)
+  mocks.projectSetup = { setup: { phase: 'complete', pending: [] }, error: null }
+  rerender()
+  expect(result.current.guidance.setupCount).toBe(0)
 })

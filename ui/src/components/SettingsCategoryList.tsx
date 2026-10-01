@@ -166,11 +166,11 @@ export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
                 label={t(item.labelKey)}
                 active={active}
                 icon={<item.Icon size={14} strokeWidth={1.75} className="text-muted-foreground/70" aria-hidden />}
-                trail={item.category === 'general' ? <><UpdateGuidanceBadge count={guidance?.availableCount ?? 0} /><UpdateGuidanceBadge count={guidance?.needsAttentionCount ?? 0} tone="attention" /></> : undefined}
+                trail={item.category === 'general' ? <><UpdateGuidanceBadge count={guidance?.availableCount ?? 0} setupCount={guidance?.setupCount ?? 0} /><UpdateGuidanceBadge count={guidance?.needsAttentionCount ?? 0} tone="attention" /></> : undefined}
                 onClick={() => {
                   openOrFocus({ kind: 'settings', params: { category: item.category } })
                   onSelect?.()
-                  if (item.category === 'general' && (guidance?.availableCount || guidance?.needsAttentionCount)) focusVersionOverviewAfterNavigation()
+                  if (item.category === 'general' && (guidance?.availableCount || guidance?.needsAttentionCount || guidance?.setupCount)) focusVersionOverviewAfterNavigation()
                 }}
               />
             )

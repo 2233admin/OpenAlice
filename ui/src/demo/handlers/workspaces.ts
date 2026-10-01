@@ -2,7 +2,7 @@ import type { SessionBlock } from '../../hooks/useSessionControl'
 import stickerWave from '../fixtures/sticker-wave.json'
 import { demoChatWorkflowReply, demoChatWorkflowTitle } from '../fixtures/chat-workflows'
 import { stickerHandlers } from './stickers'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { demoCredentialPresets } from './configKeys'
 import type { AliceHarnessConfig } from '../../hooks/useAliceHarness'
 import {
@@ -42,6 +42,14 @@ import type {
 
 import type { TakeoverRequest } from '../../hooks/useSessionTakeovers'
 import { demoHarnessSourceCandidate } from './updates'
+
+// Isolated setup-recovery walkthrough: ?workspaceSetup=failed|preparing|read-error.
+let demoSetupScenario = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('workspaceSetup') : null
+function demoProjectSetup() {
+  return { schemaVersion: 1, pending: demoSetupScenario === 'failed' || demoSetupScenario === 'preparing' ? ['auto-quant'] : [],
+    errors: demoSetupScenario === 'failed' ? { 'auto-quant': 'Demo: Workspace source could not be downloaded.' } : {},
+    phase: demoSetupScenario === 'preparing' ? 'preparing' : 'complete' }
+}
 const demoTakeoverPreview = typeof location !== 'undefined' && new URLSearchParams(location.search).has('takeover')
 let demoTakeover: TakeoverRequest | null = null
 let demoTakeoverSeconds = 60
@@ -547,8 +555,13 @@ export const workspacesHandlers = [
     demoAutoQuantDefaultWorkspaceId = workspace.id
     return HttpResponse.json({ defaultWorkspaceId: workspace.id, ready: true })
   }),
-  http.get('/api/workspaces/project-setup', () => HttpResponse.json({ schemaVersion: 1, pending: [], errors: {}, phase: 'complete' })),
-  http.post('/api/workspaces/project-setup/retry', () => HttpResponse.json({ schemaVersion: 1, pending: [], errors: {}, phase: 'complete' })),
+  http.get('/api/workspaces/project-setup', () => demoSetupScenario === 'read-error'
+    ? HttpResponse.json({ error: 'Demo: preparation status unavailable.' }, { status: 503 }) : HttpResponse.json(demoProjectSetup())),
+  http.post('/api/workspaces/project-setup/retry', async () => {
+    await delay(700)
+    demoSetupScenario = null
+    return HttpResponse.json(demoProjectSetup())
+  }),
   http.post('/api/workspaces/chat/initialize', () => {
     const workspace = demoWorkspaces.find((candidate) => candidate.template === 'chat')
     if (!workspace) {
