@@ -114,10 +114,6 @@ export const laneSuites = {
 export const laneSuiteNames = Object.freeze(Object.keys(laneSuites))
 
 const workflowContractIncludes = [
-  'tests/integration/test-selection/test-collection-inputs.spec.ts',
-  'tests/integration/test-selection/test-lanes.spec.ts',
-  'tests/integration/test-selection/test-suites.spec.ts',
-  'tests/integration/test-selection/test-results.spec.ts',
   'scripts/classify-beta-release-prep.spec.mjs',
   'scripts/prepare-cli-neutral-inputs.spec.mjs',
   'scripts/ci-workflow.spec.ts',
@@ -132,18 +128,14 @@ const platformContractIncludes = [
   'scripts/guardian/shared.spec.ts',
   'scripts/pnpm-command.spec.ts',
   'services/connector/src/core/io-journal.spec.ts',
-  'tests/e2e/uta-startup/uta-startup-resilience.spec.ts',
   'src/core/windows-workspace-shell.spec.ts',
   'src/services/auth/session-store.spec.ts',
   'src/services/auth/token-store.spec.ts',
-  'tests/integration/agent-configuration/ai-config.spec.ts',
   'src/workspaces/adapters/shell.spec.ts',
   'src/workspaces/agent-conversation-log.spec.ts',
   'src/workspaces/agent-detect.spec.ts',
-  'tests/e2e/cli-shims/shim.spec.ts',
   'src/workspaces/headless-task-win-shim.spec.ts',
   'src/workspaces/spawn-env.spec.ts',
-  'tests/integration/windows-headless-command/win-command.spec.ts',
   'src/workspaces/workspace-creator.spec.ts',
 ]
 
@@ -176,60 +168,35 @@ export const areaSuites = {
   'market-data': {
     description: 'Alice/UTA public market-data and provider reads.',
     roots: ['src/domain/market-data', 'packages/opentypebb'],
-    includes: [
-      'tests/integration/hyperliquid-market-data/ccxt-hyperliquid-markets.spec.ts',
-      'tests/integration/broker-market-data/CcxtBroker.spec.ts',
-    ],
   },
   ibkr: {
     description: 'IBKR package, adapter, and paper-account acceptance.',
     roots: ['packages/ibkr', 'packages/uta-broker-ibkr', 'services/uta/src/domain/trading/brokers/ibkr'],
-    includes: [
-      'tests/integration/broker-ibkr-paper/ibkr-paper.spec.ts',
-      'tests/integration/broker-ibkr-paper/uta-ibkr.spec.ts',
-    ],
   },
   bybit: {
     description: 'Bybit demo-account acceptance.',
-    includes: [
-      'tests/integration/broker-bybit-paper/ccxt-bybit.spec.ts',
-      'tests/integration/broker-bybit-paper/uta-bybit.spec.ts',
-      'tests/integration/broker-bybit-paper/uta-ccxt-bybit.spec.ts',
-    ],
   },
   okx: {
     description: 'OKX demo-account acceptance.',
-    includes: ['tests/integration/broker-okx-paper/ccxt-okx.spec.ts'],
   },
   alpaca: {
     description: 'Alpaca paper-account acceptance.',
-    includes: [
-      'tests/integration/broker-alpaca-paper/alpaca-paper.spec.ts',
-      'tests/integration/broker-alpaca-paper/uta-alpaca.spec.ts',
-    ],
   },
   hyperliquid: {
     description: 'Hyperliquid read-only or demo-account acceptance.',
-    includes: [
-      'tests/integration/hyperliquid-market-data/ccxt-hyperliquid-markets.spec.ts',
-      'tests/integration/broker-hyperliquid-paper/ccxt-hyperliquid.spec.ts',
-    ],
   },
   'bybit-diagnostic': {
     description: 'Manual raw broker diagnostic that market-buys and best-effort closes.',
-    includes: ['tests/integration/bybit-diagnostic/ccxt-raw-diagnostic.spec.ts'],
   },
   'uta-paper': {
     description: 'Configured UTA paper sweep, excluding the raw market-buy diagnostic.',
     roots: ownerSuites.uta.roots,
-    excludes: ['tests/integration/bybit-diagnostic/ccxt-raw-diagnostic.spec.ts'],
   },
 }
 
 export const areaSuiteNames = Object.freeze(Object.keys(areaSuites))
 
 const collectionRoots = ['src', 'packages', 'services', 'apps', 'scripts', 'ui', 'tests']
-const systemTestFiles = new Set()
 
 function isWithin(file, root) {
   return file === root || file.startsWith(`${root}/`)
@@ -276,7 +243,6 @@ export function isRiskLaneTest(file) {
   return normalized.includes('.e2e.spec.')
     || normalized.includes('.bbProvider.spec.')
     || normalized.includes('.live.spec.')
-    || systemTestFiles.has(normalized)
 }
 
 export function isHermeticDefaultTest(file) {
@@ -288,13 +254,7 @@ export function lanesForTestFile(file) {
   const normalized = slash(file)
   const central = registeredTestDefinitions.find((test) => test.path === normalized)
   if (central) return [central.lane]
-  return [
-    isHermeticDefaultTest(normalized) && 'hermetic',
-    matchesAny(normalized, integrationIncludes) && 'integration',
-    matchesAny(normalized, externalReadonlyIncludes) && 'external-readonly',
-    matchesAny(normalized, livePaperIncludes) && 'live-paper',
-    systemTestFiles.has(normalized) && 'system',
-  ].filter(Boolean)
+  return isHermeticDefaultTest(normalized) ? ['hermetic'] : []
 }
 
 export function ownersForTestFile(file) {

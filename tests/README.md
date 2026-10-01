@@ -48,5 +48,6 @@ external Connector recovery, venue timing or complete remote process cleanup.
 Those limits remain; directory moves and green local fixtures do not close them.
 Suite scopes and dedicated-runner prerequisites describe bounded evidence.
 
-The ongoing cleanup in [[plans/test-system-grouping.md]] reviews existing tests
-only. No new test cases or coverage expansion are part of this migration.
+The hierarchy migration reorganized and pruned existing tests without adding
+test cases or expanding product coverage. Missing product evidence remains a
+separate concern from complete registration of the tests that already exist.

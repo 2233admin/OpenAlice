@@ -43,11 +43,10 @@ side effects, not these scope levels.
 Register higher-tier suites in `tests/suites.json`, with purpose, tier, owner,
 execution lane, files or dedicated commands, and honest scope limits. Unit
 specs require no registration. The former scenario/contract assertion matrices
-and their per-test title references have been removed. The remaining existing
-test classification review is tracked in [[plans/test-system-grouping.md]].
-
-This cleanup processes existing tests only: relocation, consolidation, pruning
-and metadata repair. Do not add cases or expand product coverage during it.
+and their per-test title references have been removed. A module with several
+focused unit files may use `<module>.<topic>.spec.ts` beside its implementation.
+Higher-tier files containing some unit cases remain registered as a whole;
+scope descriptions state which collaborators are real and which are fixtures.
 
 ## Suite discovery and selection
 
@@ -77,6 +76,13 @@ and unregistered higher-tier files. Inventory reports tier and suite separately;
 a unit's null suite is normal. Scope review must still inspect real collaborators:
 renaming a file is not evidence of its integration or E2E fidelity.
 
+Central suites keep their owner's Node/jsdom Vitest project. Their direct
+harness imports are root development dependencies at the same installed
+versions used by the owning packages; production dependency ownership does
+not change. `pnpm exec tsc -p tests/tsconfig.json --noEmit` checks moved specs,
+including JSX. Both source-contract and dev clean-build CI run this check so
+relocation does not silently remove test code from TypeScript verification.
+
 ## Required local evidence and run receipts
 
 `pnpm test:critical --receipt artifacts/tests/critical-local.json` runs the
@@ -89,14 +95,14 @@ they do not certify browser onboarding, a real agent login, native Dock/tray
 interaction, or a venue account.
 
 The gate runs its entire declared hermetic and integration evidence. It rejects
-owner/lane/group/path/changed filters and forwarded Vitest arguments. Each
+owner/lane/suite/tier/path/changed filters and forwarded Vitest arguments. Each
 required assertion must appear exactly once and actually pass: missing,
 ambiguous, skipped and failed assertions all fail acceptance. Merely passing
 some other assertions in the same file is insufficient.
 
 Every actual `test:select` execution writes a JSON receipt. Use `--receipt` to
 choose a durable output location; otherwise the runner prints its temporary
-receipt path. JSON/list/explain/group/inventory modes remain data-only and do
+receipt path. JSON/list/explain/suite/inventory modes remain data-only and do
 not write a run receipt. Receipts record source commit and index tree, dirty
 state, host/Node identity, selectors, per-invocation executed/passed/failed/
 skipped assertion counts, required evidence and unexecuted invocations. The
@@ -297,10 +303,11 @@ can establish whether a supposedly covered regression actually fails the test;
 restore the mutation before accepting the change. Test counts and line coverage
 are inventory signals, not product acceptance.
 
-1. Decide its side-effect lane before choosing a filename. Ordinary isolated
-   specs are hermetic; deterministic product journeys are integration; public
-   reads are external; account writes are live; host/artifact journeys are
-   system tests.
+1. Decide scope and execution conditions independently. Unit/component specs
+   stay beside their module; integration/E2E suites live under `tests/`.
+   Hermetic module integration can run in the default lane; the serialized
+   local-process profile uses the integration lane. Public reads, paper writes
+   and dedicated host/artifact runners retain their explicit lanes.
 2. Keep same-name unit specs beside their implementation without registration.
    Register integration/E2E files or dedicated acceptance commands once in
    `tests/suites.json`. Keep owner/lane/package/area routing intact when moving
