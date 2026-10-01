@@ -223,6 +223,14 @@ keeps the OpenAlice wordmark without a second portrait. Its trailing ellipsis
 appears on hover, keyboard focus, or while open; touch keeps it visible. The
 trigger highlights for interaction, not because a Settings or Connectors page
 is active. Settings remains an item inside this application menu.
+Project Workspace preparation failures reuse its blue indicator and the Settings
+Overview breadcrumb. Loading and normal preparation never raise a banner or an
+error badge. Overview names the failing Harness preparation, shows its concrete
+cause, and offers the existing project-setup retry, including before a Workspace
+ID exists. Preparation has its own count rather than claiming an available
+update. One project-scoped setup provider shares polling and retries across
+Settings and Harness entry points; successful reads clear transport errors and
+successful preparation refreshes Workspace inventory and default selections.
 Settings and Developer use the same page-owned secondary navigator as Inbox
 and Market from 768px upward. At 768–959px, entering Settings temporarily
 collapses the activity rail so the category navigator and content fit together;

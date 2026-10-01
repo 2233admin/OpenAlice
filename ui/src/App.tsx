@@ -13,6 +13,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { DemoBanner } from './demo/DemoBanner'
 import { DemoAnalytics } from './demo/DemoAnalytics'
 import { WorkspacesProvider } from './contexts/WorkspacesContext'
+import { ProjectWorkspaceSetupProvider } from './hooks/useProjectWorkspaceSetup'
 import { UpdateLifecycleProvider } from './hooks/useUpdateLifecycle'
 import {
   MobilePageNavigationProvider,
@@ -65,15 +66,17 @@ const useHasFullRail = () => useMediaQuery('(min-width: 1280px)') // full rail w
 
 export function App() {
   return (
-    <WorkspacesProvider>
-      <UpdateLifecycleProvider>
-        <SessionTakeoverProvider>
-          <AppShell />
-          <SessionTakeoverDialogHost />
-          <SessionBusyDialogHost />
-          <SessionDetailsDialogHost />
-        </SessionTakeoverProvider>
-      </UpdateLifecycleProvider>
+    <WorkspacesProvider renderContent={content => (
+      <ProjectWorkspaceSetupProvider>
+        <UpdateLifecycleProvider>{content}</UpdateLifecycleProvider>
+      </ProjectWorkspaceSetupProvider>
+    )}>
+      <SessionTakeoverProvider>
+        <AppShell />
+        <SessionTakeoverDialogHost />
+        <SessionBusyDialogHost />
+        <SessionDetailsDialogHost />
+      </SessionTakeoverProvider>
     </WorkspacesProvider>
   )
 }

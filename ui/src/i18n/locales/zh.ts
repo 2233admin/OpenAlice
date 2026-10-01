@@ -270,7 +270,7 @@ export const zh: Resources = {
     noReadme: "此工作区还没有 README.md。你可以让 Agent 撰写一份说明，介绍它的用途和内容。",
     noGuide: "暂无 Harness 指南。",
   },
-  projectSetup: { connectPi: '为 Chat 配置 Pi 的 AI 提供方', title: '部分工作区尚未准备完成', description: '项目已创建。可以重试准备剩余工作区，也可以先使用已就绪的工作区。', pending: '等待准备', preparing: '正在准备…' },
+  projectSetup: { status: '工作区准备状态', setupFailed: '准备失败', connectPi: '为 Chat 配置 Pi 的 AI 提供方', title: '部分工作区尚未准备完成', description: '项目已创建。可以重试准备剩余工作区，也可以先使用已就绪的工作区。', pending: '等待准备', preparing: '正在准备…' },
   quickStart: { chooseHarness: '选择 Harness' },
   pet: {
     title: '桌宠', sound: '点击音效',
@@ -681,6 +681,25 @@ export const zh: Resources = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "结束此计划，重新审阅",
+      "title": "协同升级",
+      "description": "一起审阅明确的升级目标。进度保存在本机，重启后可以继续；文件冲突仍需在工作区审阅。",
+      "client": "当前应用",
+      "backend": "选中的远端后端",
+      "review": "审阅所选升级",
+      "approve": "确认并开始",
+      "resume": "继续已保存的升级",
+      "phase": {
+        "approved": "已确认",
+        "running": "升级中",
+        "waiting": "等待重启或服务就绪",
+        "blocked": "等待处理阻塞",
+        "failed": "升级失败",
+        "recovery": "需要在所属模块恢复",
+        "succeeded": "已完成"
+      }
+    },
     title: '设置',
     group: {
       general: '通用',
@@ -946,7 +965,7 @@ export const zh: Resources = {
       sshTarget: 'SSH 目标', label: '机器名称', sshPort: 'SSH 端口', identityFile: '本机 SSH 密钥路径', optional: '可选',
       probing: '正在检查 SSH 和远端运行态…', sshNote: '使用本机的 OpenSSH 配置。', probe: '探测机器',
       finding: '正在检查已保存的机器…', current: '当前', health: '健康状态与安装', update: '检查更新',
-      updateDescription: '与本机 OpenAlice 版本比较，并预览安全的更新计划。', checkUpdate: '探测并预览',
+      updateDescription: '检查此机器的更新通道，预览安装与激活计划。', checkUpdate: '探测并预览',
       review: '确认机器变更计划', runtime: '运行态', plannedActions: '计划执行', noChanges: '无需更改远端',
       deferred: '此运行态可以继续使用，但无法安全地激活更新。',
       restartNotice: '远端运行态重启期间，运行中的会话可能断开。',

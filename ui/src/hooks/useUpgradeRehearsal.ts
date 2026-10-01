@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import { head } from '../components/dev/upgrade-rehearsal/releases'
 import {
@@ -7,7 +7,7 @@ import {
   scenarios,
   type Action,
 } from '../components/dev/upgrade-rehearsal/model'
-const KEY = 'openalice.dev.upgrade-rehearsal.v2'
+const KEY = 'openalice.dev.upgrade-rehearsal.v3'
 // Persist commands rather than trusting a serialized runtime state. Replaying
 // through the reducer preserves guards and the approved plan after a reload.
 function valid(a: unknown): a is Action {
@@ -55,7 +55,16 @@ export function useUpgradeRehearsal() {
       /* Rehearsal remains usable without storage. */
     }
   }, [actions])
-  const state = useMemo(() => actions.reduce(reduce, initial()), [actions])
+  const [state, setState] = useState(initial)
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      let next = initial()
+      for (const action of actions) next = await reduce(next, action)
+      if (active) setState(next)
+    })()
+    return () => { active = false }
+  }, [actions])
   const discovery = useDiscoverySnapshot<ReturnType<typeof head>>(
     `${state.channel}:${state.publication.heads[state.channel] ?? 'empty'}:${state.client}`,
   )

@@ -1,9 +1,11 @@
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { rm, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import {
   buildRemoteArtifactsProbeCommand,
@@ -23,6 +25,15 @@ import {
   readRememberedRemotePort,
   runSshCommand,
 } from './remote.mjs'
+
+let updateScratch
+beforeEach(async () => {
+  updateScratch = await mkdtemp(join(tmpdir(), 'openalice-remote-update-spec-'))
+  vi.stubEnv('OPENALICE_REMOTE_STATE_FILE', join(updateScratch, 'targets.json'))
+})
+afterEach(async () => { vi.unstubAllEnvs(); await rm(updateScratch, { recursive: true, force: true }) })
+
+vi.mock('./ssh-connect.mjs', () => ({ connectSsh: () => { throw new Error('Hermetic remote specs must inject connectTunnel') } }))
 
 const CLI_VERSION = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -93,7 +104,7 @@ describe('OpenAlice managed remote connector', () => {
   it('blocks mismatched install provenance during planning instead of failing after approval', () => {
     const source = { ...masterInstallSource, cliVersion: '0.94.1-beta', updateChannel: 'stable' }
     expect(buildRemoteInstallCommand.bind(null, source)).toThrow('marked stable')
-    const plan = createRemotePlan(parseRemoteArgs(['host']), compatibleRemote(), { installSource: source })
+    const plan = createRemotePlan(parseRemoteArgs(['host']), missingRemote(), { installSource: source })
     expect(plan.blocker).toContain('marked stable')
   })
 
@@ -266,26 +277,15 @@ describe('OpenAlice managed remote connector', () => {
     expect(plan.blocker).toContain('not the requested source Runtime /srv/requested-source')
   })
 
-  it('updates a protocol-compatible remote CLI when its install source differs from local', () => {
+  it('retains a verified remote installation when client installer provenance differs', () => {
     const remote = compatibleRemote()
-    remote.installSource = {
-      ...masterInstallSource,
-      selector: { kind: 'branch', value: 'dev' },
-      installerUrl: 'https://raw.githubusercontent.com/TraderAlice/OpenAlice/dev/install',
-    }
+    remote.installSource = { ...masterInstallSource, selector: { kind: 'branch', value: 'dev' },
+      installerUrl: 'https://raw.githubusercontent.com/TraderAlice/OpenAlice/dev/install' }
     const plan = createRemotePlan(parseRemoteArgs(['host']), remote)
-    expect(plan.installCli).toBe(true)
-    expect(plan.restartServer).toBe(true)
-    expect(plan.restartOwner).toEqual({
-      pid: 99,
-      instanceId: 'runtime-99',
-      startedAt: '2026-08-31T00:00:00.000Z',
-    })
-    expect(plan.mutations).toEqual([
-      'update remote OpenAlice CLI',
-      'restart remote OpenAlice Server',
-    ])
-    expect(formatRemotePlan(plan)).toContain('update remote OpenAlice CLI; restart remote OpenAlice Server')
+    expect(plan.installCli).toBe(false)
+    expect(plan.restartServer).toBe(false)
+    expect(plan.mutations).toEqual([])
+    expect(plan.installSource).toEqual(remote.installSource)
   })
 
   it('updates a protocol-compatible remote CLI when only its CLI version differs', () => {
@@ -294,7 +294,7 @@ describe('OpenAlice managed remote connector', () => {
     remote.installSource = { ...masterInstallSource, cliVersion: '0.1.0' }
     const plan = createRemotePlan(parseRemoteArgs(['host']), remote)
     expect(plan.cliCompatible).toBe(true)
-    expect(plan.cliMatchesLocal).toBe(false)
+    expect(plan.cliMatchesTarget).toBe(false)
     expect(plan.mutations).toEqual([
       'update remote OpenAlice CLI',
       'restart remote OpenAlice Server',
@@ -466,7 +466,7 @@ describe('OpenAlice managed remote connector', () => {
     expect(plan.cloneSource).toBe(false)
   })
 
-  it('updates a matching-version remote CLI when its installed payload differs', () => {
+  it('retains verified remote bytes when a same-version client has different bytes', () => {
     const remote = compatibleRemote()
     remote.cliContentIdentity = '1111111111111111'
     remote.managedRuntime = {
@@ -481,11 +481,8 @@ describe('OpenAlice managed remote connector', () => {
       installSource: masterInstallSource,
       contentIdentity: '2222222222222222',
     })
-    expect(plan.cliMatchesLocal).toBe(false)
-    expect(plan.mutations).toEqual([
-      'update remote OpenAlice CLI',
-      'restart remote OpenAlice Server',
-    ])
+    expect(plan.cliMatchesTarget).toBe(true)
+    expect(plan.mutations).toEqual([])
   })
 
   it('reuses one immutable beta release across target-specific payload identities', () => {
@@ -524,7 +521,7 @@ describe('OpenAlice managed remote connector', () => {
       contentIdentity: 'aaaaaaaaaaaaaaaa',
     })
 
-    expect(plan.cliMatchesLocal).toBe(true)
+    expect(plan.cliMatchesTarget).toBe(true)
     expect(plan.installCli).toBe(false)
   })
 
@@ -534,7 +531,7 @@ describe('OpenAlice managed remote connector', () => {
     const plan = createRemotePlan(parseRemoteArgs(['host']), remote, {
       installSource: masterInstallSource,
     })
-    expect(plan.cliMatchesLocal).toBe(false)
+    expect(plan.cliMatchesTarget).toBe(false)
     expect(plan.installCli).toBe(true)
   })
 
@@ -616,6 +613,7 @@ describe('OpenAlice managed remote connector', () => {
     }
     const runRemote = vi.fn()
     const connectTunnel = vi.fn()
+    const onPlan = vi.fn()
 
     await expect(connectRemote(parseRemoteArgs(['host', '--plan']), {
       installSource: localSource,
@@ -624,13 +622,16 @@ describe('OpenAlice managed remote connector', () => {
       probeRemote: async () => remote,
       runRemote,
       connectTunnel,
+      onPlan,
       stdout: { write: vi.fn() },
     })).resolves.toBe(0)
     expect(runRemote).not.toHaveBeenCalled()
     expect(connectTunnel).not.toHaveBeenCalled()
+    expect(onPlan.mock.calls[0][0].installCli).toBe(false)
+    expect(onPlan.mock.calls[0][0].lifecycle.stages).toEqual(['verify', 'reconnect'])
   })
 
-  it('blocks a stale local dev build before mutating the remote host', async () => {
+  it('retains a verified remote release when the local dev client is stale', async () => {
     const localSource = devInstallSource({
       platform: 'darwin',
       arch: 'arm64',
@@ -644,8 +645,9 @@ describe('OpenAlice managed remote connector', () => {
       fetchDevManifestDocumentImpl: async () => devManifestDocument(),
       probeRemote: async () => compatibleRemote(),
       runRemote,
+      connectTunnel: async () => 0,
       stdout: { write: vi.fn() },
-    })).rejects.toThrow('not the latest dev build')
+    })).resolves.toBe(0)
     expect(runRemote).not.toHaveBeenCalled()
   })
 
@@ -720,7 +722,7 @@ describe('OpenAlice managed remote connector', () => {
       status: expect.objectContaining({ class: 'running' }),
     }))
     expect(buildRemoteControlProbeCommand(parseRemoteArgs(['host', '--stop'])))
-      .toContain('server status --json')
+      .toContain('server status --json --home "$HOME/.openalice"')
   })
 
   it('does not probe Node, build tools, or source in native remote mode', async () => {

@@ -1,8 +1,15 @@
 import {
+  UpdateCoordinator, createUpdatePlan, approveUpdate, transitionUpdate, projectUpdateUnit,
+  type UpdateOperation, type UpdatePlan, type UpdateStage,
   identityLabel,
   newerRelease,
   selectRelease,
-  verifyReleaseEvidence,
+  planRuntimeUpdate,
+  beginRuntimeOperation,
+  transitionRuntimeOperation,
+  type RuntimeOperation,
+  type RuntimeRelease,
+  type RuntimeStage,
   type ReleaseChannel,
 } from '@traderalice/update-lifecycle'
 import {
@@ -20,6 +27,8 @@ import snapshot from './release-snapshot.json'
 // Release progression is simulated from the recorded v0.94.1 baseline.
 export const scenarios = {
   together: 'App + remote backend',
+  'pending-activation': 'Stable installed, beta still running',
+  'stable-over-beta': 'Older beta client, stable backend',
   client: 'App only',
   integrated: 'Integrated Electron',
   blocked: 'Prevent backend-only upgrade',
@@ -40,6 +49,7 @@ export type Step =
   | 'backend-download'
   | 'backend-install'
   | 'backend-activate'
+  | 'backend-verify'
   | 'backend-reconnect'
   | 'content-check'
   | 'content-apply'
@@ -69,6 +79,8 @@ export interface State {
   connected: boolean
   busy: boolean
   fault: boolean
+  coordinated: UpdateOperation | null
+  operations: { client: RuntimeOperation | null; backend: RuntimeOperation | null }
   steps: Step[]
   cursor: number
   log: string[]
@@ -106,8 +118,8 @@ export function initial(scenario: Scenario = 'together'): State {
     const id = publication.records.at(-1)!.id
     for (let i = 0; i < 3; i++) publication = advanceRelease(publication, id)
   }
-  const client = mismatch && scenario !== 'server-ahead' ? '0.94.2' : version
-  const server =
+  const client = scenario === 'stable-over-beta' ? '0.94.1-beta.2' : mismatch && scenario !== 'server-ahead' ? '0.94.2' : version
+  const server = scenario === 'pending-activation' ? '0.94.1-beta.2' :
     scenario === 'server-ahead' || scenario === 'chat-stale'
       ? '0.94.2'
       : version
@@ -116,14 +128,16 @@ export function initial(scenario: Scenario = 'together'): State {
     phase: 'scenario',
     backend: scenario !== 'client',
     content: scenario === 'busy' || scenario.startsWith('chat-'),
-    target: mismatch ? '0.94.2' : version,
-    channel: 'stable',
+    target: scenario === 'stable-over-beta' ? client : mismatch ? '0.94.2' : version,
+    channel: scenario === 'stable-over-beta' ? 'beta' : 'stable',
     publication,
     selectedRelease: mismatch ? head(publication, 'stable') : null,
     client,
     clientInstalled: client,
     server,
-    serverInstalled: server,
+    serverInstalled: scenario === 'pending-activation' ? version : server,
+    coordinated: null,
+    operations: { client: null, backend: null },
     workspace: scenario.startsWith('chat-') ? 'Chat template 1' : 'R1',
     connected: true,
     busy: scenario === 'busy' || scenario === 'chat-busy',
@@ -146,19 +160,22 @@ export function contentTarget(s: State): string {
       : 'Chat template 1'
     : 'R2'
 }
-function advances(current: string, target: string): boolean {
-  return target.includes('+dev.')
-    ? target !== current
-    : newerRelease(target, current.split('+')[0])
-}
 function projectedServer(s: State): string {
-  return (s.backend || s.scenario === 'integrated') &&
-    advances(s.server, s.target)
-    ? s.target
+  return s.backend || s.scenario === 'integrated'
+    ? runtimeTargetVersion(s, s.scenario === 'integrated' ? 'client' : 'backend')
     : s.server
+}
+export function runtimeTargetVersion(s: State, unit: 'client' | 'backend'): string {
+  const target = s.operations[unit]?.target ?? runtimePlans(s)[unit].target
+  return target ? target.commit ? `${target.version}+dev.${target.commit}` : target.version
+    : unit === 'client' ? s.clientInstalled : s.serverInstalled
 }
 export function scenarioExplanation(s: State): string {
   switch (s.scenario) {
+    case 'pending-activation':
+      return 'Stable is already installed. Restart and verify the backend without downloading or installing again.'
+    case 'stable-over-beta':
+      return 'The older beta client keeps the verified stable backend. Connecting does not change the Machine channel.'
     case 'client-ahead':
       return 'Frontend 0.94.2 / backend 0.94.1. Keep the frontend; upgrade only the selected backend.'
     case 'server-ahead':
@@ -173,45 +190,62 @@ export function scenarioExplanation(s: State): string {
       return 'Select a channel, discover a release, then review the proposed update scope.'
   }
 }
-export function plan(s: State): Step[] {
-  const steps: Step[] = []
-  if (s.scenario !== 'blocked' && advances(s.client, s.target))
-    steps.push(
-      'client-download',
-      'client-install',
-      'client-activate',
-      'client-verify',
-    )
-  if (s.backend && advances(s.server, s.target) && s.scenario !== 'integrated')
-    steps.push(
-      'backend-download',
-      'backend-install',
-      'backend-activate',
-      'backend-reconnect',
-    )
-  if (s.content && s.workspace !== contentTarget(s))
-    steps.push('content-check', 'content-apply', 'content-verify')
-  return steps
+function release(version: string): RuntimeRelease {
+  const [core, commit] = version.split('+dev.')
+  return { version: core, channel: commit ? 'dev' : core.includes('-') ? 'beta' : 'stable', ...(commit ? { commit } : {}) }
 }
-export function blocker(s: State): string | null {
-  if (plan(s).some((step) => step.endsWith('-download')) && !s.selectedRelease)
-    return 'Check the selected channel before preparing an installation.'
-  if (s.scenario === 'integrated' && s.channel === 'dev')
-    return 'Dev commit artifacts are CLI-only in this rehearsal. Choose a separated scenario.'
-  if (s.scenario === 'blocked' && s.backend && s.target !== s.client)
-    return 'This plan would put the backend ahead of the app. Upgrade the app first.'
-  const client =
-    s.scenario !== 'blocked' && advances(s.client, s.target)
-      ? s.target
-      : s.client
-  const server = projectedServer(s)
-  if (newerRelease(server.split('+')[0], client.split('+')[0]))
-    return 'The backend would remain newer than the frontend. Select a channel with a matching or newer frontend release.'
-  if (s.content && !isChatCase(s) && server.split('+')[0] === '0.94.1')
-    return 'Workspace R2 needs backend 0.94.2 or newer (rehearsal assumption).'
-  return null
+export function runtimePlans(s: State) {
+  const candidate = release(s.target) as RuntimeRelease & { channel: ReleaseChannel }
+  const make = (installed: string, active: string, reconnect: boolean) => planRuntimeUpdate({
+    installed: release(installed), candidate, active: release(active), running: true,
+    canActivate: true, channel: s.channel, reconnect,
+  })
+  return { client: make(s.clientInstalled, s.client, false), backend: make(s.serverInstalled, s.server, true) }
 }
-export function reduce(s: State, a: Action): State {
+const stageName: Record<UpdateStage, string> = { prepare: 'download', apply: 'install', activate: 'activate', verify: 'verify', reconnect: 'reconnect' }
+function stepName(unit: string, stage: UpdateStage): Step {
+  return `${unit}-${unit === 'content' ? stage === 'prepare' ? 'check' : stage : stageName[stage]}` as Step
+}
+export function coordinatedPlan(s: State): UpdatePlan {
+  const plans = runtimePlans(s)
+  const proposals = (['client', 'backend'] as const).map(unit => {
+    const enabled = unit === 'client' ? s.scenario !== 'blocked' : s.backend && s.scenario !== 'integrated'
+    const runtime = plans[unit]
+    const target = runtime.target!
+    const mutate = runtime.stages.some(stage => stage === 'install' || stage === 'activate')
+    const stages: UpdateStage[] = enabled && (mutate || unit === 'backend' && !s.connected)
+      ? runtime.stages.flatMap(stage => stage === 'install' ? ['prepare', 'apply'] as UpdateStage[] : [stage]) : []
+    const identity = unit === 'client' ? s.client : s.server
+    return {
+      unit: { ...projectUpdateUnit(unit, unit === 'client' ? 'electron-updater' : 'remote', unit, release(identity), target),
+        capabilities: { control: identity === '0.94.1' ? 1 : 2 } },
+      fingerprint: JSON.stringify(target), stages, provides: { control: target.version === '0.94.1' ? 1 : 2 },
+      requires: unit === 'backend' && s.scenario === 'blocked' && mutate ? [{ unit: 'client', capability: 'control', version: 2 }] : [],
+      blockers: [ ...(runtime.blocker && enabled ? [runtime.blocker] : []),
+        ...(stages.includes('prepare') && !s.selectedRelease ? ['Check the selected channel before preparing an installation.'] : []),
+        ...(unit === 'client' && s.scenario === 'integrated' && s.channel === 'dev' ? ['Dev commit artifacts are CLI-only in this rehearsal. Choose a separated scenario.'] : []) ],
+    }
+  })
+  if (s.content && s.workspace !== contentTarget(s)) proposals.push({
+    unit: { ...projectUpdateUnit('content', 'template', 'project', { version: s.workspace }, { version: contentTarget(s) }), capabilities: { control: 1 } },
+    fingerprint: contentTarget(s), stages: ['prepare', 'apply', 'verify'], provides: { control: 1 },
+    requires: !isChatCase(s) ? [{ unit: s.scenario === 'integrated' ? 'client' : 'backend', capability: 'control', version: 2 }] : [],
+    blockers: [],
+    ...{ after: [s.scenario === 'integrated' ? 'client' : 'backend'] },
+  })
+  return createUpdatePlan('rehearsal', proposals)
+}
+export function plan(s: State): Step[] { return coordinatedPlan(s).steps.map(step => stepName(step.unit, step.stage)) }
+export function blocker(s: State): string | null { return coordinatedPlan(s).blockers[0] ?? null }
+function coordinatedPhase(op: UpdateOperation): Phase {
+  return op.phase === 'succeeded' ? 'done' : op.phase === 'waiting' ? 'suspended' : op.phase === 'recovery' ? 'failed' : op.phase === 'approved' ? 'running' : op.phase
+}
+function command(s: State, event: Parameters<typeof transitionUpdate>[1]): State {
+  if (!s.coordinated) return s
+  const coordinated = transitionUpdate(s.coordinated, event, `step-${s.cursor}`)
+  return { ...s, coordinated, phase: coordinatedPhase(coordinated) }
+}
+export async function reduce(s: State, a: Action): Promise<State> {
   if (a.type === 'publish')
     return { ...s, publication: createRelease(s.publication, a.value) }
   if (a.type === 'advance')
@@ -229,20 +263,22 @@ export function reduce(s: State, a: Action): State {
   if (a.type === 'release' && s.phase === 'blocked')
     return {
       ...s,
+      ...command(s, { type: 'resume' }),
       busy: false,
-      phase: 'running',
       log: [...s.log, 'Workspace released. Continue the same approved plan.'],
     }
   if (a.type === 'resume' && s.phase === 'suspended')
     return {
       ...s,
-      phase: 'running',
+      ...command(s, { type: 'resume' }),
       log: [...s.log, 'App resumed; approved target retained.'],
     }
   if (a.type === 'retry' && s.phase === 'failed')
     return {
       ...s,
-      phase: 'running',
+      ...command(s, { type: 'resume' }),
+      operations: { client: s.operations.client && transitionRuntimeOperation(s.operations.client, { type: 'retry' }),
+        backend: s.operations.backend && transitionRuntimeOperation(s.operations.backend, { type: 'retry' }) },
       log: [
         ...s.log,
         'Retrying the unfinished stage; completed installation is retained.',
@@ -294,68 +330,78 @@ export function reduce(s: State, a: Action): State {
   if (s.phase === 'review') {
     if (a.type === 'back') return { ...s, phase: 'scenario' }
     if (a.type === 'approve' && !blocker(s)) {
+      const shared = coordinatedPlan(s)
+      const coordinated = approveUpdate(shared, shared.fingerprint, 'rehearsal', 'approved')
       const steps = plan(s)
+      const plans = runtimePlans(s)
+      const operations = { client: steps.some(step => step.startsWith('client-')) ? beginRuntimeOperation(plans.client) : null,
+        backend: steps.some(step => step.startsWith('backend-')) ? beginRuntimeOperation(plans.backend) : null }
       return {
         ...s,
         steps,
+        coordinated,
+        operations,
         phase: steps.length ? 'running' : 'done',
-        log: [`Approved immutable target ${s.target}; ${steps.length} stages.`],
+        log: [`Approved plan: client ${runtimeTargetVersion(s, 'client')}, backend ${runtimeTargetVersion(s, 'backend')}; ${steps.length} stages.`],
       }
     }
   }
   if (a.type !== 'next' || s.phase !== 'running') return s
   const step = s.steps[s.cursor]
   if (!step) return s
-  if (step.startsWith('content-') && s.busy)
-    return {
-      ...s,
-      phase: 'blocked',
-      log: [...s.log, 'Workspace is busy. No content was changed.'],
-    }
-  if (step === 'backend-reconnect' && s.fault)
-    return {
-      ...s,
-      fault: false,
-      phase: 'failed',
-      log: [
-        ...s.log,
-        'Simulated reconnect failure. Backend is already upgraded.',
-      ],
-    }
-  if (step === 'client-verify' || step === 'backend-reconnect') {
-    const active = step === 'client-verify' ? s.client : s.server
-    const [version, commit] = active.split('+dev.')
-    const [targetVersion, targetCommit] = s.target.split('+dev.')
-    const verified = verifyReleaseEvidence(
-      { version: targetVersion, ...(targetCommit ? { commit: targetCommit } : {}) },
-      { version, ...(commit ? { commit } : {}) },
-    )
-    if (verified.status !== 'matched') return {
-      ...s, phase: 'failed', log: [...s.log, `Active release does not match the approved target (${verified.status}).`],
-    }
-  }
-  const next = {
-    ...s,
-    cursor: s.cursor + 1,
-    log: [...s.log, `${step} completed`],
-  }
-  if (step === 'client-install') next.clientInstalled = s.target
+  let operation = s.coordinated!
+  const next = { ...s, log: [...s.log] }
+  const runner = new UpdateCoordinator({
+    read: async () => operation,
+    write: async value => { operation = value },
+  }, {
+    reconcile: async () => step.startsWith('content-') && s.busy
+      ? { status: 'blocked', reason: 'Workspace is busy. No content was changed.' }
+      : { status: 'ready' },
+    execute: async (sharedStep) => {
+      if (step === 'backend-reconnect' && next.fault) {
+        next.fault = false
+        throw new Error('Reconnect failed; backend installation is retained')
+      }
+  const target = (unit: 'client' | 'backend') => runtimeTargetVersion(s, unit)
+  if (step === 'client-install') next.clientInstalled = target('client')
   if (step === 'client-activate') {
-    next.client = s.target
-    next.phase = 'suspended'
-    if (s.scenario === 'integrated')
-      next.server = next.serverInstalled = s.target
+    next.client = target('client')
+    if (s.scenario === 'integrated') next.server = next.serverInstalled = target('client')
   }
-  if (step === 'backend-install') next.serverInstalled = s.target
+  if (step === 'backend-install') next.serverInstalled = target('backend')
   if (step === 'backend-activate') {
-    next.server = s.target
+    next.server = target('backend')
     next.connected = false
   }
   if (step === 'backend-reconnect') next.connected = true
   if (step === 'content-apply') next.workspace = contentTarget(s)
-  if (next.cursor === next.steps.length) next.phase = 'done'
+  if ((step.startsWith('client-') || step.startsWith('backend-')) && !step.endsWith('-download')) {
+    const unit = step.startsWith('client-') ? 'client' : 'backend'
+    const operation = s.operations[unit]
+    if (operation) {
+      const stage = step.slice(unit.length + 1) as RuntimeStage
+      const observed = release(unit === 'client'
+        ? stage === 'install' ? next.clientInstalled : next.client
+        : stage === 'install' ? next.serverInstalled : next.server)
+      next.operations = { ...s.operations, [unit]: transitionRuntimeOperation(operation, { type: 'complete', stage, observed }) }
+    }
+  }
+      return { status: 'complete', receipt: `simulated:${sharedStep.id}` }
+    },
+  }, () => `step-${s.cursor}`)
+  await runner.run(1)
+  next.coordinated = operation
+  next.phase = coordinatedPhase(operation)
+  const sharedStep = operation.plan.steps[s.cursor]!
+  if (operation.completed[sharedStep.id]) {
+    next.cursor++
+    next.log.push(`${step} completed`)
+    if (step === 'client-activate') Object.assign(next, command(next, { type: 'wait', message: 'Native restart' }))
+  } else if (operation.error) next.log.push(operation.error)
   return next
 }
+
 export function group(name: string) {
   if (name.startsWith('OpenAlice-Broker')) return 'Broker packs'
   if (name.startsWith('openalice-cli')) return 'CLI · 6 targets'

@@ -5,7 +5,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { desktopDevExecutable, desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
+import { desktopDevExecutable, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const pnpmCommand = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'pnpm'
@@ -14,6 +14,7 @@ const pnpmArgs = (commandArgs) => process.platform === 'win32'
   : commandArgs
 const args = new Set(process.argv.slice(2))
 const skipBuild = args.has('--skip-build')
+const packagedExecutable = process.env.OPENALICE_PACKAGED_SMOKE_EXECUTABLE
 const timeoutMs = 90_000
 let activeCleanup = null
 
@@ -105,7 +106,6 @@ async function proveSurface(surface) {
     : tmpdir()
   mkdirSync(smokeBase, { recursive: true })
   const smokeRoot = realpathSync(mkdtempSync(join(smokeBase, `openalice-existing-owner-${surface}-`)))
-  const smokeEnv = desktopSmokeEnv(smokeRoot)
   const smokeHome = join(smokeRoot, 'home')
   const smokeWorkspaces = join(smokeRoot, 'workspaces')
   const electronUserData = join(smokeRoot, 'electron-user-data')
@@ -118,7 +118,7 @@ async function proveSurface(surface) {
     cwd: repoRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...smokeEnv,
+      ...process.env,
       OPENALICE_HOME: smokeHome,
       AQ_LAUNCHER_ROOT: smokeWorkspaces,
       OPENALICE_RUNTIME_FIXTURE_SURFACE: surface,
@@ -169,11 +169,11 @@ async function proveSurface(surface) {
     const fixturePid = Number(ready[1])
     const webUrl = ready[2]
 
-    child = spawnDesktopSmoke(desktopDevExecutable(), [join(repoRoot, 'dist', 'electron', 'main.js')], {
+    child = spawnDesktopSmoke(packagedExecutable || desktopDevExecutable(), packagedExecutable ? [] : [join(repoRoot, 'dist', 'electron', 'main.js')], {
       cwd: join(repoRoot, 'apps', 'desktop'),
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
-        ...smokeEnv,
+        ...process.env,
         OPENALICE_HOME: smokeHome,
         AQ_LAUNCHER_ROOT: smokeWorkspaces,
         OPENALICE_GLOBAL_DIR: join(smokeRoot, 'global'),

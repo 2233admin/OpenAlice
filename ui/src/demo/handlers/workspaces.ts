@@ -2,7 +2,7 @@ import type { SessionBlock } from '../../hooks/useSessionControl'
 import stickerWave from '../fixtures/sticker-wave.json'
 import { demoChatWorkflowReply, demoChatWorkflowTitle } from '../fixtures/chat-workflows'
 import { stickerHandlers } from './stickers'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { demoCredentialPresets } from './configKeys'
 import type { AliceHarnessConfig } from '../../hooks/useAliceHarness'
 import {
@@ -41,6 +41,15 @@ import type {
 } from '../../components/workspace/api'
 
 import type { TakeoverRequest } from '../../hooks/useSessionTakeovers'
+import { demoHarnessSourceCandidate } from './updates'
+
+// Isolated setup-recovery walkthrough: ?workspaceSetup=failed|preparing|read-error.
+let demoSetupScenario = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('workspaceSetup') : null
+function demoProjectSetup() {
+  return { schemaVersion: 1, pending: demoSetupScenario === 'failed' || demoSetupScenario === 'preparing' ? ['auto-quant'] : [],
+    errors: demoSetupScenario === 'failed' ? { 'auto-quant': 'Demo: Workspace source could not be downloaded.' } : {},
+    phase: demoSetupScenario === 'preparing' ? 'preparing' : 'complete' }
+}
 const demoTakeoverPreview = typeof location !== 'undefined' && new URLSearchParams(location.search).has('takeover')
 let demoTakeover: TakeoverRequest | null = null
 let demoTakeoverSeconds = 60
@@ -546,8 +555,13 @@ export const workspacesHandlers = [
     demoAutoQuantDefaultWorkspaceId = workspace.id
     return HttpResponse.json({ defaultWorkspaceId: workspace.id, ready: true })
   }),
-  http.get('/api/workspaces/project-setup', () => HttpResponse.json({ schemaVersion: 1, pending: [], errors: {}, phase: 'complete' })),
-  http.post('/api/workspaces/project-setup/retry', () => HttpResponse.json({ schemaVersion: 1, pending: [], errors: {}, phase: 'complete' })),
+  http.get('/api/workspaces/project-setup', () => demoSetupScenario === 'read-error'
+    ? HttpResponse.json({ error: 'Demo: preparation status unavailable.' }, { status: 503 }) : HttpResponse.json(demoProjectSetup())),
+  http.post('/api/workspaces/project-setup/retry', async () => {
+    await delay(700)
+    demoSetupScenario = null
+    return HttpResponse.json(demoProjectSetup())
+  }),
   http.post('/api/workspaces/chat/initialize', () => {
     const workspace = demoWorkspaces.find((candidate) => candidate.template === 'chat')
     if (!workspace) {
@@ -808,6 +822,24 @@ export const workspacesHandlers = [
     } })
   }),
   http.post('/api/workspaces/:id/alice-harness-upgrade', () => HttpResponse.json({ error: 'demo_read_only', message: 'This recorded preview does not modify Workspace files.' }, { status: 409 })),
+  http.get('/api/workspaces/:id/source-upgrade', ({ params }) => {
+    const workspace = demoWorkspaces.find(candidate => candidate.id === String(params.id))
+    if (!workspace) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    if (!workspace.harnessSource) return HttpResponse.json({ error: 'unsupported', message: 'This Workspace does not have a source receipt.' }, { status: 400 })
+    const candidate = workspace.id === DEMO_AUTO_QUANT_WORKSPACE_ID ? demoHarnessSourceCandidate : null
+    const blockers = candidate ? ['active_runtime'] : []
+    return HttpResponse.json({ plan: {
+      workspaceId: workspace.id, template: workspace.template, strategy: 'source-merge',
+      fromVersion: workspace.harnessSource.version, fromCommit: workspace.harnessSource.commit,
+      toVersion: candidate?.toVersion ?? workspace.harnessSource.version,
+      toCommit: candidate?.toCommit ?? workspace.harnessSource.commit,
+      verified: candidate?.verified ?? true, protocolCompatible: true, manifestVersion: 1,
+      planDigest: `demo-source-${workspace.id}`, blocked: blockers.length > 0, blockers,
+      activity: { busy: blockers.length > 0, sessions: [], headless: [] },
+      changedPaths: candidate ? ['harness.json', 'studio/server.ts'] : [], conflictedPaths: [],
+    } })
+  }),
+  http.post('/api/workspaces/:id/source-upgrade', () => HttpResponse.json({ error: 'demo_read_only', message: 'This recorded preview does not modify Workspace files.' }, { status: 409 })),
   http.get('/api/workspaces/:id/template-upgrade', ({ params }) => {
     const workspace = demoWorkspaces.find((candidate) => candidate.id === String(params.id))
     if (!workspace) return HttpResponse.json({ error: 'not_found' }, { status: 404 })

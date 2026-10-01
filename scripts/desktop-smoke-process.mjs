@@ -1,52 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
-import { join, parse, resolve } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const requireDesktop = createRequire(new URL('../apps/desktop/package.json', import.meta.url))
 
 export function desktopDevExecutable() {
   return requireDesktop('electron')
-}
-
-/** Native CLI state must follow the disposable smoke home, not the caller. */
-export function desktopSmokeEnv(root, inherited = process.env) {
-  const home = resolve(root, 'os-home')
-  const env = { ...inherited }
-  for (const key of [
-    'PI_CONFIG_DIR', 'PI_PROFILE', 'OMP_PROFILE',
-    'OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'OPENCODE_CONFIG_DIR',
-    'BASH_ENV', 'ENV',
-    'OPENAI_API_KEY', 'OPENAI_ACCESS_TOKEN', 'OPENAI_BASE_URL',
-    'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN',
-    'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'OPENROUTER_API_KEY',
-    'XAI_API_KEY', 'GROK_API_KEY', 'CURSOR_API_KEY',
-  ]) delete env[key]
-  Object.assign(env, {
-    HOME: home,
-    USERPROFILE: home,
-    ZDOTDIR: home,
-    APPDATA: join(home, 'AppData', 'Roaming'),
-    LOCALAPPDATA: join(home, 'AppData', 'Local'),
-    XDG_CONFIG_HOME: join(home, '.config'),
-    XDG_CACHE_HOME: join(home, '.cache'),
-    XDG_DATA_HOME: join(home, '.local', 'share'),
-    XDG_STATE_HOME: join(home, '.local', 'state'),
-    CODEX_HOME: join(home, '.codex'),
-    CLAUDE_CONFIG_DIR: join(home, '.claude'),
-    PI_CODING_AGENT_DIR: join(home, '.pi', 'agent'),
-    PI_CODING_AGENT_SESSION_DIR: join(home, '.pi', 'agent', 'sessions'),
-    GROK_HOME: join(home, '.grok'),
-    CURSOR_DATA_DIR: join(home, '.cursor'),
-  })
-  if (process.platform === 'win32') {
-    env.HOMEDRIVE = parse(home).root.replace(/[\\/]$/, '')
-    env.HOMEPATH = home.slice(env.HOMEDRIVE.length)
-  }
-  for (const key of ['HOME', 'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'CODEX_HOME']) {
-    mkdirSync(env[key], { recursive: true })
-  }
-  return env
 }
 
 export function spawnDesktopSmoke(executable, args, options) {

@@ -84,7 +84,7 @@ describe.skipIf(process.platform === 'win32')('CLI package-manager channel gener
       output,
       `npm/openalice-${process.platform}-${process.arch}/release/bin/openalice`,
     ))
-    expect(platformExecutable).toEqual(Buffer.from(`#!/bin/sh\nprintf '${version}\\n'\n`))
+    expect(platformExecutable).toEqual(process.platform === 'darwin' ? fixtureMachO(process.arch, version) : Buffer.from(`#!/bin/sh\nprintf '${version}\\n'\n`))
 
     const formula = await readFile(join(output, 'homebrew/openalice.rb'), 'utf8')
     expect(formula).toContain('depends_on "git"')
@@ -137,12 +137,22 @@ describe.skipIf(process.platform === 'win32')('CLI package-manager channel gener
     const packageName = `openalice-${process.platform}-${process.arch}`
     await mkdir(join(metaRoot, 'node_modules'), { recursive: true })
     await symlink(join(output, 'npm', packageName), join(metaRoot, 'node_modules', packageName), 'dir')
+    // This test exercises npm's materialization/ownership, using an executable
+    // host shim after archive-topology validation. Native Mach-O acceptance is
+    // owned by the real package smoke, not the structural fixture.
+    const executableFixture = Buffer.from(`#!/bin/sh\nprintf '${version}\\n'\n`)
+    await writeFile(join(output, 'npm', packageName, 'release/bin/openalice'), executableFixture)
     await execFileAsync(process.execPath, [join(metaRoot, 'postinstall.mjs')], {
       env: { ...process.env, npm_config_user_agent: 'npm/11.0.0 node/v22.0.0' },
     })
 
-    const installed = await execFileAsync(join(metaRoot, 'bin/openalice.exe'), ['--version'])
-    expect(installed.stdout).toBe(`${version}\n`)
+    if (process.platform === 'darwin') {
+      // Structural Mach-O fixtures prove byte preservation, not executable behavior.
+      expect(await readFile(join(metaRoot, 'bin/openalice.exe'))).toEqual(executableFixture)
+    } else {
+      const installed = await execFileAsync(join(metaRoot, 'bin/openalice.exe'), ['--version'])
+      expect(installed.stdout).toBe(`${version}\n`)
+    }
     expect(JSON.parse(await readFile(join(metaRoot, 'install-source.json'), 'utf8'))).toMatchObject({
       method: 'npm',
       artifact: { platform: process.platform, arch: process.arch },

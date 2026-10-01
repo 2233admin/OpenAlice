@@ -7,6 +7,7 @@ export interface ReleaseEvidence {
   readonly version: string
   readonly commit?: string
   readonly artifactSha256?: string
+  readonly contentIdentity?: string
 }
 export interface ReleaseVerification {
   readonly status: 'matched' | 'mismatched' | 'unknown'
@@ -22,12 +23,13 @@ export function verifyReleaseEvidence(expected: ReleaseEvidence, observed: Relea
   const different: (keyof ReleaseEvidence)[] = []
   if (!isVersion(expected.version) || !isVersion(observed.version)) missing.push('version')
   else if (expected.version.replace(/^v/, '') !== observed.version.replace(/^v/, '')) different.push('version')
-  for (const field of ['commit', 'artifactSha256'] as const) {
+  for (const field of ['commit', 'artifactSha256', 'contentIdentity'] as const) {
     const target = expected[field]
     if (target === undefined) continue
     // Abbreviated commits cannot prove exact identity; adapters must resolve the
     // full target before approval. Hash casing has no semantic significance.
-    const valid = field === 'commit' ? /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i : /^[a-f0-9]{64}$/i
+    const valid = field === 'commit' ? /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i
+      : field === 'contentIdentity' ? /^[a-f0-9]{16}$/i : /^[a-f0-9]{64}$/i
     if (!valid.test(target) || !observed[field] || !valid.test(observed[field]!)) missing.push(field)
     else if (target.toLowerCase() !== observed[field]!.toLowerCase()) different.push(field)
   }

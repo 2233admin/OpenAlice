@@ -75,7 +75,7 @@ export async function recordUpdateAttempt(
 export async function inspectPreviousUpdateAttempt(
   path: string,
   currentVersion: string,
-  options: { now?: Date; failureAfterMs?: number } = {},
+  options: { now?: Date; failureAfterMs?: number; ready?: boolean } = {},
 ): Promise<PreviousUpdateAttempt> {
   let raw: string
   try {
@@ -97,6 +97,7 @@ export async function inspectPreviousUpdateAttempt(
   // is not proof that the approved target was activated. Artifact validation
   // remains with electron-updater; this receipt does not invent payload evidence.
   if (verifyReleaseEvidence({ version: attempt.toVersion }, { version: currentVersion }).status === 'matched') {
+    if (options.ready === false) return { kind: 'pending', attempt }
     await removeIfPresent(path)
     return { kind: 'succeeded', attempt }
   }

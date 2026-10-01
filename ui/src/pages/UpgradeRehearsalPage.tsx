@@ -29,10 +29,12 @@ import {
   plan,
   releaseSnapshot,
   scenarios,
+  runtimeTargetVersion,
   type Scenario,
+  type Step,
 } from '../components/dev/upgrade-rehearsal/model'
 
-const stageNames: Record<string, string> = {
+const stageNames: Record<Step, string> = {
   'client-download': 'Download client',
   'client-install': 'Install client',
   'client-activate': 'Restart client',
@@ -40,6 +42,7 @@ const stageNames: Record<string, string> = {
   'backend-download': 'Download backend',
   'backend-install': 'Install backend',
   'backend-activate': 'Restart backend',
+  'backend-verify': 'Verify backend',
   'backend-reconnect': 'Reconnect',
   'content-check': 'Check workspace readiness',
   'content-apply': 'Apply workspace update',
@@ -210,7 +213,7 @@ export function UpgradeRehearsalPage() {
           ? 'Checking channel…'
           : (discovery.error ??
             (discovery.value
-              ? `Channel head: ${displayVersion(identityLabel(discovery.value))} · Selected target: ${displayVersion(s.target)}`
+              ? `Channel head: ${displayVersion(identityLabel(discovery.value))} · Candidate: ${displayVersion(s.target)}`
               : 'This channel has no active release. Build and activate one above.'))}{' '}
         {s.phase !== 'scenario' &&
           'This plan is frozen; later publications do not change it.'}
@@ -238,7 +241,7 @@ export function UpgradeRehearsalPage() {
               icon: Monitor,
               active: s.client,
               installed: s.clientInstalled,
-              target: steps.includes('client-download') ? s.target : s.client,
+              target: steps.includes('client-activate') ? runtimeTargetVersion(s, 'client') : s.client,
             },
             {
               name:
@@ -249,7 +252,8 @@ export function UpgradeRehearsalPage() {
               active: s.server,
               installed: s.serverInstalled,
               target:
-                steps.includes('backend-download') || s.scenario === 'integrated' && steps.includes('client-download') ? s.target : s.server,
+                steps.includes('backend-activate') ? runtimeTargetVersion(s, 'backend')
+                  : s.scenario === 'integrated' && steps.includes('client-activate') ? runtimeTargetVersion(s, 'client') : s.server,
             },
             {
               name: isChatCase(s) ? 'Chat Workspace' : 'Workspace content',

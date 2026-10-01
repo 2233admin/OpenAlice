@@ -4,12 +4,13 @@ This guide owns shared release identity and selection policy. Transport discover
 installation and project execution remain with their owners: [[docs/remote-access.md]],
 [[docs/cli-installer.md]], [[docs/managed-workspace-runtime.md]],
 [[docs/workspace-template-upgrade.md]] and [[docs/harness-web-surfaces.md]].
-The remaining migration is tracked in [[plans/update-lifecycle.md]].
+The pure planner and host adapters share one operation contract described below.
 
 ## Shared release selection
 
-`packages/update-lifecycle` is a pure TypeScript package with no React, filesystem,
-network or process dependency. Production backend version discovery, CLI update
+`packages/update-lifecycle` exposes a pure TypeScript root with no React, filesystem,
+network or process imports. Its separate `/node` export owns private atomic journals
+and Guardian process-identity leases. Production backend version discovery, CLI update
 checks, the frontend update indicator and the Dev Panel rehearsal consume it.
 There is no UI-local discovery comparator or server/CLI comparator re-export.
 Workspace source-tag ordering also uses the shared SemVer comparator. Qualified
@@ -49,8 +50,9 @@ unit/platform. Installer provenance is not release identity.
 
 Electron's existing restart marker and rehearsal activation verification consume
 this rule. The native marker currently supplies version evidence only; native
-payload validation remains with electron-updater. This does not yet replace the
-owner journal or verify every service's readiness after application startup.
+payload validation remains with electron-updater. The desktop journal additionally verifies renderer readiness and the required local
+Alice version before completing integrated startup. Separated startup verifies
+the local shell; the remote owner independently proves backend readiness.
 
 ## Shared discovery resource
 
@@ -95,14 +97,130 @@ can request the same hook's optional preview mode. Connection/fleet CRUD still
 belongs to the connection owner. Source repository discovery also uses the
 shared cache primitive rather than an independent promise/expiry implementation.
 
-## Current migration boundary
+### Shared review plans
 
-Project/SSH orchestration and operation journals still need migration into the
-shared coordinator; the rehearsal execution reducer is still separate. Local client policy and host discovery now have separate authority; terminal
-passive notices still need convergence with that resource.
-Do not infer full lifecycle or real installation acceptance from discovery or
-IPC-mock tests. Advance the canonical plan rather than introduce another public
-hook or independent request-ordering rule.
+The same provider owns the Workspace preview inventory used by the overview and
+the existing template/source review panels. Read-only candidate discovery
+prefetches the primary plan. Opening or reopening a review reuses that exact
+observation; it does not request another preview. The first status response
+joins an inventory prefetch. Subsequent automatic checks and explicit refreshes
+update the same resource and coalesce concurrent requests.
+
+Each backend recovery generation owns a fresh inventory. Workspace identity,
+template versus source versus Alice Harness layer, and skill/action projection
+form separate keys. A changed template baseline, source receipt or candidate,
+removal, successful apply, and backend retirement invalidate affected entries.
+An already-open review observes invalidation. A retired response cannot restore
+an old plan, including when switching away and back. Relay target switches
+already reload the renderer; no module-global plan survives that boundary.
+
+Failed reads retain the last successful preview alongside the error and disable
+application. Reopening retains the error instead of silently retrying. A
+backend apply rejection containing a revised plan replaces the shared digest;
+template conflict choices reset when that digest or scope changes. Existing
+backend digest, activity, transaction and exact-target checks remain approval
+authority. Scoped Alice Harness/skill plans do not become whole-template update
+evidence. Source identity includes its commit even when version labels match.
+
+Remote Machine review likewise shares its pending or settled target/project
+plan. Automatic discovery and explicit retries refresh it; closing the overview
+review keeps it. Refreshing or failed discovery blocks approval synchronously,
+even before React commits the new loading state. The native owner still enforces
+plan expiry and single use. A fresh review also retries operation-status reads.
+
+Review updates opens the sole actionable target directly. Multiple updates
+retain a chooser with exact Workspace targets. The Workspace modal host sits
+under the same lifecycle provider as the shell; it uses the existing modal and
+button primitives and retains its keyboard/focus and narrow-screen behavior.
+Attention presentation and backend update engines are separate workstreams.
+
+## Remote owner and installation boundaries
+
+Native SSH Runtime updates and rehearsal release stages now use the same
+`planRuntimeUpdate` and `transitionRuntimeOperation` contract. The planner
+separates installed, active and target identity, retains newer installations,
+and plans activation without installation when bytes are already present.
+The SSH adapter validates target-local provenance, control compatibility and
+owner identity; the rehearsal supplies explicit fixture evidence. Its publication,
+client restart presentation and Workspace-content scenarios remain adapters,
+not production compatibility evidence.
+
+Native remote execution records its approved target, selected project home,
+original owner and stage receipts in `<remote-targets.json>.updates/` on the
+controlling client. The existing process-identity lock serializes controllers on
+that client per SSH profile. A new controller probes actual state, preserves the
+recorded target, requires fresh plan consent for remaining mutations, and only
+performs unfinished installation/activation/reconnect work. An unrelated owner
+or changed installed target blocks recovery. Remote Guardian ownership and the
+installer transaction remain their own authorities; this is not a distributed
+fleet lock. Receipt writes are atomic, private, and contain no credentials.
+The version-1 journal is new state, not a migration of an existing shipped shape.
+
+## Coordinated operations and recovery
+
+`createUpdatePlan` builds a dependency graph from owner proposals and declared
+capabilities. Unknown capability and proven incompatibility remain distinct.
+Version ordering never invents a protocol prerequisite. `approveUpdate` freezes
+installation/project scope, exact target, owner digest and prerequisites. The
+review fingerprint is SHA-256 over canonical evidence, so nested child plans do
+not expand fingerprints into oversized approval requests.
+
+`UpdateCoordinator` owns stage ordering, transitions, reconciliation and event
+traces. It saves the in-flight stage before each effect. Lost outcomes are
+reconciled with owner receipts; unknown outcomes cannot be blindly replayed.
+`FileUpdateJournal` serializes each host scope using the existing Guardian lock,
+validates its saved graph, and writes private atomic receipts. Explicitly ending
+a plan archives the coordination record; it does not roll back files or erase
+child-owner receipts. These journals are new state, not a migration of a shipped
+persisted format.
+
+The local `UpdateControlService` composes backend, project and native owners.
+Relay HTTP and Electron IPC expose review, approve, status, resume and abandon.
+The local receipt survives browser/relay/desktop restart independently of the
+backend. Switching Machine or AliceProject blocks pending project effects;
+resuming never retargets them. Authenticated project commands use the current
+target session in memory only; after a host restart, the browser must supply
+its authenticated session again. Cookie namespaces prevent cross-target reuse.
+A newer publication cannot replace an approved
+artifact. The native updater retains signature/download/handoff ownership.
+
+`WorkspaceUpdateService.coordinator` owns project inventory and child operations.
+Inventory includes managed templates, independent source tags, injected Alice
+Skills and optional Broker Packs with separate installed/active/desired evidence.
+Checks are bounded and cached; forced checks refresh settled caches. Failed
+refreshes preserve the old inventory and expose error/check/success timestamps.
+Approval re-reads authoritative owner plans, never trusts the discovery cache.
+
+Template, source and Skills engines preserve their existing activity leases,
+review digests, Git baselines, conflict review and rollback transactions. Their
+manual, automatic and coordinated paths all emit common apply receipts inside
+those owner guards. Exact Git commit trailers recover a lost completion response.
+The coordinator cannot accept or resolve file conflicts itself.
+
+Broker Packs keep checksum/ABI/pointer protections. Their receipt separates
+installation, UTA activation and actual module loading. UTA records the identity
+when loading a module; reading a newer active pointer cannot pretend a cached old
+module was reloaded. The read-only module probe creates no broker account or
+trading connection. Disabled UTA leaves activation pending without blocking Chat.
+
+The rehearsal uses the same `UpdateCoordinator` with an in-memory journal,
+virtual timestamps and fake owner effects. Single-stage stepping is presentation,
+not a separate transition engine. Production and rehearsal event traces are
+compared for identical activation evidence; release publication remains a fixture.
+CLI passive notices also enter scoped shared discovery. External package managers,
+source checkouts, agent CLIs and Docker keep their own installation authority.
+
+## Acceptance scope
+
+Local acceptance covers the hermetic suite and critical gate, owner typechecks,
+real browser Relay review/apply/reload with a disposable Chat Git transaction,
+unsigned macOS ARM64 packaged integrated readiness/Workspace acceptance and
+separated startup/connection, Guardian takeover, clean installer Docker, and
+real disposable SSH `0.94.1-beta.2 -> 0.94.1` activation/reconnect recovery.
+The packaged handoff fixture proves receipt recovery in a new real app process;
+it does not replace a signed native installer. Signing, notarization, Windows
+native replacement and public feed publication retain the release lane gates in
+[[docs/development-workflow.md]]. No live trading state is used.
 
 ## Overview surface and local client policy
 

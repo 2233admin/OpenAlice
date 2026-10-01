@@ -266,7 +266,7 @@ export const ja: Resources = {
     noReadme: "このワークスペースにはまだ README.md がありません。目的や内容の概要をエージェントに作成してもらえます。",
     noGuide: "Harness ガイドはありません。",
   },
-  projectSetup: { connectPi: 'Chat 用に Pi の AI プロバイダーを設定', title: '準備が必要なワークスペースがあります', description: 'プロジェクトは作成済みです。残りの準備を再試行するか、準備済みのワークスペースを利用できます。', pending: '準備待ち', preparing: '準備中…' },
+  projectSetup: { status: 'ワークスペースの準備状況', setupFailed: '準備に失敗しました', connectPi: 'Chat 用に Pi の AI プロバイダーを設定', title: '準備が必要なワークスペースがあります', description: 'プロジェクトは作成済みです。残りの準備を再試行するか、準備済みのワークスペースを利用できます。', pending: '準備待ち', preparing: '準備中…' },
   quickStart: { chooseHarness: 'Harness を選択' },
   pet: {
     title: 'ペット', sound: 'クリック音',
@@ -678,6 +678,25 @@ export const ja: Resources = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "この計画を終了して再確認",
+      "title": "まとめて更新",
+      "description": "更新対象を確認します。進行状況はこのコンピューターに保存され、再起動後も続行できます。ファイルの競合はワークスペースで確認してください。",
+      "client": "このアプリ",
+      "backend": "選択中のリモートバックエンド",
+      "review": "選択した更新を確認",
+      "approve": "承認して開始",
+      "resume": "保存した更新を続行",
+      "phase": {
+        "approved": "承認済み",
+        "running": "更新中",
+        "waiting": "再起動または準備完了待ち",
+        "blocked": "問題の解決待ち",
+        "failed": "更新に失敗",
+        "recovery": "担当機能での復旧が必要",
+        "succeeded": "完了"
+      }
+    },
     title: '設定',
     group: {
       general: '一般',
@@ -943,7 +962,7 @@ export const ja: Resources = {
       sshTarget: 'SSH 接続先', label: 'マシン名', sshPort: 'SSH ポート', identityFile: 'ローカル SSH 鍵のパス', optional: '任意',
       probing: 'SSH とリモートランタイムを確認中…', sshNote: 'このコンピューターの OpenSSH 設定を使用します。', probe: 'マシンを調査',
       finding: '保存済みマシンを確認中…', current: '現在', health: '稼働状況とインストール', update: '更新を確認',
-      updateDescription: 'ローカルの OpenAlice と比較し、安全な更新計画を確認します。', checkUpdate: '調査して確認',
+      updateDescription: 'このマシンの更新チャンネルを確認し、インストールと有効化の計画を確認します。', checkUpdate: '調査して確認',
       review: 'マシンの変更計画', runtime: 'ランタイム', plannedActions: '予定される操作', noChanges: 'リモートの変更なし',
       deferred: 'このランタイムは再利用できますが、更新を安全に有効化できません。',
       restartNotice: 'リモートランタイムの再起動中、実行中のセッションが切断される場合があります。',

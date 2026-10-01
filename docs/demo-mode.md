@@ -62,11 +62,6 @@ links, agreement between report API and native file reads, path containment,
 unknown-route failure and React mounting. `--skip-build` is supported after a
 successful demo build.
 
-The automated `--smoke` runner also isolates OS/native CLI homes and clears
-inherited provider credentials through `desktopSmokeEnv`. That extra smoke home
-is deleted after its process tree stops; ordinary interactive demo diagnostics
-remain available as described above.
-
 Native mock assets live in `ui/dist-demo/` and `dist/demo/`; normal `ui/dist/`
 remains separate. Add reusable scenarios to the shared fixtures and preserve
 cross-links between Workspace, Session, Inbox, Issue, run and file identifiers.
@@ -94,3 +89,11 @@ Replies distinguish illustrative analysis and proposed work from actual market
 reads, saved files, scheduled jobs or backtests. Unrecognized prompts retain the
 existing simulated conversation/permission flow. Browser and Electron resolve
 the same fixtures through their normal demo transports.
+
+## Workspace preparation recovery
+
+Browser demo accepts `?workspaceSetup=failed`, `preparing`, or `read-error`.
+The failure scenario follows the avatar blue dot through Settings Overview to
+Auto Quant preparation; Retry simulates recovery without creating real files.
+The preparing scenario stays quiet. These fixtures exercise UI guidance and
+recovery only, not a live Workspace clone or native packaging.

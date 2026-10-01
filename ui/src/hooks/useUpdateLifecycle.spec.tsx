@@ -2,16 +2,19 @@
 
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { VersionInfo } from '../api/types'
 
 const mocks = vi.hoisted(() => ({
+  projectSetup: null as { setup: { phase: 'complete'; pending: string[]; errors?: Record<string, string> }; error: string | null } | null,
   getVersion: vi.fn(), currentVersion: vi.fn(), checkVersion: vi.fn(),
   workspaces: [] as { id: string; template?: string; upgradeAvailable?: { to: string } }[],
   backendUnavailable: false,
   backendRecoveryGeneration: 0,
   refreshWorkspaces: vi.fn(async () => undefined),
 }))
+vi.mock('./useProjectWorkspaceSetup', async importOriginal => ({ ...await importOriginal<any>(), useSharedProjectWorkspaceSetup: () => mocks.projectSetup }))
 vi.mock('./useRelayConnection', () => ({ useRelayConnection: () => ({ refresh: async () => undefined }) }))
 vi.mock('../api', () => ({ api: { version: {
   get: mocks.getVersion, current: mocks.currentVersion, check: mocks.checkVersion,
@@ -20,10 +23,11 @@ vi.mock('../auth/AuthContext', () => ({
   useBackendRecoverySignal: () => ({ backendUnavailable: mocks.backendUnavailable, backendRecoveryGeneration: mocks.backendRecoveryGeneration }),
 }))
 vi.mock('../contexts/workspaces-context', () => ({
-  useWorkspaces: () => ({ workspaces: mocks.workspaces, refresh: mocks.refreshWorkspaces }),
+  useWorkspaces: () => ({ workspaces: mocks.workspaces, hasLoaded: true, refresh: mocks.refreshWorkspaces }),
 }))
 
 import { UpdateLifecycleProvider, useUpdateLifecycle } from './useUpdateLifecycle'
+import { useWorkspacePlan } from '../lib/updates/useWorkspacePlan'
 
 const version: VersionInfo = {
   current: '0.94.1-beta', channel: 'beta', updateAuthority: 'cli', latest: '0.95.0-beta', hasUpdate: true,
@@ -31,9 +35,16 @@ const version: VersionInfo = {
 }
 const preferences = { autoCheckApp: true, autoUpdateAutoQuant: true, autoUpdateAutoPrediction: true }
 const wrapper = ({ children }: { children: ReactNode }) => <UpdateLifecycleProvider>{children}</UpdateLifecycleProvider>
+const workspacePreview = {
+  workspaceId: 'chat', template: 'chat', strategy: 'managed-context' as const,
+  fromVersion: '1', toVersion: '3', planDigest: 'shared-plan', source: 'recorded-baseline' as const,
+  blocked: false, blockers: [], activity: { busy: false, sessions: [], headless: [] },
+  files: [], summary: { ready: 0, preserved: 0, conflicts: 0, unchanged: 0 },
+}
 
 beforeEach(() => {
   mocks.workspaces = []
+  mocks.projectSetup = null
   mocks.backendUnavailable = false
   mocks.backendRecoveryGeneration = 0
   mocks.getVersion.mockResolvedValue(version)
@@ -42,6 +53,65 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (handle: number) => clearTimeout(handle))
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+it('prefetches the candidate once and projects the same plan into guidance and manual review', async () => {
+  mocks.workspaces = [{ id: 'chat', template: 'chat', upgradeAvailable: { to: '2' } }]
+  let reads = 0
+  let current = false
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path === '/api/workspaces/chat/template-upgrade') {
+      reads++
+      return { ok: true, json: async () => ({ plan: current ? { ...workspacePreview, fromVersion: '3' } : workspacePreview }) }
+    }
+    return { ok: true, json: async () => ({ preferences, workspaces: [] }) }
+  }))
+  const { result } = renderHook(useUpdateLifecycle, { wrapper })
+  const request = { workspaceId: 'chat', kind: 'template' as const }
+  await waitFor(() => expect(result.current.workspacePlans.peek(request)?.toVersion).toBe('3'))
+  await act(async () => { await result.current.workspacePlans.ensure(request) })
+  expect(reads).toBe(1)
+  expect(result.current.guidance.workspaceIds).toEqual(['chat'])
+  current = true
+  await act(async () => { await result.current.refresh() })
+  await waitFor(() => expect(result.current.guidance.workspaceIds).toEqual([]))
+  expect(result.current.workspacePlans.peek(request)?.fromVersion).toBe('3')
+  expect(reads).toBe(2)
+})
+
+it('does not revive a plan across backend A → B → A or disconnected reads', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
+  const { result, rerender } = renderHook(useUpdateLifecycle, { wrapper })
+  const request = { workspaceId: 'chat', kind: 'template' as const }
+  const first = result.current.workspacePlans
+  await act(async () => { await first.replace(request, workspacePreview) })
+  mocks.backendRecoveryGeneration++
+  rerender()
+  expect(first.isActive()).toBe(false)
+  expect(result.current.workspacePlans.peek(request)).toBeNull()
+  mocks.backendRecoveryGeneration++
+  rerender()
+  expect(result.current.workspacePlans).not.toBe(first)
+  expect(result.current.workspacePlans.peek(request)).toBeNull()
+  mocks.backendUnavailable = true
+  rerender()
+  await act(async () => { await result.current.workspacePlans.ensure(request) })
+  expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('/workspaces/'))).toBe(false)
+})
+
+it('loads a non-candidate review after StrictMode retires the first mount flight', async () => {
+  let reads = 0
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path === '/api/workspaces/chat/template-upgrade') {
+      reads++
+      return { ok: true, json: async () => ({ plan: workspacePreview }) }
+    }
+    return { ok: true, json: async () => ({ preferences, workspaces: [] }) }
+  }))
+  const strictWrapper = ({ children }: { children: ReactNode }) => <StrictMode><UpdateLifecycleProvider>{children}</UpdateLifecycleProvider></StrictMode>
+  const { result } = renderHook(() => useWorkspacePlan({ workspaceId: 'chat', kind: 'template' }), { wrapper: strictWrapper })
+  await waitFor(() => expect(result.current.plan?.planDigest).toBe('shared-plan'))
+  expect(reads).toBe(1)
+})
 
 it('starts after paint, selects distinct app and Workspace updates, and activates the backend', async () => {
   mocks.workspaces = [{ id: 'aq', template: 'auto-quant-v2', upgradeAvailable: { to: 'v1.2.3' } }]
@@ -232,4 +302,18 @@ it('retains local client policy across backend switches and checks while the bac
   expect(result.current.client?.currentVersion).toBe('0.94.1')
   expect(requests).toHaveBeenCalledWith('/relay/v1/updates/check', expect.objectContaining({ method: 'POST' }))
   expect(result.current.versionInfo).toBeNull()
+})
+
+it('projects setup recovery independently of update candidates and clears it after recovery', async () => {
+  mocks.getVersion.mockResolvedValue({ ...version, hasUpdate: false, latest: null })
+  mocks.projectSetup = { setup: { phase: 'complete', pending: ['auto-quant'], errors: { 'auto-quant': 'clone failed' } }, error: null }
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ preferences, workspaces: [] }) })))
+  const { result, rerender } = renderHook(useUpdateLifecycle, { wrapper })
+  await waitFor(() => expect(result.current.preferences).toEqual(preferences))
+  expect(result.current.guidance.setupCount).toBe(1)
+  expect(result.current.guidance.availableCount).toBe(0)
+  expect(result.current.guidance.needsAttentionCount).toBe(0)
+  mocks.projectSetup = { setup: { phase: 'complete', pending: [] }, error: null }
+  rerender()
+  expect(result.current.guidance.setupCount).toBe(0)
 })

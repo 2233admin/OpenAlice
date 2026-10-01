@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { desktopDevExecutable, desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
+import { desktopDevExecutable, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const pnpmCommand = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'pnpm'
@@ -76,7 +76,6 @@ if (!skipBuild) run('build Electron runtime', 'pnpm', ['electron:build'])
 const smokeRoot = mkdtempSync(join(tmpdir(), 'openalice-electron-pty-smoke-'))
 const smokeHome = join(smokeRoot, 'home')
 const smokeWorkspaces = join(smokeRoot, 'workspaces')
-const smokeEnv = desktopSmokeEnv(smokeRoot)
 const utaPort = await freePort()
 let recoveryOwner = null
 let recoveryOwnerExited = !guardianRecovery
@@ -89,7 +88,7 @@ if (guardianRecovery) {
     cwd: repoRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...smokeEnv,
+      ...process.env,
       OPENALICE_HOME: smokeHome,
       AQ_LAUNCHER_ROOT: smokeWorkspaces,
       OPENALICE_RUNTIME_FIXTURE_MODE: 'healthy',
@@ -126,7 +125,7 @@ const child = spawnDesktopSmoke(desktopDevExecutable(), [join(repoRoot, 'dist', 
   cwd: join(repoRoot, 'apps', 'desktop'),
   stdio: ['ignore', 'pipe', 'pipe'],
   env: {
-    ...smokeEnv,
+    ...process.env,
     OPENALICE_HOME: smokeHome,
     AQ_LAUNCHER_ROOT: smokeWorkspaces,
     OPENALICE_GLOBAL_DIR: join(smokeRoot, 'global'),
@@ -223,7 +222,7 @@ const maybeRunCliSmoke = () => {
   execFile(cliPath, [], {
     shell: process.platform === 'win32',
     env: {
-      ...smokeEnv,
+      ...process.env,
       OPENALICE_MANAGED_PI_NODE_PATH: process.execPath,
       AQ_WS_ID: workspaceId,
       OPENALICE_TOOL_SOCKET: socketPath,

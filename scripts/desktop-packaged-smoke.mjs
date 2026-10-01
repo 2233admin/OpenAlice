@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { writeProjectWorkspaceRequest } from '../packages/cli/src/project-workspaces.ts'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { createServer as createNetServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
@@ -14,7 +14,7 @@ import {
 import { buildDesktopPackagedSmokePlan } from './desktop-packaged-smoke-plan.mjs'
 import { runPnpmSync } from './pnpm-command.mjs'
 import { packagedElectronExecutable } from './smoke-packaged-toolchain.mjs'
-import { desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
+import { spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
 import { startWorkspaceAcceptanceAiMock } from './workspace-acceptance-ai-mock.mjs'
 import {
   formatWorkspaceAcceptanceFailure,
@@ -48,8 +48,8 @@ Options:
   --package-root <path>
                  Reuse an explicit package output (requires --skip-pack)
   --keep-package Keep the temporary package output created by this run
-  --temp-data    Use isolated temporary data/workspace/global/native CLI stores (default)
-  --real-data    Explicitly opt into real user data and native CLI state
+  --temp-data    Use isolated temporary OpenAlice data/workspace/global stores (default)
+  --real-data    Explicitly opt into real OpenAlice user data
   --onboarding   Use temp data and run an automated fresh-user renderer smoke,
                  then exit
   --trading-mode Use temp data, exercise lite -> readonly -> lite UTA lifecycle,
@@ -247,7 +247,7 @@ async function main() {
       join(homedir(), '.local', 'bin'),
     ].filter(Boolean)
     const env = {
-      ...(smokeRoot ? desktopSmokeEnv(smokeRoot) : process.env),
+      ...process.env,
       ...plan.launchEnv,
       PATH: [process.env['PATH'], ...pathAdditions].filter(Boolean).join(delimiter),
       OPENALICE_EXTRA_AGENT_PATH: pathAdditions.join(delimiter),
@@ -264,6 +264,14 @@ async function main() {
       env.AQ_LAUNCHER_ROOT = smokeWorkspaces
       env.OPENALICE_GLOBAL_DIR = smokeGlobal
       if (onboarding) env.PI_CODING_AGENT_DIR = join(smokeRoot, 'pi-agent')
+    }
+
+    if (workspaceAcceptance) {
+      // Seed only the durable native handoff. The real candidate process must
+      // prove its own identity/readiness; no native installer is simulated here.
+      const { DesktopUpdateLifecycle } = await import('../dist/electron/update-lifecycle.js')
+      const version = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).version
+      await new DesktopUpdateLifecycle(env.OPENALICE_ELECTRON_SMOKE_USER_DATA, () => '0.0.0').install(version, async () => {}, async () => {})
     }
 
     const receiptPath = workspaceAcceptance

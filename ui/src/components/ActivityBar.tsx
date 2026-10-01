@@ -120,7 +120,7 @@ export function ActivityBar({
   const pendingPush = usePendingPushCount()
   const connectorWarnings = useConnectorWarningCount()
   const updateGuidance = useUpdateLifecycle({ optional: true })?.guidance
-  const updateGuidanceCount = (updateGuidance?.availableCount ?? 0) + (updateGuidance?.needsAttentionCount ?? 0)
+  const updateGuidanceCount = (updateGuidance?.availableCount ?? 0) + (updateGuidance?.needsAttentionCount ?? 0) + (updateGuidance?.setupCount ?? 0)
   const collapsedSections = useActivityBarCollapse((s) => s.collapsedSections)
   const setCollapsed = useActivityBarCollapse((s) => s.setCollapsed)
   const railCollapsed = useActivityBarCollapse((s) => s.railCollapsed)

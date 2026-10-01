@@ -1,11 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { build } from 'tsup'
-import { desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from '../desktop-smoke-process.mjs'
+import { spawnDesktopSmoke, stopDesktopSmoke } from '../desktop-smoke-process.mjs'
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const require = createRequire(new URL('../../apps/desktop/package.json', import.meta.url))
 const flags = new Set(process.argv.slice(2))
@@ -37,15 +34,12 @@ if (!process.argv.includes('--skip-build')) {
     banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
   })
 }
-const smokeRoot = flags.has('--smoke') ? mkdtempSync(join(tmpdir(), 'openalice-demo-smoke-')) : null
 const child = spawnDesktopSmoke(require('electron'), [fileURLToPath(new URL('../../dist/electron/demo-main.js', import.meta.url)), ...(process.argv.includes('--smoke') ? ['--demo-smoke'] : [])], {
-  cwd: root, stdio: 'inherit', env: smokeRoot ? desktopSmokeEnv(smokeRoot) : { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+  cwd: root, stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
 })
 let stopping = null
 let requestedExitCode = null
-const stop = () => stopping ??= stopDesktopSmoke(child).then(() => {
-  if (smokeRoot) rmSync(smokeRoot, { recursive: true, force: true })
-})
+const stop = () => stopping ??= stopDesktopSmoke(child)
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
     requestedExitCode = signal === 'SIGINT' ? 130 : 143

@@ -20,11 +20,12 @@ function stageIndex(stage: MachineOperation['stage']): number {
   return 0
 }
 
-export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClose, onApply, onRetry }: {
+export function MachineUpgradeDialog({ open, plan, operation, busy, checking = false, error, onClose, onApply, onRetry }: {
   open: boolean
   plan: MachinePlan | null
   operation: MachineOperation | null
   busy: boolean
+  checking?: boolean
   error: string | null
   onClose: () => void
   onApply: () => void
@@ -50,7 +51,7 @@ export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClo
         {!plan && !progress && !error && <div className="flex items-center gap-3 py-8 text-muted-foreground" role="status"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none"/>Preparing the update plan…</div>}
         {plan && <div className="grid gap-3 rounded-xl border border-border bg-secondary/35 p-4 text-sm sm:grid-cols-2">
           <div className="min-w-0"><p className="text-xs text-muted-foreground">Machine · AliceProject</p><p className="mt-1 font-medium">{plan.machine.label}{plan.project ? ` · ${plan.project.displayName}` : ''}</p></div>
-          <div><p className="text-xs text-muted-foreground">Version</p><p className="mt-1 font-mono tabular-nums">{plan.installedVersion} → {plan.targetVersion}</p></div>
+          <div><p className="text-xs text-muted-foreground">Running → Target</p><p className="mt-1 font-mono tabular-nums">{plan.activeVersion ?? 'Stopped / unreported'} → {plan.targetVersion}</p><p className="mt-1 text-xs text-muted-foreground">Installed: {plan.installedVersion}{plan.installedVersion === plan.targetVersion && plan.activeVersion !== plan.targetVersion ? ' · ready to activate' : ''}</p></div>
         </div>}
         {progress ? <div className="mt-6" role="status" aria-live="polite">
           <div className="grid grid-cols-4 gap-2" aria-label="Update stages">
@@ -80,8 +81,8 @@ export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClo
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-secondary/20 px-5 py-4 sm:px-7">
         {working ? <span className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />Update in progress · controls are paused</span> : <>
           <Button variant="outline" onClick={onClose}>{progress ? 'Close' : 'Cancel'}</Button>
-          {failure && <Button onClick={onRetry}>Review again</Button>}
-          {!progress && plan && !plan.blocker && plan.actions.length > 0 && <Button onClick={() => { setApprovedPlanId(plan.id); onApply() }}>Approve update</Button>}
+          {failure && <Button disabled={checking} onClick={onRetry}>Review again</Button>}
+          {!progress && plan && !plan.blocker && plan.actions.length > 0 && <Button disabled={checking || !!failure} onClick={() => { setApprovedPlanId(plan.id); onApply() }}>Approve update</Button>}
         </>}
       </div>
     </DialogContent>

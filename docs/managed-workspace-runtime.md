@@ -8,6 +8,23 @@ Related guides: [[docs/project-structure.md]],
 [[docs/model-semantics-and-runtime-injection.md]], and
 [[docs/development-workflow.md]].
 
+## Update readiness and acceptance
+
+[[docs/update-lifecycle.md]] owns coordinated update semantics. Electron keeps
+its native installer and local `userData/update-operations/` receipt; the relay
+or desktop control plane persists a composed plan under `update-control/`.
+A native handoff is complete only when the exact approved app version starts,
+the renderer is ready, and the required integrated Alice service reports that
+version. A separated client verifies its local shell; backend readiness belongs
+to the selected Runtime. No Workspace Agent or Studio is started for this check.
+
+`electron:smoke:workspace` seeds a durable native handoff, then starts a new
+unsigned packaged process and checks real readiness through preload. It also
+checks the shared Skills inventory. `scripts/desktop-startup-smoke.mjs` accepts
+`--app-path <executable> --connected-home <disposable-running-project>` to prove
+packaged separated inventory without taking local project ownership. Native
+signature/notarization and Windows installer replacement remain release gates.
+
 ## Product Contract
 
 A packaged OpenAlice install must be able to open a Workspace on a fresh
@@ -614,22 +631,6 @@ Keep these true together:
 
 ## Verification
 
-### Disposable native-agent homes
-
-Desktop PTY, startup, existing-owner, upgrade, automated demo, and temporary-data
-packaged smokes use `desktopSmokeEnv` from `scripts/desktop-smoke-process.mjs`.
-The helper places OS home, Windows profile/AppData, XDG roots, and native-agent
-home overrides beneath the smoke-owned `os-home/`. It removes inherited provider
-keys and shell startup overrides rather than copying real CLI authentication.
-Fixture owners and CLI children share that same disposable environment.
-
-Packaged smoke defaults to temporary data. `--real-data` is an explicit opt-in
-to user data and native CLI state; never use it for automated acceptance.
-Build/package commands keep their toolchain environment, and normal interactive
-demo behavior is unchanged. Smoke-owned homes are removed only after the owned
-process tree has stopped.
-
-
 ### Workspace acceptance contract
 
 `pnpm electron:smoke:workspace` is the release-facing definition of an
@@ -826,3 +827,11 @@ not that the host init reaped PID entries. Real Node helper tests cover graceful
 and ignored TERM after wrapper exit; a local pthread diagnostic additionally
 checks a Z leader with a live worker. Native Electron/platform acceptance remains
 separate from these Node and injected-procfs assertions.
+
+Routine fixes do not require adding a permanent native smoke entry point.
+The one-off Default-selection navigation script was removed after acceptance;
+its product fix and hermetic Relay/UI regressions remain. Packaged smoke defaults
+to temporary OpenAlice data. `--real-data` is an explicit manual opt-in and is
+rejected by automated acceptance modes. These temporary stores do not promise
+OS-home or native-agent credential isolation; do not run live native Agents
+against a maintainer account as part of ordinary test verification.

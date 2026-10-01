@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ReactNode } from 'react'
@@ -104,5 +104,83 @@ describe('shared lifecycle Machine controls', () => {
     expect(result.current.probing).toBe(false)
     expect(result.current.plan).toBeNull()
     expect(result.current.operationError).toBe('SSH host is unreachable')
+  })
+
+  it('joins concurrent reviews and reuses the same plan until an explicit refresh', async () => {
+    let finish!: (value: Response) => void
+    const pending = new Promise<Response>(resolve => { finish = resolve })
+    vi.mocked(fetch).mockImplementation(async path => path === '/relay/v1/machines/operation'
+      ? { ok: true, json: async () => null } as Response : pending)
+    const { result } = renderHook(() => useUpdateLifecycle().machines, { wrapper })
+    let first!: Promise<unknown>
+    const input = { mode: 'upgrade' as const, machineKey: 'cloud', projectKey: 'desk' }
+    act(() => {
+      first = result.current.probe(input)
+      expect(result.current.probe(input, { force: true })).toBe(first)
+    })
+    await act(async () => { finish({ ok: true, json: async () => preview } as Response); await first })
+    await act(async () => { expect(await result.current.probe(input)).toBe(preview) })
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === '/relay/v1/machines/plan')).toHaveLength(1)
+    await act(async () => { await result.current.probe(input, { force: true }) })
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === '/relay/v1/machines/plan')).toHaveLength(2)
+  })
+
+  it('retains failed-refresh evidence but blocks approval until a successful fresh review', async () => {
+    let fail = false
+    vi.mocked(fetch).mockImplementation(async path => path === '/relay/v1/machines/operation'
+      ? { ok: true, json: async () => null } as Response
+      : fail ? { ok: false, status: 502, json: async () => ({ error: 'probe offline' }) } as Response
+        : { ok: true, json: async () => preview } as Response)
+    const { result } = renderHook(() => useUpdateLifecycle().machines, { wrapper })
+    const input = { mode: 'upgrade' as const, machineKey: 'cloud' }
+    await act(async () => { await result.current.probe(input) })
+    fail = true
+    await act(async () => { await expect(result.current.probe(input, { force: true })).rejects.toThrow('offline') })
+    expect(result.current.plan).toBe(preview)
+    expect(result.current.operationError).toBe('probe offline')
+    await expect(result.current.apply()).rejects.toThrow('reviewed')
+    await act(async () => { await result.current.probe(input) })
+    expect(result.current.operationError).toBe('probe offline')
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === '/relay/v1/machines/plan')).toHaveLength(2)
+    fail = false
+    await act(async () => { await result.current.probe(input, { force: true }) })
+    expect(result.current.operationError).toBeNull()
+  })
+
+  it('does not reuse a plan for another project on the same machine', async () => {
+    vi.mocked(fetch).mockImplementation(async path => path === '/relay/v1/machines/operation'
+      ? { ok: true, json: async () => null } as Response : { ok: true, json: async () => preview } as Response)
+    const { result } = renderHook(() => useUpdateLifecycle().machines, { wrapper })
+    await act(async () => { await result.current.probe({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'one' }) })
+    await act(async () => { await result.current.probe({ mode: 'upgrade', machineKey: 'cloud', projectKey: 'two' }) })
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => path === '/relay/v1/machines/plan')).toHaveLength(2)
+  })
+
+  it('blocks an approval synchronously when a refresh starts before React commits', async () => {
+    vi.mocked(fetch).mockImplementation(async path => path === '/relay/v1/machines/operation'
+      ? { ok: true, json: async () => null } as Response : { ok: true, json: async () => preview } as Response)
+    const { result } = renderHook(() => useUpdateLifecycle().machines, { wrapper })
+    const input = { mode: 'upgrade' as const, machineKey: 'cloud' }
+    await act(async () => { await result.current.probe(input) })
+    const previousApply = result.current.apply
+    await act(async () => {
+      const refresh = result.current.probe(input, { force: true })
+      await expect(previousApply()).rejects.toThrow('reviewed')
+      await refresh
+    })
+    expect(vi.mocked(fetch).mock.calls.some(([path]) => path === '/relay/v1/machines/apply')).toBe(false)
+  })
+
+  it('recovers failed operation-status discovery through an explicit fresh review', async () => {
+    let offline = true
+    vi.mocked(fetch).mockImplementation(async path => path === '/relay/v1/machines/operation'
+      ? offline ? { ok: false, status: 503 } as Response : { ok: true, json: async () => null } as Response
+      : { ok: true, json: async () => preview } as Response)
+    const { result } = renderHook(() => useUpdateLifecycle().machines, { wrapper })
+    await waitFor(() => expect(result.current.operationError).toContain('503'))
+    offline = false
+    await act(async () => { await result.current.probe({ mode: 'upgrade', machineKey: 'cloud' }, { force: true }) })
+    await waitFor(() => expect(result.current.operationError).toBeNull())
+    expect(result.current.plan).toBe(preview)
   })
 })

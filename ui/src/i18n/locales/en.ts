@@ -284,7 +284,7 @@ export const en = {
     noReadme: "There is no README.md in this Workspace yet. You can ask your agent to write an overview of its purpose and contents.",
     noGuide: "No Harness guide is available.",
   },
-  projectSetup: { connectPi: 'Connect a provider for Chat with Pi', title: 'Some workspaces need attention', description: 'Your project is ready. Retry preparing the remaining workspaces, or continue with the ones already available.', pending: 'Waiting for setup', preparing: 'Preparing…' },
+  projectSetup: { status: 'Workspace preparation', setupFailed: 'Preparation failed', connectPi: 'Connect a provider for Chat with Pi', title: 'Some workspaces need attention', description: 'Your project is ready. Retry preparing the remaining workspaces, or continue with the ones already available.', pending: 'Waiting for setup', preparing: 'Preparing…' },
   quickStart: { chooseHarness: 'Choose Harness' },
   pet: {
     title: 'Pet', sound: 'Click sound',
@@ -696,6 +696,25 @@ export const en = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "End this plan and review again",
+      "title": "Coordinated update",
+      "description": "Review exact targets together. Progress is saved on this computer; resume after restart. File conflicts still require Workspace review.",
+      "client": "This app",
+      "backend": "Selected remote backend",
+      "review": "Review selected updates",
+      "approve": "Approve and start",
+      "resume": "Resume saved update",
+      "phase": {
+        "approved": "Approved",
+        "running": "Updating",
+        "waiting": "Waiting for restart or readiness",
+        "blocked": "Waiting for owner review",
+        "failed": "Update failed",
+        "recovery": "Owner recovery required",
+        "succeeded": "Completed"
+      }
+    },
     title: 'Settings',
     group: {
       general: 'General',
@@ -961,7 +980,7 @@ export const en = {
       sshTarget: 'SSH target', label: 'Machine label', sshPort: 'SSH port', identityFile: 'Local SSH key path', optional: 'optional',
       probing: 'Checking SSH and remote Runtime…', sshNote: 'Uses this computer’s OpenSSH configuration.', probe: 'Probe Machine',
       finding: 'Checking saved Machines…', current: 'Current', health: 'Health & installation', update: 'Check for update',
-      updateDescription: 'Compare this Machine with the local OpenAlice release and review a safe plan.', checkUpdate: 'Probe and review',
+      updateDescription: 'Check this Machine’s update channel and review the installation and activation plan.', checkUpdate: 'Probe and review',
       review: 'Review Machine plan', runtime: 'Runtime', plannedActions: 'Planned actions', noChanges: 'No remote changes',
       deferred: 'This Runtime can be reused, but its update cannot be activated safely.',
       restartNotice: 'Running sessions may disconnect while the remote Runtime restarts.',
