@@ -128,11 +128,24 @@ review keeps it. Refreshing or failed discovery blocks approval synchronously,
 even before React commits the new loading state. The native owner still enforces
 plan expiry and single use. A fresh review also retries operation-status reads.
 
-Review updates opens the sole actionable target directly. Multiple updates
-retain a chooser with exact Workspace targets. The Workspace modal host sits
-under the same lifecycle provider as the shell; it uses the existing modal and
-button primitives and retains its keyboard/focus and narrow-screen behavior.
-Attention presentation and backend update engines are separate workstreams.
+Settings presents exactly three update objects: App, Backend and Alice Project.
+Project content stays in a collapsed disclosure: Chat, Quant and Prediction each
+resolve only their persisted default Workspace (Chat's recent/default pointer,
+and the Quant/Prediction preference IDs). Missing defaults remain unconfigured;
+there is no name or activity fallback. Only these defaults get automatic preview
+reads or contribute to the project badge, which counts once regardless of how
+many default contents can update. The general Workspace registry remains owned
+by the app shell, but Settings no longer requests a project-wide update inventory.
+
+Each object's View update opens its actionable review directly. Alice Project
+prepares one exact project plan automatically, with no checkboxes or chooser.
+It compares the owner proposals with the displayed preview digests and targets
+before enabling Update Alice Project. Existing coordinated journals own execution
+and recovery; only file conflicts hand off to the Workspace merge review. Project
+planning reads only requested units, without probing unrelated Workspaces or
+Broker Packs. Failed or retired previews cannot authorize application. Dialogs,
+buttons and project disclosures use shared primitives, including keyboard/focus,
+reduced-motion and narrow-screen behavior.
 
 ## Remote owner and installation boundaries
 

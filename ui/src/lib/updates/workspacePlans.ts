@@ -102,6 +102,6 @@ export class WorkspacePlanStore {
     }
     // Also refresh open/previously opened layer and skill reviews, without
     // treating their scoped changes as whole-template update evidence.
-    for (const [key, entry] of this.entries) if (!refreshed.has(key)) void check(entry.request)
+    for (const [key, entry] of this.entries) if (!refreshed.has(key) && workspaces.some(workspace => workspace.id === entry.request.workspaceId)) void check(entry.request)
   }
 }

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   backendRecoveryGeneration: 0,
   refreshWorkspaces: vi.fn(async () => undefined),
 }))
+vi.mock('./useAgentLaunchConfig', () => ({ useAgentLaunchPreferences: () => ({ loaded: true, recentChatWorkspaceId: 'chat' }) }))
 vi.mock('./useProjectWorkspaceSetup', async importOriginal => ({ ...await importOriginal<any>(), useSharedProjectWorkspaceSetup: () => mocks.projectSetup }))
 vi.mock('./useRelayConnection', () => ({ useRelayConnection: () => ({ refresh: async () => undefined }) }))
 vi.mock('../api', () => ({ api: { version: {
@@ -23,7 +24,7 @@ vi.mock('../auth/AuthContext', () => ({
   useBackendRecoverySignal: () => ({ backendUnavailable: mocks.backendUnavailable, backendRecoveryGeneration: mocks.backendRecoveryGeneration }),
 }))
 vi.mock('../contexts/workspaces-context', () => ({
-  useWorkspaces: () => ({ workspaces: mocks.workspaces, hasLoaded: true, refresh: mocks.refreshWorkspaces }),
+  useWorkspaces: () => ({ workspaces: mocks.workspaces, hasLoaded: true, refresh: mocks.refreshWorkspaces, autoQuantDefaultWorkspaceId: 'aq', autoQuantPreferenceLoaded: true, autoPredictionDefaultWorkspaceId: 'ap', autoPredictionPreferenceLoaded: true }),
 }))
 
 import { UpdateLifecycleProvider, useUpdateLifecycle } from './useUpdateLifecycle'
@@ -55,7 +56,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 it('prefetches the candidate once and projects the same plan into guidance and manual review', async () => {
-  mocks.workspaces = [{ id: 'chat', template: 'chat', upgradeAvailable: { to: '2' } }]
+  mocks.workspaces = [{ id: 'chat', template: 'chat', upgradeAvailable: { to: '2' } }, { id: 'old-chat', template: 'chat', upgradeAvailable: { to: '9' } }]
   let reads = 0
   let current = false
   vi.stubGlobal('fetch', vi.fn(async (path: string) => {
@@ -70,6 +71,7 @@ it('prefetches the candidate once and projects the same plan into guidance and m
   await waitFor(() => expect(result.current.workspacePlans.peek(request)?.toVersion).toBe('3'))
   await act(async () => { await result.current.workspacePlans.ensure(request) })
   expect(reads).toBe(1)
+  expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('old-chat') || String(path).includes('/updates/inventory'))).toBe(false)
   expect(result.current.guidance.workspaceIds).toEqual(['chat'])
   current = true
   await act(async () => { await result.current.refresh() })

@@ -41,7 +41,7 @@ import type {
 } from '../../components/workspace/api'
 
 import type { TakeoverRequest } from '../../hooks/useSessionTakeovers'
-import { demoHarnessSourceCandidate } from './updates'
+import { demoHarnessSourceCandidate, demoProjectUpdatesReady } from './updates'
 
 // Isolated setup-recovery walkthrough: ?workspaceSetup=failed|preparing|read-error.
 let demoSetupScenario = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('workspaceSetup') : null
@@ -826,7 +826,7 @@ export const workspacesHandlers = [
     const workspace = demoWorkspaces.find(candidate => candidate.id === String(params.id))
     if (!workspace) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
     if (!workspace.harnessSource) return HttpResponse.json({ error: 'unsupported', message: 'This Workspace does not have a source receipt.' }, { status: 400 })
-    const candidate = workspace.id === DEMO_AUTO_QUANT_WORKSPACE_ID ? demoHarnessSourceCandidate : null
+    const candidate = workspace.id === DEMO_AUTO_QUANT_WORKSPACE_ID && !demoProjectUpdatesReady ? demoHarnessSourceCandidate : null
     const blockers = candidate ? ['active_runtime'] : []
     return HttpResponse.json({ plan: {
       workspaceId: workspace.id, template: workspace.template, strategy: 'source-merge',
@@ -855,7 +855,11 @@ export const workspacesHandlers = [
         },
       })
     }
-    return HttpResponse.json({ plan: demoTemplateUpgradePlan(workspace.id) })
+    const plan = demoTemplateUpgradePlan(workspace.id)
+    if (demoProjectUpdatesReady && workspace.id === DEMO_CHAT_WORKSPACE_ID) {
+      return HttpResponse.json({ plan: { ...plan, files: plan.files.filter(file => file.status !== 'conflict'), summary: { ...plan.summary, conflicts: 0 } } })
+    }
+    return HttpResponse.json({ plan })
   }),
   http.post('/api/workspaces/:id/template-upgrade', async ({ params, request }) => {
     const workspace = demoWorkspaces.find((candidate) => candidate.id === String(params.id))

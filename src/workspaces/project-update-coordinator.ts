@@ -29,26 +29,30 @@ export class ProjectUpdateCoordinator {
     const { value, ...freshness } = this.discovery.getSnapshot()
     return { units: value ?? [], ...freshness }
   }
-  private async collectInventory(): Promise<UpdateUnit[]> {
+  private async collectInventory(selected?: ReadonlySet<string>): Promise<UpdateUnit[]> {
     const units: UpdateUnit[] = []
-    const injection = await aliceHarnessSourceVersion()
+    const injection = !selected || [...selected].some(id => id.startsWith('alice-harness:')) ? await aliceHarnessSourceVersion() : null
     for (const workspace of this.service.registry.list()) {
+      if (selected && ![...selected].some(id => id.slice(id.indexOf(':') + 1) === workspace.id)) continue
       const template = workspace.template ? this.service.templates.get(workspace.template) : undefined
-      if (template?.upgradeStrategy === 'managed-context') {
+      if (template?.upgradeStrategy === 'managed-context' && (!selected || selected.has(`template:${workspace.id}`))) {
         const installed = await this.service.templateUpgrades.currentVersion(workspace)
         units.push(projectUpdateUnit(`template:${workspace.id}`, 'template', workspace.dir, installed ? { version: installed } : null, { version: template.version }))
       }
-      if (template?.source) {
+      if (template?.source && (!selected || selected.has(`source:${workspace.id}`))) {
         const receipt = await readHarnessSource(workspace.dir)
         const latest = receipt && await this.service.sourceUpgrades.latest(template.name, receipt.version, true)
         units.push(projectUpdateUnit(`source:${workspace.id}`, 'source', workspace.dir,
           receipt ? { version: receipt.version, commit: receipt.commit } : null,
           latest ? { version: latest.version, commit: latest.commit } : receipt ? { version: receipt.version, commit: receipt.commit } : { version: 'unknown' }))
       }
-      const injected = await this.service.aliceHarnessUpgrades.currentVersion(workspace)
-      units.push(projectUpdateUnit(`alice-harness:${workspace.id}`, 'alice-harness', workspace.dir, injected ? { version: injected } : null, { version: injection }))
+      if (!selected || selected.has(`alice-harness:${workspace.id}`)) {
+        const injected = await this.service.aliceHarnessUpgrades.currentVersion(workspace)
+        units.push(projectUpdateUnit(`alice-harness:${workspace.id}`, 'alice-harness', workspace.dir, injected ? { version: injected } : null, { version: injection! }))
+      }
     }
     for (const engine of INSTALLABLE_BROKER_ENGINES) {
+      if (selected && !selected.has(`pack:${engine}`)) continue
       const status = await getBrokerPackLocalStatus(engine)
       // Inventory missing optional engines without interpreting absence as update permission.
       units.push({ ...projectUpdateUnit(`pack:${engine}`, 'broker-pack', 'project-runtime', status.version ? { version: status.version } : null, { version: getCurrentVersion() }),
@@ -58,7 +62,7 @@ export class ProjectUpdateCoordinator {
   }
   async plan(ids: string[]): Promise<UpdatePlan> {
     if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length) throw new Error('Select distinct project update units')
-    const inventory = await this.inventory(true)
+    const inventory = await this.collectInventory(new Set(ids))
     const proposals: UpdateProposal[] = []
     for (const id of ids) {
       const unit = inventory.find(u => u.id === id)
