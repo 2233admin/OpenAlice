@@ -47,13 +47,15 @@ cleanup claims rather than skipping failures or widening waits.
 - [ ] Run scoped feedback and required final gates; retain native platform gaps;
   publish bounded Draft PRs and check exact-head CI. No merge/release authority.
 
-Physical organization is a separate proposed follow-up: split the mixed
-60-case PTY file into real startup/selection/recovery journey specs under
-`tests/scenarios/startup-project-selection/` and CLI-owned terminal presentation
-specs, with one shared support fixture directory. Central specs require explicit
-`centralTests` owner/lane definitions; protocol manifests cross-reference rather
-than copy them. Do not mass-move files or alter collection before that bounded
-split is confirmed. Current registrations immediately execute existing files.
+Physical organization is now authorized and implemented as a separate increment
+on the CLI repair: three real startup/selection/recovery specs under
+`tests/scenarios/startup-project-selection/` and one CLI-owned terminal presentation
+spec. One shared support module owns fixture paths and cleanup hooks. All 53 test
+blocks (60 expanded cases) are conserved; one path expression changes for
+relocation. Three central hermetic specs declare Runtime/CLI ownership, platform
+area and CLI package association once. Protocol manifests cross-reference them
+without copying tests. The Kitty input claim belongs to native-platform rather
+than forcing the whole presentation file into startup selection.
 
 Stage 1 makes the test system navigable and its missing evidence visible.
 Stage 2 supplies and enforces evidence for the highest-risk missing behaviors.
@@ -561,3 +563,17 @@ unchanged dev product code and pass after repair. Installer selection passes
 closure; those two targeted cases pass. No test deletion or timeout increase.
 The earlier Draft/failed-suite paragraphs above are historical snapshots, not
 current PR or gate status. Final required gates and Draft CI remain pending.
+
+### Physical PTY organization verification
+
+Four files preserve the 60 collected full test names exactly once: startup 10,
+project selection 9, exit/recovery 12, terminal presentation 29. Normalized test
+block hashes also preserve all 53 source blocks, changing only the one relocated
+fixture path expression. Actual startup selection now runs 8 files /169 tests
+(12.92s), including 31 journey PTY cases; presentation separately passes 29
+(16.74s). This removes unrelated presentation work from startup without claiming
+less terminal coverage. Catalog guards pass 29 tests and central typecheck passes.
+CLI package association selects all three central files; persisted-state selects
+the settings/selection file. Shared support imports all four, while product
+subprocesses remain a dynamic boundary requiring explicit owner/scenario surface
+selection. No merge/release. Combined full-suite and exact-head CI pending.

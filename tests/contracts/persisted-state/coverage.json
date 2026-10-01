@@ -52,13 +52,13 @@
       "expected": "Actual settings change without inventing an explicit CLI override or changing Default; successful writes report accurately.",
       "evidence": [
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-project-selection.pty.spec.ts",
           "assertion": "edits and persists selected-AliceProject settings inside the TUI",
           "level": "integration",
           "scope": "Real Node CLI/PTY and isolated config files; no native Electron or broker."
         },
         {
-          "spec": "packages/cli/src/supervisor-tui.pty.spec.ts",
+          "spec": "tests/scenarios/startup-project-selection/supervisor-project-selection.pty.spec.ts",
           "assertion": "switches setup scope and persists machine defaults inside the TUI",
           "level": "integration",
           "scope": "Real Node CLI/PTY and isolated config files; no native Electron or broker."

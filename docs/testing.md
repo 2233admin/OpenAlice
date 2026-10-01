@@ -308,12 +308,13 @@ also do not certify that every storage layer propagates disk write failures.
 PTY input, rendering, project switching and detached recovery alongside component
 and loopback protocol evidence. `--scenario update-recovery --path
 packages/cli/src/install.spec.mjs` selects immutable installer integrity fixtures.
-`--contract persisted-state --path packages/cli/src/supervisor-tui.pty.spec.ts`
+`--contract persisted-state --path tests/scenarios/startup-project-selection/supervisor-project-selection.pty.spec.ts`
 selects real terminal settings persistence. Append `--list --explain` for a dry run.
 
 Coverage manifests name exact claims, but generic selection executes entire spec
-files. The current mixed PTY file executes all 60 cases; it is not copied into
-every group. Synthetic Runtime relay success does not establish real backend
+files. The three central PTY journey files execute startup, selection and recovery;
+the CLI terminal-presentation file is selected separately by native-platform or
+the Runtime/CLI owner. All 60 cases remain collected exactly once. Synthetic Runtime relay success does not establish real backend
 identity verification; the separately mapped loopback WebRelay tests do. Fixture
 HOME is caller-owned and real-CLI cases clear inherited Home/Project overrides.
 Native installed launchers, Windows/macOS terminals, real SSH, native Electron
