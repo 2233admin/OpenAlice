@@ -585,7 +585,7 @@ For installer changes run:
 
 ```bash
 bash -n install
-pnpm exec vitest run packages/cli/src/install.spec.mjs
+pnpm exec vitest run tests/e2e/cli-installer/install.spec.mjs
 pnpm test:system:installer
 npx tsc --noEmit
 pnpm test
@@ -597,9 +597,9 @@ For a managed SSH or AliceProject cross-target change, also run:
 pnpm test:system:remote
 pnpm exec vitest run \\
   packages/cli/src/remote.spec.mjs \\
-  packages/cli/src/project-transfer.spec.ts \\
+  tests/integration/project-transfer/project-transfer.spec.ts \\
   packages/cli/src/project-transfer-ssh.spec.ts \\
-  packages/cli/src/project-transfer-stream.spec.ts
+  tests/integration/project-transfer/project-transfer-stream.spec.ts
 ```
 
 OpenAlice assumes the target is already reachable through ordinary SSH. These

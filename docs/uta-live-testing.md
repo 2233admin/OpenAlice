@@ -54,7 +54,7 @@ OKX, and Bybit still return a latest bar across 1m, 15m, 1h, 4h, and 1d:
 ```bash
 pnpm exec vitest run \
   --config vitest.external.config.ts \
-  services/uta/src/domain/trading/brokers/ccxt/CcxtBroker.e2e.spec.ts
+  tests/integration/broker-market-data/CcxtBroker.spec.ts
 ```
 
 Keep this outside ordinary CI: it is real venue evidence, but DNS, venue
@@ -122,7 +122,7 @@ When selecting a test by name, keep the shared lane and file selection explicit:
 ```bash
 OPENALICE_UTA_LIVE_PAPER=1 pnpm test:select \
   --lane live-paper \
-  --path services/uta/src/domain/trading/__test__/e2e/ibkr-paper.e2e.spec.ts \
+  --path tests/integration/broker-ibkr-paper/ibkr-paper.spec.ts \
   -- -t 'canonical conId routing'
 ```
 

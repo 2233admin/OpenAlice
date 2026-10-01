@@ -553,15 +553,15 @@ evidence beyond changed-file imports.
 npx tsc --noEmit
 pnpm vitest run \
   src/workspaces/headless-output.spec.ts \
-  src/workspaces/headless-task.spec.ts \
+  tests/integration/headless-process/headless-task.spec.ts \
   src/workspaces/headless-task-registry.spec.ts \
   src/webui/routes/headless.spec.ts \
   src/workspaces/issues/declaration.spec.ts \
-  src/workspaces/issues/mutate.spec.ts \
-  src/workspaces/issues/comment-delivery.spec.ts \
+  tests/integration/issue-lifecycle/mutate.spec.ts \
+  tests/integration/issue-lifecycle/comment-delivery.spec.ts \
   src/workspaces/issues/board.spec.ts \
-  src/webui/routes/issues.spec.ts \
-  src/workspaces/issues/auto-complete.spec.ts \
+  tests/integration/issue-routes/issues.spec.ts \
+  tests/integration/issue-lifecycle/auto-complete.spec.ts \
   src/workspaces/schedule/scanner.spec.ts
 ```
 

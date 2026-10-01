@@ -103,8 +103,9 @@ packages/
 ui/                            React/Vite renderer
 apps/desktop/                  Electron main/preload/IPC shell
 scripts/guardian/              dev/prod supervisors, local control + recovery tests
-tests/scenarios/               cross-module product journeys and coverage requirements
-tests/contracts/               protocol/workflow specs and coverage requirements
+tests/integration/             registered collaboration tests grouped by topic
+tests/e2e/                     application-entry workflows
+tests/suites.json              integration/E2E suite registry
 tests/commands.json            dedicated acceptance prerequisites (manifest commands stay in place)
 default/                       shipped skills and factory defaults
 docs/                          owner guides and contributor documentation

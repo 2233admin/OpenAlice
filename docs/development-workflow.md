@@ -277,12 +277,10 @@ for changed runner/configuration, executable tests, or product code. Typechecks
 and real surfaces apply when their code or behavior changes; explain why a
 check is applicable or not rather than inventing runtime acceptance.
 
-Scenario, protocol and owner are separate selection dimensions: values within
-one dimension are ORed, dimensions are ANDed. An owner/scenario intersection
-can exclude part of an affected protocol; run that protocol regression
-independently as well. Inspect owner/package/path evidence beyond group
-metadata: an owner-only spec without a scenario mapping is not proof of
-irrelevance. `pnpm test:critical` always runs its complete declared evidence;
+Suite, tier and owner are separate selection dimensions: values within one
+are ORed, dimensions are ANDed. A focused intersection can exclude affected
+behavior; inspect unit/owner/package tests beyond registered high-level suites.
+Unit tests intentionally require no suite registration. `pnpm test:critical` always runs its complete declared evidence;
 neither focused development feedback nor this ladder may trim it or weaken its
 existing CI requirement.
 

@@ -705,7 +705,7 @@ pnpm vitest run \
   src/core/runtime-profile.spec.ts \
   src/workspaces/agent-detect.spec.ts \
   src/workspaces/spawn-env.spec.ts \
-  src/workspaces/adapters/ai-config.spec.ts \
+  tests/integration/agent-configuration/ai-config.spec.ts \
   scripts/vendor-managed-runtime.spec.ts \
   scripts/assert-desktop-package.spec.ts \
   scripts/smoke-packaged-toolchain.spec.ts
