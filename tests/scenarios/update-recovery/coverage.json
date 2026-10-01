@@ -94,6 +94,41 @@
         }
       ],
       "gap": "Real signed/downloaded artifacts, native macOS/Windows and installer Docker acceptance require their dedicated commands. Mode corruption is independent of process umask."
+    },
+    {
+      "id": "remote-installed-pending-activation",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "Stable is installed while a beta Runtime remains active, or the update controller lost transport.",
+      "action": "Plan and approve native SSH activation; restart the controller after interrupted install, stop or reconnect.",
+      "expected": "Production and rehearsal share activation-only planning. Keep the approved target, never downgrade, and never stop a replacement owner.",
+      "evidence": [
+        {
+          "spec": "packages/cli/src/remote-update.spec.ts",
+          "assertion": "produces the same activation-only plan in production and rehearsal for installed stable / active beta",
+          "level": "component",
+          "scope": "Production planner/controller and durable filesystem journal with injected SSH probes/actions; does not claim native SSH execution."
+        },
+        {
+          "spec": "packages/cli/src/remote-update.spec.ts",
+          "assertion": "resumes after controller loss following installation without reinstalling or changing the approved target",
+          "level": "component",
+          "scope": "Production planner/controller and durable filesystem journal with injected SSH probes/actions; does not claim native SSH execution."
+        },
+        {
+          "spec": "packages/cli/src/remote-update.spec.ts",
+          "assertion": "does not stop a replacement owner when recovering an interrupted activation",
+          "level": "component",
+          "scope": "Production planner/controller and durable filesystem journal with injected SSH probes/actions; does not claim native SSH execution."
+        },
+        {
+          "spec": "packages/cli/src/remote-update.spec.ts",
+          "assertion": "retains failed reconnect in the journal and retries it without another restart",
+          "level": "component",
+          "scope": "Production planner/controller and durable filesystem journal with injected SSH probes/actions; does not claim native SSH execution."
+        }
+      ],
+      "gap": "Real SSH/native artifact acceptance requires test:system:remote; cross-platform signed update handoff remains release-owned."
     }
   ]
 }

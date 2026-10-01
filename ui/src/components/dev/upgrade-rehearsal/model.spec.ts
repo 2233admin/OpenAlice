@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { initial, reduce, releaseSnapshot, type State } from './model'
+import { initial, reduce, plan, runtimePlans, runtimeTargetVersion, releaseSnapshot, type State } from './model'
 function approved(s: State) {
   s = reduce(s, { type: 'publish', value: 'stable' })
   const id = s.publication.records.at(-1)!.id
@@ -95,7 +95,8 @@ it('does not downgrade a newer backend when the selected channel has no matching
   let s = initial('server-ahead')
   s = reduce(s, { type: 'channel', value: 'beta' })
   s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
-  expect(s.phase).toBe('review')
+  expect(s.phase).toBe('done')
+  expect(s.steps).toEqual([])
   expect(s.server).toBe('0.94.2')
 })
 
@@ -106,4 +107,29 @@ it('does not complete activation when a different release starts after handoff',
   expect(failed.phase).toBe('failed')
   expect(failed.clientInstalled).toBe('0.94.2')
   expect(failed.cursor).toBe(s.cursor)
+})
+
+it('rehearses an installed stable release with an old beta process through the shared plan', () => {
+  let s = initial('pending-activation')
+  expect(runtimePlans(s).backend.stages).toEqual(['activate', 'verify', 'reconnect'])
+  expect(plan(s)).toEqual(['backend-activate', 'backend-verify', 'backend-reconnect'])
+  s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+  const done = until(s, 'done')
+  expect(done.server).toBe('0.94.1')
+  expect(done.operations.backend?.completed).toEqual(['activate', 'verify', 'reconnect'])
+  expect(done.log.some(line => line.includes('backend-install'))).toBe(false)
+})
+it('retains stable when the client requests the same-base older beta', () => {
+  const s = initial('stable-over-beta')
+  expect(runtimePlans(s).backend.target?.version).toBe('0.94.1')
+  expect(plan(s)).toEqual([])
+})
+it('activates the retained installed target when an older client reconnects to a pending upgrade', () => {
+  let s = { ...initial('stable-over-beta'), server: '0.94.1-beta.2' }
+  expect(runtimeTargetVersion(s, 'backend')).toBe('0.94.1')
+  s = reduce(reduce(s, { type: 'review' }), { type: 'approve' })
+  const done = until(s, 'done')
+  expect(done.server).toBe('0.94.1')
+  expect(done.phase).toBe('done')
+  expect(done.operations.backend?.completed).toEqual(['activate', 'verify', 'reconnect'])
 })

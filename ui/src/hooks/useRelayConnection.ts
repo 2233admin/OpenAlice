@@ -115,7 +115,9 @@ export function useRelayConnection(initial: RelayStatus | null = null) {
   }, [desktop, refresh])
 
   useEffect(() => {
-    const generation = ++discoveryGeneration.current
+    // Child effects may already have requested inventory during this mount.
+    // Status initialization must not cancel that refresh and strand loading.
+    const generation = discoveryGeneration.current
     if (!initial) void (desktop ? desktop.status() : relayJson<RelayStatus>('status')).then((next) => {
       if (generation === discoveryGeneration.current) setStatus(next)
     }).catch(() => undefined)

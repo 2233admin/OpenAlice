@@ -961,7 +961,7 @@ export const en = {
       sshTarget: 'SSH target', label: 'Machine label', sshPort: 'SSH port', identityFile: 'Local SSH key path', optional: 'optional',
       probing: 'Checking SSH and remote Runtime…', sshNote: 'Uses this computer’s OpenSSH configuration.', probe: 'Probe Machine',
       finding: 'Checking saved Machines…', current: 'Current', health: 'Health & installation', update: 'Check for update',
-      updateDescription: 'Compare this Machine with the local OpenAlice release and review a safe plan.', checkUpdate: 'Probe and review',
+      updateDescription: 'Check this Machine’s update channel and review the installation and activation plan.', checkUpdate: 'Probe and review',
       review: 'Review Machine plan', runtime: 'Runtime', plannedActions: 'Planned actions', noChanges: 'No remote changes',
       deferred: 'This Runtime can be reused, but its update cannot be activated safely.',
       restartNotice: 'Running sessions may disconnect while the remote Runtime restarts.',

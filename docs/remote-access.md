@@ -735,10 +735,11 @@ The read-only plan reports:
 
 Apply rules for an ordinary SSH-managed host:
 
-1. no matching compatible CLI or Runtime: ask before invoking the normal
-   installer with the local CLI's recorded logical release selector and
-   expected target-local artifact identity; the installer obtains the matching
-   platform-native release;
+1. an unprepared Machine uses the client release as a bootstrap candidate; an
+   existing installation retains its recorded channel and any newer release.
+   Explicit GUI updates discover the remote channel's release. Ask before
+   invoking its installation owner; package-manager installations stay owned
+   by their package manager;
 2. native mode never installs source-build dependencies or Agent Runtime
    executables;
 3. explicit source mode validates its own prerequisites and remains separate
@@ -766,14 +767,30 @@ failure. Source preparation uses compact phase output and suppresses successful
 package/build chatter; a failed phase still includes a bounded diagnostic tail.
 
 For an ordinary SSH-managed host, the local orchestrator compares protocol
-ranges and logical release identity; human version strings alone are
-insufficient. Stable, beta, and pinned releases may have different macOS and
+ranges and control compatibility separately from exact installation identity. Different
+client/backend SemVer values alone are not incompatibility evidence. Stable, beta, and pinned releases may have different macOS and
 Linux archive/content identities, but the remote CLI provenance and embedded
-Runtime must agree with that remote host's target. For dev, the latest CDN dev
-manifest is the completed-set authority: the local CLI must match its own
-target, the remote target is selected from the same manifest, and installer
-handoff is bound to the remote checksum and content identity. If the manifest
-cannot be verified or the local CLI is stale, remote mutation is blocked.
+Runtime must agree with that remote host's target. For dev, a discovered candidate must be bound to the remote target checksum
+and content identity from the completed-set manifest. An existing verified
+remote installation can be reused independently of the client's build. A stale
+bootstrap client cannot supply a new dev installation target.
+
+## Interrupted native updates
+
+`packages/update-lifecycle` owns release selection and install/activate/verify/
+reconnect transitions for both native SSH execution and the rehearsal. A stable
+release outranks its same-base beta. Installation and activation are separate:
+when stable is installed but beta is still running, review a restart-only plan.
+No second installation is needed. The review shows installed, running and target
+versions separately. A newer active release is never implicitly downgraded.
+
+The local controller's durable scoped receipt freezes the approved release,
+project home and original process owner. Reopening the client and reviewing the
+same Machine/project resumes from probed state. If stop succeeded before a lost
+reply, resume starts the installed target; if activation succeeded but relay
+reconnection failed, resume verifies and reconnects without stopping again.
+A changed owner prevents automatic stop. Only the selected project is restarted;
+other projects using that machine installation retain their running processes.
 
 ## Future Independent Studio Protocol
 
@@ -881,7 +898,7 @@ Runtime model.
 | ordinary SSH, matching compatible remote CLI/Server | reuses both without mutation |
 | ordinary SSH, matching release across different targets | compares the logical stable/beta/pinned release, then validates the remote archive and Runtime against its own platform/architecture provenance |
 | ordinary SSH, dev client behind latest manifest | blocks install/start mutation and asks the user to update the local dev CLI first |
-| ordinary SSH, protocol-compatible CLI from a different branch/tag/commit | plan names a matching CLI update before connection |
+| ordinary SSH, verified compatible CLI with different client provenance | retain the remote release and channel; no implicit reinstall or downgrade |
 | ordinary SSH, missing remote CLI, interactive | shows plan; default no leaves host unchanged |
 | ordinary SSH, missing remote CLI, non-interactive | fails unless explicit approval is present |
 | ordinary SSH, incompatible running Server | explains process impact before update/restart |
@@ -930,6 +947,19 @@ When this surface changes:
    and package smoke whenever shared Guardian, PTY, startup, or dependency
    behavior changes;
 7. run the repository-wide TypeScript and test gates required by `AGENTS.md`.
+
+For pending activation and controller-loss acceptance, add an exact published
+release pair, for example:
+
+```bash
+pnpm test:system:remote -- --upgrade-from 0.94.1-beta.2 --upgrade-to 0.94.1
+```
+
+This opt-in extension downloads official artifacts on the disposable host,
+leaves the old process running after the new installation, executes an
+activation-only plan, interrupts relay restoration, and reconnects over real
+SSH/HTTP without another install or restart. It is external acceptance, never
+part of hermetic `pnpm test`. The host architecture selects the native payload.
 
 Record any network-shaping gap explicitly. A localhost smoke does not verify
 remote TUI behavior, and an SSH tunnel smoke does not verify Electron package

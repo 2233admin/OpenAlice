@@ -946,7 +946,7 @@ export const zh: Resources = {
       sshTarget: 'SSH 目标', label: '机器名称', sshPort: 'SSH 端口', identityFile: '本机 SSH 密钥路径', optional: '可选',
       probing: '正在检查 SSH 和远端运行态…', sshNote: '使用本机的 OpenSSH 配置。', probe: '探测机器',
       finding: '正在检查已保存的机器…', current: '当前', health: '健康状态与安装', update: '检查更新',
-      updateDescription: '与本机 OpenAlice 版本比较，并预览安全的更新计划。', checkUpdate: '探测并预览',
+      updateDescription: '检查此机器的更新通道，预览安装与激活计划。', checkUpdate: '探测并预览',
       review: '确认机器变更计划', runtime: '运行态', plannedActions: '计划执行', noChanges: '无需更改远端',
       deferred: '此运行态可以继续使用，但无法安全地激活更新。',
       restartNotice: '远端运行态重启期间，运行中的会话可能断开。',

@@ -50,7 +50,7 @@ export function MachineUpgradeDialog({ open, plan, operation, busy, error, onClo
         {!plan && !progress && !error && <div className="flex items-center gap-3 py-8 text-muted-foreground" role="status"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none"/>Preparing the update plan…</div>}
         {plan && <div className="grid gap-3 rounded-xl border border-border bg-secondary/35 p-4 text-sm sm:grid-cols-2">
           <div className="min-w-0"><p className="text-xs text-muted-foreground">Machine · AliceProject</p><p className="mt-1 font-medium">{plan.machine.label}{plan.project ? ` · ${plan.project.displayName}` : ''}</p></div>
-          <div><p className="text-xs text-muted-foreground">Version</p><p className="mt-1 font-mono tabular-nums">{plan.installedVersion} → {plan.targetVersion}</p></div>
+          <div><p className="text-xs text-muted-foreground">Running → Target</p><p className="mt-1 font-mono tabular-nums">{plan.activeVersion ?? 'Stopped / unreported'} → {plan.targetVersion}</p><p className="mt-1 text-xs text-muted-foreground">Installed: {plan.installedVersion}{plan.installedVersion === plan.targetVersion && plan.activeVersion !== plan.targetVersion ? ' · ready to activate' : ''}</p></div>
         </div>}
         {progress ? <div className="mt-6" role="status" aria-live="polite">
           <div className="grid grid-cols-4 gap-2" aria-label="Update stages">

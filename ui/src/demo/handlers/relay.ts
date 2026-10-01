@@ -53,8 +53,9 @@ export const relayHandlers = [
       id: 'demo-machine-plan', mode: input.mode,
       machine: { key: machine?.key ?? null, label: machine?.displayName ?? input.label ?? 'Cloud Linux', sshTarget: machine?.sshTarget ?? input.sshTarget ?? 'alice@cloud.example.com' },
       project: project ? { key: project.key, displayName: project.displayName } : null,
-      platform: 'macOS arm64', installedVersion: '0.93.1', targetVersion: '0.94.1',
-      runtime: 'running · cli-server', actions: ['update remote OpenAlice CLI', 'restart remote OpenAlice Server'], blocker: null, deferredUpdate: false,
+      platform: 'macOS arm64', activeVersion: project?.runtime.class === 'absent' ? null : '0.93.1', installedVersion: '0.93.1', targetVersion: '0.94.1',
+      runtime: project?.runtime.class === 'absent' ? 'absent · none' : 'running · cli-server',
+      actions: ['update remote OpenAlice CLI', project?.runtime.class === 'absent' ? 'start remote OpenAlice Server' : 'restart remote OpenAlice Server'], blocker: null, deferredUpdate: false,
       expiresAt: new Date(Date.now() + 300_000).toISOString(),
     })
   }),
