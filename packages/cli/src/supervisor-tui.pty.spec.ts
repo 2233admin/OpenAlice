@@ -1130,6 +1130,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
         HOME: isolatedHome,
         OPENALICE_HOME: join(isolatedHome, 'state'),
         OPENALICE_TUI_FIXTURE_RUNTIME: 'running',
+        OPENALICE_TUI_FIXTURE_HOME_AVAILABLE: '0',
         OPENALICE_TUI_MOTION: '0',
         TERM: 'xterm-256color',
       },
@@ -1928,14 +1929,18 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
   it('opens Setup by clicking a bottom Command Dock result', async () => {
     const isolatedHome = await mkdtemp(join(tmpdir(), 'openalice-cli-command-dock-'))
     temporaryPaths.push(isolatedHome)
+    const childEnv = { ...process.env }
+    delete childEnv.OPENALICE_HOME
+    delete childEnv.OPENALICE_INSTANCE
+    delete childEnv.OPENALICE_PROJECT
     const child = pty.spawn(process.execPath, [cliEntry], {
       cols: 80,
       rows: 24,
       cwd: dirname(cliEntry),
       env: {
-        ...process.env,
+        ...childEnv,
         HOME: isolatedHome,
-        OPENALICE_HOME: join(isolatedHome, 'state'),
+        OPENALICE_SUPERVISOR_HOME: join(isolatedHome, 'supervisor'),
         TERM: 'xterm-256color',
       },
     })
@@ -2005,10 +2010,13 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     const childEnv: NodeJS.ProcessEnv = {
       ...process.env,
       HOME: isolatedHome,
-      OPENALICE_HOME: join(isolatedHome, 'state'),
+      OPENALICE_SUPERVISOR_HOME: join(isolatedHome, 'supervisor'),
       TERM: 'xterm-256color',
     }
     delete childEnv.NO_COLOR
+    delete childEnv.OPENALICE_HOME
+    delete childEnv.OPENALICE_INSTANCE
+    delete childEnv.OPENALICE_PROJECT
     const child = pty.spawn(process.execPath, [cliEntry], {
       cols: 80,
       rows: 24,
@@ -2089,6 +2097,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     const closedSpine = '╰─ [ / ] Commands  ›  [ q ] Detach ──────────╯'
     const transcript = await new Promise<string>((resolve, reject) => {
       let output = ''
+      let detaching = false
       let opened = false
       let closingAt = -1
       const timeout = setTimeout(() => {
@@ -2105,7 +2114,8 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
           child.write('\u001b[<35;6;30M')
           child.write('\u001b[<0;6;30M')
           child.write('\u001b[<35;1;4M')
-        } else if (closingAt >= 0 && output.slice(closingAt).includes(closedSpine)) {
+        } else if (!detaching && closingAt >= 0 && output.slice(closingAt).includes(closedSpine)) {
+          detaching = true
           child.write('q')
         }
       })
@@ -2351,6 +2361,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     let expandedFleet = ''
     const transcript = await new Promise<string>((resolve, reject) => {
       let output = ''
+      let detaching = false
       let openedFleet = false
       let hoveredSixth = false
       let clickedSixth = false
@@ -2370,7 +2381,8 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
         } else if (!clickedSixth && output.includes('» Local Project 6')) {
           clickedSixth = true
           child.write('\u001b[<0;70;11M')
-        } else if (clickedSixth && output.includes('AliceProjects · This computer · 6/6')) {
+        } else if (!detaching && clickedSixth && output.includes('AliceProjects · This computer · 6/6')) {
+          detaching = true
           child.write('q')
         }
       })
@@ -2405,6 +2417,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
         OPENALICE_TUI_MOTION: '0',
         OPENALICE_TUI_START_VIEW: 'connect',
         OPENALICE_TUI_FIXTURE_RUNTIME: 'running',
+        OPENALICE_TUI_FIXTURE_HOME_AVAILABLE: '0',
         TERM: 'xterm-256color',
       },
     })
@@ -2897,7 +2910,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
           child.write('\u001b')
         } else if (
           !detached
-          && output.includes('STATUS   Setup closed.')
+          && closedSettings && output.slice(output.lastIndexOf('Saved browser port')).includes('Alice Session · OpenAlice')
         ) {
           detached = true
           child.write('q')
@@ -2921,7 +2934,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     expect(transcript).toContain('Layer Context · PROJECT · FIX')
     expect(transcript).toContain('Browser port must be a whole number')
     expect(transcript).toContain('Saved browser port for AliceProject "Default AliceProject".')
-    expect(transcript).toContain('STATUS   Setup closed.')
+    expect(transcript).toContain('Alice Session · OpenAlice')
     expect(transcript).toContain('\u001b[?25h')
     expect(transcript).toContain('\u001b[?2004l')
   }, 15_000)
@@ -3099,7 +3112,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
           child.write('\r')
         } else if (
           !detached
-          && output.includes('Selected AliceProject Default AliceProject')
+          && output.includes('Opened AliceProject Default AliceProject')
           && output.includes('Default AliceProject')
         ) {
           detached = true
@@ -3117,6 +3130,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
       await readFile(join(supervisorHome, 'config.json'), 'utf8'),
     )
     expect(config.defaultProject).toBeUndefined()
+    expect(config.defaultTarget).toEqual({ machine: 'local', project: 'default' })
     expect(config.projects.research).toEqual({
       name: 'research',
       home: await realpath(join(isolatedHome, '.openalice-research')),
@@ -3126,7 +3140,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     expect(transcript).toContain('Create & start')
     expect(transcript).toContain('Choose workspaces')
     expect(JSON.parse(await readFile(join(isolatedHome, '.openalice-research/workspace-setup.json'), 'utf8')).pending).toEqual(['chat', 'auto-quant', 'auto-prediction'])
-    expect(transcript).toContain('Selected AliceProject Default AliceProject')
+    expect(transcript).toContain('Opened AliceProject Default AliceProject')
     expect(transcript).toContain('\u001b[?25h')
     expect(transcript).toContain('\u001b[?2004l')
   }, 15_000)
@@ -3211,7 +3225,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     const childEnv = { ...process.env }
     delete childEnv.OPENALICE_HOME
     delete childEnv.OPENALICE_INSTANCE
-    const child = pty.spawn(process.execPath, [cliEntry], {
+    const child = pty.spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), '__fixtures__/supervisor-project-create-fixture.ts')], {
       cols: 110,
       rows: 30,
       cwd: dirname(cliEntry),
@@ -3258,7 +3272,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
           child.write('\u001b[<0;75;10M')
         } else if (
           !detached
-          && output.includes('Selected AliceProject Research')
+          && output.includes('Opened AliceProject Research; Default updated.')
         ) {
           detached = true
           child.write('q')
@@ -3272,10 +3286,12 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     })
 
     const config = JSON.parse(await readFile(join(supervisorHome, 'config.json'), 'utf8'))
-    expect(config.defaultProject).toBe('research')
+    expect(config.defaultProject).toBeUndefined()
+    expect(config.defaultTarget).toEqual({ machine: 'local', project: 'research' })
+    expect(config.projects.research.home).toBe(researchHome)
     expect(transcript).toContain('› Research')
     expect(transcript).toContain('› [ Enter ] Select')
-    expect(transcript).toContain('Selected AliceProject Research')
+    expect(transcript).toContain('Opened AliceProject Research; Default updated.')
     expect(transcript).toContain('\u001b[?25h')
     expect(transcript).toContain('\u001b[?2004l')
   }, 15_000)
@@ -3336,7 +3352,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     expect(transcript).toContain('\u001b[?2004l')
   }, 12_000)
 
-  it('recovers in the AliceProject picker when the remembered complete home is missing', async () => {
+  it('keeps an unavailable remembered Default detached while the Project picker offers recovery', async () => {
     const isolatedHome = await mkdtemp(join(tmpdir(), 'openalice-cli-instance-recovery-'))
     temporaryPaths.push(isolatedHome)
     const supervisorHome = join(isolatedHome, 'supervisor')
@@ -3369,7 +3385,8 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     const transcript = await new Promise<string>((resolve, reject) => {
       let output = ''
       let openedProjects = false
-      let repairedDefault = false
+      let attemptedSelection = false
+      let closeOffset = -1
       let detached = false
       const timeout = setTimeout(() => {
         child.kill()
@@ -3379,27 +3396,32 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
         output += data
         if (
           !openedProjects
-          && output.includes('Using "default"; press i Alice')
+          && output.includes('Alice Session · OpenAlice')
           && output.includes('Default AliceProject')
         ) {
           openedProjects = true
           child.write('i')
         } else if (
           openedProjects
-          && !repairedDefault
+          && !attemptedSelection
           && output.includes('AliceProject Switchboard')
           && output.includes('Default AliceProject')
           && output.includes('CURRENT')
           && output.includes('+ Create AliceProject')
         ) {
-          repairedDefault = true
+          attemptedSelection = true
           child.write('\r')
         } else if (
           !detached
-          && output.includes('Selected AliceProject Default AliceProject')
+          && attemptedSelection && output.includes('Could not switch AliceProject:')
         ) {
-          detached = true
-          child.write('q')
+          if (closeOffset < 0) {
+            closeOffset = output.length
+            child.write('\u001b')
+          } else if (output.slice(closeOffset).includes('Alice Session · OpenAlice')) {
+            detached = true
+            child.write('q')
+          }
         }
       })
       child.onExit(({ exitCode }) => {
@@ -3414,10 +3436,14 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
     )
     expect(config.defaultProject).toBeUndefined()
     expect(config.projects.missing.home).toBe(join(isolatedHome, 'disconnected-home'))
-    expect(transcript).toContain('AliceProject "missing" is missing.')
-    expect(transcript).toContain('Using "default"; press i Alice')
+    expect(config.defaultTarget).toEqual({ machine: 'local', project: 'missing' })
+    expect(transcript).toContain('Could not switch AliceProject:')
+    expect(transcript).not.toContain('Using "default"')
+    expect(transcript).not.toContain('READ ONLY')
     expect(transcript).toContain('+ Create AliceProject')
-    expect(transcript).toContain('Selected AliceProject Default AliceProject')
+    expect(transcript).not.toContain('Selected AliceProject Default AliceProject')
+    expect(transcript).toContain('\u001b[?25h')
+    expect(transcript).toContain('\u001b[?2004l')
   }, 15_000)
 
   it('shows higher-priority CLI overrides as locked settings', async () => {
@@ -3533,7 +3559,7 @@ describe.skipIf(process.platform === 'win32')('Supervisor TUI PTY', () => {
       })
     })
 
-    expect(transcript).toContain('Locked by --instance.')
+    expect(transcript).toContain('Locked by --project.')
     expect(transcript).toContain('Research')
     expect(transcript).toContain('CURRENT')
     expect(transcript).toContain('READ ONLY')

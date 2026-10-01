@@ -536,18 +536,34 @@ export async function runSupervisorTui(
     )
   }
 
-  const resolveContext = dependencies.resolveContext
-    ?? ((flags: TuiLaunchFlags) => {
+  const resolveContext = async (flags: TuiLaunchFlags, selectedProject?: string) => {
+      if (dependencies.resolveContext) {
+        return dependencies.resolveContext(selectedProject ? { ...flags, project: selectedProject } : flags)
+      }
       if (dependencies.machineConfig || dependencies.projectConfig) {
         return resolveLaunchContext({
           flags,
           env: dependencies.env,
-          machineConfig: dependencies.machineConfig,
+          machineConfig: selectedProject
+            ? { ...dependencies.machineConfig, defaultProject: selectedProject }
+            : dependencies.machineConfig,
           projectConfig: dependencies.projectConfig,
         })
       }
-      return resolveStoredLaunchContext({ ...flags, project: flags.machine && flags.machine !== 'local' ? 'default' : flags.project ?? flags.instance ?? 'default' }, { env: dependencies.env })
-    })
+      const remote = flags.machine && flags.machine !== 'local'
+      const localFlags = remote
+        ? { ...flags, project: undefined, instance: undefined }
+        : { ...flags, project: flags.project ?? flags.instance }
+      // A detached TUI still needs an editable local presentation context.
+      // Selecting that context internally must not invent a CLI override or
+      // attach it in place of an unavailable/remote saved Default.
+      if (!selectedProject) {
+        const target = hasExplicitProjectOrHomeSelection(flags, dependencies.env ?? process.env)
+          ? null : await readStartupTarget({ supervisorRoot: resolveSupervisorRootPath({ env: dependencies.env }) })
+        selectedProject = target?.machine === 'local' ? target.project : 'default'
+      }
+      return resolveStoredLaunchContext(localFlags, { env: dependencies.env, selectedProject })
+    }
   let context: ResolvedLaunchContext | undefined
   let startupNotice: string | undefined
   let configRecovery = false
@@ -567,7 +583,7 @@ export async function runSupervisorTui(
       context = await resolveAvailableStoredLaunchContext({
         env: dependencies.env,
       })
-      startupNotice = storedHomeRecoveryNotice(error, context.project)
+      startupNotice = storedHomeRecoveryNotice(error)
     } else if (isSupervisorConfigError(error)) {
       if (explicitCliSelection) throw error
       configRecovery = true
@@ -644,7 +660,7 @@ export async function runSupervisorTui(
         else await webRelay.connect(startup.target.machine, startup.target.project, { remember: false })
         const selection = webRelay.activeSelection
         if (selection?.machine.key === 'local') {
-          context = await resolveContext({ ...launchFlags, project: selection.project.key })
+          context = await resolveContext(launchFlags, selection.project.key)
           services = createServices(dependencies, context)
           runtime = await services.inspect({ homeRoot: context.home, waitMs: 2_000 })
           activeTarget = localSupervisorTarget(context, runtime)
@@ -1034,9 +1050,7 @@ export async function runSupervisorTui(
     patch,
   ) => {
     await persistAliceProjectLaunchConfig(currentContext, patch)
-    return resolveStoredLaunchContext(launchFlags, {
-      env: dependencies.env,
-    })
+    return resolveContext(launchFlags, currentContext.project)
   })
   const loadProjectConfig = dependencies.loadProjectConfig
     ?? readAliceProjectLaunchConfig
@@ -1047,9 +1061,7 @@ export async function runSupervisorTui(
     patch,
   ) => {
     await persistMachineLaunchConfig(currentContext, patch)
-    return resolveStoredLaunchContext(launchFlags, {
-      env: dependencies.env,
-    })
+    return resolveContext(launchFlags, currentContext.project)
   })
   const loadProjectRegistry = dependencies.loadProjectRegistry
     ?? readSupervisorAliceProjectRegistry
@@ -1057,7 +1069,7 @@ export async function runSupervisorTui(
     currentContext,
     name,
   ) => {
-    return resolveStoredLaunchContext({ ...launchFlags, project: name }, { env: dependencies.env })
+    return resolveContext(launchFlags, name)
   })
   const createProject = dependencies.createProject ?? (async (
     currentContext,
@@ -1066,7 +1078,7 @@ export async function runSupervisorTui(
     workspaces,
   ) => {
     await createSupervisorAliceProject(currentContext, name, home, { select: false, workspaces: workspaces ?? [...PROJECT_WORKSPACES] })
-    return resolveStoredLaunchContext({ ...launchFlags, project: name }, { env: dependencies.env })
+    return resolveContext(launchFlags, name)
   })
   const prepareManaged = dependencies.prepareManagedSource
     ?? (() => prepareManagedSource())
@@ -6410,7 +6422,6 @@ function safeError(error: unknown): string {
 
 function storedHomeRecoveryNotice(
   error: unknown,
-  fallbackProject: string,
 ): string {
   const message = error instanceof Error ? error.message : String(error)
   const match = message.match(/for AliceProject "([^"]+)" (is missing|is unavailable or not writable)/)
@@ -6418,7 +6429,7 @@ function storedHomeRecoveryNotice(
     ? `AliceProject "${match[1]}" ${match[2]}.`
     : 'The remembered AliceProject home is unavailable.'
   return sanitize(
-    `${unavailable} Using "${fallbackProject}"; press i AliceProjects to recover.`,
+    `${unavailable} No Runtime attached; press i AliceProjects to choose.`,
   )
 }
 
@@ -6455,7 +6466,8 @@ function alignLocalFleetProject(
       portAutomatic: context.provenance.port.source === 'default',
       product: existing?.product ?? 'trader',
       isDefault: existing?.isDefault ?? false,
-      available: runtime && runtimeIsConnected(runtime) ? true : existing?.available ?? true,
+      // Endpoint/process liveness does not prove the complete Home is present.
+      available: existing?.available ?? true,
       runtime: {
         class: runtime?.class ?? 'unavailable',
         state: runtime?.state ?? 'unknown',

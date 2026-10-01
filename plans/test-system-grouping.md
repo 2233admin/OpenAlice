@@ -1,8 +1,11 @@
 # Test system grouping and product coverage
 
 Status: Stage 1 accepted as PR #1667 and bounded Stage 2 accepted as PR #1672.
-The lifecycle classification pilot below is a separate Draft PR increment;
-native desktop, browser onboarding and real paper-venue acceptance remain open.
+The lifecycle classification pilot and conservative Guardian liveness repair
+were accepted as #1677/#1678. The current bounded follow-up repairs diagnosed
+PTY/installer fixtures and TUI/process-group semantics while registering their
+actual executable evidence; Draft PR review only, no merge or release.
+Native desktop, browser onboarding and real paper-venue acceptance remain open.
 Audit baseline: `dev` at `b7dbe2af15626534d2784b8ccaee361bcf7e05b4` on
 2026-09-30. Stage 2 incorporates notification integration at
 `48cdb0f1ada301e35b32c39fefce90e87626ab83` and Stage 1's final merge into dev
@@ -20,6 +23,37 @@ or extending its acceptance: [[docs/managed-workspace-runtime.md]],
 [[docs/remote-access.md]].
 
 ## Outcome and scope
+
+### Current lifecycle repair batches
+
+Baseline: merged dev `0a10220d` (2026-10-01). Actual isolated diagnosis:
+Supervisor PTY 38/60 passed, 22 failed; installer mode corruption was a no-op
+under umask 0077; Desktop smoke mistook an exited single-thread zombie group
+for executing helpers under a non-reaping init. These sources were unchanged
+by #1677/#1678. Preserve terminal, Default, installer integrity and live-child
+cleanup claims rather than skipping failures or widening waits.
+
+- [x] CLI fixtures use caller-owned temporary HOME; relay fake includes the
+  invocation API; mode corruption differs from its original mode under either
+  umask. Update stale presentation/Default observations without losing claims.
+- [x] Internal selected context preserves ordinary selection provenance;
+  post-save reread does not require a saved Default; running Runtime does not
+  force missing Home availability. Prove with component and real PTY evidence.
+- [x] Register named PTY startup/selection assertions and installer immutable
+  release assertions in existing manifests. Verify actual selector file closure
+  and keep mocked lifecycle/real terminal/native artifact evidence distinct.
+- [ ] Repair Desktop smoke group liveness conservatively; independently verify
+  live TERM-ignoring members, zombie leaders with workers and exited zombies.
+- [ ] Run scoped feedback and required final gates; retain native platform gaps;
+  publish bounded Draft PRs and check exact-head CI. No merge/release authority.
+
+Physical organization is a separate proposed follow-up: split the mixed
+60-case PTY file into real startup/selection/recovery journey specs under
+`tests/scenarios/startup-project-selection/` and CLI-owned terminal presentation
+specs, with one shared support fixture directory. Central specs require explicit
+`centralTests` owner/lane definitions; protocol manifests cross-reference rather
+than copy them. Do not mass-move files or alter collection before that bounded
+split is confirmed. Current registrations immediately execute existing files.
 
 Stage 1 makes the test system navigable and its missing evidence visible.
 Stage 2 supplies and enforces evidence for the highest-risk missing behaviors.
@@ -515,3 +549,15 @@ startup/Guardian intersection one. Inventory confirms 909 specs, 70 commands,
 869 owner-only entries. Guardian selection still needs the separate process
 liveness fix in Draft #1678; that PR verifies the same six mapped paths against
 its fixed source. Drafts are intentionally independent, with neither merged.
+
+### Current CLI validation snapshot
+
+At the repair tree based on merged dev `0a10220d`, startup selection expands
+from five to six files and passes 198 assertions, including all 60 real PTY
+cases (32.96 seconds). The three new component regressions fail against the
+unchanged dev product code and pass after repair. Installer selection passes
+29 cases with one existing macOS-only exclusion under both umasks 0077 and
+0022. Two terminal exit guards prevent repeated quit writes after descriptor
+closure; those two targeted cases pass. No test deletion or timeout increase.
+The earlier Draft/failed-suite paragraphs above are historical snapshots, not
+current PR or gate status. Final required gates and Draft CI remain pending.

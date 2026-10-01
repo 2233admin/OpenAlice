@@ -10,6 +10,7 @@ import {
   readlink,
   realpath,
   readdir,
+  stat,
   rm,
   symlink,
   utimes,
@@ -102,11 +103,14 @@ describe.skipIf(process.platform === 'win32')('OpenAlice native CLI installer', 
       'dist',
       'index.html',
     )
-    await chmod(installedIndex, 0o600)
+    const originalMode = (await stat(installedIndex)).mode & 0o777
+    const damagedMode = originalMode ^ 0o040
+    await chmod(installedIndex, damagedMode)
+    expect((await stat(installedIndex)).mode & 0o777).not.toBe(originalMode)
     await expect(runInstaller(fixture, installRoot, ['--yes']))
       .rejects.toMatchObject({ stderr: expect.stringContaining(`Existing release ${releaseName} is damaged`) })
 
-    await chmod(installedIndex, 0o644)
+    await chmod(installedIndex, originalMode)
     await writeFile(
       installedIndex,
       '<!doctype html><p>damaged</p>',
@@ -893,6 +897,7 @@ printf 'fixture %s\\n' '${version}'
 `)
   await chmod(executable, 0o755)
   await writeFile(join(release, 'share', 'openalice', 'ui', 'dist', 'index.html'), '<!doctype html>')
+  await chmod(join(release, 'share', 'openalice', 'ui', 'dist', 'index.html'), 0o644)
   await writeFile(join(release, 'release.json'), `${JSON.stringify({
     schemaVersion: 1,
     version,

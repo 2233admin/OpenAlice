@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
@@ -56,6 +56,68 @@ const pointerClick = (col: number, row: number) => ({
 } as const)
 
 describe('Supervisor TUI screen', () => {
+  it.each(['none', 'research'] as const)('keeps internal presentation selection editable for Default %s', async (selected) => {
+    const root = await mkdtemp(join(tmpdir(), 'tui-selection-provenance-'))
+    const defaultHome = join(root, 'default')
+    const researchHome = join(root, 'research')
+    await Promise.all([mkdir(defaultHome), mkdir(researchHome)])
+    const saved = {
+      schemaVersion: 3,
+      defaultTarget: selected === 'none' ? null : { machine: 'local', project: selected },
+      projects: { default: { home: defaultHome }, research: { home: researchHome } },
+    }
+    await writeFile(join(root, 'config.json'), JSON.stringify(saved))
+    let screen: SupervisorScreen | undefined
+    let quit: ((data: string) => unknown) | undefined
+    class FakeTui {
+      addChild(component: SupervisorScreen): void { screen = component }
+      addInputListener(listener: (data: string) => unknown): () => void { quit = listener; return () => undefined }
+      requestRender(): void {} setShowHardwareCursor(): void {} start(): void {} stop(): void {}
+    }
+    const running = runSupervisorTui({}, {
+      webRelay: null, env: { OPENALICE_SUPERVISOR_HOME: root },
+      stdin: { isTTY: true } as NodeJS.ReadStream, stdout: { isTTY: true } as NodeJS.WriteStream,
+      inspect: async () => ({ class: 'absent', endpoints: {} }),
+      seedFleet: isolatedLocalFleet, inspectFleet: isolatedLocalFleet,
+      discoverUpdate: async () => null, pollIntervalMs: 60_000,
+      loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey, isKeyRelease }) as never,
+    })
+    try {
+      await vi.waitFor(() => expect(quit).toBeDefined())
+      expect(screen?.snapshot.context?.project).toBe(selected === 'none' ? 'default' : selected)
+      expect(screen?.snapshot.context?.provenance.project.source).toBe('machine-config')
+      expect(JSON.parse(await readFile(join(root, 'config.json'), 'utf8'))).toEqual(saved)
+    } finally { quit?.('q'); await running; await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('keeps a missing Home unavailable while its Runtime endpoint is live', async () => {
+    const context = resolveLaunchContext({ flags: { project: 'default', home: '/isolated/missing' } })
+    const fleet = await isolatedLocalFleet()
+    fleet.machines[0]!.projects[0]!.available = false
+    let screen: SupervisorScreen | undefined
+    let quit: ((data: string) => unknown) | undefined
+    class FakeTui {
+      addChild(component: SupervisorScreen): void { screen = component }
+      addInputListener(listener: (data: string) => unknown): () => void { quit = listener; return () => undefined }
+      requestRender(): void {} setShowHardwareCursor(): void {} start(): void {} stop(): void {}
+    }
+    const running = runSupervisorTui({}, {
+      resolveContext: () => context, webRelay: null,
+      stdin: { isTTY: true } as NodeJS.ReadStream, stdout: { isTTY: true } as NodeJS.WriteStream,
+      inspect: async () => ({ class: 'running', endpoints: { web: 'http://127.0.0.1:47331' } }),
+      seedFleet: async () => fleet, inspectFleet: async () => fleet,
+      discoverUpdate: async () => null, pollIntervalMs: 60_000,
+      env: { OPENALICE_TUI_START_VIEW: 'home', OPENALICE_TUI_BOOT: '0', OPENALICE_TUI_MOTION: '0', NO_COLOR: '1' },
+      loadTui: async () => ({ ProcessTerminal: class {}, TUI: FakeTui, matchesKey, isKeyRelease }) as never,
+    })
+    try {
+      await vi.waitFor(() => expect(quit).toBeDefined())
+      expect(screen?.snapshot.runtime?.class).toBe('running')
+      expect(screen?.snapshot.fleet?.machines[0]?.projects[0]?.available).toBe(false)
+      expect(screen?.render(100).join('\n')).toContain('Runtime is live; AliceProject home is missing')
+    } finally { quit?.('q'); await running }
+  })
+
   it('makes the disconnected surface a three-step OpenAlice Launcher', () => {
     const activated: string[] = []
     let viewportHeight = 32
