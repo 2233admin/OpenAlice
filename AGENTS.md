@@ -70,67 +70,10 @@ synchronous gates.
 
 ## Verification Ladder
 
-Use the smallest gate that can realistically falsify the change, then escalate
-with ownership breadth and risk. During development, select feedback for the
-current edit; before delivery, reassess the entire branch diff against the
-freshly fetched target base. Several individually small edits can require a
-broader owner or full-suite gate together. Record selection reasons, actual
-results, and unverified risks in the PR; see the detailed ladder in
+Verify changes with relevant tests, owning typechecks, and the affected real
+surface; report actual results and unverified risks. Detailed test selection,
+safety boundaries, and release gates live in [[docs/testing.md]] and
 [[docs/development-workflow.md]].
-
-| Change shape | Minimum evidence |
-|---|---|
-| Leaf change inside one owner | `pnpm test:changed` or an explicit `test:select` intersection; owning typecheck; real affected surface |
-| Shared change inside one owner | Matching `pnpm test:owner:*` suite or package-local test; owning typecheck; real affected surface |
-| Cross-owner behavior, shared protocol/lifecycle, shared test/build infrastructure, dependency/config change, or uncertain impact | Root and applicable package/UI typechecks; complete `pnpm test`; every touched surface's acceptance |
-| Beta promotion | Recorded local full-suite/surface acceptance plus automatic master source gate and Windows dev-stack smoke |
-| Manual backstop or stable release | Complete remote matrix and release gates from [[docs/development-workflow.md]] |
-
-`pnpm test:changed` compares the feature branch and working tree with freshly
-fetched `origin/dev`. It follows Vitest's static import graph; dynamic imports,
-generated contracts, registries, process boundaries, implicit runtime coupling,
-and a zero-test selection require an explicit owner/area/package selection or escalation. It
-is development feedback, not a release gate. `pnpm test` retains the
-deterministic full-suite meaning. See [[docs/testing.md]] for the complete
-namespace, composition rules, and side-effect contracts. Scenario/protocol/owner
-filters intersect across dimensions; run affected protocol regressions
-independently when that intersection excludes their evidence. Owner-only specs
-without group metadata can still be affected. Required `test:critical` evidence
-is indivisible and cannot be narrowed by this ladder.
-
-Typecheck the owner that changed: root `npx tsc --noEmit` covers `src/`; UI uses
-`cd ui && npx tsc -b`; a package uses its own `typecheck` command. Do not cite a
-green typecheck that did not include the changed code.
-
-Add the applicable surface gate:
-
-| Surface | Required evidence |
-|---|---|
-| `ui/` | UI typecheck, changed specs or `pnpm test:owner:ui` as appropriate, and the real browser route |
-| UI `/api/*` contract or demo | Update `ui/src/demo/` handlers and walk `pnpm -F open-alice-ui dev:demo` |
-| `packages/<name>/` | Package typecheck; use its local `test` or `pnpm test:select --package <workspace-name>` when it owns specs, then escalate to the owner suite for shared behavior |
-| UTA state, ledger, staging, or sync | `pnpm test:integration:uta` plus targeted specs from [[docs/uta-live-testing.md]] |
-| Broker adapter, order write, or permission | Smallest explicit live-paper scenario; verify demo/paper mode and leave the account flat |
-| Workspace issues, schedules, headless dispatch | Follow [[docs/workspace-issues-and-scheduling.md]] |
-| Guardian lock, ownership, or takeover | `pnpm test:system:guardian` and the real launcher path |
-| Desktop, IPC, PTY, managed runtime, or packaging | Matching unsigned Electron/package smoke from [[docs/managed-workspace-runtime.md]] |
-| Root installer or distributed CLI | [[docs/cli-installer.md]], `pnpm test:system:installer`, and the interactive playground before release |
-| Server/remote deployment | [[docs/remote-access.md]] and `pnpm test:system:remote` |
-| Persisted state | Apply the shipped-boundary rule above; shipped shapes need an idempotent migration, spec, and regenerated index |
-| Onboarding, first run, or auth | Isolated state plus dev and packaged paths where relevant |
-
-`pnpm test` is hermetic: it must not open real SSH, read cloud credentials,
-deploy, or publish.
-Those system paths remain explicit `test:system:*` or artifact-owner commands.
-`pnpm test:integration` is non-trading and must never load configured broker
-accounts or contact public providers. External read-only and live-paper lanes
-are opt-in; an all-skipped run is not acceptance. Live-paper tests require
-explicit `OPENALICE_UTA_LIVE_PAPER=1`, a verified demo/paper account, and a
-flat-account check even after failure.
-
-Routine development and package smoke must not read release signing secrets.
-If an applicable native, browser, package, or external gate cannot run, state
-the exact residual risk; an unrelated green test is not substitute evidence.
 
 ## Repository Records
 
