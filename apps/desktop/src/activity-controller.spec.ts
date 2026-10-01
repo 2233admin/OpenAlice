@@ -26,6 +26,44 @@ function setup() {
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-30T12:00:00Z')) })
 afterEach(() => { vi.useRealTimers() })
 describe('desktop Journal arbitration', () => {
+  it('stops without querying a destroyed surface or restarting after late work', async () => {
+    let destroyed = false
+    let identity = 'project-a'
+    const foreground = vi.fn(() => {
+      if (destroyed) throw new Error('Object has been destroyed')
+      return true
+    })
+    const read = vi.fn().mockResolvedValue({ entries: [], lastSeq: 0 })
+    const send = vi.fn()
+    const controller = new ActivityController({ identity: () => identity, read }, {
+      foreground, petVisible: () => false, send, open: vi.fn(),
+    }, structuredClone(defaults))
+    await controller.poll()
+    read.mockResolvedValueOnce({ entries: [event(1)], lastSeq: 1 })
+    await controller.poll()
+    let resolve!: (value: unknown) => void
+    read.mockImplementationOnce((_query, signal) => {
+      expect(signal).toBeInstanceOf(AbortSignal)
+      return new Promise(r => { resolve = r })
+    })
+    const pending = controller.poll()
+    const calls = foreground.mock.calls.length
+    destroyed = true
+    expect(() => controller.stop()).not.toThrow()
+    expect(() => controller.stop()).not.toThrow()
+    controller.transition()
+    controller.setPreferences(structuredClone(defaults))
+    identity = 'project-b'
+    await controller.poll()
+    resolve({ entries: [event(2)], lastSeq: 2 })
+    await pending
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(foreground).toHaveBeenCalledTimes(calls)
+    expect(read).toHaveBeenCalledTimes(3)
+    expect(send.mock.calls.filter(([, message]) => message.type === 'show')).toHaveLength(1)
+    expect(controller.snapshot()).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it('silences historical baseline, announces one new revision and keeps replay silent', async () => {
     const s = setup(); await s.page([event(1)]); expect(s.sent).toEqual([])
     await s.page([event(2)]); expect(s.sent.filter(e => e.event.type === 'show')).toHaveLength(1)
