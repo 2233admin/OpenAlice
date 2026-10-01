@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import {
   Activity,
   Bot,
@@ -12,6 +13,7 @@ import {
   Code2,
   FlaskConical,
   LayoutDashboard,
+  Monitor,
   Languages,
   LineChart,
   ListChecks,
@@ -71,6 +73,7 @@ const CATEGORY_GROUPS = [
     labelKey: 'settings.group.general',
     items: [
       { labelKey: 'settings.category.general', category: 'general', Icon: LayoutDashboard },
+      { labelKey: 'settings.machines.title', category: 'machines', Icon: Monitor },
       { labelKey: 'settings.language.title', category: 'language', Icon: Languages },
       { labelKey: 'pet.title', category: 'pet', Icon: Ghost },
       { labelKey: 'settings.category.issues', category: 'issues', Icon: ListChecks },
@@ -124,6 +127,7 @@ const CATEGORY_GROUPS = [
  */
 export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { project } = useAliceProject()
   const guidance = useUpdateLifecycle({ optional: true })?.guidance
   const focused = useWorkspace((state) => getFocusedTab(state)?.spec)
@@ -168,7 +172,7 @@ export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
                 icon={<item.Icon size={14} strokeWidth={1.75} className="text-muted-foreground/70" aria-hidden />}
                 trail={item.category === 'general' ? <><UpdateGuidanceBadge count={guidance?.availableCount ?? 0} setupCount={guidance?.setupCount ?? 0} /><UpdateGuidanceBadge count={guidance?.needsAttentionCount ?? 0} tone="attention" /></> : undefined}
                 onClick={() => {
-                  openOrFocus({ kind: 'settings', params: { category: item.category } })
+                  navigate(item.category === 'general' ? '/settings' : `/settings/${item.category}`)
                   onSelect?.()
                   if (item.category === 'general' && (guidance?.availableCount || guidance?.needsAttentionCount || guidance?.setupCount)) focusVersionOverviewAfterNavigation()
                 }}

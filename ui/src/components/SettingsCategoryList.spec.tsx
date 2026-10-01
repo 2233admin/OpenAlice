@@ -11,8 +11,11 @@ const mocks = vi.hoisted(() => ({
   focused: null as null | { kind: 'dev'; params: { tab: 'logs' | 'runs' | 'api' } }
     | { kind: 'automation'; params: { section: 'runs' | 'api' } },
   openOrFocus: vi.fn(),
+  navigate: vi.fn(),
   guidance: { availableCount: 0, needsAttentionCount: 0 },
 }))
+
+vi.mock('react-router-dom', () => ({ useNavigate: () => mocks.navigate }))
 
 vi.mock('../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({ guidance: mocks.guidance }) }))
 
@@ -63,6 +66,7 @@ beforeEach(() => {
   window.sessionStorage.clear()
   mocks.focused = null
   mocks.openOrFocus.mockClear()
+  mocks.navigate.mockClear()
   mocks.guidance = { availableCount: 0, needsAttentionCount: 0 }
 })
 
@@ -147,4 +151,12 @@ describe('SettingsCategoryList', () => {
     expect(screen.getByRole('button', { name: 'settings.group.developer' }).getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByRole('button', { name: 'automation.runs' })).toBeTruthy()
   })
+})
+
+it('places Machines directly after Overview and opens its dedicated tab', () => {
+  render(<SettingsCategoryList />)
+  const names = screen.getAllByRole('button').map(button => button.textContent)
+  expect(names.indexOf('settings.machines.title')).toBe(names.indexOf('settings.category.general') + 1)
+  fireEvent.click(screen.getByRole('button', { name: 'settings.machines.title' }))
+  expect(mocks.navigate).toHaveBeenCalledWith('/settings/machines')
 })
