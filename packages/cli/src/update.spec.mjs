@@ -13,7 +13,7 @@ import {
 } from './update.mjs'
 
 const currentCliVersion = JSON.parse(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
 ).version
 const [currentMajor = '0', currentMinor = '0'] = currentCliVersion.split('.')
 const newerStableVersion = `${currentMajor}.${Number(currentMinor) + 1}.0`

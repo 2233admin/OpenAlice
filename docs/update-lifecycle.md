@@ -6,6 +6,20 @@ installation and project execution remain with their owners: [[docs/remote-acces
 [[docs/workspace-template-upgrade.md]] and [[docs/harness-web-surfaces.md]].
 The pure planner and host adapters share one operation contract described below.
 
+## Product identity
+
+Root `package.json#version` is the authored product version. Backend, CLI and
+Guardian use the shared Node identity reader: an injected build value takes
+precedence, otherwise the known product manifest supplies source identity.
+The reader never searches cwd or substitutes a private package's version.
+The CLI workspace is private and has no authored product version. Existing
+native/npm assembly generates distribution metadata from the root identity.
+
+Release preparation and candidate receipts import the same dependency-free
+release policy source before installation; runtime consumers use the package's
+built entry. Trusted-base workflow classification copies both the classifier and
+that policy from the base revision. No generated policy copy is checked in.
+
 ## Shared release selection
 
 `packages/update-lifecycle` exposes a pure TypeScript root with no React, filesystem,

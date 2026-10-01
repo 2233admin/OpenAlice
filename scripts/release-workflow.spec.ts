@@ -106,7 +106,7 @@ describe('Release workflow critical path', () => {
     expect(guard).toContain('releases/latest')
     expect(guard).toContain('.draft == false and .prerelease == false')
     expect(guard).toContain('merge-base --is-ancestor')
-    expect(guard).toContain('packages/cli/package.json')
+    expect(guard).not.toContain('packages/cli/package.json')
     const download = step(job, 'Download and verify existing public release bytes').run ?? ''
     expect(download).toContain('verifyCliNpmPackages')
     expect(download).toContain('verify-public-cli-channels.mjs')
@@ -143,7 +143,7 @@ describe('Release workflow critical path', () => {
     const plan = step(workflow.jobs.release, 'Validate release intent and version authority').run ?? ''
     expect(plan).toContain('refs/heads/master')
     expect(plan).toContain("require('./package.json').version")
-    expect(plan).toContain("require('./packages/cli/package.json').version")
+    expect(plan).not.toContain("require('./packages/cli/package.json').version")
     expect(plan).toContain('Release tag already exists')
     expect(plan).toContain("RELEASE_CHANNEL\" = \"stable")
     expect(plan).toContain("RELEASE_CHANNEL\" = \"beta")

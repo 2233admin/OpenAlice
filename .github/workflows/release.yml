@@ -165,9 +165,8 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           if [ "$OPERATION" = "release" ]; then
             PACKAGE_VERSION=$(node -p "require('./package.json').version")
-            CLI_VERSION=$(node -p "require('./packages/cli/package.json').version")
-            if [ "$PACKAGE_VERSION" != "$VERSION" ] || [ "$CLI_VERSION" != "$VERSION" ]; then
-              echo "Release tag $RELEASE_TAG requires package versions $VERSION; root=$PACKAGE_VERSION cli=$CLI_VERSION" >&2
+            if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+              echo "Release tag $RELEASE_TAG requires root product version $VERSION; root=$PACKAGE_VERSION" >&2
               exit 1
             fi
 
@@ -1117,9 +1116,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases/latest" > release.json
           jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .draft == false and .prerelease == false' release.json
           git merge-base --is-ancestor "$RELEASE_TAG^{commit}" origin/master
-          for manifest in package.json packages/cli/package.json; do
-            test "$(git show "$RELEASE_TAG:$manifest" | jq -r .version)" = "${RELEASE_TAG#v}"
-          done
+          test "$(git show "$RELEASE_TAG:package.json" | jq -r .version)" = "${RELEASE_TAG#v}"
 
       - name: Verify npm authority for this explicit publication
         run: node scripts/preflight-public-cli-authority.mjs

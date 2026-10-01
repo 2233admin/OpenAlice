@@ -7,8 +7,8 @@ Progress: backend, CLI, and Guardian now share product identity through the
 existing update-lifecycle Node entry. Backend provenance parsing delegates to
 the shared parser moved from the CLI. Source CLI fallback reports development;
 desktop relay and CLI feasibility builds read root identity. The unused UI
-version define is removed. Product-package metadata generation and release
-contracts still need convergence; step 1 is not yet complete.
+version define is removed. Product-package metadata generation is now converged (see below); missing
+packaged-provenance handling and artifact acceptance keep step 1 open.
 
 Verified for this increment: shared package build; root and CLI typechecks;
 78 focused tests; direct backend/CLI imports after changing cwd to
@@ -62,6 +62,22 @@ exercise completed-Project/failed-native ordering, the reverse ordering, linked
 parent/child restart, exact-target mismatch, abandonment, and independent same-target
 receipts. The focused control/native adapter suite passes 27 tests. Packaged restart
 acceptance and the refreshed full suite remain outstanding.
+
+Metadata/validation increment: the CLI source package is private and no longer
+authors a product version. Existing public npm/native packaging derives its
+metadata from the root; Windows preview and PTY fixtures also read that identity.
+The shared pure release functions moved intact into a dependency-free source
+entry, re-exported by the same package. Beta preparation and candidate validation
+now consume it; private parsing/comparison and root/CLI synchronization checks
+are removed. Trusted-base classifiers copy that source with the script before
+installing dependencies. The root manifest alone defines version-only release prep.
+
+Verified: shared build and root/CLI typechecks; 104 workflow contract tests;
+32 candidate/classifier tests (including invalid beta numbers and leading zeros);
+5 existing public-package assembly tests. A real Node 22 subprocess ran the
+classifier from a temporary tree containing only it and the shared policy, with
+no package install. Publication-time forward-head validation and final artifact
+acceptance remain pending.
 
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),
