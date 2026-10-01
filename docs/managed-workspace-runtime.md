@@ -614,6 +614,22 @@ Keep these true together:
 
 ## Verification
 
+### Disposable native-agent homes
+
+Desktop PTY, startup, existing-owner, upgrade, automated demo, and temporary-data
+packaged smokes use `desktopSmokeEnv` from `scripts/desktop-smoke-process.mjs`.
+The helper places OS home, Windows profile/AppData, XDG roots, and native-agent
+home overrides beneath the smoke-owned `os-home/`. It removes inherited provider
+keys and shell startup overrides rather than copying real CLI authentication.
+Fixture owners and CLI children share that same disposable environment.
+
+Packaged smoke defaults to temporary data. `--real-data` is an explicit opt-in
+to user data and native CLI state; never use it for automated acceptance.
+Build/package commands keep their toolchain environment, and normal interactive
+demo behavior is unchanged. Smoke-owned homes are removed only after the owned
+process tree has stopped.
+
+
 ### Workspace acceptance contract
 
 `pnpm electron:smoke:workspace` is the release-facing definition of an

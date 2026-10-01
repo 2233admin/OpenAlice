@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { desktopDevExecutable, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
+import { desktopDevExecutable, desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
 
 const appPathIndex = process.argv.indexOf('--app-path')
 const appPath = appPathIndex >= 0 ? process.argv[appPathIndex + 1] : null
@@ -18,7 +18,7 @@ for (const hasRecent of [false, true]) {
     await mkdir(supervisor)
     await writeFile(join(supervisor, 'config.json'), JSON.stringify({ schemaVersion: 2, projects: { default: { name: 'default', home: join(root, 'default') } } }))
     if (hasRecent) await writeFile(join(supervisor, 'startup-target.json'), JSON.stringify({ schemaVersion: 1, target: { machine: 'missing-machine', project: 'main' } }))
-    const env = { ...process.env, OPENALICE_SUPERVISOR_HOME: supervisor, OPENALICE_GLOBAL_DIR: join(root, 'global'), OPENALICE_ELECTRON_SMOKE_STARTUP: '1', OPENALICE_ELECTRON_SMOKE_USER_DATA: join(root, 'profile') }
+    const env = { ...desktopSmokeEnv(root), OPENALICE_SUPERVISOR_HOME: supervisor, OPENALICE_GLOBAL_DIR: join(root, 'global'), OPENALICE_ELECTRON_SMOKE_STARTUP: '1', OPENALICE_ELECTRON_SMOKE_USER_DATA: join(root, 'profile') }
     delete env.OPENALICE_HOME
     delete env.AQ_LAUNCHER_ROOT
     child = spawnDesktopSmoke(appPath ?? desktopDevExecutable(), appPath ? [] : [join(repoRoot, 'dist/electron/main.js')], { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'] })

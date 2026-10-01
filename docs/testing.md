@@ -167,6 +167,11 @@ decorative `test:*` alias: examples include `pnpm electron:smoke:*`, Electron pa
 candidate builders. Likewise, the package-manager artifact smoke requires
 explicit artifact arguments and is not a parameterless root test command.
 
+Desktop smoke commands isolate native CLI/OS homes as well as OpenAlice data;
+`OPENALICE_HOME` alone is not an authentication/configuration isolation boundary.
+Packaged smoke uses temporary data by default. Only explicit `--real-data`
+permits user data and native CLI state; automated acceptance must not use it.
+
 ## Composable Selection
 
 Use the stable aliases above for normal work. Use `test:select` when a change

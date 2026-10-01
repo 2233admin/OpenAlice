@@ -3,21 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { buildDesktopPackagedSmokePlan } from './desktop-packaged-smoke-plan.mjs'
 
 describe('buildDesktopPackagedSmokePlan', () => {
-  it('keeps the default packaged smoke on real data', () => {
-    const plan = buildDesktopPackagedSmokePlan([], {}, { randomUUID: () => 'fixed' })
-
-    expect(plan.errors).toEqual([])
-    expect(plan.options).toMatchObject({
-      onboarding: false,
-      realData: true,
-      tempData: false,
-      tradingMode: false,
-      workspaceAcceptance: false,
-    })
-    expect(plan.buildEnv).toEqual({})
-    expect(plan.launchEnv).toEqual({})
-  })
-
   it('makes onboarding smoke isolated and deterministic', () => {
     const plan = buildDesktopPackagedSmokePlan(['--onboarding'], {
       OPENALICE_TRADING_MODE: 'pro',

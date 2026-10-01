@@ -111,12 +111,6 @@ beforeEach(async () => {
     dir: wsDir,
     createdAt: new Date(0).toISOString(),
   })
-  // Codex prepareWorkspace writes ~/.codex/config.toml trust entries. This
-  // spec is about Issue ownership, not that side effect.
-  const adapter = service.adapters.get('codex')
-  if (adapter?.lifecycle?.prepareWorkspace) {
-    vi.spyOn(adapter.lifecycle, 'prepareWorkspace').mockResolvedValue(undefined)
-  }
 })
 
 afterEach(async () => {

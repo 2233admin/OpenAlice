@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url'
 import WebSocket from 'ws'
 
 import { assertDesktopPackage } from './assert-desktop-package.mjs'
+import { desktopSmokeEnv } from './desktop-smoke-process.mjs'
 import {
   buildDesktopUpgradeSmokePlan,
   buildUpgradeSeedExpression,
@@ -470,7 +471,6 @@ async function main() {
   const smokeHome = join(smokeRoot, 'home')
   const smokeWorkspaces = join(smokeRoot, 'workspaces')
   const smokeGlobal = join(smokeRoot, 'global')
-  const smokeOsHome = join(smokeRoot, 'os-home')
   const electronUserData = join(smokeRoot, 'electron-user-data')
   const previousAsset = previousDesktopAssetName(previousVersion, process.platform, process.arch)
   const previousArchive = join(smokeRoot, previousAsset)
@@ -479,7 +479,6 @@ async function main() {
   let journeyCompleted = false
 
   try {
-    mkdirSync(smokeOsHome, { recursive: true })
     const previousUrl = `https://github.com/${repository}/releases/download/${encodeURIComponent(fromTag)}/${encodeURIComponent(previousAsset)}`
     await download(previousUrl, previousArchive)
 
@@ -490,13 +489,7 @@ async function main() {
     }
 
     const commonEnv = {
-      ...process.env,
-      ...(process.platform === 'darwin'
-        ? { HOME: smokeOsHome, XDG_CACHE_HOME: join(smokeOsHome, '.cache') }
-        : {
-            APPDATA: join(smokeOsHome, 'AppData', 'Roaming'),
-            LOCALAPPDATA: join(smokeOsHome, 'AppData', 'Local'),
-          }),
+      ...desktopSmokeEnv(smokeRoot),
       OPENALICE_HOME: smokeHome,
       AQ_LAUNCHER_ROOT: smokeWorkspaces,
       OPENALICE_GLOBAL_DIR: smokeGlobal,

@@ -5,7 +5,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { desktopDevExecutable, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
+import { desktopDevExecutable, desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const pnpmCommand = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'pnpm'
@@ -105,6 +105,7 @@ async function proveSurface(surface) {
     : tmpdir()
   mkdirSync(smokeBase, { recursive: true })
   const smokeRoot = realpathSync(mkdtempSync(join(smokeBase, `openalice-existing-owner-${surface}-`)))
+  const smokeEnv = desktopSmokeEnv(smokeRoot)
   const smokeHome = join(smokeRoot, 'home')
   const smokeWorkspaces = join(smokeRoot, 'workspaces')
   const electronUserData = join(smokeRoot, 'electron-user-data')
@@ -117,7 +118,7 @@ async function proveSurface(surface) {
     cwd: repoRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...process.env,
+      ...smokeEnv,
       OPENALICE_HOME: smokeHome,
       AQ_LAUNCHER_ROOT: smokeWorkspaces,
       OPENALICE_RUNTIME_FIXTURE_SURFACE: surface,
@@ -172,7 +173,7 @@ async function proveSurface(surface) {
       cwd: join(repoRoot, 'apps', 'desktop'),
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
-        ...process.env,
+        ...smokeEnv,
         OPENALICE_HOME: smokeHome,
         AQ_LAUNCHER_ROOT: smokeWorkspaces,
         OPENALICE_GLOBAL_DIR: join(smokeRoot, 'global'),

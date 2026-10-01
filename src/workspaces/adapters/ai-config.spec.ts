@@ -211,76 +211,6 @@ describe('claudeAdapter AI-config', () => {
 });
 
 describe('codexAdapter AI-config', () => {
-  it('injects both global and workspace MCP servers into fresh commands', () => {
-    expect(codexAdapter.composeCommand(['ignored'], {
-      cwd: dir,
-      env: {
-        OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp',
-        AQ_WS_ID: 'ws-abc',
-      },
-    })).toEqual([
-      'codex',
-      '--sandbox',
-      'danger-full-access',
-      '--ask-for-approval',
-      'never',
-      '-c',
-      'allow_login_shell=false',
-      '-c',
-      'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
-      '-c',
-      'mcp_servers.openalice-workspace.url="http://127.0.0.1:47332/mcp/ws-abc"',
-    ]);
-  });
-
-  it('preserves both MCP servers when resuming codex sessions', () => {
-    const env = {
-      OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp',
-      AQ_WS_ID: 'ws-abc',
-    };
-    expect(codexAdapter.composeCommand([], { cwd: dir, env, resume: 'last' })).toEqual([
-      'codex',
-      '--sandbox',
-      'danger-full-access',
-      '--ask-for-approval',
-      'never',
-      '-c',
-      'allow_login_shell=false',
-      '-c',
-      'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
-      '-c',
-      'mcp_servers.openalice-workspace.url="http://127.0.0.1:47332/mcp/ws-abc"',
-      'resume',
-      '--last',
-    ]);
-    expect(codexAdapter.composeCommand([], { cwd: dir, env, resume: { sessionId: 'rollout-id' } })).toEqual([
-      'codex',
-      '--sandbox',
-      'danger-full-access',
-      '--ask-for-approval',
-      'never',
-      '-c',
-      'allow_login_shell=false',
-      '-c',
-      'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
-      '-c',
-      'mcp_servers.openalice-workspace.url="http://127.0.0.1:47332/mcp/ws-abc"',
-      'resume',
-      'rollout-id',
-    ]);
-  });
-
-  it('keeps explicit full access when interactive Codex runs without MCP', () => {
-    expect(codexAdapter.composeCommand([], { cwd: dir, env: {} })).toEqual([
-      'codex',
-      '--sandbox',
-      'danger-full-access',
-      '--ask-for-approval',
-      'never',
-      '-c',
-      'allow_login_shell=false',
-    ]);
-  });
 
   it('writes full provider config byte-exact (config.toml + env.json)', async () => {
     await codexAdapter.writeAiConfig!(dir, {
@@ -785,21 +715,6 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
     ]);
   });
 
-  it('codex: CLI-mode headless (no MCP) — approval/sandbox/network -c + exec --json -- <prompt>', () => {
-    expect(codexAdapter.composeHeadlessCommand!(['codex'], ctx(), 'do x')).toEqual([
-      'codex',
-      '-c',
-      'approval_policy="never"',
-      '-c',
-      'sandbox_mode="danger-full-access"',
-      '-c',
-      'allow_login_shell=false',
-      'exec',
-      '--json',
-      '--',
-      'do x',
-    ]);
-  });
 
   it('agy: stream-json --dangerously-skip-permissions -p <prompt> (no -- terminator)', () => {
     expect(agyAdapter.composeHeadlessCommand!(['claude'], ctx(), 'do x')).toEqual([

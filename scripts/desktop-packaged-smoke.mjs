@@ -14,7 +14,7 @@ import {
 import { buildDesktopPackagedSmokePlan } from './desktop-packaged-smoke-plan.mjs'
 import { runPnpmSync } from './pnpm-command.mjs'
 import { packagedElectronExecutable } from './smoke-packaged-toolchain.mjs'
-import { spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
+import { desktopSmokeEnv, spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
 import { startWorkspaceAcceptanceAiMock } from './workspace-acceptance-ai-mock.mjs'
 import {
   formatWorkspaceAcceptanceFailure,
@@ -48,8 +48,8 @@ Options:
   --package-root <path>
                  Reuse an explicit package output (requires --skip-pack)
   --keep-package Keep the temporary package output created by this run
-  --temp-data    Use isolated temporary data/workspace/global stores
-  --real-data    Use real data explicitly (default; kept for compatibility)
+  --temp-data    Use isolated temporary data/workspace/global/native CLI stores (default)
+  --real-data    Explicitly opt into real user data and native CLI state
   --onboarding   Use temp data and run an automated fresh-user renderer smoke,
                  then exit
   --trading-mode Use temp data, exercise lite -> readonly -> lite UTA lifecycle,
@@ -247,7 +247,7 @@ async function main() {
       join(homedir(), '.local', 'bin'),
     ].filter(Boolean)
     const env = {
-      ...process.env,
+      ...(smokeRoot ? desktopSmokeEnv(smokeRoot) : process.env),
       ...plan.launchEnv,
       PATH: [process.env['PATH'], ...pathAdditions].filter(Boolean).join(delimiter),
       OPENALICE_EXTRA_AGENT_PATH: pathAdditions.join(delimiter),

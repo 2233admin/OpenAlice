@@ -443,6 +443,13 @@ are not a supported Codex project layer, so OpenAlice-managed custom providers
 use an explicit `.codex/openalice-home/`, while model/effort-only login-backed
 preferences leave `CODEX_HOME` unset.
 
+Codex Workspace creation does not read or rewrite global `config.toml` or
+`auth.json`. Interactive, headless, and Web launches trust only their canonical
+Workspace path through a process-local `-c projects={...}` inline TOML table.
+This keeps native project model/effort configuration available without persisting
+trust or racing another Workspace, Codex, or the user's editor. Do not use a
+dotted override key containing a quoted path: Codex splits that key on dots.
+
 Context-window and output limits follow the same ownership boundary. Registered
 model semantics provide known limits; an explicit Workspace preference may
 override the context registration for runtimes that support it; otherwise the
@@ -728,7 +735,7 @@ namespaces that many remote containers cannot create.
 
 | Runtime | Process-local execution policy |
 | --- | --- |
-| Codex | `danger-full-access`, approval `never`; Web thread start/resume use the same wire values |
+| Codex | `danger-full-access`, approval `never`, process-local Workspace trust; Web thread start/resume use the same permission wire values |
 | Claude | `--dangerously-skip-permissions`, injected `sandbox.enabled=false` |
 | Cursor | `--force --trust --sandbox disabled` |
 | Grok | `--always-approve`, `--sandbox off` |
