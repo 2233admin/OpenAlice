@@ -11,7 +11,7 @@ export declare class WebRelay {
   listen(): Promise<string>
   connect(machine: string, project: string, options?: { remember?: boolean }): Promise<void>
   rememberCurrentSelection(current?: () => boolean): Promise<void>
-  planMachine(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string }): Promise<unknown>
+  planMachine(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; projectKey?: string; machineKey?: string }): Promise<unknown>
   applyMachine(id: string): Promise<unknown>
   readonly machineOperation: unknown
   startupPreference(): Promise<{ target: { machine: string; project: string } | null; error: string | null }>
@@ -35,4 +35,19 @@ export declare class ClientUpdateService {
   activate(): void
   stop(): void
   savePreferences(input: unknown): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
+}
+
+export declare class UpdateControlService {
+  constructor(options: {
+    root?: string
+    scope(): string
+    project(path: string, body?: unknown): Promise<unknown>
+    backend?: { plan(): Promise<unknown>; apply(id: string): Promise<unknown> }
+    client?: { current(): string; downloaded(): string | null; install(version: string): Promise<unknown>; ready(): Promise<boolean> }
+  })
+  status(): Promise<import('@traderalice/update-lifecycle').UpdateOperation | null>
+  review(selection: { client: boolean; backend: boolean; projectUnits: string[] }): Promise<import('@traderalice/update-lifecycle').UpdatePlan>
+  approve(plan: import('@traderalice/update-lifecycle').UpdatePlan, fingerprint: string): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
+  abandon(): Promise<void>
+  resume(): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
 }

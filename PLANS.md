@@ -29,6 +29,10 @@ the durable truth after it changes. Git history is the archive.
 
 ## Active
 
+- [[plans/review-updates-shared-plan.md]] — Share automatic/manual update review
+  plans and open exact single targets. Independent Draft #1693; preserve the
+  coordinated owner review from #1692 and keep attention #1691 separate.
+
 - [[plans/cli-artifact-signature.md]] — Bun compiler pin, final macOS ad-hoc
   signatures and shared final-archive acceptance for #1670. Draft PR acceptance
   remains pending.
@@ -42,10 +46,6 @@ the durable truth after it changes. Git history is the archive.
 - [[plans/compact-notifications.md]] — Approved compact type-specific pop-out
   notifications, bounded news/Inbox grouping and optional news thumbnails;
   implementation and Draft PR review only, no merge authority.
-
-- [[plans/update-lifecycle.md]] — Unify version inventory, backend probing, planning and durable update
-  operations behind one lifecycle and UI hook; migrate real consumers and the
-  rehearsal together, retiring duplicate paths while preserving owner engines.
 
 - [[plans/cli-relay-entry-unification.md]] — Consolidates CLI-launched browser
   sessions on the client-owned WebRelay while retaining explicit local and

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { ClientUpdatePreferences, ClientUpdateSnapshot } from '@traderalice/update-lifecycle'
+import type { UpdateUnit, UpdatePlan, UpdateOperation, ClientUpdatePreferences, ClientUpdateSnapshot } from '@traderalice/update-lifecycle'
 import { useDiscoverySnapshot } from '../lib/updates/useDiscoverySnapshot'
 import type { VersionInfo } from '../api/types'
 import { api } from '../api'
@@ -35,6 +35,14 @@ export type NativeStatus =
 interface UpdateResponse { preferences: UpdatePreferences; workspaces: WorkspaceUpdateState[] }
 
 export interface UpdateLifecycle {
+  inventoryError: string | null
+  inventoryCheckedAt: number | null
+  inventory: UpdateUnit[]
+  operation: UpdateOperation | null
+  review(selection: { client: boolean; backend: boolean; projectUnits: string[] }): Promise<UpdatePlan>
+  approve(plan: UpdatePlan): Promise<void>
+  abandon(): Promise<void>
+  resume(): Promise<void>
   client: ClientUpdateSnapshot | null
   clientError: string | null
   saveClientPreferences(next: ClientUpdatePreferences): Promise<void>
@@ -78,6 +86,22 @@ class UnsupportedUpdatesError extends Error {}
 
 export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const machines = useMachineControls()
+  const [inventoryError, setInventoryError] = useState<string | null>(null)
+  const [inventoryCheckedAt, setInventoryCheckedAt] = useState<number | null>(null)
+  const [inventory, setInventory] = useState<UpdateUnit[]>([])
+  const [operation, setOperation] = useState<UpdateOperation | null>(null)
+  const readOperation = useCallback(async () => {
+    try { setOperation(await coordination('operation') as UpdateOperation | null) } catch { /* Unsupported older local host. */ }
+  }, [])
+  useEffect(() => {
+    void readOperation()
+    const timer = window.setInterval(() => { void readOperation() }, operation && operation.phase !== 'succeeded' ? 1500 : POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [readOperation, operation?.phase])
+  const abandon = useCallback(async () => { await coordination('abandon'); await readOperation() }, [readOperation])
+  const review = useCallback((selection: { client: boolean; backend: boolean; projectUnits: string[] }) => coordination('review', selection) as Promise<UpdatePlan>, [])
+  const resume = useCallback(async () => { await coordination('resume'); await readOperation() }, [readOperation])
+  const approve = useCallback(async (plan: UpdatePlan) => { setOperation(await coordination('approve', { plan, fingerprint: plan.fingerprint }) as UpdateOperation); await resume() }, [resume])
   const clientDiscovery = useDiscoverySnapshot<ClientUpdateSnapshot | null>('client-host')
   const { value: client, error: clientTransportError, check: checkClient, clear: clearClient } = clientDiscovery
   const refreshClient = useCallback(async (force = false) => {
@@ -169,6 +193,14 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
       // status response. Initial discovery joins it; later polls refresh it.
       workspacePlans.refreshObserved(inventory, [...observed.workspaceIds, ...observed.needsAttentionWorkspaceIds], force || observedPlansLoaded.current)
       observedPlansLoaded.current = true
+      try {
+        const response = await fetch(`/api/updates/inventory${force ? '?force=1' : ''}`)
+        if (!response.ok && response.status !== 404) throw new Error(`Inventory refresh failed: HTTP ${response.status}`)
+        if (response.ok && !response.headers?.get('content-type')?.includes('text/html')) {
+          const value = await response.json() as { units?: UpdateUnit[]; error?: string | null; checkedAt?: number | null }
+          if (isCurrent()) { setInventory(value.units ?? []); setInventoryError(value.error ?? null); setInventoryCheckedAt(value.checkedAt ?? null) }
+        }
+      } catch (cause) { if (isCurrent()) setInventoryError(String(cause)) }
       let refreshedWorkspace = false
       for (const state of snapshot.workspaces) {
         if (state.phase !== 'updated') continue
@@ -201,6 +233,10 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   }, [backendUnavailable, refreshWorkspaces, checkVersion, isCurrent, workspacePlans])
 
   useEffect(() => {
+    if (operation?.phase === 'succeeded') void load(true)
+  }, [operation?.id, operation?.phase, load])
+
+  useEffect(() => {
     setChecking(false)
     setError(null)
     updatesSupported.current = null
@@ -208,6 +244,9 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     observedPlansLoaded.current = false
     setPreferences(null)
     setWorkspaceStates([])
+    setInventory([])
+    setInventoryError(null)
+    setInventoryCheckedAt(null)
     setUpdatesUnsupported(false)
     if (backendUnavailable) {
       clearVersion()
@@ -266,7 +305,7 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
     if (!updater || !nativeReady) return Promise.reject(new Error('No downloaded client update is ready'))
     setNativeInstalling(true)
     setNativeError(null)
-    const flight = Promise.resolve().then(async () => { await updater.installAndRestart() }).catch((cause: unknown) => {
+    const flight = Promise.resolve().then(async () => { await updater.installAndRestart(nativeReady.version) }).catch((cause: unknown) => {
       nativeInstallFlight.current = null
       setNativeInstalling(false)
       setNativeError(cause instanceof Error ? cause.message : String(cause))
@@ -340,10 +379,11 @@ export function UpdateLifecycleProvider({ children }: { children: ReactNode }) {
   const availableCount = guidance.availableCount
 
   const value = useMemo<UpdateLifecycle>(() => ({
+    inventoryError, inventoryCheckedAt, inventory, operation, review, approve, resume, abandon,
     client, clientError: clientTransportError ?? client?.discovery.error ?? null, saveClientPreferences,
     machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspacePlans, workspaceStates, checking: checking || clientDiscovery.checking || Boolean(client?.discovery.checking), error, versionError, updatesUnsupported, availableCount, guidance,
     refresh: async () => { await Promise.all([load(true), refreshClient(true)]) }, savePreferences,
-  }), [client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, guidance, load, savePreferences, workspacePlans, planRevision])
+  }), [inventoryError, inventoryCheckedAt, inventory, operation, review, approve, resume, abandon, client, clientTransportError, saveClientPreferences, clientDiscovery.checking, refreshClient, machines, preferences, versionInfo, nativeStatus, nativeReady, nativeInstalling, nativeError, installClient, openClientRelease, workspaceStates, checking, error, versionError, updatesUnsupported, availableCount, guidance, load, savePreferences, workspacePlans, planRevision])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 
@@ -382,4 +422,20 @@ async function readClientUpdates(action: 'status' | 'check' | 'activate' | 'pref
     throw new Error('Invalid client update status from local host')
   }
   return value
+}
+
+async function coordination(action: 'operation' | 'review' | 'approve' | 'resume' | 'abandon', body?: unknown): Promise<unknown> {
+  const bridge = window.openAlice?.clientUpdates
+  if (bridge?.operation) {
+    if (action === 'operation') return bridge.operation()
+    if (action === 'abandon') return bridge.abandon()
+    if (action === 'resume') return bridge.resume()
+    if (action === 'review') return bridge.review(body as Parameters<typeof bridge.review>[0])
+    const input = body as { plan: UpdatePlan; fingerprint: string }
+    return bridge.approve(input.plan, input.fingerprint)
+  }
+  const response = await fetch(`/relay/v1/updates/${action}`, { method: action === 'operation' ? 'GET' : 'POST', headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
+  if (response.status === 404 || response.headers?.get('content-type')?.includes('text/html')) throw new Error('This host does not support coordinated updates')
+  if (!response.ok) { const failure = await response.json().catch(() => null) as { error?: string } | null; throw new Error(failure?.error ?? `Update command failed: HTTP ${response.status}`) }
+  return response.json()
 }

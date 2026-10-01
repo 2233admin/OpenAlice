@@ -1,3 +1,5 @@
+import { UpdateControlService } from './update-control.ts'
+export { UpdateControlService } from './update-control.ts'
 import { ClientUpdateService } from './client-updates.ts'
 export { ClientUpdateService } from './client-updates.ts'
 export { readStartupTarget, writeStartupTarget, validateStartupTarget } from './startup-target.ts'
@@ -73,6 +75,8 @@ export class WebRelay {
   private readonly server = createServer((req, res) => void this.handle(req, res))
   private readonly options: WebRelayOptions
   private readonly clientUpdates: ClientUpdateService
+  private projectCredentials: { target: ActiveTarget; cookie: string } | null = null
+  readonly updates: UpdateControlService
   private readonly machines: MachineManagement
   private origin = ''
   private startupError: string | null = null
@@ -86,6 +90,16 @@ export class WebRelay {
     }
     this.clientUpdates = options.clientUpdates ?? new ClientUpdateService()
     this.machines = options.machineManagement ?? new MachineManagement()
+    this.updates = new UpdateControlService({
+      scope: () => `${this.target?.machine ?? 'none'}:${this.target?.project ?? 'none'}`,
+      project: async (path, body) => {
+        if (!this.target) throw new Error('Select an AliceProject')
+        const response = await fetch(new URL(path, this.target.endpoint), { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...(this.projectCredentials?.target === this.target ? { cookie: this.projectCredentials.cookie } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(120_000) })
+        if (!response.ok) throw new Error(`Project update command failed: ${await response.text()}`)
+        return response.json()
+      },
+      backend: { plan: () => { if (!this.target || this.target.machine === 'local') throw new Error('Local backend uses its own installation owner'); return this.planMachine({ mode: 'upgrade', machineKey: this.target.machine, projectKey: this.target.project }) }, apply: id => this.applyMachine(id) },
+    })
     this.server.on('upgrade', (req, socket, head) => this.upgrade(req, socket, head))
   }
 
@@ -414,6 +428,23 @@ export class WebRelay {
       }
       if (!this.validRequest(req, mutation)) return json(res, 403, { error: 'Relay origin rejected.' })
       res.setHeader('cache-control', 'no-store')
+      // Browser authentication is ephemeral and target-scoped, never journaled.
+      // After a relay restart the next authorized command supplies it again.
+      if (this.target && req.method === 'POST' && ['/relay/v1/updates/review', '/relay/v1/updates/approve', '/relay/v1/updates/resume'].includes(url.pathname)) {
+        const headers = upstreamHeaders(req, new URL(this.target.endpoint), this.target)
+        this.projectCredentials = { target: this.target, cookie: String(headers.cookie ?? '') }
+      }
+      if (url.pathname === '/relay/v1/updates/abandon' && req.method === 'POST') { await this.updates.abandon(); return json(res, 200, { ok: true }) }
+      if (url.pathname === '/relay/v1/updates/operation' && req.method === 'GET') return json(res, 200, await this.updates.status())
+      if (url.pathname === '/relay/v1/updates/review' && req.method === 'POST') return json(res, 200, await this.updates.review(await readJsonBody(req) as Parameters<UpdateControlService['review']>[0]))
+      if (url.pathname === '/relay/v1/updates/approve' && req.method === 'POST') {
+        const body = await readJsonBody(req, 1_048_576) as { plan: Parameters<UpdateControlService['approve']>[0]; fingerprint: string }
+        return json(res, 200, await this.updates.approve(body.plan, body.fingerprint))
+      }
+      if (url.pathname === '/relay/v1/updates/resume' && req.method === 'POST') {
+        void this.updates.resume().catch(error => console.warn('[updates] continuation failed:', error))
+        return json(res, 202, { accepted: true })
+      }
       if (url.pathname === '/relay/v1/updates' && req.method === 'GET') return json(res, 200, await this.clientUpdates.snapshot())
       if (url.pathname === '/relay/v1/updates/activate' && req.method === 'POST') {
         this.clientUpdates.activate()
@@ -631,11 +662,11 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readJsonBody(req: IncomingMessage, limit = MAX_BODY): Promise<unknown> {
   let text = ''
   for await (const chunk of req) {
     text += String(chunk)
-    if (text.length > MAX_BODY) throw new Error('Request body is too large.')
+    if (text.length > limit) throw new Error('Request body is too large.')
   }
   return JSON.parse(text)
 }

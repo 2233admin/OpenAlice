@@ -91,3 +91,17 @@ it('keeps exact Workspace targets in a multi-update review', () => {
   fireEvent.click(quant.querySelector('button')!)
   expect(mocks.openAgentConfig).toHaveBeenCalledWith('aq', undefined, 'template')
 })
+
+it('keeps coordinated recovery visible instead of bypassing a pending operation', () => {
+  mocks.updates.guidance.backend = false
+  mocks.updates.guidance.availableCount = 1
+  mocks.updates.availableCount = 1
+  mocks.updates.operation = { phase: 'blocked', error: 'Reconnect the approved target', completed: {}, plan: { steps: [] } }
+  mocks.updates.resume = vi.fn()
+  mocks.updates.abandon = vi.fn()
+  render(<VersionOverviewSection />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review updates' }))
+  expect(screen.getByRole('dialog').textContent).toContain('Reconnect the approved target')
+  expect(mocks.openAgentConfig).not.toHaveBeenCalled()
+  expect(mocks.updates.resume).not.toHaveBeenCalled()
+})

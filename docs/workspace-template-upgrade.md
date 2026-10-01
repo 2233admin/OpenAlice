@@ -8,6 +8,18 @@ a future Workspace Merge/Absorb workflow.
 Related guides: [[docs/workspace-agent-guidance.md]],
 [[docs/workspace-lifecycle.md]], and [[docs/project-structure.md]].
 
+## Shared operation receipts
+
+Settings can compose template and injected Skills updates with other owners
+through [[docs/update-lifecycle.md]]. The existing preview digest, active-session
+check, file conflict review and checkout lease remain authoritative. Every apply
+path emits a common receipt under the checkout's actual Git directory
+(`openalice-updates/`) inside those guards. A matching committed transaction
+trailer proves completion if the process dies before the response is delivered.
+The outer coordinator never resolves file conflicts or substitutes a newly
+published target for an approved digest. Source upgrade emits its own exact
+commit trailer through the same receipt contract.
+
 ## Product Promise
 
 Template Upgrade means “bring the template's newer core assets to this desk

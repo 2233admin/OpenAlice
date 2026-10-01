@@ -1,3 +1,4 @@
+import { CoordinatedUpdateReview } from './CoordinatedUpdateReview'
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronRight, ExternalLink, Folder, Info, LoaderCircle, Monitor, RefreshCw, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -19,9 +20,7 @@ const UI_VERSION = typeof __OPENALICE_UI_VERSION__ === 'string' ? __OPENALICE_UI
 const version = (value?: string | null) => value ? `v${value.replace(/^v/, '')}` : '—'
 type View = 'app' | 'backend' | 'project' | 'review' | 'native-review' | 'native-progress' | 'backend-review' | null
 
-/** Overview selects observations from the one lifecycle owner. Commands keep
- * their real owner approval boundary; this view must not invent cross-restart
- * orchestration or infer an installed version from a running-version probe. */
+/** Overview projects the local coordinator and authoritative owner reviews. */
 export function VersionOverviewSection() {
   const { t } = useTranslation()
   const text = (key: keyof Resources['settings']['versions']) => t(`settings.versions.${key}`)
@@ -90,7 +89,9 @@ export function VersionOverviewSection() {
       ...(guidance.app ? ['app'] : []), ...(guidance.backend ? ['backend'] : []),
       ...guidance.workspaceIds.map(id => `workspace-${id}`),
     ]
-    if (targets.length !== 1) { open('review'); return }
+    // A durable coordinated attempt keeps its recovery entry even when one
+    // discovery target remains. Owner review must not hide resume/abandon.
+    if (targets.length !== 1 || (updates.operation && updates.operation.phase !== 'succeeded')) { open('review'); return }
     const selected = targets[0]
     if (selected.startsWith('workspace-')) openWorkspace(selected.slice('workspace-'.length))
     else if (selected === 'app' || integrated) open(updates.nativeReady ? 'native-review' : 'app')
@@ -148,7 +149,7 @@ export function VersionOverviewSection() {
         <div className="border-b border-border px-6 py-5 pr-14"><DialogTitle className="text-xl">{text(view === 'review' ? 'review' : view === 'native-review' ? 'reviewApp' : view === 'native-progress' ? 'appProgress' : `${view === 'backend' ? 'backend' : view === 'project' ? 'project' : 'app'}Details`)}</DialogTitle><DialogDescription className="mt-2">{text(view === 'review' ? 'reviewDescription' : view === 'native-review' ? 'restartNote' : view === 'native-progress' ? 'handoffNote' : 'detailsDescription')}</DialogDescription></div>
         <div className="min-h-0 overflow-y-auto p-6">
           {view === 'review' && <div className="space-y-3">
-            <p className="mb-4 rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">{text('ownerReview')}</p>
+            <CoordinatedUpdateReview remote={remote}/>
             <ReviewRow title={text('app')} detail={`${version(appVersion)} · ${appStatus}`} label={updates.nativeReady ? text('review') : text('details')} onClick={() => open(updates.nativeReady ? 'native-review' : 'app')}/>
             <ReviewRow title={text('backend')} detail={`${machineName} · ${backendStatus}`} label={text('review')} onClick={integrated ? () => open('app') : remote ? () => reviewBackend() : () => open('backend')}/>
             {workspaceRows.filter(({ workspace }) => guidance.workspaceIds.includes(workspace.id) || guidance.needsAttentionWorkspaceIds.includes(workspace.id)).map(({ workspace, current, candidate }) => <ReviewRow key={workspace.id} title={workspace.displayName || workspace.tag} detail={`${version(current)} → ${version(candidate)}`} label={text('review')} onClick={() => openWorkspace(workspace.id)}/>)}
