@@ -1,4 +1,4 @@
-import { selectRelease, isVersion, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
+import { DiscoveryStore, selectRelease, isVersion, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -51,7 +51,22 @@ export function parseUpdateArgs(argv) {
   return options
 }
 
+const discoveries = new WeakMap()
 export async function checkForUpdate(options = {}, dependencies = {}) {
+  const owner = dependencies.fetchImpl ?? globalThis.fetch
+  let resources = discoveries.get(owner)
+  if (!resources) { resources = new Map(); discoveries.set(owner, resources) }
+  const key = JSON.stringify([options, dependencies.platform ?? process.platform, dependencies.env?.OPENALICE_INSTALL_SOURCE ?? process.env.OPENALICE_INSTALL_SOURCE ?? '', dependencies.readInstallSourceImpl?.toString()])
+  if (!resources.has(key)) {
+    if (resources.size >= 64) resources.delete(resources.keys().next().value)
+    resources.set(key, new DiscoveryStore())
+  }
+  const store = resources.get(key)
+  const value = await store.check(() => discoverUpdate(options, dependencies), true)
+  if (!value) throw new Error(store.getSnapshot().error ?? 'Release discovery failed')
+  return value
+}
+async function discoverUpdate(options = {}, dependencies = {}) {
   const platform = options.platform ?? dependencies.platform ?? process.platform
   const currentVersion = options.currentVersion ?? CURRENT_VERSION
   const installSource = options.installSource ?? await (

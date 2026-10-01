@@ -100,7 +100,19 @@ which performs this transaction:
 4. verify the published SHA-256 checksum before extraction;
 5. validate package name, version, API entry, and manifest;
 6. move the immutable release into place and atomically replace `active.json`;
-7. request a UTA restart so the new active pointer is observed.
+7. request a UTA restart so the new active pointer is observed;
+8. verify UTA's loaded module identity against the approved version and content ID.
+
+The shared [[docs/update-lifecycle.md]] records installation and UTA activation
+separately in each engine's `lifecycle/` journal. The installer also emits its
+own apply receipt under `update-operations/`. A lost restart response is
+reconciled using `GET /__uta/broker-packs/:engine`; changing the pointer alone
+cannot prove that an already cached SDK was replaced. This probe validates the
+module without creating a broker account or contacting a venue. Pack owners
+share one serialized UTA restart queue, with bounded health probes, so
+concurrent upgrades cannot race the restart flag or claim an earlier boot. Disabled UTA
+leaves activation pending and does not block Chat. Explicit artifact-only smoke
+can request `restart: false`; production intents use the complete lifecycle.
 
 Failure before pointer replacement leaves the previous active release intact.
 An installation lock rejects concurrent mutation of the same engine. Pack

@@ -13,6 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // gets the same effect via NODE_OPTIONS=--conditions=source (see scripts/guardian/dev.ts).
 const workspaceAliases = {
   '@': resolve(__dirname, './src'),
+  '@traderalice/update-lifecycle/node': resolve(__dirname, './packages/update-lifecycle/src/node.ts'),
   '@traderalice/update-lifecycle': resolve(__dirname, './packages/update-lifecycle/src/index.ts'),
   '@traderalice/guardian-runtime': resolve(__dirname, './packages/guardian-runtime/src/index.ts'),
   '@traderalice/connector-protocol': resolve(__dirname, './packages/connector-protocol/src/index.ts'),

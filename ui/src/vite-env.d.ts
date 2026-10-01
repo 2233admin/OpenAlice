@@ -44,6 +44,7 @@ interface Window {
     readonly desktopMachine?: {
       plan(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; machineKey?: string; projectKey?: string }): Promise<unknown>
       apply(id: string): Promise<unknown>
+      abandon(): Promise<void>
       operation(): Promise<unknown>
     }
     readonly companion?: {
@@ -98,6 +99,11 @@ interface Window {
       openCurrent(): Promise<string>
     }
     readonly clientUpdates?: {
+      abandon(): Promise<void>
+      operation(): Promise<import('@traderalice/update-lifecycle').UpdateOperation | null>
+      review(selection: { client: boolean; backend: boolean; projectUnits: string[] }): Promise<import('@traderalice/update-lifecycle').UpdatePlan>
+      approve(plan: import('@traderalice/update-lifecycle').UpdatePlan, fingerprint: string): Promise<import('@traderalice/update-lifecycle').UpdateOperation>
+      resume(): Promise<unknown>
       status(): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
       check(): Promise<import('@traderalice/update-lifecycle').ClientUpdateSnapshot>
       activate(): Promise<void>
@@ -131,7 +137,7 @@ interface Window {
           }
         | { phase: 'error'; message: string }
       ) => void): () => void
-      installAndRestart(): Promise<unknown>
+      installAndRestart(version?: string): Promise<unknown>
       openRelease(version?: string): Promise<unknown>
     }
     readonly workspace?: {

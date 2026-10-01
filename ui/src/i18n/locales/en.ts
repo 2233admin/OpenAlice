@@ -696,6 +696,25 @@ export const en = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "End this plan and review again",
+      "title": "Coordinated update",
+      "description": "Review exact targets together. Progress is saved on this computer; resume after restart. File conflicts still require Workspace review.",
+      "client": "This app",
+      "backend": "Selected remote backend",
+      "review": "Review selected updates",
+      "approve": "Approve and start",
+      "resume": "Resume saved update",
+      "phase": {
+        "approved": "Approved",
+        "running": "Updating",
+        "waiting": "Waiting for restart or readiness",
+        "blocked": "Waiting for owner review",
+        "failed": "Update failed",
+        "recovery": "Owner recovery required",
+        "succeeded": "Completed"
+      }
+    },
     title: 'Settings',
     group: {
       general: 'General',

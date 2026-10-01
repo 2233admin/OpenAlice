@@ -1,3 +1,4 @@
+import { createUpdatePlan, approveUpdate, UpdateCoordinator, projectUpdateUnit, type UpdateOperation, type UpdatePlan } from '@traderalice/update-lifecycle'
 import { http, HttpResponse } from 'msw'
 import { DEMO_AUTO_QUANT_WORKSPACE_ID } from '../fixtures/workspaces'
 
@@ -22,7 +23,31 @@ const clientSnapshot = () => ({
   discovery: { value: { status: 'current', currentVersion: '0.94.1-beta.2', channel: 'beta' },
     checking: false, error: null, checkedAt: Date.now(), succeededAt: Date.now() },
 })
+let operation: UpdateOperation | null = null
+const injection = projectUpdateUnit('alice-harness:demo-ws', 'alice-harness', 'demo', { version: '1' }, { version: '2' })
+const inventory = [injection]
 export const updatesHandlers = [
+  http.get('/api/updates/inventory', () => HttpResponse.json({ units: inventory, capabilities: { 'project-updates': 1 } })),
+  http.get('/relay/v1/updates/operation', () => HttpResponse.json(operation)),
+  http.post('/relay/v1/updates/abandon', () => { operation = null; return HttpResponse.json({ ok: true }) }),
+  http.post('/relay/v1/updates/review', async ({ request }) => {
+    const input = await request.json() as { backend: boolean; projectUnits: string[] }
+    const proposals = input.projectUnits.map(id => ({ unit: inventory.find(u => u.id === id)!, fingerprint: 'demo-exact-files', stages: ['apply', 'verify'] as const }))
+    if (input.backend) proposals.unshift({ unit: projectUpdateUnit('backend', 'remote', 'demo', { version: '0.94.0' }, { version: '0.94.1' }), fingerprint: 'demo-release', stages: ['apply', 'verify'] })
+    return HttpResponse.json(createUpdatePlan('demo', proposals.map(p => ({ ...p, stages: [...p.stages] }))))
+  }),
+  http.post('/relay/v1/updates/approve', async ({ request }) => {
+    const input = await request.json() as { plan: UpdatePlan; fingerprint: string }
+    operation = approveUpdate(input.plan, input.fingerprint, 'demo-operation', new Date().toISOString())
+    return HttpResponse.json(operation)
+  }),
+  http.post('/relay/v1/updates/resume', async () => {
+    if (operation) await new UpdateCoordinator({ read: async () => operation, write: async next => { operation = next } }, {
+      reconcile: async () => ({ status: 'ready' }), execute: async step => ({ status: 'complete', receipt: `demo:${step.id}` }),
+    }).run()
+    if (operation?.phase === 'succeeded') for (const p of operation.plan.proposals) { const unit = inventory.find(u => u.id === p.unit.id); if (unit) unit.installed = unit.desired }
+    return HttpResponse.json({ accepted: true })
+  }),
   http.get('/relay/v1/updates', () => HttpResponse.json(clientSnapshot())),
   http.post('/relay/v1/updates/check', () => HttpResponse.json(clientSnapshot())),
   http.post('/relay/v1/updates/activate', () => HttpResponse.json({ accepted: true }, { status: 202 })),
