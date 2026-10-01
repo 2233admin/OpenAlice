@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useAliceProject } from '../hooks/useAliceProject'
 import { isNanoProduct } from '../lib/product-surfaces'
 import { useWorkspace } from './store'
@@ -532,6 +532,9 @@ function specToSection(spec: ViewSpec): ActivitySection {
  * deep link, back-forward) lands with the expected navigation context.
  */
 function useAdopt(spec: ViewSpec) {
+  // A store-only tab switch can leave Router on this same path. A fresh
+  // navigation still needs adoption even when the spec key did not change.
+  const locationKey = useLocation().key
   const openOrFocus = useWorkspace((state) => state.openOrFocus)
   const setSidebar = useWorkspace((state) => state.setSidebar)
   // Stable string key for dep tracking; spec is freshly built each render.
@@ -546,7 +549,7 @@ function useAdopt(spec: ViewSpec) {
     openOrFocus(spec)
     // The spec object captured here is the one keyed by `key`; safe to use.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, locationKey])
 }
 
 /**

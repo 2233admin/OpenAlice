@@ -131,7 +131,6 @@ export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
   const { project } = useAliceProject()
   const guidance = useUpdateLifecycle({ optional: true })?.guidance
   const focused = useWorkspace((state) => getFocusedTab(state)?.spec)
-  const openOrFocus = useWorkspace((state) => state.openOrFocus)
   const developerTab = focused?.kind === 'dev' ? focused.params.tab
     : focused?.kind === 'automation' ? focused.params.section : null
   const developerActive = developerTab !== null
@@ -220,7 +219,7 @@ export function SettingsCategoryList({ onSelect }: { onSelect?: () => void }) {
                   active={active}
                   icon={<item.Icon size={14} strokeWidth={1.75} className="text-muted-foreground/70" aria-hidden />}
                   onClick={() => {
-                    openOrFocus({ kind: 'dev', params: { tab: item.tab } })
+                    navigate(`/settings/developer/${item.tab}`)
                     onSelect?.()
                   }}
                 />

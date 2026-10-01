@@ -107,3 +107,31 @@ approval tests also pass. Chromium acceptance at 1440×1000 and 390×844 passed
 form/review/apply, probe error retry, blocked review, apply failure/review retry,
 focus trap/return, Escape, saved Current target, direct route, reload and actual
 Back/Forward. Final exact-head verification and delivery remain pending.
+
+## Recovery and mixed-navigation follow-up
+
+Review found two reproduction-backed gaps. A replacement renderer had no
+apply promise to refresh its fleet after a restored add completed. The dialog
+now refreshes once before announcing success only when the original provider
+flight does not already own that refresh. A late first operation response can
+adopt a running add even after the form opened; historical completion and
+upgrade operations are ignored.
+
+Settings Developer entries now use the same Router navigation as categories.
+The URL adopter also keys adoption to a fresh Router location, so same-path
+navigation recovers from a tab-only native URL projection. Actual Router/store
+regressions cover Machines/Logs/Overview and Back/Forward.
+
+GitHub CLI 2.102.0 was fetched from its official release and verified against
+the official SHA-256 manifest. Its documented --attach command accepts the
+option, but uploading the first PNG returned HTTP 400 Bad Content-Length; the
+CLI explicitly reported that the PR was not changed. No authentication or
+global network settings were changed. The requester has received two verified
+compressed actual screenshots in Slack; high-resolution originals are retained.
+
+Follow-up local checks: 65 targeted assertions passed; the real browser
+controller-restoration fixture passed both reload-during-add and late-operation
+discovery. Each completion issued exactly one additional fleet read, displayed
+Restored Cloud without changing Current, and issued zero apply calls. Browser
+Machines/Logs/Overview history also passed. The injected controller is a test
+fixture, not real SSH acceptance.

@@ -154,3 +154,58 @@ it('restores only the active add operation and requires re-entry when restored e
   expect((screen.getByLabelText('SSH target') as HTMLInputElement).value).toBe('')
   expect(manager.apply).not.toHaveBeenCalled()
 })
+
+it.each([false, true])('refreshes a restored add before announcing success (late discovery: %s)', async lateDiscovery => {
+  const onAdded = vi.fn()
+  let finishRefresh!: () => void
+  const refresh = vi.fn(() => new Promise<void>(resolve => { finishRefresh = resolve }))
+  const running = { id: 'restore-add', planId: 'restore-plan', mode: 'add' as const, phase: 'running' as const, stage: 'verifying' as const, startedAt: '', error: null }
+  const manager = {
+    refresh, clearPlan: vi.fn(), probe: vi.fn(), apply: vi.fn(), probing: false, applying: false, plan: null,
+    operation: lateDiscovery ? null : running,
+  } as unknown as Parameters<typeof AddMachineDialog>[0]['manager']
+  const ref = { current: null }
+  const view = render(<AddMachineDialog manager={manager} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  if (lateDiscovery) {
+    expect(screen.getByRole('heading', { name: 'Add a Machine' })).toBeTruthy()
+    view.rerender(<AddMachineDialog manager={{ ...manager, operation: running }} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  }
+  expect(await screen.findByRole('heading', { name: 'Adding Machine' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+  const succeeded = { ...running, phase: 'succeeded' as const }
+  view.rerender(<AddMachineDialog manager={{ ...manager, operation: succeeded }} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  expect(onAdded).not.toHaveBeenCalled()
+  view.rerender(<AddMachineDialog manager={{ ...manager, operation: { ...succeeded } }} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  await act(async () => finishRefresh())
+  expect(onAdded).toHaveBeenCalledOnce()
+  expect(refresh).toHaveBeenCalledOnce()
+  expect(manager.apply).not.toHaveBeenCalled()
+})
+
+it('does not duplicate the refresh owned by a surviving apply flight', async () => {
+  const onAdded = vi.fn()
+  const refresh = vi.fn(async () => undefined)
+  const running = { id: 'same-renderer', planId: 'approved-plan', mode: 'add' as const, phase: 'running' as const, stage: 'verifying' as const, startedAt: '', error: null }
+  const manager = { refresh, clearPlan: vi.fn(), applying: true, operation: running } as unknown as Parameters<typeof AddMachineDialog>[0]['manager']
+  const ref = { current: null }
+  const view = render(<AddMachineDialog manager={manager} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  view.rerender(<AddMachineDialog manager={{ ...manager, applying: false, operation: { ...running, phase: 'succeeded' } }} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  await waitFor(() => expect(onAdded).toHaveBeenCalledOnce())
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+it.each([
+  { mode: 'upgrade', phase: 'running' },
+  { mode: 'add', phase: 'succeeded' },
+] as const)('does not adopt an unrelated $mode/$phase response into the form', async state => {
+  const onAdded = vi.fn()
+  const refresh = vi.fn(async () => undefined)
+  const manager = { refresh, clearPlan: vi.fn(), applying: false, operation: null } as unknown as Parameters<typeof AddMachineDialog>[0]['manager']
+  const ref = { current: null }
+  const view = render(<AddMachineDialog manager={manager} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  view.rerender(<AddMachineDialog manager={{ ...manager, operation: { id: 'unrelated', planId: 'unrelated-plan', ...state, stage: 'verifying', startedAt: '', error: null } }} onClose={vi.fn()} onAdded={onAdded} restoreFocusRef={ref} />)
+  expect(screen.getByRole('heading', { name: 'Add a Machine' })).toBeTruthy()
+  expect(refresh).not.toHaveBeenCalled()
+  expect(onAdded).not.toHaveBeenCalled()
+})

@@ -124,7 +124,7 @@ describe('SettingsCategoryList', () => {
     fireEvent.click(developer)
     expect(developer.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: 'common.logs' }))
-    expect(mocks.openOrFocus).toHaveBeenCalledWith({ kind: 'dev', params: { tab: 'logs' } })
+    expect(mocks.navigate).toHaveBeenCalledWith('/settings/developer/logs')
   })
 
   it('automatically expands for a Developer deep link', () => {
@@ -141,7 +141,7 @@ describe('SettingsCategoryList', () => {
     expect(screen.queryByRole('button', { name: `automation.${tab}` })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'settings.group.developer' }))
     fireEvent.click(screen.getByRole('button', { name: `automation.${tab}` }))
-    expect(mocks.openOrFocus).toHaveBeenCalledWith({ kind: 'dev', params: { tab } })
+    expect(mocks.navigate).toHaveBeenCalledWith(`/settings/developer/${tab}`)
     expect(onSelect).toHaveBeenCalledOnce()
   })
 

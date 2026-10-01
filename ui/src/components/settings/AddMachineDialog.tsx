@@ -26,6 +26,10 @@ export function AddMachineDialog({ manager, onClose, onAdded, restoreFocusRef }:
   const [sshPort, setSshPort] = useState('')
   const [identityFile, setIdentityFile] = useState('')
   const restored = manager.operation?.mode === 'add' && manager.operation.phase === 'running' ? manager.operation : null
+  // A surviving apply() flight already refreshes the fleet. A replacement
+  // renderer only polls the operation and must refresh after registration.
+  const refreshRestoredCompletion = useRef(Boolean(restored && !manager.applying))
+  const completedOperation = useRef<string | null>(null)
   const [approvedId, setApprovedId] = useState<string | null>(restored?.planId ?? null)
   const [phase, setPhase] = useState<Phase>(restored ? 'applying' : 'form')
   const [reviewed, setReviewed] = useState<MachinePlan | null>(null)
@@ -35,7 +39,7 @@ export function AddMachineDialog({ manager, onClose, onAdded, restoreFocusRef }:
   const applying = useRef(Boolean(restored))
   const request = useRef(0)
   const operation = manager.operation?.mode === 'add' && manager.operation.planId === approvedId ? manager.operation : null
-  const working = manager.applying || operation?.phase === 'running'
+  const working = manager.applying || Boolean(restored)
   const displayPhase = working ? 'applying' : phase
   applying.current = working
   const currentPlan = manager.plan?.mode === 'add' && manager.plan.id === reviewed?.id ? manager.plan : null
@@ -51,12 +55,33 @@ export function AddMachineDialog({ manager, onClose, onAdded, restoreFocusRef }:
     }
   }, [clearPlan])
   useEffect(() => {
+    // Operation discovery may finish after the user has opened the form.
+    // Adopt only a currently running add, never an old result or an upgrade.
+    if (!restored || restored.planId === approvedId) return
+    request.current++
+    refreshRestoredCompletion.current = !manager.applying
+    completedOperation.current = null
+    if (!manager.applying) clearPlan()
+    setApprovedId(restored.planId)
+    setReviewed(null)
+    setError(null)
+    setPhase('applying')
+  }, [restored?.id, restored?.planId, approvedId, manager.applying, clearPlan])
+  useEffect(() => {
     if ((phase !== 'applying' && phase !== 'failed') || manager.applying) return
     if (operation?.phase === 'failed') {
       setError(operation.error)
       setPhase('failed')
-    } else if (operation?.phase === 'succeeded') onAdded()
-  }, [phase, manager.applying, operation?.phase, operation?.error, onAdded])
+    } else if (operation?.phase === 'succeeded' && completedOperation.current !== operation.id) {
+      completedOperation.current = operation.id
+      if (refreshRestoredCompletion.current) {
+        refreshRestoredCompletion.current = false
+        void manager.refresh().then(() => {
+          if (live.current && completedOperation.current === operation.id) onAdded()
+        })
+      } else onAdded()
+    }
+  }, [phase, manager.applying, manager.refresh, operation?.id, operation?.phase, operation?.error, onAdded])
   useEffect(() => { if (phase !== 'form') headingRef.current?.focus() }, [phase])
 
   const close = () => {
@@ -93,6 +118,8 @@ export function AddMachineDialog({ manager, onClose, onAdded, restoreFocusRef }:
   const approve = async () => {
     if (!currentPlan || currentPlan.blocker || applying.current) return
     applying.current = true
+    refreshRestoredCompletion.current = false
+    completedOperation.current = null
     setApprovedId(currentPlan.id)
     setPhase('applying')
     setError(null)
