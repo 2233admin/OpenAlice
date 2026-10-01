@@ -58,6 +58,14 @@ export interface WebRelayOptions {
   machineManagement?: MachineManagement
 }
 
+export interface RelaySelectionOptions {
+  remember?: boolean
+  signal?: AbortSignal
+  /** Desktop owns presentation; Relay keeps the selection open through it. */
+  present?: () => Promise<void>
+  current?: () => boolean
+}
+
 export class WebRelay {
   private target: ActiveTarget | null = null
   private readonly defaultSelection = new DefaultSelection()
@@ -248,9 +256,9 @@ export class WebRelay {
     previous.abort?.abort()
   }
 
-  async connect(machineKey: string, projectKey: string, options: { remember?: boolean; signal?: AbortSignal } = {}): Promise<void> {
+  async connect(machineKey: string, projectKey: string, options: RelaySelectionOptions = {}): Promise<void> {
     if (options.signal?.aborted) throw new Error('Selection cancelled.')
-    await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false, undefined, options.signal)
+    await this.connectTarget(machineKey, projectKey, false, undefined, options.remember !== false, undefined, options)
   }
 
   /** A --home/env invocation supplies its observed local identity; it never saves. */
@@ -259,19 +267,13 @@ export class WebRelay {
     await this.connectTarget('local', project, false, undefined, false, machine)
   }
 
-  /** Desktop saves Default only after its replacement window has loaded.
-   * The public HTTP path commits after verified attachment; reconnect never does. */
-  async rememberCurrentSelection(current: () => boolean = () => true): Promise<void> {
-    const selected = this.target
-    const operation = this.defaultSelection.begin()
-    if (selected && this.targetConnection === 'healthy' && !this.closing) await this.rememberSelection(selected.machine, selected.project, () => current() && operation.current() && this.target === selected && !this.closing)
-  }
-
-  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false, localInvocation?: MachineInventory, signal?: AbortSignal): Promise<void> {
+  private async connectTarget(machineKey: string, projectKey: string, duringMachineOperation: boolean, expectedTarget?: ActiveTarget, remember = false, localInvocation?: MachineInventory, options: RelaySelectionOptions = {}): Promise<void> {
+    const { signal } = options
     if (this.projectOperation) throw new Error('Wait for the project operation to finish.')
     if (this.machines.busy && !duringMachineOperation) throw new Error('Wait for the Machine operation to finish before switching locations.')
     if (expectedTarget && this.switching) throw new Error('A user selection is in progress.')
     const operation = this.defaultSelection.begin()
+    const current = () => operation.current() && !this.closing && !signal?.aborted && (options.current?.() ?? true)
     const cancel = () => {
       if (!operation.current()) return
       operation.cancel()
@@ -283,6 +285,7 @@ export class WebRelay {
     this.switching = true
     this.announce()
     let candidateAbort: AbortController | undefined
+    let attached = false
     try {
       const machine = localInvocation ?? await this.inspectSelection(machineKey)
       const project = machine.projects.find((entry) => entry.key === projectKey)
@@ -338,20 +341,25 @@ export class WebRelay {
         const identity = await identityResponse.json() as { project?: { id?: string } }
         if (identity.project?.id !== project.id) throw new Error('The Runtime answered for a different AliceProject; connection was not switched.')
       }
-      if (!operation.current() || this.closing || (expectedTarget && this.target !== expectedTarget)) throw new Error('The selected location changed during recovery.')
+      if (!current() || (expectedTarget && this.target !== expectedTarget)) throw new Error('The selected location changed during recovery.')
       const previous = this.target
       this.target = { machine: machineKey, machineName: machine.displayName, project: projectKey, projectName: project.displayName, endpoint, inventory: { machine, project }, abort: candidateAbort }
+      attached = true
+      const selected = this.target
       this.targetConnection = 'healthy'
       this.recoveryAttempts = 0
       if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
       this.recoveryTimer = null
-      if (remember) await this.rememberSelection(machineKey, projectKey, () => operation.current() && !this.closing)
       this.generation += 1
       this.announce()
       for (const socket of this.sockets) socket.destroy()
       previous?.abort?.abort()
+      await options.present?.()
+      if (!current() || this.target !== selected) throw new Error('The selected location changed before completion.')
+      if (remember) await this.rememberSelection(machineKey, projectKey, () => current() && this.target === selected)
     } catch (error) {
-      candidateAbort?.abort()
+      // Presentation/save errors do not tear down an already verified attachment.
+      if (!attached) candidateAbort?.abort()
       throw error
     } finally {
       signal?.removeEventListener('abort', cancel)

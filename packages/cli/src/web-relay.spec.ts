@@ -53,6 +53,56 @@ async function withHost(origin: string, path: string, host: string): Promise<{ s
 }
 
 describe('WebRelay', () => {
+  it('keeps one selection open through presentation and commits Default before publishing completion', async () => {
+    const runtime = await backend('expected-id', 'working')
+    openedBackends.push(runtime.server)
+    const write = vi.fn(async (_target: { machine: string; project: string } | null) => undefined)
+    const relay = new WebRelay({ writeStartup: write,
+      inspectLocal: async () => ({ machine: { key: 'local', displayName: 'Local', projects: [{ key: 'main', id: 'expected-id', displayName: 'Main', available: true, runtime: { webEndpoint: `http://127.0.0.1:${runtime.port}` } }] } }) as never,
+      waitReady: async () => undefined,
+    })
+    openedRelays.push(relay)
+    await relay.listen()
+    let finish!: () => void
+    const present = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+    const selection = relay.connect('local', 'main', { present })
+    await vi.waitFor(() => expect(present).toHaveBeenCalledOnce())
+    expect(relay.status).toMatchObject({ generation: 1, switching: true, target: { project: 'main' } })
+    expect(write).not.toHaveBeenCalled()
+    finish()
+    await selection
+    expect(write).toHaveBeenCalledOnce()
+    expect(write.mock.calls[0]?.[0]).toEqual({ machine: 'local', project: 'main' })
+    expect(relay.status.switching).toBe(false)
+  })
+
+  it.each(['navigation failure', 'cancel', 'close', 'supersede', 'window closed'])('does not save a selection after %s during presentation', async reason => {
+    const runtime = await backend('expected-id', 'working')
+    openedBackends.push(runtime.server)
+    const write = vi.fn(async () => undefined)
+    const relay = new WebRelay({ writeStartup: write,
+      inspectLocal: async () => ({ machine: { key: 'local', displayName: 'Local', projects: [{ key: 'main', id: 'expected-id', displayName: 'Main', available: true, runtime: { webEndpoint: `http://127.0.0.1:${runtime.port}` } }] } }) as never,
+      waitReady: async () => undefined,
+    })
+    openedRelays.push(relay)
+    await relay.listen()
+    let finish!: () => void
+    let current = true
+    const controller = new AbortController()
+    const present = vi.fn(() => new Promise<void>((resolve, reject) => { finish = () => reason === 'navigation failure' ? reject(new Error('ERR_ABORTED')) : resolve() }))
+    const selection = relay.connect('local', 'main', { present, signal: controller.signal, current: () => current })
+    const rejected = expect(selection).rejects.toThrow()
+    await vi.waitFor(() => expect(present).toHaveBeenCalledOnce())
+    if (reason === 'cancel') controller.abort()
+    if (reason === 'close') await relay.close()
+    if (reason === 'supersede') await relay.connect('local', 'main', { remember: false })
+    if (reason === 'window closed') current = false
+    finish()
+    await rejected
+    expect(write).not.toHaveBeenCalled()
+    if (reason === 'navigation failure') expect(relay.status.target?.project).toBe('main')
+  })
+
   it('records Recent only after identity verification and keeps attachment if persistence fails', async () => {
     const runtime = await backend('expected-id', 'working')
     openedBackends.push(runtime.server)
@@ -72,7 +122,7 @@ describe('WebRelay', () => {
     id = 'expected-id'
     await relay.connect('local', 'main', { remember: false })
     expect(write).not.toHaveBeenCalled()
-    await relay.rememberCurrentSelection()
+    await relay.connect('local', 'main')
     expect(recent).toEqual({ machine: 'local', project: 'main' })
     write.mockRejectedValueOnce(new Error('Disk is read-only'))
     await expect(relay.connect('local', 'main')).resolves.toBeUndefined()

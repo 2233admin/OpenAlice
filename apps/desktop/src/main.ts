@@ -635,8 +635,8 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
   let launcherSwitching = false
   let launcherGeneration = 0
   const switchLauncher = async (action: (current: () => boolean) => Promise<unknown>) => {
-    const generation = ++launcherGeneration
     if (launcherSwitching) throw new Error('A startup operation is already in progress.')
+    const generation = ++launcherGeneration
     launcherSwitching = true
     try { return await action(() => generation === launcherGeneration && !appQuitting && !win.isDestroyed()) } finally { launcherSwitching = false }
   }
@@ -659,9 +659,7 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
       const selected = inventory.machine.projects.find(entry => entry.key === project)
       if (!selected?.runtime.webEndpoint) return integrate(project)
     }
-    await relay.connect(machine, project, { remember: false })
-    await win.loadURL(`${relay.originUrl}/settings`)
-    if (!win.isDestroyed() && !appQuitting) await relay.rememberCurrentSelection(current)
+    await relay.connect(machine, project, { current, present: () => win.loadURL(`${relay.originUrl}/settings`) })
   }))
   ipcMain.handle('openalice:desktop-connection:project-control', async (event, input: { machine: string; project: string; action: string }) => switchLauncher(async (current) => {
     assertSender(event.sender.id)
@@ -1318,8 +1316,8 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('openalice:desktop-connection:connect', async (event, machine: unknown, project: unknown) => {
     fromMainWindow(event.sender.id)
-    const generation = ++modeSwitchGeneration
     if (modeSwitching) throw new Error('A connection switch is already in progress.')
+    const generation = ++modeSwitchGeneration
     if (typeof machine !== 'string' || typeof project !== 'string') {
       throw new Error('Choose a running AliceProject.')
     }
@@ -1328,22 +1326,24 @@ app.whenReady().then(async () => {
       if (localRuntimeSuspended) {
         const relay = await ensureRelay()
         if (typeof machine !== 'string' || typeof project !== 'string') throw new Error('Choose a running AliceProject.')
-        await relay.connect(machine, project, { remember: false })
-        await win.loadURL(`${relay.originUrl}/settings`)
-        if (!win.isDestroyed() && !appQuitting) await relay.rememberCurrentSelection(() => generation === modeSwitchGeneration && !appQuitting && !win.isDestroyed())
+        await relay.connect(machine, project, {
+          current: () => generation === modeSwitchGeneration && !appQuitting && !win.isDestroyed(),
+          present: () => win.loadURL(`${relay.originUrl}/settings`),
+        })
         return relay.status
       }
       const relay = await ensureRelay()
       // The old local Runtime remains fully owned until the remote candidate
       // has passed the relay's SSH, endpoint, and Project identity checks.
-      await relay.connect(machine, project, { remember: false })
-      assertSwitchResources()
-      desktopDiagnostics?.write('guardian', 'remote target verified; loading relay window')
-      // Keep the local Runtime and its Guardian ownership intact until the
-      // replacement page has actually loaded. A failed navigation must not
-      // strand the user with neither a window nor a local backend.
-      await win.loadURL(`${relay.originUrl}/settings`)
-      if (!win.isDestroyed() && !appQuitting) await relay.rememberCurrentSelection(() => generation === modeSwitchGeneration && !appQuitting && !win.isDestroyed())
+      await relay.connect(machine, project, {
+        current: () => generation === modeSwitchGeneration && !appQuitting && !win.isDestroyed(),
+        present: async () => {
+          assertSwitchResources()
+          desktopDiagnostics?.write('guardian', 'remote target verified; loading relay window')
+          // Keep the local Runtime until its replacement page is usable.
+          await win.loadURL(`${relay.originUrl}/settings`)
+        },
+      })
       desktopDiagnostics?.write('guardian', 'relay window loaded; retiring local runtime')
       localRuntimeSuspended = true
       flagWatchAbort.abort()

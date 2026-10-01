@@ -9,8 +9,7 @@ export declare class WebRelay {
     switching: boolean
   }
   listen(): Promise<string>
-  connect(machine: string, project: string, options?: { remember?: boolean }): Promise<void>
-  rememberCurrentSelection(current?: () => boolean): Promise<void>
+  connect(machine: string, project: string, options?: { remember?: boolean; present?: () => Promise<void>; current?: () => boolean }): Promise<void>
   planMachine(input: { mode: 'add' | 'upgrade'; sshTarget?: string; label?: string; sshPort?: number; identityFile?: string; projectKey?: string; machineKey?: string }): Promise<unknown>
   applyMachine(id: string): Promise<unknown>
   readonly machineOperation: unknown
