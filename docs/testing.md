@@ -319,3 +319,10 @@ identity verification; the separately mapped loopback WebRelay tests do. Fixture
 HOME is caller-owned and real-CLI cases clear inherited Home/Project overrides.
 Native installed launchers, Windows/macOS terminals, real SSH, native Electron
 and signed installer artifacts retain explicit acceptance gaps.
+
+For a real impact probe, `pnpm exec vitest related
+packages/cli/src/supervisor-tui.ts --run --project node` selects the statically
+importing component/input/CLI tests; it does not include spawned PTY consumers.
+Run the startup scenario and affected native-platform presentation separately,
+or the Runtime/CLI owner/package suite. The shared PTY support module is imported
+by all four files, but fixture and product child entry paths remain dynamic.
