@@ -888,6 +888,7 @@ export const zh: Resources = {
       beta: '测试版',
     },
     versions: {
+      olderRelease: '可用发行版比正在运行的版本更旧，常规升级不会将其降级。',
       "previewChanged": "更新内容已变化，请重新检查后再更新。",
       "managedChanges": "将更新 {{changed}} 个托管文件，保留 {{preserved}} 个本地自定义文件。",
       "sourceChanges": "将变更 {{count}} 个源文件。",

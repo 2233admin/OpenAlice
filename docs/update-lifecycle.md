@@ -34,6 +34,15 @@ existing transaction owner; Skill content projection uses file fingerprints.
 - Selection says whether a candidate is available, current, blocked or unknown,
   with a reason. It does not prove client/backend protocol compatibility.
 
+Backend HTTP, CLI, relay and native desktop adapters retain the selection status
+and reason. The backend's shipped `hasUpdate` field is only a compatibility
+projection of a fresh `available` decision. Missing decisions are unknown;
+blocked and failed observations cannot be presented as current. Native transport
+notifications do not authorize downloads: the shared policy accepts the candidate
+before electron-updater downloads it. Installation rechecks the exact approved
+version before handoff. Electron still owns payload validation and activation.
+Native IPC and renderer consumers share one status type.
+
 The Node CLI consumes the package's built ESM, while repository tests resolve its
 source. Workspace dependencies and the build graph must build it before CLI/UI
 consumers. Shared identity and selection tests live beside the package; network,

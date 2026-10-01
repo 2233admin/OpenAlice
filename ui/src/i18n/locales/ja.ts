@@ -885,6 +885,7 @@ export const ja: Resources = {
       beta: 'ベータ',
     },
     versions: {
+      olderRelease: '利用可能なリリースは実行中のバージョンより古いため、通常の更新ではダウングレードできません。',
       "previewChanged": "更新内容が変わりました。再確認してください。",
       "managedChanges": "管理対象の {{changed}} ファイルを更新し、ローカルで変更した {{preserved}} ファイルを保持します。",
       "sourceChanges": "{{count}} 個のソースファイルが変更されます。",

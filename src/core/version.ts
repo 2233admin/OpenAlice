@@ -14,7 +14,7 @@
  * discovery does not depend on GitHub's anonymous API.
  */
 
-import { DiscoveryStore, selectRelease, releaseChannelMatchesVersion, installSourceUpdateChannel } from '@traderalice/update-lifecycle'
+import { DiscoveryStore, selectRelease, releaseChannelMatchesVersion, installSourceUpdateChannel, releaseChannelForVersion, type ReleaseDecision } from '@traderalice/update-lifecycle'
 import { readFileSync } from 'node:fs'
 import { getProductVersion as getCurrentVersion } from '@traderalice/update-lifecycle/node'
 export { getCurrentVersion }
@@ -68,12 +68,6 @@ const ERROR_TTL_MS = 5 * 60 * 1000 // 5min
 
 // Fixed feed inventory: each channel owns one bounded single-flight resource.
 const cache = new Map<ReleaseChannel, DiscoveryStore<LatestRelease>>()
-
-function releaseChannelForVersion(version: string): ReleaseChannel {
-  return /^v?\d+\.\d+\.\d+-beta(?:\.|$)/.test(version)
-    ? 'beta'
-    : 'stable'
-}
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -131,6 +125,7 @@ export async function fetchLatestRelease(
   opts?: FetchLatestReleaseOptions,
 ): Promise<{ result: LatestRelease | null; error: string | null }> {
   const channel = opts?.channel ?? releaseChannelForVersion(getCurrentVersion())
+  if (!channel) return { result: null, error: 'Running product identity has no supported release channel' }
   let store = cache.get(channel)
   if (!store) {
     store = new DiscoveryStore<LatestRelease>({ successTtlMs: SUCCESS_TTL_MS, errorTtlMs: ERROR_TTL_MS })
@@ -161,7 +156,9 @@ export interface VersionInfo {
   channel: VersionChannel
   updateAuthority: UpdateAuthority
   latest: string | null
+  /** Compatibility projection for released clients; decision is authoritative. */
   hasUpdate: boolean
+  decision: ReleaseDecision | null
   releaseUrl: string | null
   releaseNotes: string | null
   publishedAt: string | null
@@ -193,6 +190,7 @@ export async function getVersionInfo(opts?: GetVersionInfoOptions): Promise<Vers
       updateAuthority: context.authority,
       latest: null,
       hasUpdate: false,
+      decision: null,
       releaseUrl: null,
       releaseNotes: null,
       publishedAt: null,
@@ -209,7 +207,7 @@ export async function getVersionInfo(opts?: GetVersionInfoOptions): Promise<Vers
       current,
       channel: context.channel,
       updateAuthority: context.authority,
-      latest: null, hasUpdate: false,
+      latest: null, hasUpdate: false, decision: null,
       releaseUrl: null, releaseNotes: null, publishedAt: null,
       error,
     }
@@ -219,13 +217,14 @@ export async function getVersionInfo(opts?: GetVersionInfoOptions): Promise<Vers
     { channel: context.channel, version: result.version },
     context.channel,
   )
-  const hasUpdate = decision.status === 'available'
+  const hasUpdate = !error && decision.status === 'available'
   return {
     current,
     channel: context.channel,
     updateAuthority: context.authority,
     latest: result.version,
     hasUpdate,
+    decision,
     releaseUrl: result.url,
     releaseNotes: result.body,
     publishedAt: result.publishedAt,
@@ -257,7 +256,7 @@ function resolveUpdateContext(
   const channel = installedChannel ?? (
     installedSourcePath
       ? 'custom'
-      : releaseChannelForVersion(currentVersion)
+      : releaseChannelForVersion(currentVersion) ?? 'custom'
   )
 
   if (runtimeProfile === 'electron-packaged') {
@@ -272,7 +271,7 @@ function resolveUpdateContext(
     return { channel, authority, error: provenanceError }
   }
 
-  return { channel, authority: 'source', error: null }
+  return { channel: 'dev', authority: 'source', error: null }
 }
 
 function isSourceRuntimeProfile(runtimeProfile: string | undefined): boolean {

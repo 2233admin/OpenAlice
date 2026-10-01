@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     },
     autoUpdater: {
       checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(async () => []),
       quitAndInstall: vi.fn(),
       on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
         listeners.set(event, listener)
@@ -120,6 +121,52 @@ describe('configureAutoUpdate', () => {
     await expect(manual).resolves.toMatchObject({ status: 'current', latestVersion: '0.94.1' })
     await expect(joined).resolves.toMatchObject({ status: 'current' })
     expect(mocks.autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['0.94.1', '0.94.0', 'blocked', 'older-release'],
+    ['0.94.1-beta.10', '0.94.1-beta.2', 'blocked', 'older-release'],
+    ['0.94.1+local.7', '0.94.1', 'current', 'same-release'],
+    ['0.94.1-beta.2', '0.94.1-beta.10', 'available', 'newer-release'],
+    ['0.94.1', '0.95.0', 'available', 'newer-release'],
+    ['0.94.1', '0.94.1-beta.2', 'unknown', 'invalid-identity'],
+    ['0.94.1', 'invalid', 'unknown', 'invalid-identity'],
+  ])('uses policy for native event %s -> %s (%s)', async (current, candidate, status, reason) => {
+    mocks.app.isPackaged = true
+    mocks.capability = { enabled: true, configPath: '/fixture/app-update.yml' }
+    const beforeInstall = vi.fn()
+    const controls = configureAutoUpdate({ isDestroyed: () => false, webContents: { send: vi.fn() } } as never, { beforeInstall }, current)
+    // Transport intentionally advertises every candidate as available.
+    mocks.autoUpdater.checkForUpdates.mockImplementationOnce(async () => { mocks.listeners.get('update-available')?.({ version: candidate }) })
+    await expect(controls.discover()).resolves.toMatchObject({ status, reason, latestVersion: candidate })
+    expect(mocks.autoUpdater.downloadUpdate).toHaveBeenCalledTimes(status === 'available' ? 1 : 0)
+    if (status !== 'available') {
+      mocks.listeners.get('update-downloaded')?.({ version: candidate })
+      expect(controls.downloaded()).toBeNull()
+      await expect(controls.install(candidate)).rejects.toThrow()
+      expect(beforeInstall).not.toHaveBeenCalled()
+      expect(mocks.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    }
+  })
+
+  it('does not turn an older native no-update result into current', async () => {
+    mocks.app.isPackaged = true
+    mocks.capability = { enabled: true, configPath: '/fixture/app-update.yml' }
+    const controls = configureAutoUpdate({ isDestroyed: () => false, webContents: { send: vi.fn() } } as never, { beforeInstall: vi.fn() }, '0.94.1')
+    mocks.autoUpdater.checkForUpdates.mockImplementationOnce(async () => { mocks.listeners.get('update-not-available')?.({ version: '0.94.0' }) })
+    await expect(controls.discover()).resolves.toMatchObject({ status: 'blocked', reason: 'older-release' })
+  })
+
+  it('rejects a changed download after review and a stale response during installation', async () => {
+    mocks.app.isPackaged = true
+    mocks.capability = { enabled: true, configPath: '/fixture/app-update.yml' }
+    const controls = configureAutoUpdate({ isDestroyed: () => false, webContents: { send: vi.fn() } } as never, {
+      beforeInstall: async () => { mocks.listeners.get('update-downloaded')?.({ version: '0.96.0' }) },
+    }, '0.94.1')
+    mocks.listeners.get('update-downloaded')?.({ version: '0.95.0' })
+    await expect(controls.install('0.94.2')).rejects.toThrow('changed')
+    await expect(controls.install('0.95.0')).rejects.toThrow('changed')
+    expect(mocks.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
   it('reports visible install stages before handing off to the native updater', async () => {

@@ -111,3 +111,22 @@ it.each(['check', 'review', 'apply'])('shows %s failures without misclassifying 
   expect(Boolean(project.queryByText('Update check failed'))).toBe(stage === 'check')
   expect(project.getByText('operation failed')).toBeTruthy()
 })
+
+it('retains a blocked release decision and explains it without an update action', () => {
+  mocks.updates.client.discovery.value = { status: 'blocked', reason: 'older-release', latestVersion: '0.94.0', channel: 'stable' }
+  render(<VersionOverviewSection />)
+  const app = within(document.getElementById('settings-version-app')!)
+  expect(app.getByText('Needs attention')).toBeTruthy()
+  expect(app.queryByRole('button', { name: 'View update' })).toBeNull()
+  fireEvent.click(app.getByRole('button', { name: 'App · Details' }))
+  expect(screen.getByText('The available release is older than the running version. An ordinary update cannot downgrade it.')).toBeTruthy()
+})
+
+it('does not offer installation from a retained candidate after discovery fails', () => {
+  mocks.updates.client.discovery.value = { status: 'available', latestVersion: '0.95.0', channel: 'stable' }
+  mocks.updates.clientError = 'feed offline'
+  render(<VersionOverviewSection />)
+  const app = within(document.getElementById('settings-version-app')!)
+  expect(app.getByText('Update check failed')).toBeTruthy()
+  expect(app.queryByRole('button', { name: 'View update' })).toBeNull()
+})

@@ -33,6 +33,23 @@ Workspace transaction suite passed all 38 tests, including the forward peer
 upgrade and rejected downgrades. Full product/artifact acceptance is still
 pending; this does not complete the plan.
 
+Discovery increment: CLI, backend, relay and native adapters now preserve the
+shared status/reason. Native transport events pass the shared channel/precedence
+policy before download, and handoff rechecks the exact target. The duplicate
+native wire unions are replaced by their existing shared contract. Settings and
+demo retain blocked/failed/unknown distinctions; failed refreshes do not expose
+new update actions from retained observations. The shipped backend `hasUpdate`
+field remains a projection, not another decision owner.
+
+Verification: root, CLI, desktop, UI and integration typechecks; 150 focused
+adapter/HTTP/UI tests; actual demo Settings and App details. A full suite run
+reported 894 passed files and two failed files (12 assertions): remote fixtures
+implicitly assumed source execution was installed stable, and a broker-pack
+artifact fixture omitted its product manifest. Those fixtures now declare their
+actual provenance; a source remote regression asserts installation is blocked.
+Both files then passed all 78 tests. A fresh full suite and native artifact
+acceptance remain required before completion.
+
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),
 [#1706](https://github.com/TraderAlice/OpenAlice/issues/1706), and

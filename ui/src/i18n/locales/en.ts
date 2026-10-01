@@ -903,6 +903,7 @@ export const en = {
       beta: 'Beta',
     },
     versions: {
+      olderRelease: 'The available release is older than the running version. An ordinary update cannot downgrade it.',
       "previewChanged": "Update content changed. Check again before updating.",
       "managedChanges": "{{changed}} managed files will be updated; {{preserved}} locally customized files will be preserved.",
       "sourceChanges": "{{count}} source files will change.",

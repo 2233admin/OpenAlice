@@ -74,6 +74,15 @@ export function releaseChannelMatchesVersion(channel: ReleaseChannel, version: s
   if (channel === 'stable') return /^\d+\.\d+\.\d+$/.test(version)
   return /^\d+\.\d+\.\d+-beta(?:\.[1-9][0-9]*)?$/.test(version)
 }
+/** Classify a running product identity using the same channel grammar as feeds.
+ * Build metadata belongs to identity, not precedence or channel selection. */
+export function releaseChannelForVersion(version: string): 'stable' | 'beta' | null {
+  if (!isVersion(version)) return null
+  const release = version.replace(/^v/, '').split('+')[0]
+  if (releaseChannelMatchesVersion('stable', release)) return 'stable'
+  if (releaseChannelMatchesVersion('beta', release)) return 'beta'
+  return null
+}
 export function identityLabel(release: ReleaseIdentity): string {
   return release.channel === 'dev' ? `${release.version}+dev.${release.commit ?? 'unknown'}` : release.version
 }
@@ -111,7 +120,7 @@ export function selectRelease(
 
 export { DiscoveryStore, type DiscoverySnapshot } from './discovery.js'
 export { verifyReleaseEvidence, type ReleaseEvidence, type ReleaseVerification } from './verification.js'
-export type { ClientUpdatePreferences, ClientReleaseObservation, ClientUpdateSnapshot } from './client.js'
+export type { ClientUpdatePreferences, ClientReleaseObservation, ClientUpdateSnapshot, NativeUpdaterStatus, UpdaterInstallStage } from './client.js'
 export * from './runtime.js'
 
 export * from './coordinator.js'

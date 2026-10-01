@@ -892,6 +892,7 @@ export const zhHant: Resources = {
       beta: '測試版',
     },
     versions: {
+      olderRelease: '可用發行版比正在執行的版本更舊，一般升級不會將其降級。',
       "previewChanged": "更新內容已變更，請重新檢查後再更新。",
       "managedChanges": "將更新 {{changed}} 個託管檔案，保留 {{preserved}} 個本機自訂檔案。",
       "sourceChanges": "將變更 {{count}} 個來源檔案。",
