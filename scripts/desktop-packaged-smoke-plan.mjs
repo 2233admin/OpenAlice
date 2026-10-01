@@ -76,8 +76,8 @@ export function buildDesktopPackagedSmokePlan(argv, env = process.env, opts = {}
     warnings.push('[desktop-smoke] --onboarding with --skip-pack assumes the packaged app contains the fresh-user smoke UI')
   }
 
-  const tempData = onboarding || tradingMode || workspaceAcceptance || tempDataFlag
-  const realData = !tempData
+  const realData = realDataFlag
+  const tempData = !realData
   const onboardingBuildEnv = onboarding ? {
     VITE_OPENALICE_ONBOARDING_TEST: '1',
     VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'mock',

@@ -828,14 +828,10 @@ and ignored TERM after wrapper exit; a local pthread diagnostic additionally
 checks a Z leader with a live worker. Native Electron/platform acceptance remains
 separate from these Node and injected-procfs assertions.
 
-### Default selection navigation acceptance
-
-After building the current Desktop and UI, run
-`node scripts/desktop-selection-smoke.mjs`. The gate launches real Electron
-against a disposable Guardian/HTTP fixture and Supervisor state seeded with a
-legacy Default conflict. It verifies preload/IPC selection, replacement Settings
-navigation, committed Default and cleared conflict, another native switch, and
-an HTTP switch handled by the shared generation observer. No configured SSH
-host, trading account or user home is read by the fixture. Pass
-`--app-path <packaged-executable>` to verify the same path in an unsigned package.
-The script owns its temporary profile/process and cleans both up.
+Routine fixes do not require adding a permanent native smoke entry point.
+The one-off Default-selection navigation script was removed after acceptance;
+its product fix and hermetic Relay/UI regressions remain. Packaged smoke defaults
+to temporary OpenAlice data. `--real-data` is an explicit manual opt-in and is
+rejected by automated acceptance modes. These temporary stores do not promise
+OS-home or native-agent credential isolation; do not run live native Agents
+against a maintainer account as part of ordinary test verification.

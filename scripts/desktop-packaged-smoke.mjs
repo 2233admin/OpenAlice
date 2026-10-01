@@ -48,8 +48,8 @@ Options:
   --package-root <path>
                  Reuse an explicit package output (requires --skip-pack)
   --keep-package Keep the temporary package output created by this run
-  --temp-data    Use isolated temporary data/workspace/global stores
-  --real-data    Use real data explicitly (default; kept for compatibility)
+  --temp-data    Use isolated temporary OpenAlice data/workspace/global stores (default)
+  --real-data    Explicitly opt into real OpenAlice user data
   --onboarding   Use temp data and run an automated fresh-user renderer smoke,
                  then exit
   --trading-mode Use temp data, exercise lite -> readonly -> lite UTA lifecycle,
