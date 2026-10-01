@@ -28,7 +28,12 @@ export function useMachineControls(initial: RelayStatus | null = null) {
   const operationDiscovery = useDiscoverySnapshot<MachineOperation | null>('local-machine-control')
   const operation = operationDiscovery.value
   const checkOperation = operationDiscovery.check
+  const planRef = useRef(plan)
+  planRef.current = plan
+  const planRequestKey = useRef<string | null>(null)
+  const probeFlight = useRef<{ key: string; promise: Promise<MachinePlan> } | null>(null)
   const probeGeneration = useRef(0)
+  const approvedGeneration = useRef<number | null>(null)
   const applyFlight = useRef<Promise<{ machineKey: string }> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,29 +53,42 @@ export function useMachineControls(initial: RelayStatus | null = null) {
     return () => window.clearInterval(timer)
   }, [applying, operation?.phase, refreshOperation])
 
-  const clearPlan = useCallback(() => { probeGeneration.current++; setPlan(null); setError(null); setProbing(false) }, [])
-  const probe = useCallback(async (input: MachinePlanInput) => {
-    if (applyFlight.current) throw new Error('Wait for the current operation to finish')
+  const clearPlan = useCallback(() => { probeGeneration.current++; probeFlight.current = null; planRequestKey.current = null; planRef.current = null; setPlan(null); setError(null); setProbing(false) }, [])
+  const probe = useCallback((input: MachinePlanInput, options: { force?: boolean } = {}): Promise<MachinePlan> => {
+    if (applyFlight.current) return Promise.reject(new Error('Wait for the current operation to finish'))
+    const key = JSON.stringify([input.mode, input.machineKey, input.projectKey, input.sshTarget, input.label, input.sshPort, input.identityFile])
+    if (probeFlight.current?.key === key) return probeFlight.current.promise
+    if (!options.force && input.mode === 'upgrade' && planRef.current && planRequestKey.current === key) return Promise.resolve(planRef.current)
+    // A fresh review also retries a failed operation-status read. Reopening a
+    // cached review returns above and does not start either read again.
+    void refreshOperation()
     const generation = ++probeGeneration.current
     setProbing(true)
-    setPlan(null)
+    if (planRequestKey.current !== key) setPlan(null)
     setError(null)
-    try {
-      const next = desktop
-        ? await desktop.plan(input) as MachinePlan
-        : await relayMutation<MachinePlan>('plan', input)
-      if (generation !== probeGeneration.current) throw new Error('This probe was superseded')
-      setPlan(next)
-      return next
-    } catch (cause) {
-      if (generation === probeGeneration.current) setError(cause instanceof Error ? cause.message : String(cause))
-      throw cause
-    } finally { if (generation === probeGeneration.current) setProbing(false) }
-  }, [desktop])
+    const promise = Promise.resolve().then(async () => {
+      try {
+        const next = desktop ? await desktop.plan(input) as MachinePlan : await relayMutation<MachinePlan>('plan', input)
+        if (generation !== probeGeneration.current) throw new Error('This probe was superseded')
+        planRequestKey.current = key
+        approvedGeneration.current = generation
+        planRef.current = next
+        setPlan(next)
+        return next
+      } catch (cause) {
+        if (generation === probeGeneration.current) setError(cause instanceof Error ? cause.message : String(cause))
+        throw cause
+      } finally {
+        if (generation === probeGeneration.current) { setProbing(false); probeFlight.current = null }
+      }
+    })
+    probeFlight.current = { key, promise }
+    return promise
+  }, [desktop, refreshOperation])
 
   const apply = useCallback((): Promise<{ machineKey: string }> => {
     if (applyFlight.current) return applyFlight.current
-    if (!plan || plan.blocker) return Promise.reject(new Error('A reviewed unblocked plan is required'))
+    if (!plan || plan !== planRef.current || approvedGeneration.current !== probeGeneration.current || plan.blocker || probing || error) return Promise.reject(new Error('A reviewed unblocked plan is required'))
     const approved = plan
     setApplying(true)
     setError(null)
@@ -82,10 +100,14 @@ export function useMachineControls(initial: RelayStatus | null = null) {
           ? await desktop.apply(approved.id) as { machineKey: string }
           : await relayMutation<{ machineKey: string }>('apply', { id: approved.id })
         await refreshOperation()
+        planRef.current = null
+        planRequestKey.current = null
         setPlan(null)
         await relay.refresh()
         return result
       } catch (cause) {
+        planRef.current = null
+        planRequestKey.current = null
         setPlan(null)
         setError(cause instanceof Error ? cause.message : String(cause))
         await refreshOperation()
@@ -97,8 +119,7 @@ export function useMachineControls(initial: RelayStatus | null = null) {
     })
     applyFlight.current = flight
     return flight
-  }, [desktop, plan, relay.refresh, refreshOperation])
+  }, [desktop, plan, probing, error, relay.refresh, refreshOperation])
 
   return { ...relay, plan, probing, applying, operation, operationError: error ?? operationDiscovery.error, clearPlan, probe, apply }
 }
-

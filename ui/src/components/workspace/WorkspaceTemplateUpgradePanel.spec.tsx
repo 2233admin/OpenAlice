@@ -1,5 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { WorkspacePlanStore } from '../../lib/updates/workspacePlans'
+let planStore: WorkspacePlanStore
+vi.mock('../../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({ workspacePlans: planStore }) }))
 
 import { i18n } from '../../i18n'
 import {
@@ -66,6 +70,7 @@ const plan: TemplateUpgradePlan = {
 }
 
 beforeEach(async () => {
+  planStore = new WorkspacePlanStore()
   await i18n.changeLanguage('en')
   vi.mocked(getTemplateUpgradePlan).mockResolvedValue(plan)
   vi.mocked(applyTemplateUpgrade).mockResolvedValue({
@@ -157,4 +162,39 @@ describe('WorkspaceTemplateUpgradePanel', () => {
     expect(await screen.findByText('Prepare this Workspace before applying')).toBeTruthy()
     expect(screen.getByText(/p1.*pi.*Web/i)).toBeTruthy()
   })
+})
+
+it('reopens the same review without requesting another plan and refreshes explicitly', async () => {
+  const props = { wsId: 'chat-old', onWorkspaceChanged: vi.fn(), onClose: vi.fn() }
+  const first = render(<WorkspaceTemplateUpgradePanel {...props} />)
+  await screen.findByText('Ready to update')
+  expect(getTemplateUpgradePlan).toHaveBeenCalledOnce()
+  first.unmount()
+  render(<WorkspaceTemplateUpgradePanel {...props} />)
+  expect(screen.getByText('Ready to update')).toBeTruthy()
+  expect(getTemplateUpgradePlan).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }))
+  await waitFor(() => expect(getTemplateUpgradePlan).toHaveBeenCalledTimes(2))
+})
+it('adopts the authoritative stale-plan response and resets prior conflict choices', async () => {
+  const { TemplateUpgradeApiError } = await import('./api')
+  vi.mocked(applyTemplateUpgrade).mockRejectedValueOnce(new TemplateUpgradeApiError('stale_plan', 'Review the changed plan', 409, { ...plan, planDigest: 'new-digest' }))
+  render(<WorkspaceTemplateUpgradePanel wsId="chat-old" onWorkspaceChanged={vi.fn()} onClose={vi.fn()} />)
+  await screen.findByText('Needs your choice')
+  fireEvent.click(screen.getByRole('radio', { name: 'Use template' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Apply and commit' }))
+  await waitFor(() => expect(screen.getByText('Review the changed plan')).toBeTruthy())
+  expect(planStore.peek({ workspaceId: 'chat-old', kind: 'template' })?.planDigest).toBe('new-digest')
+  expect((screen.getByRole('button', { name: 'Apply and commit' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+it('refreshes an already open review after Workspace content invalidation', async () => {
+  render(<WorkspaceTemplateUpgradePanel wsId="chat-old" onWorkspaceChanged={vi.fn()} onClose={vi.fn()} />)
+  await screen.findByText('Needs your choice')
+  fireEvent.click(screen.getByRole('radio', { name: 'Use template' }))
+  vi.mocked(getTemplateUpgradePlan).mockResolvedValueOnce({ ...plan, planDigest: 'content-changed' })
+  act(() => { planStore.invalidateWorkspace('chat-old') })
+  await waitFor(() => expect(planStore.peek({ workspaceId: 'chat-old', kind: 'template' })?.planDigest).toBe('content-changed'))
+  expect(getTemplateUpgradePlan).toHaveBeenCalledTimes(2)
+  expect((screen.getByRole('button', { name: 'Apply and commit' }) as HTMLButtonElement).disabled).toBe(true)
 })

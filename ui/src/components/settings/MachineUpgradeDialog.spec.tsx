@@ -29,3 +29,13 @@ it('offers review rather than blind application when probing failed', () => {
   expect(retry).toHaveBeenCalledOnce()
   expect(apply).not.toHaveBeenCalled()
 })
+it('shows retained preview evidence while preventing approval during refresh or failure', () => {
+  const props = { open: true, plan, operation: null, busy: false, onClose: vi.fn(), onApply: vi.fn(), onRetry: vi.fn() }
+  const { rerender } = render(<MachineUpgradeDialog {...props} checking error={null}/>)
+  expect(screen.getByText('Planned changes')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Approve update' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('progressbar')).toBeNull()
+  rerender(<MachineUpgradeDialog {...props} error="probe offline"/>)
+  expect((screen.getByRole('button', { name: 'Approve update' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByRole('alert').textContent).toBe('probe offline')
+})
