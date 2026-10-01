@@ -12,49 +12,6 @@ Detailed delivery and release procedure lives in
 [[docs/development-workflow.md]], test selection and side effects live in
 [[docs/testing.md]], and active multi-step work lives in [[PLANS.md]].
 
-## Start Here
-
-```bash
-pnpm install              # full local install, including Electron
-pnpm dev                  # Guardian -> UTA + Alice + Vite
-pnpm dev --takeover       # replace the recorded local Guardian owner tree
-pnpm build                # packages + UI + UTA + Alice
-pnpm test:changed         # hermetic changed-file closure against origin/dev
-pnpm test:owner:ui        # complete hermetic UI owner suite
-pnpm test:integration     # deterministic local product integration
-pnpm test                 # complete hermetic monorepo Vitest suite
-pnpm test:select --help   # owners, lanes, areas, packages, and side effects
-```
-
-Before changing files:
-
-1. Run `git fetch origin`, `git status -sb`, and inspect the current diff.
-2. Preserve unrelated user changes. Do not reset, overwrite, stash, or commit
-   them merely to obtain a clean tree.
-3. Routine work starts from current `dev` on a focused feature branch. If the
-   checkout is on `master`, a merged branch, or a surprising historical branch,
-   establish the intended base before editing.
-4. Start from the real surface: reproduce UI/runtime behavior, inspect current
-   code, and read the applicable owner guide before designing.
-5. Before adding a migration, compatibility parser, or dual-read path, establish
-   whether the persisted shape shipped. Replace unreleased `dev`-only shapes
-   directly; do not turn them into permanent upgrade boundaries.
-
-## UI Design Workflow
-
-For frontend visual, layout, or interaction changes, separate product design
-from implementation.
-
-- In serial work, present viable approaches and tradeoffs, recommend one, and
-  align with the maintainer before detailed design or implementation.
-- State the selected interaction model, responsive behavior, accessibility
-  implications, and shared primitive ownership before editing. Verify the real
-  browser route afterward.
-- Autonomous work follows the same sequence in its plan or PR, explicitly
-  records its own choice, and never implies maintainer approval it did not get.
-- Keep ceremony proportional for small fixes without skipping the design
-  decision.
-
 ## Product and Architecture Boundaries
 
 - `src/` is Alice: Workspace lifecycle, tools, data domains, HTTP/IPC surfaces,
@@ -188,17 +145,3 @@ the exact residual risk; an unrelated green test is not substitute evidence.
 - `README.md` is public positioning. Ask for product framing before rewriting
   its tagline, pillars, hero, or other marketing copy.
 
-## Code Conventions
-
-- ESM only; include `.js` extensions in TypeScript imports.
-- Strict TypeScript, ES2023 target.
-- Zod for config schemas; TypeBox for tool parameter schemas.
-- `decimal.js` for financial arithmetic.
-- Prefer shared shadcn/Base UI primitives under `ui/src/components/ui/`.
-  Extend that layer before hand-rolling portals, positioning, focus, dismissal,
-  keyboard behavior, or bespoke control styling inside a feature.
-- Frontend reads of backend-owned data go through a domain hook. Keep
-  presentation components prop-driven and test each hook's selection plus
-  loading/error semantics.
-- Prefer structured Workspace launcher logs; the main process currently uses
-  `console` and has no universal pino sink.
