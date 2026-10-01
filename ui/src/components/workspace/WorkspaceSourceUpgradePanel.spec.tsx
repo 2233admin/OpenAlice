@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkspacePlanStore } from '../../lib/updates/workspacePlans'
 let planStore: WorkspacePlanStore
-vi.mock('../../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({ workspacePlans: planStore }) }))
+let observations: import('../../hooks/useUpdateLifecycle').WorkspaceUpdateState[] = []
+vi.mock('../../hooks/useUpdateLifecycle', () => ({ useUpdateLifecycle: () => ({
+  workspacePlans: planStore, workspaceStates: observations, projectWorkspaces: [],
+  checking: false, preferences: {}, error: null, refresh: vi.fn(),
+}) }))
 
 import { i18n } from '../../i18n'
 import { WorkspaceSourceUpgradePanel } from './WorkspaceSourceUpgradePanel'
@@ -37,6 +41,7 @@ const plan = {
 }
 
 beforeEach(async () => {
+  observations = []
   planStore = new WorkspacePlanStore()
   await i18n.changeLanguage('en')
   vi.mocked(api.getHarnessSourceUpgradePlan).mockResolvedValue(plan)
@@ -95,11 +100,19 @@ it('retains the last plan after failed refresh and does not retry by reopening',
   expect(api.getHarnessSourceUpgradePlan).toHaveBeenCalledTimes(2)
 })
 
-it('disables a completed cached source plan when reopened', async () => {
-  vi.mocked(api.getHarnessSourceUpgradePlan).mockResolvedValue({ ...plan, fromVersion: plan.toVersion, fromCommit: plan.toCommit })
+it('shows a current observation without requesting an upgrade plan', async () => {
+  observations = [{ workspaceId: 'aq-1', template: 'auto-quant-v2', phase: 'current', checkedAt: 'now', fromVersion: plan.toVersion }]
   render(<WorkspaceSourceUpgradePanel wsId="aq-1" onWorkspaceChanged={vi.fn()} />)
-  expect((await screen.findByRole('button', { name: 'Up to date' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(await screen.findByText('Up to date')).toBeTruthy()
+  expect(api.getHarnessSourceUpgradePlan).not.toHaveBeenCalled()
   expect(api.applyHarnessSourceUpgrade).not.toHaveBeenCalled()
+})
+
+it('reviews the observed target instead of rediscovering latest', async () => {
+  observations = [{ workspaceId: 'aq-1', template: 'auto-quant-v2', phase: 'available', checkedAt: 'now', fromVersion: plan.fromVersion, toVersion: plan.toVersion }]
+  render(<WorkspaceSourceUpgradePanel wsId="aq-1" onWorkspaceChanged={vi.fn()} />)
+  await screen.findByText('studio/server.ts')
+  expect(api.getHarnessSourceUpgradePlan).toHaveBeenCalledWith('aq-1', plan.toVersion)
 })
 
 it('replaces a stale source digest with the backend conflict plan without another GET', async () => {
