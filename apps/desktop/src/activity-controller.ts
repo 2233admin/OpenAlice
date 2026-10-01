@@ -81,7 +81,7 @@ export class ActivityController {
     }, Date.now, this.surface.foreground() ? 3 : 1, 100)
   }
   setPreferences(prefs: ActivityPreferences) { this.prefs = prefs; this.clearQueue() }
-  private clearQueue() { this.queue.dispose(); this.queue = this.makeQueue() }
+  private clearQueue() { this.queue.dispose(); if (!this.stopped) this.queue = this.makeQueue() }
   /** Hide old announcements on a surface transition. Never transfer/replay them. */
   transition() { this.clearQueue() }
   private reset(identity: string | null) {
@@ -107,8 +107,12 @@ export class ActivityController {
   }
   signalSnapshot() { return this.signals }
   snapshot() { return [...this.targets].filter(([, v]) => v.surface === 'main' && v.identity === this.source.identity()).map(([displayId, v]) => ({ type: 'show' as const, displayId, input: v.input })) }
-  stop() { this.abort?.abort(); this.stopped = true; this.epoch++; this.clearQueue() }
+  stop() {
+    if (this.stopped) return
+    this.stopped = true; this.epoch++; this.abort?.abort(); this.queue.dispose()
+  }
   async poll() {
+    if (this.stopped) return
     const identity = this.source.identity()
     if (identity !== this.identity) this.reset(identity)
     if (this.busyEpoch === this.epoch || this.stopped || !identity) return

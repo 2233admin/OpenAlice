@@ -6,7 +6,7 @@ import { ActivityController, type ActivitySource } from './activity-controller.j
 export function installCompanionActivity(owner: BrowserWindow, pet: BrowserWindow) {
   const store = createActivityPreferenceStore(join(app.getPath('userData'), 'activity-notifications.json'))
   let source: ActivitySource | undefined
-  const foreground = () => owner.isVisible() && !owner.isMinimized()
+  const foreground = () => !owner.isDestroyed() && owner.isVisible() && !owner.isMinimized()
   const controller = new ActivityController({ identity: () => source?.identity() ?? null, read: (query, signal) => {
     if (!source) throw new Error('No activity source')
     return source.read(query, signal)
@@ -33,7 +33,7 @@ export function installCompanionActivity(owner: BrowserWindow, pet: BrowserWindo
   handle('preferences', event => { if (!trusted(event, owner)) throw new Error('Unauthorized activity access'); return store.get() })
   const publish = (settings: ReturnType<typeof store.get>) => {
     controller.setPreferences(settings)
-    owner.webContents.send('openalice:activity:preferences-changed', settings)
+    if (!owner.isDestroyed()) owner.webContents.send('openalice:activity:preferences-changed', settings)
     return settings
   }
   handle('update-preferences', async (event, input) => { if (!trusted(event, owner)) throw new Error('Unauthorized activity access'); return publish(await store.update(input)) })
