@@ -16,8 +16,8 @@ There is no UI-local discovery comparator or server/CLI comparator re-export.
 Workspace source-tag ordering also uses the shared SemVer comparator. Qualified
 `snapshot-*` catalog entries are opaque exact selections: they remain selectable
 but cannot be ordered as release zero or auto-upgraded without a comparable
-baseline. Template managed-file versions retain their existing owner-specific
-convention for now.
+baseline. Managed-template release precedence uses the same shared ordering inside its
+existing transaction owner; Skill content projection uses file fingerprints.
 
 - A release identifies a channel and version, with a commit for development builds.
   An owner with same-platform payload evidence can additionally supply its artifact

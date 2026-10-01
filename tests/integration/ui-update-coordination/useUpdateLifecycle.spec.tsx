@@ -38,6 +38,7 @@ const preferences = { autoCheckApp: true, autoUpdateAutoQuant: true, autoUpdateA
 const wrapper = ({ children }: { children: ReactNode }) => <UpdateLifecycleProvider>{children}</UpdateLifecycleProvider>
 const workspacePreview = {
   workspaceId: 'chat', template: 'chat', strategy: 'managed-context' as const,
+  update: { status: 'available' as const, reason: 'newer-release' },
   fromVersion: '1', toVersion: '3', planDigest: 'shared-plan', source: 'recorded-baseline' as const,
   blocked: false, blockers: [], activity: { busy: false, sessions: [], headless: [] },
   files: [], summary: { ready: 0, preserved: 0, conflicts: 0, unchanged: 0 },

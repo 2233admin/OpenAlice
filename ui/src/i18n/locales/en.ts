@@ -3536,6 +3536,12 @@ export const en = {
     upgradeBlockedSessionItem: '{{name}} · {{agent}} · {{surface}} is open.',
     upgradeBlockedHeadlessItem: '{{agent}} headless run {{run}} is still working.',
     upgradeSynchronousRun: 'synchronous run',
+    upgradeBlockedReason: {
+      'older-release': 'The available template is older than this Workspace. An update cannot downgrade it.',
+      'invalid-identity': 'Workspace version evidence is unavailable.',
+      'missing-candidate': 'The template does not report a version.',
+      'template_version_not_bumped': 'The template contents changed without a version bump.',
+    },
     upgradeBlockedStaged: 'Commit or unstage staged files so the template update gets a clean, isolated Git commit.',
     upgradeReadyTitle: 'Ready to update',
     upgradeReadyDescription: 'The template changed these files and this Workspace did not. They apply automatically.',

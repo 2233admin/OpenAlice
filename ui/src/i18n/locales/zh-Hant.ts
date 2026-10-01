@@ -3502,6 +3502,12 @@ export const zhHant: Resources = {
     upgradeBlockedSessionItem: '{{name}} · {{agent}} · {{surface}} 仍在開啟。',
     upgradeBlockedHeadlessItem: '{{agent}} 的 Headless 執行 {{run}} 仍在工作。',
     upgradeSynchronousRun: '同步執行',
+    upgradeBlockedReason: {
+      'older-release': '可用範本比目前工作區更舊，升級不能將其降級。',
+      'invalid-identity': '無法確認工作區的版本，暫不能判斷是否可升級。',
+      'missing-candidate': '範本未提供版本號。',
+      'template_version_not_bumped': '範本內容已變更，但版本號未遞增。',
+    },
     upgradeBlockedStaged: '請先提交或取消暫存檔案，讓範本升級擁有一筆乾淨、獨立的 Git 提交。',
     upgradeReadyTitle: '可以直接更新',
     upgradeReadyDescription: '範本修改了這些檔案，而工作區沒有修改；它們會自動套用。',

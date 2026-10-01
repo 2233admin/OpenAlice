@@ -15,6 +15,24 @@ Verified for this increment: shared package build; root and CLI typechecks;
 `apps/desktop` both report root `0.94.1`, with source channel `development`.
 Native artifacts, full-suite evidence, and remaining plan steps are pending.
 
+Workspace increment: the existing managed-template manager now owns a shared
+precedence decision for discovery, plans and locked apply. List/check/tool/UI
+consumers use it; equal-version changed content remains a blocker, while Skill
+projection remains fingerprint-driven. Missing template versions no longer
+become `0.0.0`; no invented creation baseline is written. Coordinated plans
+retain the same owner blockers, including current/unknown targets.
+
+Verified so far: real disposable Git transactions reject stable-to-beta,
+newer-to-older and post-preview target downgrades without changing files, HEAD
+or baseline; the actual Workspace tool rejects the same targets. A beta-to-stable
+peer upgrade is exercised through that tool. Shared UI review refuses an older
+backend that supplies no eligibility rather than reconstructing it. Root, UI and
+integration TypeScript checks passed; the demo Settings route opened the actual
+Chat review. The complete UI owner suite passed (357 files, 2,062 tests), and the real
+Workspace transaction suite passed all 38 tests, including the forward peer
+upgrade and rejected downgrades. Full product/artifact acceptance is still
+pending; this does not complete the plan.
+
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),
 [#1706](https://github.com/TraderAlice/OpenAlice/issues/1706), and

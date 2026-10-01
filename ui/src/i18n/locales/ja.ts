@@ -3495,6 +3495,12 @@ export const ja: Resources = {
     upgradeBlockedSessionItem: '{{name}} · {{agent}} · {{surface}} が開いています。',
     upgradeBlockedHeadlessItem: '{{agent}} の Headless 実行 {{run}} はまだ処理中です。',
     upgradeSynchronousRun: '同期実行',
+    upgradeBlockedReason: {
+      'older-release': '利用可能なテンプレートはこのワークスペースより古いため、更新できません。',
+      'invalid-identity': 'ワークスペースのバージョンを確認できません。',
+      'missing-candidate': 'テンプレートのバージョンがありません。',
+      'template_version_not_bumped': 'テンプレートの内容が変更されましたが、バージョンは更新されていません。',
+    },
     upgradeBlockedStaged: 'テンプレート更新を独立した Git コミットにするため、ステージ済みファイルをコミットまたはステージ解除してください。',
     upgradeReadyTitle: 'そのまま更新可能',
     upgradeReadyDescription: 'テンプレートだけが変更したファイルです。自動的に適用されます。',

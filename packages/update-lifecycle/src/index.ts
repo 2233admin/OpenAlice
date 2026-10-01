@@ -55,7 +55,17 @@ export function compareVersions(left: string, right: string): number {
   return 0
 }
 export function newerRelease(latest: string | null | undefined, current: string): boolean {
-  return Boolean(latest && isVersion(latest) && isVersion(current) && compareVersions(latest, current) > 0)
+  return selectVersion(current, latest).status === 'available'
+}
+/** Ordered content releases and product feeds share precedence. Feed/channel
+ * validation remains in selectRelease; content revisions are not product feeds. */
+export function selectVersion(current: string | null | undefined, candidate: string | null | undefined): ReleaseDecision {
+  if (!candidate) return { status: 'unknown', reason: 'missing-candidate' }
+  if (!current || !isVersion(current) || !isVersion(candidate)) return { status: 'unknown', reason: 'invalid-identity' }
+  const precedence = compareVersions(candidate, current)
+  return precedence > 0 ? { status: 'available', reason: 'newer-release' }
+    : precedence === 0 ? { status: 'current', reason: 'same-release' }
+      : { status: 'blocked', reason: 'older-release' }
 }
 /** Product feed validation is narrower than general Workspace SemVer parsing. */
 export function releaseChannelMatchesVersion(channel: ReleaseChannel, version: string): boolean {
@@ -96,10 +106,7 @@ export function selectRelease(
   }
   if (intent === 'switch-channel' && current.channel !== channel)
     return { status: 'available', reason: 'channel-change' }
-  const precedence = compareVersions(candidate.version, current.version)
-  return precedence > 0 ? { status: 'available', reason: 'newer-release' }
-    : precedence === 0 ? { status: 'current', reason: 'same-release' }
-      : { status: 'blocked', reason: 'older-release' }
+  return selectVersion(current.version, candidate.version)
 }
 
 export { DiscoveryStore, type DiscoverySnapshot } from './discovery.js'
