@@ -795,3 +795,18 @@ For an isolated native frontend preview with shared mock data, use
 `pnpm electron:demo`. It preserves app protocol, preload and child IPC without
 starting managed agents or trading services. See [[docs/demo-mode.md]] for
 commands, data ownership and acceptance limits.
+
+### Smoke-owned process-group completion
+
+On Linux a positive group signal probe includes exited zombies. The smoke helper
+uses two complete procfs snapshots with matching nonempty PID/start-time
+identities before treating a group as exited: every member must be Z with exactly
+one thread. A Z thread-group leader with workers remains live. State is parsed
+after comm's final parenthesis, since legal process names can contain `)`.
+Restricted, hidden, unreadable, malformed, empty or changing snapshots remain
+conservative; live members in the private session also prevent completion.
+TERM/KILL order and shutdown budgets are unchanged. This proves execution stopped,
+not that the host init reaped PID entries. Real Node helper tests cover graceful
+and ignored TERM after wrapper exit; a local pthread diagnostic additionally
+checks a Z leader with a live worker. Native Electron/platform acceptance remains
+separate from these Node and injected-procfs assertions.
