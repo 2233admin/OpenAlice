@@ -178,7 +178,7 @@ pretend that merging coworkers is merely a template update.
 - `src/webui/routes/workspaces.ts` — preview and apply API.
 - `ui/src/components/workspace/WorkspaceTemplateUpgradePanel.tsx` — review and
   conflict decisions.
-- `src/workspaces/template-upgrade.spec.ts` — classification, stale preview,
+- `tests/integration/workspace-upgrades/template-upgrade.spec.ts` — classification, stale preview,
   concurrency, rollback, baseline, and real-template materialization coverage.
 
 ## Line-level merging and conflict handoff

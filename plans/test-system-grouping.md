@@ -1,9 +1,8 @@
 # Existing test hierarchy and registration cleanup
 
-Status: active, maintainer-directed work from `dev` on
-`codex/test-value-pruning`. This plan supersedes the previous evidence-expansion
-plan. Delivery follows the normal interactive workflow; historical Draft-only
-restrictions belonged to earlier increments, not this cleanup.
+Status: active, maintainer-requested completion on `codex/test-suite-registry`.
+The current goal finishes the remaining migration as one coherent Draft PR for
+maintainer acceptance; no new test cases or product assertions are authorized.
 
 Owner guides: [[docs/testing.md]], [[tests/README.md]],
 [[docs/development-workflow.md]], and each migrated subsystem's guide in
@@ -63,7 +62,7 @@ and consolidated PNG checks. Historical execution details remain in Git/PRs.
    `tests/integration/`: first-run, conversation-recovery, workspace-creation,
    trading-approval and alice-uta. Drop misleading `.e2e` names; preserve file
    contents, owner, lane, package filters, required references and side effects.
-4. [ ] Simplify registration to suites. Migrate `coverage.json`/selector consumers
+4. [x] Simplify registration to suites. Migrate `coverage.json`/selector consumers
    together; remove unit/component references and ordinary per-`it` duplication.
    Preserve the current required-gate evidence explicitly before removing any
    row it uses. Do not keep a permanent dual registry/compatibility parser for
@@ -74,7 +73,7 @@ and consolidated PNG checks. Historical execution details remain in Git/PRs.
    Leave true units beside their module, lift real integration/E2E suites,
    consolidate shared setup and duplicate behavior, and document deletions in
    the matching PR. Review non-colocated leaf specs rather than assuming E2E.
-6. [ ] Converge commands and inventory: expose tier separately from execution
+6. [x] Converge commands and inventory: expose tier separately from execution
    conditions; an unregistered unit is normal, an unregistered integration/E2E
    suite is an error. Reuse existing catalog checks to catch missing entries,
    dangling paths and duplicate execution. Reduce obsolete aliases/metadata.
@@ -82,10 +81,11 @@ and consolidated PNG checks. Historical execution details remain in Git/PRs.
    record remaining limitations without filling coverage gaps. Delete this plan
    and its PLANS entry only after the migration is accepted.
 
-Steps 4–6 are not complete when only paths have moved. During the bounded first
-increment, `tests/scenarios/` and `tests/contracts/` still contain legacy
-assertion-level metadata and some PTY specs; that transitional state must remain
-explicit in docs and must not be called full semantic classification.
+The suite registry and selector have replaced all 18 legacy assertion matrices.
+The critical gate keeps its original 15 assertions independently. Tier is now
+separate from lane, including native artifact/host integration runners that do
+not establish E2E product journeys. Final classification and full verification
+are still in progress; the following first-increment results are historical.
 
 ## Verification and completion criteria
 
@@ -137,3 +137,23 @@ reported, not converted into acceptance.
 - Next increment is step 4: replace ordinary assertion-level mapping with suite
   registration while preserving required-gate evidence. Do not report the
   directory migration as completion of registration cleanup.
+
+## Suite migration progress
+
+- Registry consumers, commands and data-only inventory use `--suite`/`--tier`.
+  No compatibility parser or unit-registration ledger remains.
+- Reviewed actual static/dynamic collaborators, local process/HTTP fixtures,
+  non-colocated files and all dedicated acceptance commands across every owner.
+  Pure adapters, parsers, component tests and injected-service route units stay
+  local. Mixed files with real integration evidence move together without
+  adding cases. Native/external fidelity is bounded in each registered scope.
+- 167 existing files relocated so far; old/new owner, lane, area and package
+  routing compares with zero differences for every retained one-to-one file.
+- Colocated TWSE transform tests split along their existing implementation
+  files. IBKR model boilerplate loses six default-value cases; existing wire
+  formatting and debug rendering cases move beside their implementations.
+- Removed five terminal CSS/source-text checks and two third-party API-shape
+  assertions. The obsolete partial-registration framework case is retired.
+- First full migration run found only a relocated package import and stale
+  path assertion; repairs pass focused verification (34 files, 289 cases).
+  Final full-suite/typechecks/integration/critical receipts remain required.

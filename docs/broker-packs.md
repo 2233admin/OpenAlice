@@ -260,7 +260,7 @@ Run the focused checks before the repository-wide gates:
 ```bash
 pnpm broker-packs:build
 pnpm broker-packs:upgrade-smoke
-pnpm vitest run src/services/broker-packs/installer.spec.ts \
+pnpm vitest run tests/integration/broker-pack-installation/installer.spec.ts \
   services/uta/src/domain/trading/brokers/registry.spec.ts \
   ui/src/components/uta/CreateUTADialog.spec.tsx
 npx tsc --noEmit
