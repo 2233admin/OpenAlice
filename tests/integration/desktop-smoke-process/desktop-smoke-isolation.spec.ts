@@ -16,7 +16,8 @@ it.each([[], ['--onboarding'], ['--workspace-acceptance'], ['--trading-mode']])(
     await mkdir(cwd, { recursive: true })
     const plan = buildDesktopPackagedSmokePlan(args, {})
     expect(plan.options.tempData).toBe(true)
-    const env = { PI_CODING_AGENT_DIR: sentinel, ...desktopSmokeStateEnv(root) }
+    const inherited = { PI_CODING_AGENT_DIR: sentinel }
+    const env = { ...inherited, ...desktopSmokeStateEnv(root) }
     await syncPiProjectTrust(cwd, env)
     expect(await readdir(sentinel)).toEqual(['sentinel'])
     expect(await readFile(join(sentinel, 'sentinel'), 'utf8')).toBe('do not change')
