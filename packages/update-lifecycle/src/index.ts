@@ -109,3 +109,4 @@ export * from './runtime.js'
 
 export * from './coordinator.js'
 export * from './owner.js'
+export { parseInstallSource, requireInstallSource, installSourceUpdateChannel, type InstallSource, type InstallChannel } from './install-source.js'

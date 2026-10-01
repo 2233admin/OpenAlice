@@ -1,6 +1,19 @@
 # Version Lifecycle Convergence
 
-Status: Planned; audit complete, implementation and acceptance pending.
+Status: In progress; identity/provenance convergence implemented first, with
+cross-surface acceptance and the remaining construction steps pending.
+
+Progress: backend, CLI, and Guardian now share product identity through the
+existing update-lifecycle Node entry. Backend provenance parsing delegates to
+the shared parser moved from the CLI. Source CLI fallback reports development;
+desktop relay and CLI feasibility builds read root identity. The unused UI
+version define is removed. Product-package metadata generation and release
+contracts still need convergence; step 1 is not yet complete.
+
+Verified for this increment: shared package build; root and CLI typechecks;
+78 focused tests; direct backend/CLI imports after changing cwd to
+`apps/desktop` both report root `0.94.1`, with source channel `development`.
+Native artifacts, full-suite evidence, and remaining plan steps are pending.
 
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),

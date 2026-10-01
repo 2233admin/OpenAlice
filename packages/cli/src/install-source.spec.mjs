@@ -23,17 +23,16 @@ afterEach(async () => {
 })
 
 describe('OpenAlice install source', () => {
-  it('uses a channel and release selector matching the local CLI version when metadata is absent', async () => {
+  it('keeps source execution on dev when installed metadata is absent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'openalice-install-source-'))
     temporaryPaths.push(root)
     await expect(readInstallSource({ metadataUrl: join(root, 'missing.json') }))
       .resolves.toEqual(DEFAULT_INSTALL_SOURCE)
-    const beta = /^[0-9]+\.[0-9]+\.[0-9]+-beta(?:\.[1-9][0-9]*)?$/.test(CLI_VERSION)
     expect(DEFAULT_INSTALL_SOURCE).toMatchObject({
       schemaVersion: 2,
-      selector: beta ? { kind: 'version', value: `v${CLI_VERSION}` } : { kind: 'branch', value: 'master' },
+      selector: { kind: 'branch', value: 'dev' },
       installerUrl: 'https://openalice.ai/install',
-      updateChannel: beta ? 'beta' : 'stable',
+      updateChannel: 'development',
     })
     expect(installSourceChannelVersionError(DEFAULT_INSTALL_SOURCE)).toBeNull()
   })
