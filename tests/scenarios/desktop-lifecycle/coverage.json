@@ -146,6 +146,35 @@
         }
       ],
       "gap": "Native menu Quit, PTY/service/port/process tree completion and close/quit race require separate acceptance."
+    },
+    {
+      "id": "smoke-owned-process-group",
+      "priority": "P0",
+      "review": "reviewed",
+      "initial": "The smoke-owned wrapper exits while helpers or a zombie thread-group leader remain.",
+      "action": "Stop the private process group, escalating only while members may execute.",
+      "expected": "Live TERM-ignoring helpers receive KILL; only stable exited single-thread zombies establish completion.",
+      "evidence": [
+        {
+          "spec": "scripts/desktop-smoke-process.spec.mjs",
+          "assertion": "terminates a %s helper after the parent exits",
+          "level": "integration",
+          "scope": "Real POSIX Node helpers in a private group, including ignored TERM and legal adversarial process names; no Electron."
+        },
+        {
+          "spec": "scripts/desktop-smoke-process.spec.mjs",
+          "assertion": "keeps state %s with thread count %s live",
+          "level": "unit",
+          "scope": "Synthetic procfs states including a Z leader with executing workers or unknown thread count."
+        },
+        {
+          "spec": "scripts/desktop-smoke-process.spec.mjs",
+          "assertion": "retains live children forked between the directory snapshot and zombie read",
+          "level": "unit",
+          "scope": "Injected procfs snapshots; incomplete/racing evidence remains conservative."
+        }
+      ],
+      "gap": "Native Electron Quit, packaged service/port cleanup, Windows taskkill and macOS group semantics require separate acceptance. Optional native pthread diagnostic is local evidence, not a mandatory compiler dependency."
     }
   ]
 }
