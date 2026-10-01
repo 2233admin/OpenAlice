@@ -246,6 +246,10 @@ function resolveUpdateContext(
     return { channel: 'dev', authority: 'source', error: null }
   }
 
+  if (runtimeProfile === 'electron-packaged') {
+    return { channel: releaseChannelForVersion(currentVersion) ?? 'custom', authority: 'desktop', error: null }
+  }
+
   const installedSourcePath = env['OPENALICE_INSTALL_SOURCE']?.trim()
   const installedChannel = installedSourcePath
     ? readInstalledChannel(installedSourcePath, readTextFile)
@@ -259,9 +263,6 @@ function resolveUpdateContext(
       : releaseChannelForVersion(currentVersion) ?? 'custom'
   )
 
-  if (runtimeProfile === 'electron-packaged') {
-    return { channel, authority: 'desktop', error: provenanceError }
-  }
   if (runtimeProfile === 'docker') {
     return { channel, authority: 'service', error: provenanceError }
   }

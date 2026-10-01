@@ -15,6 +15,20 @@ The reader never searches cwd or substitutes a private package's version.
 The CLI workspace is private and has no authored product version. Existing
 native/npm assembly generates distribution metadata from the root identity.
 
+The desktop relay bundles this reader with the existing build-version injection;
+leaving it external would make an installed package search for a source manifest.
+The launcher declares its actual desktop mode before initializing readers. Desktop
+provenance belongs to those app bytes, even if its parent shell carries a CLI receipt.
+Native CLI launch clears inherited desktop mode and declares `cli-server` after
+composing the child environment. Its existing installed receipt supplies the channel;
+a raw binary without that receipt has no installed-update authority. Missing explicit
+receipts and invalid receipts never fall back to source or stable provenance.
+
+TUI, remote planning and backend adapters consume the shared provenance parser.
+Source execution stays development; pinned/custom/unknown ownership is preserved
+instead of being normalized to stable. Remote planning requires its caller's resolved
+identity; no exported default provenance object can bypass that read.
+
 Release preparation and candidate receipts import the same dependency-free
 release policy source before installation; runtime consumers use the package's
 built entry. Trusted-base workflow classification copies both the classifier and

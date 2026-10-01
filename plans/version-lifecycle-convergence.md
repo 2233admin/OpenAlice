@@ -9,7 +9,10 @@ remaining authority audit are pending. No release publication or merge acceptanc
   known root manifest; cwd search and fake product versions are removed. Desktop
   relay/CLI packaging derive root identity; the private CLI package no longer
   authors a version. CLI/backend share the shipped provenance parser. Source
-  execution reports development. Missing packaged-provenance handling is pending.
+  execution reports development. Missing native receipts remain unavailable; explicit
+  missing/invalid receipts fail instead of becoming source/stable installations.
+  Desktop declares its actual mode and ignores unrelated inherited CLI receipts.
+  The relay bundles shared identity so build injection reaches packaged bytes.
 - Workspace: the existing managed-template owner supplies shared eligibility to
   discovery, review and locked apply. Private ordering and equality-only decisions
   are removed. Unknown versions stay unknown; equal-version Skill projection
@@ -28,7 +31,8 @@ remaining authority audit are pending. No release publication or merge acceptanc
   predecessor ordering use shared pure policy. Private parsers and manual root/CLI
   synchronization are removed. The existing serialized publisher checks forward
   release or exact-head mirror intent and re-reads the observed head before any
-  mutable write. Bootstrap Bash/PowerShell grammar parity remains pending.
+  mutable write. Bash and real PowerShell bootstrap planning now agree with shared grammar
+  for stable/beta manifest and exact-version input, including malformed versions.
 
 Whole-branch checks at `00e1b82c`, before the publication and App-entry changes:
 complete suite 896 passed files / 7,638 passed tests (1 file / 8 tests skipped);
@@ -38,14 +42,34 @@ integration typechecks passed. Earlier real demo Settings exercised owner review
 the complete UI owner suite passed 357 files / 2,062 tests. Source CLI/backend
 imports from the desktop cwd both reported root `0.94.1` and source ownership.
 
-Latest entry/publication verification: 93 tests across the six native/control/UI
-and release suites passed. Publication tests execute the production upload shell
-against local object-store transport; changed-head failures write no mutable
-feeds/aliases. Desktop, CLI, UI and integration typechecks, full Electron build,
-and real source Electron startup (missing/unavailable Recent) passed. Existing
-user Electron was left running. Packaged restart, integrated/separated artifacts,
-installer/playground and disposable SSH acceptance remain pending; source startup
-is not artifact acceptance. Refresh whole-branch gates after the remaining edits.
+Latest acceptance before the final whole-branch refresh:
+- Native macOS arm64 Bun 1.4.2 archive passed real CLI/Guardian/backend startup,
+  independent Agent PTYs, Workspace CLI transport, and same-version payload
+  activation/readiness. Source identity and runtime ownership remain separate.
+- Unsigned integrated Electron passed all 13 packaged Workspace checks, including
+  persisted native handoff/restart readiness and the real update inventory.
+  Packaged separated Electron connected to a real published 0.94.1-beta.2 backend;
+  its own client remained 0.94.1. Final rebuild follows the inherited-provenance fix.
+- Disposable Linux SSH acceptance passed installed-versus-active beta.2-to-stable
+  activation, interrupted controller reconnect and no unnecessary reinstall/restart.
+- Local Docker installer and the interactive playground passed plan, decline
+  without state, approved install and CLI invocation. Actual Bash and PowerShell
+  planning passed 44 grammar cases per interpreter. PowerShell ran on macOS;
+  native Windows installer replacement and signing remain platform release gates.
+- Root/CLI/UI/desktop/shared policy/Guardian and integration typechecks passed
+  before the final backend mode precedence correction; refresh is pending.
+- Latest full suite exposed one test fixture bug: PATH executable lookup accepted
+  PowerShell's `tr` language directory. Rejecting directories in that existing
+  fixture fixed the reproduction with the same PATH. Targeted installer suite now
+  passes 33 tests. No installer product fallback was added.
+- Artifact acceptance exposed an actual launch bug while clearing inherited mode:
+  CLI's `cli-server` ownership must be assigned after child environment composition.
+  The launch entry now does so; the rebuilt native archive passed. The failure was
+  not bypassed by weakening readiness or adding a second startup status.
+
+Final whole-branch tests, critical gate, artifact refresh and authority audit remain
+in progress. Existing user Electron and #1704 preview remain untouched. No release
+publication, signing, channel mutation or PR merge has been performed.
 
 Tracking: [#1721](https://github.com/TraderAlice/OpenAlice/issues/1721).
 Existing defects: [#1705](https://github.com/TraderAlice/OpenAlice/issues/1705),

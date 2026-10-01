@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseInstallSource, requireInstallSource, installSourceUpdateChannel, releaseChannelMatchesVersion } from '@traderalice/update-lifecycle'
+import { parseInstallSource, requireInstallSource, installSourceUpdateChannel, releaseChannelMatchesVersion, releaseChannelForVersion } from '@traderalice/update-lifecycle'
 export { parseInstallSource, requireInstallSource, installSourceUpdateChannel } from '@traderalice/update-lifecycle'
 
 import {
@@ -16,18 +16,13 @@ import {
 
 export const CLI_VERSION = getProductVersion()
 
-const sourceExecution = globalThis.__OPENALICE_BUILD_VERSION__ === undefined
-const betaCliVersion = releaseChannelMatchesVersion('beta', CLI_VERSION)
-
-export const DEFAULT_INSTALL_SOURCE = Object.freeze({
+const SOURCE_INSTALL_SOURCE = Object.freeze({
   schemaVersion: 2,
   repository: 'TraderAlice/OpenAlice',
   cliVersion: CLI_VERSION,
-  selector: Object.freeze(sourceExecution ? { kind: 'branch', value: 'dev' } : betaCliVersion
-    ? { kind: 'version', value: `v${CLI_VERSION}` }
-    : { kind: 'branch', value: 'master' }),
+  selector: Object.freeze({ kind: 'branch', value: 'dev' }),
   installerUrl: 'https://openalice.ai/install',
-  updateChannel: sourceExecution ? 'development' : betaCliVersion ? 'beta' : 'stable',
+  updateChannel: 'development',
 })
 
 export function installSourceChannelVersionError(source) {
@@ -44,6 +39,15 @@ export function installSourceChannelVersionError(source) {
 
 export async function readInstallSource(options = {}) {
   const env = options.env ?? process.env
+  const standalone = options.bunStandalone ?? isBunStandalone()
+  const profile = standalone ? undefined : env.OPENALICE_RUNTIME_PROFILE || env.OPENALICE_LAUNCHER
+  if (profile === 'electron-packaged') {
+    return { ...SOURCE_INSTALL_SOURCE, selector: { kind: 'version', value: `v${CLI_VERSION}` },
+      updateChannel: releaseChannelForVersion(CLI_VERSION) ?? 'custom' }
+  }
+  if (['dev', 'electron-dev', 'electron'].includes(profile)) {
+    return { ...SOURCE_INSTALL_SOURCE, selector: { ...SOURCE_INSTALL_SOURCE.selector } }
+  }
   const metadataLocations = options.metadataUrl
     ? [options.metadataUrl]
     : env['OPENALICE_INSTALL_SOURCE']
@@ -53,16 +57,12 @@ export async function readInstallSource(options = {}) {
     try {
       return requireInstallSource(JSON.parse(await readFile(metadataUrl, 'utf8')))
     } catch (error) {
-      if (error?.code === 'ENOENT') continue
+      if (error?.code === 'ENOENT' && !options.metadataUrl && !env['OPENALICE_INSTALL_SOURCE']) continue
       throw error
     }
   }
-  const source = cloneInstallSource(DEFAULT_INSTALL_SOURCE)
-  if (['dev', 'electron-dev', 'electron'].includes(env.OPENALICE_RUNTIME_PROFILE || env.OPENALICE_LAUNCHER)) {
-    source.selector = { kind: 'branch', value: 'dev' }
-    source.updateChannel = 'development'
-  }
-  return source
+  if (standalone) return null
+  return { ...SOURCE_INSTALL_SOURCE, selector: { ...SOURCE_INSTALL_SOURCE.selector } }
 }
 
 export function installedContentIdentity(moduleUrl = import.meta.url, options = {}) {
@@ -92,10 +92,6 @@ function nativeInstallSourceLocations(options, env) {
   )
 }
 
-export function normalizeInstallSource(value, fallback = DEFAULT_INSTALL_SOURCE) {
-  return parseInstallSource(value) ?? cloneInstallSource(fallback)
-}
-
 export function installSourcesMatch(left, right) {
   const normalizedLeft = parseInstallSource(left)
   const normalizedRight = parseInstallSource(right)
@@ -109,7 +105,7 @@ export function installSourcesMatch(left, right) {
 }
 
 export function formatInstallSelector(source) {
-  const normalized = normalizeInstallSource(source)
+  const normalized = requireInstallSource(source)
   return `${normalized.selector.kind} ${normalized.selector.value}`
 }
 
@@ -124,18 +120,4 @@ export function managedSourceKey(source) {
     .digest('hex')
     .slice(0, 8)
   return `${readable}-${digest}`
-}
-
-function cloneInstallSource(source) {
-  return {
-    schemaVersion: source.schemaVersion,
-    repository: source.repository,
-    cliVersion: source.cliVersion,
-    selector: { ...source.selector },
-    installerUrl: source.installerUrl,
-    ...(source.schemaVersion >= 2 ? { updateChannel: source.updateChannel } : {}),
-    ...(source.schemaVersion === 3 && source.method ? { method: source.method } : {}),
-    ...(source.schemaVersion === 3 && source.artifact ? { artifact: { ...source.artifact } } : {}),
-    ...(source.schemaVersion === 3 && source.installedAt ? { installedAt: source.installedAt } : {}),
-  }
 }

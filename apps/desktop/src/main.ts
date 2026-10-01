@@ -66,6 +66,9 @@ import { configureWindowLifecycle, showAppWindow } from './window-lifecycle.js'
 import type { CompanionHandle } from './companion.js'
 import { CLI_VERSION, UpdateControlService, ClientUpdateService, WebRelay, readStartupTarget, writeStartupTarget, resolveLocalStartupHome, inspectLocalMachine } from './web-relay.js'
 
+// The desktop launcher owns its mode for both relay and child Runtime readers.
+process.env.OPENALICE_RUNTIME_PROFILE = app.isPackaged ? 'electron-packaged' : 'electron-dev'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
@@ -705,15 +708,17 @@ async function startDesktopLauncher(repoRoot: string, updateAttemptPath: string,
         const status = await bridge.desktopConnection.status()
         const recent = await bridge.desktopConnection.startupTarget()
         if (!connected && status.target) throw new Error('Unexpected project attachment')
+        let backendVersion = null
         if (connected) {
           if (status.target?.machine !== 'local' || status.target?.project !== 'default') throw new Error('Separated connection missing')
-          const inventory = await fetch('/api/updates/inventory?force=1').then(r => r.json())
-          if (!inventory.units?.some(unit => unit.owner === 'alice-harness')) throw new Error('Separated update inventory missing')
+          const backend = await fetch('/api/version').then(r => r.json())
+          if (typeof backend.current !== 'string' || !backend.current) throw new Error('Separated backend identity missing')
+          backendVersion = backend.current
           const native = await bridge.clientUpdates.operation()
           if (native && native.phase !== 'succeeded') throw new Error('Separated native readiness not verified')
         }
         if (document.querySelector('[data-testid="first-run-guide"]')) throw new Error('Legacy wizard mounted')
-        return { heading: document.querySelector('h1').textContent, recent, version: client.currentVersion }
+        return { heading: document.querySelector('h1').textContent, recent, version: client.currentVersion, backendVersion }
       })()`)
       if (alice || uta || connector || guardianRuntimeLock) throw new Error('Startup shell acquired local project ownership')
       console.log('[guardian] renderer startup smoke passed ' + JSON.stringify(result))

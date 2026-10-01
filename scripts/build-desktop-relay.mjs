@@ -10,6 +10,7 @@ await build({
   platform: 'node',
   target: 'node22',
   splitting: false,
+  noExternal: ['@traderalice/update-lifecycle'],
   clean: false,
   define: {
     'globalThis.__OPENALICE_BUILD_VERSION__': JSON.stringify(product.version),

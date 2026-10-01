@@ -1,3 +1,4 @@
+import { readInstallSource } from './install-source.mjs'
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { rm, mkdtemp } from 'node:fs/promises'
@@ -166,7 +167,7 @@ describe('OpenAlice managed remote connector', () => {
 
   it('does not turn source execution into an installed stable release', async () => {
     const options = parseRemoteArgs(['host', '--yes'])
-    const plan = createSourceRemotePlan(options, missingRemote())
+    const plan = createSourceRemotePlan(options, missingRemote(), { installSource: await readInstallSource({ env: {} }) })
     expect(plan.installSource.updateChannel).toBe('development')
     expect(plan.blocker).toContain('dev target')
     const runRemote = vi.fn()

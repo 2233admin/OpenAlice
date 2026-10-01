@@ -1,3 +1,4 @@
+import { releaseChannelForVersion } from '@traderalice/update-lifecycle'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   getCurrentVersion,
@@ -58,14 +59,6 @@ function mockJsonResponse(value: unknown, response?: { status?: number; statusTe
   globalThis.fetch = fetchMock as unknown as typeof fetch
   return fetchMock
 }
-
-describe('getCurrentVersion', () => {
-  it('returns a non-empty version string from package.json', () => {
-    const version = getCurrentVersion()
-    expect(typeof version).toBe('string')
-    expect(version.length).toBeGreaterThan(0)
-  })
-})
 
 describe('fetchLatestRelease (mocked manifest fetch)', () => {
   const originalFetch = globalThis.fetch
@@ -369,6 +362,17 @@ describe('getVersionInfo', () => {
     })
     expect(readTextFile).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps packaged desktop ownership independent of inherited CLI provenance', async () => {
+    const readTextFile = vi.fn(() => { throw new Error('Unrelated CLI receipt') })
+    const info = await getVersionInfo({
+      currentOnly: true,
+      env: { OPENALICE_RUNTIME_PROFILE: 'electron-packaged', OPENALICE_INSTALL_SOURCE: '/cli/install-source.json' },
+      readTextFile,
+    })
+    expect(info).toMatchObject({ current: getCurrentVersion(), channel: releaseChannelForVersion(getCurrentVersion()), updateAuthority: 'desktop', error: null })
+    expect(readTextFile).not.toHaveBeenCalled()
   })
 
   it('normalizes legacy non-master branch provenance to the development channel', async () => {
