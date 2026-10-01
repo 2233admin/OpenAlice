@@ -1290,15 +1290,16 @@
   },
   {
     "id": "desktop-smoke-process",
-    "title": "desktop smoke process",
+    "title": "Desktop smoke process and state isolation",
     "tier": "integration",
     "owner": "repo-tooling",
     "lane": "hermetic",
     "areas": [],
     "files": [
-      "tests/integration/desktop-smoke-process/desktop-smoke-process.spec.mjs"
+      "tests/integration/desktop-smoke-process/desktop-smoke-process.spec.mjs",
+      "tests/integration/desktop-smoke-process/desktop-smoke-isolation.spec.ts"
     ],
-    "scope": "Smoke process supervisor and native test-owned process trees; no packaged desktop or real user process."
+    "scope": "Smoke process supervisor and native test-owned process trees, plus smoke state selection integrated with the real Pi trust writer under disposable sentinel directories; no packaged desktop or real user state."
   },
   {
     "id": "installer-powershell",

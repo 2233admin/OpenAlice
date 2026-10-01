@@ -2,8 +2,8 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, realpath } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { buildDesktopPackagedSmokePlan, desktopSmokeStateEnv } from './desktop-packaged-smoke-plan.mjs'
-import { syncPiProjectTrust } from '../src/workspaces/adapters/pi.js'
+import { buildDesktopPackagedSmokePlan, desktopSmokeStateEnv } from '../../../scripts/desktop-packaged-smoke-plan.mjs'
+import { syncPiProjectTrust } from '../../../src/workspaces/adapters/pi.js'
 
 it.each([[], ['--onboarding'], ['--workspace-acceptance'], ['--trading-mode']])('isolates native Pi trust in temporary mode %j', async (...args) => {
   const parent = await mkdtemp(join(tmpdir(), 'oa-pi-sentinel-'))
