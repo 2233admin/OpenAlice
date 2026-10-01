@@ -685,6 +685,25 @@ export const zhHant: Resources = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "結束此計畫，重新審閱",
+      "title": "協同升級",
+      "description": "一起審閱明確的升級目標。進度儲存在本機，重新啟動後可以繼續；檔案衝突仍需在工作區審閱。",
+      "client": "目前應用程式",
+      "backend": "選取的遠端後端",
+      "review": "審閱所選升級",
+      "approve": "確認並開始",
+      "resume": "繼續已儲存的升級",
+      "phase": {
+        "approved": "已確認",
+        "running": "升級中",
+        "waiting": "等待重新啟動或服務就緒",
+        "blocked": "等待處理阻塞",
+        "failed": "升級失敗",
+        "recovery": "需要在所屬模組恢復",
+        "succeeded": "已完成"
+      }
+    },
     title: '設定',
     group: {
       general: '一般',

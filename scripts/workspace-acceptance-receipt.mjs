@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 export const requiredWorkspaceChecks = [
-  'workspaceCreated', 'gitReady', 'cliEnvironmentInjected', 'allCliManifestsLoaded',
+  'updateLifecycle', 'workspaceCreated', 'gitReady', 'cliEnvironmentInjected', 'allCliManifestsLoaded',
   'shellCliRoundTrip', 'scheduledIssueDispatched', 'scheduledIssueAutoCompleted',
   'managedPiAssistantReply', 'managedPiStructuredOutput', 'managedPiDiagnosticCompaction',
   'managedPiCliSideEffect', 'cleanupComplete',

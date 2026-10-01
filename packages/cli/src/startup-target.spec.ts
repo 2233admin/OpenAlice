@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { readStartupTarget, writeStartupTarget, resolveStartupTarget } from './startup-target.ts'
 
@@ -48,4 +48,11 @@ describe('client startup target', () => {
     await expect(resolveStartupTarget({ machine: 'other', env: {} }, { supervisorRoot })).rejects.toThrow('--project')
   })
 
+})
+
+// Default migration must never consult the maintainer's installed Desktop state.
+vi.mock('./supervisor-default-migration.ts', async importOriginal => {
+  const actual = await importOriginal<typeof import('./supervisor-default-migration.ts')>()
+  return { ...actual, migrateSupervisorDefault: (root: string, config: Parameters<typeof actual.migrateSupervisorDefault>[1], save: Parameters<typeof actual.migrateSupervisorDefault>[2], desktopPath?: string) =>
+    actual.migrateSupervisorDefault(root, config, save, desktopPath ?? join(root, 'fixture-desktop-preferences.json')) }
 })

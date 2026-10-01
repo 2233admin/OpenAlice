@@ -12,7 +12,7 @@ GitHub navigation.
 | [[docs/alice-project.md]] | [AliceProject](alice-project.md) | Top-level local runtime identity, one-project/one-backend topology, concurrency, and display contract |
 | [[docs/project-structure.md]] | [Project structure](project-structure.md) | Process boundaries, source ownership, state roots, architectural entry points |
 | [[docs/development-workflow.md]] | [Development workflow](development-workflow.md) | Branches, delivery modes, PRs, promotions, external review, risk gates |
-| [[docs/update-lifecycle.md]] | [Update lifecycle](update-lifecycle.md) | Shared release identity, native remote planning/recovery and rehearsal; remaining lifecycle boundaries |
+| [[docs/update-lifecycle.md]] | [Update lifecycle](update-lifecycle.md) | Shared inventory, exact-target planning, durable owner coordination and rehearsal |
 | [[docs/testing.md]] | [Testing](testing.md) | Product scenario/protocol evidence groups, required assertion gates/run receipts, test ownership, risk lanes, command namespace, selector composition, side effects, and package-local semantics |
 | [[docs/managed-workspace-runtime.md]] | [Managed Workspace runtime](managed-workspace-runtime.md) | Electron packaging, managed Pi, PortableGit/Bash, runtime profile, Workspace PATH |
 | [[docs/harness-web-surfaces.md]] | [Harness web surfaces](harness-web-surfaces.md) | Harness manifests, managed Studio ports, readiness, routing, transport, lifecycle, and embedding |

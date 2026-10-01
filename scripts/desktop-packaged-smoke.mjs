@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { writeProjectWorkspaceRequest } from '../packages/cli/src/project-workspaces.ts'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { createServer as createNetServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
@@ -264,6 +264,14 @@ async function main() {
       env.AQ_LAUNCHER_ROOT = smokeWorkspaces
       env.OPENALICE_GLOBAL_DIR = smokeGlobal
       if (onboarding) env.PI_CODING_AGENT_DIR = join(smokeRoot, 'pi-agent')
+    }
+
+    if (workspaceAcceptance) {
+      // Seed only the durable native handoff. The real candidate process must
+      // prove its own identity/readiness; no native installer is simulated here.
+      const { DesktopUpdateLifecycle } = await import('../dist/electron/update-lifecycle.js')
+      const version = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).version
+      await new DesktopUpdateLifecycle(env.OPENALICE_ELECTRON_SMOKE_USER_DATA, () => '0.0.0').install(version, async () => {}, async () => {})
     }
 
     const receiptPath = workspaceAcceptance

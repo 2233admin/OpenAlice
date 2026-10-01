@@ -8,6 +8,23 @@ Related guides: [[docs/project-structure.md]],
 [[docs/model-semantics-and-runtime-injection.md]], and
 [[docs/development-workflow.md]].
 
+## Update readiness and acceptance
+
+[[docs/update-lifecycle.md]] owns coordinated update semantics. Electron keeps
+its native installer and local `userData/update-operations/` receipt; the relay
+or desktop control plane persists a composed plan under `update-control/`.
+A native handoff is complete only when the exact approved app version starts,
+the renderer is ready, and the required integrated Alice service reports that
+version. A separated client verifies its local shell; backend readiness belongs
+to the selected Runtime. No Workspace Agent or Studio is started for this check.
+
+`electron:smoke:workspace` seeds a durable native handoff, then starts a new
+unsigned packaged process and checks real readiness through preload. It also
+checks the shared Skills inventory. `scripts/desktop-startup-smoke.mjs` accepts
+`--app-path <executable> --connected-home <disposable-running-project>` to prove
+packaged separated inventory without taking local project ownership. Native
+signature/notarization and Windows installer replacement remain release gates.
+
 ## Product Contract
 
 A packaged OpenAlice install must be able to open a Workspace on a fresh
@@ -810,3 +827,15 @@ not that the host init reaped PID entries. Real Node helper tests cover graceful
 and ignored TERM after wrapper exit; a local pthread diagnostic additionally
 checks a Z leader with a live worker. Native Electron/platform acceptance remains
 separate from these Node and injected-procfs assertions.
+
+### Default selection navigation acceptance
+
+After building the current Desktop and UI, run
+`node scripts/desktop-selection-smoke.mjs`. The gate launches real Electron
+against a disposable Guardian/HTTP fixture and Supervisor state seeded with a
+legacy Default conflict. It verifies preload/IPC selection, replacement Settings
+navigation, committed Default and cleared conflict, another native switch, and
+an HTTP switch handled by the shared generation observer. No configured SSH
+host, trading account or user home is read by the fixture. Pass
+`--app-path <packaged-executable>` to verify the same path in an unsigned package.
+The script owns its temporary profile/process and cleans both up.

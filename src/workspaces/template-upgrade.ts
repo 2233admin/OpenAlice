@@ -1,3 +1,5 @@
+import { recordOwnerUpdate, projectUpdateUnit } from '@traderalice/update-lifecycle';
+import { FileUpdateJournal } from '@traderalice/update-lifecycle/node';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
@@ -444,6 +446,12 @@ export class TemplateUpgradeManager {
     } satisfies StoredBaseline);
     await atomicWriteJson(join(workspace.dir, this.paths.journal), journal);
 
+    const owner = this.opts.aliceHarness ? 'alice-harness' : 'template';
+    const unit = projectUpdateUnit(`${owner}:${workspace.id}`, owner, workspace.dir, { version: plan.fromVersion }, { version: plan.toVersion, revision: plan.planDigest });
+    return recordOwnerUpdate({
+      journal: new FileUpdateJournal(join((await runGit(workspace.dir, ['rev-parse', '--absolute-git-dir'])).trim(), 'openalice-updates'), unit.id),
+      unit, fingerprint: plan.planDigest, id: plan.planDigest, receipt: result => result.commit,
+      apply: async () => {
     try {
       for (const path of changedPaths) {
         await writeSnapshotFile(workspace.dir, path, merged[path] ?? incoming[path] ?? missingFile());
@@ -489,6 +497,8 @@ export class TemplateUpgradeManager {
       );
       throw err;
     }
+      },
+    });
   }
 
   private async buildPlan(

@@ -1,3 +1,4 @@
+import type { RuntimeUpdatePlan, ReleaseEvidence } from '@traderalice/update-lifecycle'
 /** Local GUI control for read-only Machine plans and explicitly approved apply. */
 import { randomUUID } from 'node:crypto'
 
@@ -26,6 +27,8 @@ type RemotePlan = {
   activationRoute: string
   installSource: { cliVersion: string }
   deferredCliUpdate: boolean
+  observed?: { installed: ReleaseEvidence | null; active: ReleaseEvidence | null }
+  lifecycle?: RuntimeUpdatePlan
   activeVersion?: string | null
 }
 
@@ -35,6 +38,8 @@ export interface MachinePlanPreview {
   machine: { key: string | null; label: string; sshTarget: string }
   project: { key: string; displayName: string } | null
   platform: string
+  observed?: { installed: ReleaseEvidence | null; active: ReleaseEvidence | null }
+  releaseIdentity?: RuntimeUpdatePlan['target']
   installedVersion: string
   activeVersion: string | null
   targetVersion: string
@@ -102,6 +107,8 @@ export class MachineManagement {
       machine: { key: resolved.machine?.key ?? null, label: resolved.profile.label, sshTarget: resolved.profile.sshTarget },
       project: resolved.project ? { key: resolved.project.key, displayName: resolved.project.displayName } : null,
       platform: plan.platform,
+      releaseIdentity: plan.lifecycle?.target,
+      observed: plan.observed,
       installedVersion: plan.cliVersion,
       activeVersion: plan.activeVersion ?? null,
       targetVersion: plan.installSource.cliVersion,

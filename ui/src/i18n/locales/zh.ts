@@ -681,6 +681,25 @@ export const zh: Resources = {
     },
   },
   settings: {
+    updateCoordinator: {
+      "abandon": "结束此计划，重新审阅",
+      "title": "协同升级",
+      "description": "一起审阅明确的升级目标。进度保存在本机，重启后可以继续；文件冲突仍需在工作区审阅。",
+      "client": "当前应用",
+      "backend": "选中的远端后端",
+      "review": "审阅所选升级",
+      "approve": "确认并开始",
+      "resume": "继续已保存的升级",
+      "phase": {
+        "approved": "已确认",
+        "running": "升级中",
+        "waiting": "等待重启或服务就绪",
+        "blocked": "等待处理阻塞",
+        "failed": "升级失败",
+        "recovery": "需要在所属模块恢复",
+        "succeeded": "已完成"
+      }
+    },
     title: '设置',
     group: {
       general: '通用',
