@@ -39,6 +39,7 @@ pnpm test:groups --contract alice-uta --json
 pnpm test:inventory --json
 pnpm test:select --scenario workspace-creation --lane integration
 pnpm test:select --scenario first-run --contract alice-uta --owner alice --explain
+pnpm test:select --scenario startup-project-selection --explain
 ```
 
 `--scenario` and `--contract` select referenced spec evidence and compose with
@@ -55,6 +56,14 @@ An owner-only leaf spec is accounted for without inventing a product coverage
 claim. Mapped evidence is not a run result; a green component check is not a
 native user journey. Catalog guards validate assertion/task references and
 central ownership. Metadata changes force collection-wide changed-test reruns.
+
+The startup/lifecycle pilot maps shared Default migration and verified Project
+attachment separately from Desktop startup/retirement helpers and Guardian
+stop/descendant contracts. Existing leaf specs can support several groups
+without acquiring another owner or lane. Native chooser, Dock/tray/menu Quit,
+SSH and complete process/port cleanup remain explicit gaps. Inspect the
+scenario and affected protocol separately when their intersection would omit
+evidence; the required `critical-local` gate remains unchanged and whole.
 
 ## Required local evidence and run receipts
 
