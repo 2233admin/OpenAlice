@@ -1141,8 +1141,8 @@ describe('Supervisor TUI screen', () => {
   it('uses shared provenance for source, packaged, pinned and unknown channels', async () => {
     await expect(resolveSupervisorChannel()).resolves.toBe('dev')
     const source = { schemaVersion: 2, repository: 'TraderAlice/OpenAlice', cliVersion: '0.94.1',
-      selector: { kind: 'version', value: 'v0.94.1' }, installerUrl: 'https://openalice.ai/install' }
-    for (const channel of ['stable', 'beta', 'development', 'pinned', 'custom']) {
+      selector: { kind: 'version', value: 'v0.94.1' }, installerUrl: 'https://openalice.ai/install' } as const
+    for (const channel of ['stable', 'beta', 'development', 'pinned', 'custom'] as const) {
       await expect(resolveSupervisorChannel({ readSource: async () => ({ ...source, updateChannel: channel }) }))
         .resolves.toBe(channel === 'development' ? 'dev' : channel)
     }
@@ -5269,7 +5269,7 @@ describe('Supervisor TUI screen', () => {
 
   it('routes pointer selection through the focused update-channel stage', async () => {
     let inputListener: ((data: string) => unknown) | undefined
-    const checked: string[] = []
+    const checked: Array<string | undefined> = []
     class FakeTui {
       addChild(): void {}
       addInputListener(listener: (data: string) => unknown): () => void {
