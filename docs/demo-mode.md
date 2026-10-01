@@ -110,3 +110,11 @@ recovery. Blocked plans never allow approval. The normal add plan has no remote
 changes and still requires approval to save the profile. All SSH, remote state,
 installation and persistence in these scenarios are simulated through MSW; no
 SSH connection is attempted.
+
+## Update overview walkthrough
+
+Open `/settings?updates=ready` in the browser demo to exercise the three-object
+overview, the collapsed default Harness details, and one-step Alice Project
+review/apply/completion. The fixture updates only in-memory Chat content. The
+ordinary demo retains the Quant active-work blocker for the disabled-apply path.
+No real installation, Workspace file, or remote Machine is updated.

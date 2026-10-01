@@ -32,7 +32,7 @@ vi.mock('../api/preferences', () => ({
 
 vi.mock('../hooks/useUpdateLifecycle', () => ({
   useUpdateLifecycle: () => ({ machines: { status: null, fleet: [], loading: false, busy: false, error: null, refresh: mocks.refreshMachines }, versionInfo: null, nativeStatus: null, workspaceStates: [],
-    preferences: null, checking: false, error: null, availableCount: 0,
+    projectWorkspaces: [], preferences: null, checking: false, error: null, availableCount: 0,
     guidance: { app: false, backend: false, workspaceIds: [], needsAttentionWorkspaceIds: [], availableCount: 0, needsAttentionCount: 0 },
     refresh: vi.fn(async () => undefined), savePreferences: vi.fn(async () => undefined) }),
 }))
