@@ -14,7 +14,7 @@ GitHub navigation.
 | [[docs/development-workflow.md]] | [Development workflow](development-workflow.md) | Branches, delivery modes, PRs, promotions, external review, risk gates |
 | [[docs/update-lifecycle.md]] | [Update lifecycle](update-lifecycle.md) | Shared inventory, exact-target planning, durable owner coordination and rehearsal |
 | [[docs/testing.md]] | [Testing](testing.md) | Unit/integration/E2E scope and suite registration, required gates/run receipts, ownership, execution conditions, selectors, and package-local semantics |
-| [[docs/managed-workspace-runtime.md]] | [Managed Workspace runtime](managed-workspace-runtime.md) | Electron packaging, managed Pi, PortableGit/Bash, runtime profile, Workspace PATH |
+| [[docs/managed-workspace-runtime.md]] | [Managed Workspace runtime](managed-workspace-runtime.md) | Electron packaging, local package diagnostics, managed Pi, PortableGit/Bash, runtime profile, Workspace PATH |
 | [[docs/harness-web-surfaces.md]] | [Harness web surfaces](harness-web-surfaces.md) | Harness manifests, managed Studio ports, readiness, routing, transport, lifecycle, and embedding |
 | [[docs/model-semantics-and-runtime-injection.md]] | [Model semantics and runtime injection](model-semantics-and-runtime-injection.md) | AI credential access, model semantics, Workspace selection, and native Agent projection |
 | [[docs/broker-packs.md]] | [Broker Packs](broker-packs.md) | Optional broker SDK packaging, UI installation, activation, runtime loading, release assets |
@@ -92,6 +92,9 @@ guide, also without vendoring third-party code.
 - When code and a guide disagree, verify the runtime and update the guide in the
   same change.
 - Do not copy an owner guide back into `AGENTS.md`; add or update its wikilink.
+- Keep OpenAlice operating and release rules in this repository. Do not mirror
+  them into personal/global assistant skills or maintain a second external
+  test runner; update the owning guide and repository commands together.
 - Do not leave executable instructions in a retired guide. Keep a short
   tombstone when old external links need a destination.
 - Prefer self-describing code/catalogs over copied provider, event, or route
