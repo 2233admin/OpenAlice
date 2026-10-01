@@ -1,8 +1,10 @@
-# IBKR conId Contract Resolution
+# IBKR conId Contract Resolution — Repair Record
 
-Status: completed
+Date: 2026-07-17
 
-Started: 2026-07-17
+This is historical evidence from a completed repair, not a current task plan or
+test-running guide. Current acceptance and safe test selection belong to
+[[docs/uta-live-testing.md]] and [[docs/testing.md]].
 
 Related contribution: [PR #345](https://github.com/TraderAlice/OpenAlice/pull/345)
 
@@ -51,7 +53,7 @@ No order was staged or submitted while establishing this evidence.
 
 ## Design invariant
 
-The repair establishes this boundary inside `IbkrBroker`:
+The repair established this boundary inside `IbkrBroker`:
 
 - `conId` identifies the instrument.
 - A canonical IBKR `Contract` addresses that instrument for quotation or
@@ -63,44 +65,32 @@ The repair establishes this boundary inside `IbkrBroker`:
   stock request without a conId.
 - Missing routing fields for other no-conId asset classes must not be guessed.
 
-The resolver should cache canonical contracts by conId, deduplicate concurrent
-lookups, discard failed cache entries so they can be retried, and return clones
-so downstream code cannot mutate the cached canonical value.
+The resolver cached canonical contracts by conId, deduplicated concurrent
+lookups, discarded failed cache entries so they could be retried, and returned
+clones so downstream code could not mutate the cached canonical value.
 
 ## Implementation boundary
 
-The same canonical resolver will be used by every IBKR path that sends a
-contract to a TWS operation where routing fields matter:
+The repair used the same canonical resolver for IBKR operations whose
+contracts require routing fields:
 
 - `placeOrder`
 - `modifyOrder`
 - `getQuote`
 - `closePosition` through `placeOrder`
 
-`closePosition` must stop overwriting the position contract's exchange with
-`SMART`. A venue-returned position contract is already stronger evidence than
-a generic stock default.
+The close-position path preserved the venue-returned contract rather than
+overwriting its exchange with `SMART`. The repair left optional display
+symbols in UTA staging, but made them non-authoritative at the conId lookup.
 
-UTA may continue carrying the optional tool `symbol` for display in staged
-operations during this repair. The IBKR boundary must treat it as
-non-authoritative whenever a conId is present. Separating display metadata from
-execution contracts across every broker is a larger model change and is not
-required to close this defect safely.
+## Repair scope
 
-## Non-goals
+The repair retained the UTA abstraction and Alice ID grammar; it did not add
+pricing or market-selection policy. PR #345 provided related input but also
+contained an unrelated Dockerfile commit and did not cover close-position or
+contradictory typed contracts, so it was not the complete repair.
 
-- Do not replace or broadly redesign the UTA abstraction in this change.
-- Do not change Alice ID grammar or remove conId as IBKR's canonical leaf key.
-- Do not add general pricing or market-selection policy to UTA.
-- Do not merge or cherry-pick PR #345 as-is; it contains an unrelated
-  Dockerfile commit and does not cover close-position or contradictory typed
-  contracts.
-- Do not use a real-money account for validation.
-
-The architecture may deserve a separate review, but the current priority is to
-restore a correct broker boundary and protect it with reproducible evidence.
-
-## Regression and acceptance matrix
+## Regression coverage at the time of repair
 
 ### Unit tests
 
@@ -115,12 +105,12 @@ restore a correct broker boundary and protect it with reproducible evidence.
 
 ### Non-trading E2E
 
-The ordinary UTA lifecycle suite must continue to cover staging, commit, push,
-ledger, and cleanup without configured broker accounts or external orders.
+The recorded UTA lifecycle acceptance covered staging, commit, push, ledger,
+and cleanup without configured broker accounts or external orders.
 
 ### IBKR paper E2E
 
-The explicit live-paper lane will cover both layers that previously diverged:
+The recorded live-paper acceptance covered both layers that had diverged:
 
 1. Broker-level contract resolution and order validation, preferring an IBKR
    what-if order where it gives the same contract validation without
@@ -131,13 +121,12 @@ The explicit live-paper lane will cover both layers that previously diverged:
    the FX contract accepted at the write boundary is canonical without
    transmitting an FX order.
 
-The live run must record the pre-run position and open-order baseline, clean up
-in `finally`, and prove the post-run state returned to that baseline. A failure
-to prove cleanup stops the delivery lane.
+Live verification recorded pre-run positions and open orders, cleaned up in
+`finally`, and confirmed that the post-run state matched the baseline.
 
 ## Smoke evidence and reusable fixtures
 
-Live-paper smoke output is split into two forms:
+The repair split live-paper smoke evidence into two forms:
 
 1. An untracked per-run JSONL record under
    `data/uta-live-paper-runs/`, containing the Git commit, scenario, safe input
@@ -167,10 +156,11 @@ scenario: it records the starting quantity and open-order ids, cancels any
 introduced hanger in `finally`, closes only the positive quantity delta created
 by the test, and asserts the exact baseline afterward.
 
-Targeted live runs must invoke Vitest directly when selecting files or test
-names; do not put an extra `--` between the live-paper config and the filters.
+The selection failure exposed by this repair informed the later explicit test
+selector. Current invocation rules belong to [[docs/uta-live-testing.md]];
+the direct-Vitest workaround used during this repair is not current guidance.
 
-## Verification completed
+## Historical verification receipt
 
 - Canonical resolver unit suite: 20 passing tests, including the three recorded
   TWS contract fixtures.
@@ -184,14 +174,3 @@ names; do not put an extra `--` between the live-paper config and the filters.
 - Full non-trading E2E reached 32 passing tests; its only failure was an
   unrelated TLS `ECONNRESET` reaching `api.bls.gov`, explicitly classified by
   the provider layer as external network unreachability.
-
-## Completion criteria
-
-- The targeted regression tests fail before the repair and pass afterward.
-- `npx tsc --noEmit`, `pnpm test`, and `pnpm test:e2e` pass.
-- Targeted IBKR paper broker and UTA scenarios pass against a verified paper
-  account.
-- The live-paper run leaves no new open orders or position delta.
-- The smoke record is written and a stable sanitized fixture is reviewed.
-- The change is delivered to `dev` as a focused internal repair with the
-  contribution in PR #345 credited in the final history or PR discussion.

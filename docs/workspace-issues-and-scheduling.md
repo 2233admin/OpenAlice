@@ -24,8 +24,9 @@ emits them. Completion stays on `runtime.stopped` with clipped assistant
 text and block metrics. Tool input/output and the user prompt stay out —
 they already live in the structured run snapshot and conversation log.
 TUI has no equivalent extractor yet, so headed Sessions still only write
-occupancy. The journal is not a dispatch authority. Office reads this file;
-Automation → Runs remains the current headless-task table.
+occupancy. This is the Agent family of [[docs/product-activity-journal.md]],
+not a dispatch authority. Office reads the journal; Developer → Runs at
+`/settings/developer/runs` is the current headless-task table.
 
 ## One Object, Two Roles
 
