@@ -24,6 +24,86 @@ or extending its acceptance: [[docs/managed-workspace-runtime.md]],
 
 ## Outcome and scope
 
+### Test-value audit and first pruning batch (2026-10-01)
+
+The maintainer requested a system-wide inventory and consolidation/deletion of
+low-value tests. This follow-up starts at `75c1c8c1` on
+`codex/test-value-audit`. It reuses the existing catalog and does not add a new
+runner, classification schema, or CI gate.
+
+Inventory: 925 spec files / 165,012 lines; 898 hermetic, 5 deterministic
+integration, 11 external read-only, and 11 live-paper. The catalog discovers
+70 commands. Its 57 reviewed requirement rows are 5 mapped, 51 partial and 1
+missing; these are bounded evidence claims, not measured code coverage or
+executed acceptance. The 878 owner-only files are not automatically redundant.
+Inventory is exhaustive at file level; value judgments below are source review
+of selected examples, not a claim to have individually reviewed every assertion.
+
+The owner distribution is UI 362, Runtime/CLI 203, Alice 177, UTA 75,
+repository tooling 58, Desktop 25 and Connector 25. In UI source review, 56
+spec files mention `className`/`classList`; that is a review queue, not 56
+approved deletions. Office's 58 files account for 14,616 lines, but its
+navigation, keyboard, async duty and persistence tests cover distinct behavior.
+
+The first bounded batch is Office test maintenance:
+
+- [x] Remove the three CSS-text style specs (782 lines / 50 test cases).
+  They match declarations and source ordering without executing CSS layout,
+  cascade, hit testing, or animation. Appending `.oa-office-main { display:
+  none !important; }` left all 50 cases green while the real browser measured
+  a hidden 0-by-0 map. The temporary mutation was restored byte-for-byte.
+  Removal deliberately retires declaration-presence/spelling guards; it does
+  not claim that existing component tests cover the same rendered geometry.
+- [x] Consolidate furniture, HUD and journal PNG checks. Preserve missing-file,
+  signature, native-dimension and alpha checks; drop copied versioned filenames,
+  arbitrary compressed-byte thresholds and obsolete asset-name exclusions.
+  The single `ui/src/office/assets.spec.ts` preserves all four behavior cases;
+  sprite-atlas behavior tests remain separate.
+- [x] Verify the UI owner, UI typecheck, catalog contract and real Office route;
+  record full-suite timing/failures separately without deleting failing tests
+  to manufacture a green baseline.
+
+The resulting inventory is 920 specs / 164,171 lines: five fewer files and
+841 fewer test lines, with 50 fewer CSS-text cases. No product source, test
+runner, lane, gate or required evidence row changed. UI ownership passes all
+357 files / 2,056 cases; workflow contracts pass 12 files / 108 cases; UI
+typecheck passes. The demo Office route rendered at 1280x720 and 390x844, and
+Menu/Escape restored the map. This manual check does not replace automated
+layout/cascade/reduced-motion acceptance; those rendered regression gaps remain.
+
+The first full baseline collected 898 files / 7,634 cases in 264.73 seconds:
+7,565 passed, 61 failed and 8 skipped. The failures were the Project market CLI
+and four Supervisor PTY files launching without compiled Guardian dependencies.
+The documented leaf-only update-lifecycle build itself failed on that missing
+dependency. Building `@traderalice/update-lifecycle...` in dependency order
+made all 61 failed cases pass on an isolated rerun; the guide now gives that
+command. No failing assertion was deleted. Timing of that initial run is not
+a valid before/after speed comparison, because its subprocesses exited early.
+Final full-suite verification with built prerequisites passes: 893 files,
+7,576 passed / 8 skipped / 0 failed cases in 268.67 seconds on macOS arm64,
+Node 22.22.1. The same eight cases were skipped in the baseline. No line-coverage
+percentage was measured, and this source run does not certify native artifacts
+or real broker venues.
+
+Keep permission, financial arithmetic, shipped migrations, replay, persistence
+and process-recovery checks. Large files alone are not deletion evidence. For
+later review, prioritize class-name/copy-only UI assertions and repeated setup
+for the same component; preserve distinct failure modes when consolidating.
+Source-based release-policy checks remain useful where the workflow file is
+itself the contract. CSS layout claims require rendered-browser evidence.
+Likewise, `noFlashTheme.spec.ts` executes the shipped bootstrap script and
+`semanticColors.spec.ts` computes contrast ratios; reading a source file alone
+is not grounds for deletion. The largest retained specs exercise installer,
+PTY, navigation or lifecycle behavior and need case-level review, not a size
+quota. This batch optimizes maintenance value, not a promised wall-time saving.
+
+The missing-boundary example is existing issue #1680: IBKR write tests replace
+`requestCurrentTime` with an immediately fulfilled promise, while the report
+describes delayed replies after consecutive real Gateway writes. Retain those
+unit tests for their bounded gate behavior; venue timing/recovery needs evidence
+at that boundary. Existing #1513 similarly concerns separately bundled Decimal
+copies. Neither issue is solved by this pruning batch.
+
 ### Current lifecycle repair batches
 
 Baseline: merged dev `0a10220d` (2026-10-01). Actual isolated diagnosis:
