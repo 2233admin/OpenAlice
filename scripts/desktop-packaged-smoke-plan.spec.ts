@@ -17,11 +17,11 @@ describe('buildDesktopPackagedSmokePlan', () => {
     })
     expect(plan.buildEnv).toMatchObject({
       VITE_OPENALICE_ONBOARDING_TEST: '1',
-      VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
+      VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'http',
     })
     expect(plan.launchEnv).toMatchObject({
       OPENALICE_ONBOARDING_TEST: '1',
-      OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
+      OPENALICE_CREDENTIAL_TEST_MODE: 'http',
       OPENALICE_AGENT_RUNTIME_INSTALLS: 'only:pi',
       OPENALICE_MCP_ENABLED: '0',
       OPENALICE_ELECTRON_SMOKE_ONBOARDING: '1',

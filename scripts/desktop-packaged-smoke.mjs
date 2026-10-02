@@ -163,7 +163,7 @@ async function main() {
   }
   for (const warning of plan.warnings) console.warn(warning)
 
-  if (process.platform !== 'darwin' && !workspaceAcceptance) {
+  if (process.platform !== 'darwin' && !workspaceAcceptance && !onboarding) {
     console.error('[desktop-smoke] packaged .app smoke currently runs on macOS only')
     return { code: 1, signal: null }
   }
@@ -312,6 +312,10 @@ async function main() {
     appStopped = true
     signalToRaise = exit.requestedSignal
     finalCode = exit.timedOut ? 1 : exit.code ?? (exit.signal ? 1 : 0)
+
+    if (onboarding && finalCode === 0 && (aiMock.stats.credentialTests < 1 || aiMock.stats.readinessTurns < 2)) {
+      throw new Error('onboarding mock did not observe credential test, configured readiness and first Chat reply')
+    }
 
     if (workspaceAcceptance) {
       if (!existsSync(receiptPath)) {
