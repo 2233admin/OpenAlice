@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 export const DESKTOP_PACKAGED_SMOKE_ARGS = new Set([
   '--skip-build',
   '--skip-pack',
@@ -136,5 +138,46 @@ export function buildDesktopPackagedSmokePlan(argv, env = process.env, opts = {}
       ...workspaceAcceptanceLaunchEnv,
     },
     unsetLaunchEnv,
+  }
+}
+
+// Only host plumbing crosses the temporary smoke boundary. In particular no
+// ambient provider credentials/endpoints, native config files, NODE_OPTIONS,
+// cloud credentials or arbitrary OPENALICE_* overrides reach a fresh user.
+// Omitting Pi session/OMP profile overrides keeps their default layouts under
+// the isolated agent root, consistently for native writes and adapter reads.
+const SMOKE_HOST_ENV = [
+  'PATH', 'Path', 'PATHEXT', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'windir',
+  'COMSPEC', 'ComSpec', 'TEMP', 'TMP', 'TMPDIR',
+  'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'SHELL',
+  'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS',
+  // Explicit invocation-only host workaround; the runner never enables this.
+  'ELECTRON_DISABLE_SANDBOX',
+]
+
+/** Complete launch environment for temporary smokes, before explicit plan flags. */
+export function desktopSmokeStateEnv(root, parent = {}) {
+  const host = Object.fromEntries(SMOKE_HOST_ENV.flatMap(key =>
+    typeof parent[key] === 'string' ? [[key, parent[key]]] : [],
+  ))
+  return {
+    ...host,
+    HOME: join(root, 'os-home'),
+    USERPROFILE: join(root, 'os-home'),
+    APPDATA: join(root, 'os-home', 'AppData', 'Roaming'),
+    LOCALAPPDATA: join(root, 'os-home', 'AppData', 'Local'),
+    XDG_CONFIG_HOME: join(root, 'config'),
+    XDG_CACHE_HOME: join(root, 'cache'),
+    XDG_DATA_HOME: join(root, 'data'),
+    OPENALICE_ELECTRON_SMOKE_USER_DATA: join(root, 'electron-profile'),
+    OPENALICE_SUPERVISOR_HOME: join(root, 'supervisor'),
+    OPENALICE_HOME: join(root, 'home'),
+    AQ_LAUNCHER_ROOT: join(root, 'workspaces'),
+    OPENALICE_GLOBAL_DIR: join(root, 'global'),
+    PI_CODING_AGENT_DIR: join(root, 'pi-agent'),
+    CODEX_HOME: join(root, 'codex'),
+    CLAUDE_CONFIG_DIR: join(root, 'claude'),
+    CURSOR_DATA_DIR: join(root, 'cursor'),
+    GROK_HOME: join(root, 'grok'),
   }
 }
