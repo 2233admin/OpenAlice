@@ -1,4 +1,4 @@
-import { runRendererOnboardingSmoke } from './onboarding-smoke.js'
+import { runRendererCredentialPiSmoke } from './credential-pi-smoke.js'
 /**
  * Electron main process — OpenAlice's desktop guardian.
  *
@@ -81,7 +81,7 @@ let tray: Tray | null = null
 let restartingUTA = false
 let restartingConnector = false
 let pendingUTAMode: GuardianTradingModePlan | null = null
-let rendererOnboardingSmokeStarted = false
+let rendererCredentialPiSmokeStarted = false
 let rendererDataHomeSmokeStarted = false
 let rendererTradingModeSmokeStarted = false
 let rendererWorkspaceAcceptanceSmokeStarted = false
@@ -1411,14 +1411,14 @@ app.whenReady().then(async () => {
               }
             })
         }
-        if (process.env['OPENALICE_ELECTRON_SMOKE_ONBOARDING'] === '1' && !rendererOnboardingSmokeStarted) {
-          rendererOnboardingSmokeStarted = true
-          void runRendererOnboardingSmoke(win)
+        if (process.env['OPENALICE_ELECTRON_SMOKE_CREDENTIAL_PI'] === '1' && !rendererCredentialPiSmokeStarted) {
+          rendererCredentialPiSmokeStarted = true
+          void runRendererCredentialPiSmoke(win)
             .then(() => {
               if (process.env['OPENALICE_ELECTRON_SMOKE_EXIT'] === '1') shutdown()
             })
             .catch((err) => {
-              console.error(`[guardian] electron smoke onboarding → failed: ${err instanceof Error ? err.message : String(err)}`)
+              console.error(`[guardian] electron smoke credential-pi → failed: ${err instanceof Error ? err.message : String(err)}`)
               if (process.env['OPENALICE_ELECTRON_SMOKE_EXIT'] === '1') {
                 process.exitCode = 1
                 shutdown()

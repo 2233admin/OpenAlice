@@ -105,7 +105,7 @@ export async function startWorkspaceAcceptanceAiMock() {
       if (body.stream !== true) {
         stats.credentialTests += 1
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ id: 'chatcmpl-onboarding-test', object: 'chat.completion',
+        res.end(JSON.stringify({ id: 'chatcmpl-credential-pi-test', object: 'chat.completion',
           model: body.model, choices: [{ index: 0, message: { role: 'assistant', content: 'OpenAlice credential is ready.' }, finish_reason: 'stop' }] }))
         return
       }

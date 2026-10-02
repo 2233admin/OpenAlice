@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { runInNewContext } from 'node:vm'
-import { runRendererOnboardingSmoke } from './onboarding-smoke.js'
+import { runRendererCredentialPiSmoke } from './credential-pi-smoke.js'
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -19,7 +19,7 @@ async function run(overrides: { status?: string; source?: string; reply?: string
     else if (url.endsWith('/trading/status')) body = { mode: 'lite' }
     else if (url.endsWith('/credentials')) {
       if (input) { saved = true; body = { slug: 'smoke' } }
-      else body = { credentials: saved ? [{ slug: 'smoke', label: 'Onboarding acceptance', lastModel: 'openalice-onboarding-test', wires: { 'openai-chat': 'http://127.0.0.1:1234/v1' } }] : [] }
+      else body = { credentials: saved ? [{ slug: 'smoke', label: 'Credential + Pi acceptance', lastModel: 'openalice-onboarding-test', wires: { 'openai-chat': 'http://127.0.0.1:1234/v1' } }] : [] }
     } else if (url.endsWith('/readiness/probe')) { probes++; body = {} }
     else if (url.endsWith('/readiness')) body = { agents: { pi: probes === 1
       ? { status: 'failed', ready: false, source: 'global-login' }
@@ -59,18 +59,18 @@ async function run(overrides: { status?: string; source?: string; reply?: string
     HTMLInputElement: dom.window.HTMLInputElement, HTMLSelectElement: dom.window.HTMLSelectElement,
     Event: dom.window.Event, setTimeout,
   }) } }
-  try { await runRendererOnboardingSmoke(win as never) } finally { dom.window.close() }
+  try { await runRendererCredentialPiSmoke(win as never) } finally { dom.window.close() }
   return { probes, saved, chatRuns }
 }
 
-describe('onboarding acceptance verdict', () => {
-  it('requires persisted credentials, configured readiness and a separate Chat reply', async () => {
+describe('credential + native Pi execution acceptance verdict', () => {
+  it('requires persisted credentials, configured readiness and a separate native headless reply', async () => {
     expect(await run()).toEqual({ probes: 2, saved: true, chatRuns: 1 })
   })
   it('rejects failed/global-login even when the process could exit zero', async () => {
     await expect(run({ status: 'failed', source: 'global-login' })).rejects.toThrow('readiness failed')
   })
   it('rejects a successful process without an assistant reply', async () => {
-    await expect(run({ reply: null })).rejects.toThrow('first Chat reply failed')
+    await expect(run({ reply: null })).rejects.toThrow('native headless reply failed')
   })
 })

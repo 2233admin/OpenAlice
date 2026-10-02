@@ -1,8 +1,8 @@
 import type { BrowserWindow } from 'electron'
 
-export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<void> {
+export async function runRendererCredentialPiSmoke(win: BrowserWindow): Promise<void> {
   const aiBaseUrl = process.env.OPENALICE_ONBOARDING_AI_BASE_URL
-  if (!aiBaseUrl || !/^http:\/\/127\.0\.0\.1:\d+\/v1$/.test(aiBaseUrl)) throw new Error('onboarding requires a local deterministic AI mock')
+  if (!aiBaseUrl || !/^http:\/\/127\.0\.0\.1:\d+\/v1$/.test(aiBaseUrl)) throw new Error('credential-pi acceptance requires a local deterministic AI mock')
   const result = await win.webContents.executeJavaScript(`(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     const json = async (res) => {
@@ -40,7 +40,7 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
       throw new Error('isolated packaged smoke should be locked by OPENALICE_HOME')
     }
 
-    // Fresh-user verification follows the real product shell. Workspace setup
+    // This acceptance starts inside a selected project, bypassing the launcher. Workspace setup
     // happens after the renderer opens; no retired wizard controls are involved.
     await waitFor('product navigation', () => document.querySelector('[data-testid="activity-bar"]'))
     await waitFor('asynchronous Chat preparation', async () => {
@@ -56,7 +56,7 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
 
     const tradingStatus = await json(await fetch('/api/trading/status'))
     if (tradingStatus.mode !== 'lite') {
-      throw new Error('expected fresh onboarding trading mode to be lite, got ' + tradingStatus.mode)
+      throw new Error('expected credential-pi acceptance trading mode to be lite, got ' + tradingStatus.mode)
     }
 
     const request = async (url, body, method = 'POST') => json(await fetch(url, {
@@ -66,7 +66,7 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
     const chat = workspaceList.workspaces.find(ws => ws.template === 'chat')
     const workspaceUrl = '/api/workspaces/' + encodeURIComponent(chat.id)
     const vault = await json(await fetch('/api/config/credentials'))
-    if (vault.credentials.length !== 0) throw new Error('fresh onboarding unexpectedly has credentials')
+    if (vault.credentials.length !== 0) throw new Error('credential-pi acceptance unexpectedly has credentials')
     await request('/api/agent-runtimes/readiness/probe', { agent: 'pi' })
     const missing = await waitFor('fresh Pi missing native login', async () => {
       const snapshot = await json(await fetch('/api/agent-runtimes/readiness'))
@@ -78,7 +78,7 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
     }
 
     // Drive the actual Add/Test/Save form. Read the vault back only to verify
-    // persistence and select the saved binding for the first native Chat turn.
+    // persistence and select the saved binding for the native headless turn.
     const credential = { baseUrl: ${JSON.stringify(aiBaseUrl)}, apiKey: 'oa_test_ok', model: 'openalice-onboarding-test' }
     history.pushState({}, '', '/settings/ai-provider')
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -101,7 +101,7 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
     await click('[data-testid="credential-add"]')
     await click('[data-credential-preset="custom"]')
     const modal = '[data-testid="credential-modal-scroll"] '
-    await fill(modal + 'input[maxlength="80"]', 'Onboarding acceptance')
+    await fill(modal + 'input[maxlength="80"]', 'Credential + Pi acceptance')
     await fill(modal + 'select', 'openai-chat')
     await fill(modal + 'input[placeholder="https://provider.example/v1"]', credential.baseUrl)
     await fill(modal + 'input[type="password"]', 'oa_test_invalid')
@@ -117,10 +117,11 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
     await click('[data-testid="credential-modal-primary"]')
     await waitFor('credential modal saved and closed', () => !find('[data-testid="credential-modal-scroll"]'))
     const persisted = await json(await fetch('/api/config/credentials'))
-    const saved = persisted.credentials.find(row => row.label === 'Onboarding acceptance')
+    const saved = persisted.credentials.find(row => row.label === 'Credential + Pi acceptance')
     if (!saved?.slug || saved.lastModel !== credential.model || saved.wires?.['openai-chat'] !== credential.baseUrl) {
-      throw new Error('onboarding credential was not saved')
+      throw new Error('credential-pi credential was not saved')
     }
+    // Bind the executor through the test API, not the runtime-selection UI.
     const preference = { defaultAgent: 'pi', agents: { pi: {
       accessMode: 'vault', credentialSlug: saved.slug, model: credential.model,
     } } }
@@ -132,13 +133,14 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
       return row && row.status !== 'unknown' && row.status !== 'checking' ? row : null
     }, 60000)
     if (readiness.status !== 'ready' || readiness.ready !== true || readiness.source !== 'launcher-vault') {
-      throw new Error('configured onboarding Pi readiness failed: ' + JSON.stringify(readiness))
+      throw new Error('configured native Pi readiness failed: ' + JSON.stringify(readiness))
     }
+    // Exercise native Pi execution, not the browser Chat composer.
     const reply = await request(workspaceUrl + '/headless', {
       agent: 'pi', prompt: 'Reply with a short greeting. Do not use tools.', wait: true, timeoutMs: 45000,
     })
     if (reply.exitCode !== 0 || reply.killed || reply.assistantText?.trim() !== 'OpenAlice packaged runtime is ready.') {
-      throw new Error('onboarding first Chat reply failed: ' + JSON.stringify({ exitCode: reply.exitCode, killed: reply.killed, assistantReply: Boolean(reply.assistantText) }))
+      throw new Error('credential-pi native headless reply failed: ' + JSON.stringify({ exitCode: reply.exitCode, killed: reply.killed, assistantReply: Boolean(reply.assistantText) }))
     }
 
     return {
@@ -159,8 +161,8 @@ export async function runRendererOnboardingSmoke(win: BrowserWindow): Promise<vo
     tradingMode?: string
     dataHome?: string
   }
-  if (result.ok !== true || result.assistantReply !== true) throw new Error('incomplete onboarding acceptance')
+  if (result.ok !== true || result.assistantReply !== true) throw new Error('incomplete credential-pi acceptance')
   console.log(
-    `[guardian] electron smoke onboarding → ok mode=${result.tradingMode ?? ''} pi=${result.piPath ?? 'managed'} runtime=${result.runtimeStatus ?? ''}/${result.runtimeSource ?? ''} data=${result.dataHome ?? ''}`,
+    `[guardian] electron smoke credential-pi → ok binding=api reply=headless mode=${result.tradingMode ?? ''} pi=${result.piPath ?? 'managed'} runtime=${result.runtimeStatus ?? ''}/${result.runtimeSource ?? ''} data=${result.dataHome ?? ''}`,
   )
 }
