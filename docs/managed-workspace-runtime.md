@@ -676,6 +676,17 @@ contract lives in `scripts/desktop-packaged-smoke.mjs` and
 `scripts/desktop-packaged-smoke-plan.mjs`; do not infer defaults from an old
 command transcript.
 
+Temporary packaged app launches inherit only host plumbing and explicit runner
+flags. OS-home/XDG, Pi, OpenAlice, Supervisor, global, and Electron state stays
+beneath the smoke root; ambient provider credentials, endpoints and native config
+overrides are excluded. Build/install subprocesses retain their normal environment.
+Known Codex, Claude, Cursor and Grok directory overrides also point under that root.
+`PI_CODING_AGENT_SESSION_DIR` and OMP profile selectors are cleared so Pi writes
+and adapter reads use the same isolated default layout. The sentinel integration
+checks the spawned environment, Pi trust writes and session-title lookup against
+disposable inherited directories. This does not certify every third-party CLI's
+optional external configuration or plugins.
+
 For a resource-layout failure, inspect an unsigned persistent package:
 
 ```bash

@@ -11,7 +11,7 @@ import {
   createTemporaryDesktopPackageArtifact,
   DEFAULT_DESKTOP_PACKAGE_ROOT,
 } from './desktop-package-artifact.mjs'
-import { buildDesktopPackagedSmokePlan } from './desktop-packaged-smoke-plan.mjs'
+import { buildDesktopPackagedSmokePlan, desktopSmokeStateEnv } from './desktop-packaged-smoke-plan.mjs'
 import { runPnpmSync } from './pnpm-command.mjs'
 import { packagedElectronExecutable } from './smoke-packaged-toolchain.mjs'
 import { spawnDesktopSmoke, stopDesktopSmoke } from './desktop-smoke-process.mjs'
@@ -247,7 +247,7 @@ async function main() {
       join(homedir(), '.local', 'bin'),
     ].filter(Boolean)
     const env = {
-      ...process.env,
+      ...(smokeRoot ? desktopSmokeStateEnv(smokeRoot, process.env) : process.env),
       ...plan.launchEnv,
       PATH: [process.env['PATH'], ...pathAdditions].filter(Boolean).join(delimiter),
       OPENALICE_EXTRA_AGENT_PATH: pathAdditions.join(delimiter),
@@ -258,12 +258,7 @@ async function main() {
       env.OPENALICE_UTA_PORT = String(await getAvailablePort())
     }
     if (!realData && smokeHome && smokeWorkspaces && smokeGlobal) {
-      env.OPENALICE_ELECTRON_SMOKE_USER_DATA = join(smokeRoot, 'electron-profile')
-      env.OPENALICE_SUPERVISOR_HOME = join(smokeRoot, 'supervisor')
-      env.OPENALICE_HOME = smokeHome
-      env.AQ_LAUNCHER_ROOT = smokeWorkspaces
-      env.OPENALICE_GLOBAL_DIR = smokeGlobal
-      if (onboarding) env.PI_CODING_AGENT_DIR = join(smokeRoot, 'pi-agent')
+      mkdirSync(env.HOME, { recursive: true })
     }
 
     if (workspaceAcceptance) {
