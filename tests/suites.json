@@ -114,6 +114,7 @@
       "open-alice#electron:smoke:demo",
       "open-alice#electron:smoke:packaged",
       "open-alice#electron:smoke:startup",
+      "open-alice#electron:smoke:credential-pi",
       "open-alice#electron:smoke:onboarding",
       "open-alice#electron:smoke:trading-mode",
       "open-alice#electron:smoke:workspace",

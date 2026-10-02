@@ -168,8 +168,28 @@ startup against the built desktop bundle. Pass `--app-path <packaged executable>
 to exercise the unsigned package. The cases isolate Supervisor, project state,
 and Electron profile, verify the client-only boundary without adopting an
 unrelated Runtime, then stop the private process group and remove test state.
-The fresh-user `electron:smoke:onboarding` gate retains real asynchronous Workspace
-and credential readiness checks; it no longer expects the retired wizard.
+`pnpm electron:smoke:credential-pi` is **credential + native Pi execution
+acceptance** inside an already selected project. It waits for Chat Workspace
+preparation, checks an empty vault and missing native login, then drives the real
+Settings → AI Provider UI through Add, a rejected key, a successful HTTP Test
+against a local deterministic provider, and Save. It reads back the credential,
+sets the Workspace's interactive/headless executor binding through
+`PUT /api/workspaces/:id/runtime-settings`, requires `ready/launcher-vault`, and
+calls `POST /api/workspaces/:id/headless` for a separate native Pi reply. Terminal
+readiness failure or exit zero without the expected reply fails acceptance.
+The mock also requires observed credential-test and native reply requests.
+
+This is not the retired onboarding wizard or complete cold-start acceptance.
+Explicit `OPENALICE_HOME` bypasses the Machine/AliceProject launcher; the startup
+smoke above owns that boundary. Executor selection uses a test API, not its UI,
+and the native reply does not exercise the browser Chat composer.
+
+`electron:smoke:onboarding` / `--onboarding` remain deprecated aliases that warn
+and run the same gate. Use `--credential-pi` for direct runner invocation.
+Shared `OPENALICE_ONBOARDING_*` / `VITE_OPENALICE_ONBOARDING_*` fixture variables
+and the deterministic model ID retain their existing names for dev compatibility;
+they do not expand this gate's scope. The unsigned Linux path does not certify
+macOS/Windows packaging, signing or notarization.
 
 ## Current Platform Payloads
 
