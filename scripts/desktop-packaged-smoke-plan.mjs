@@ -82,12 +82,12 @@ export function buildDesktopPackagedSmokePlan(argv, env = process.env, opts = {}
   const tempData = !realData
   const onboardingBuildEnv = onboarding ? {
     VITE_OPENALICE_ONBOARDING_TEST: '1',
-    VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'http',
+    VITE_OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
   } : {}
   const onboardingLaunchEnv = onboarding ? {
     ...onboardingBuildEnv,
     OPENALICE_ONBOARDING_TEST: '1',
-    OPENALICE_CREDENTIAL_TEST_MODE: 'http',
+    OPENALICE_CREDENTIAL_TEST_MODE: 'mock',
     OPENALICE_AGENT_RUNTIME_INSTALLS: 'only:pi',
     OPENALICE_MCP_ENABLED: '0',
     OPENALICE_ELECTRON_SMOKE_ONBOARDING: '1',

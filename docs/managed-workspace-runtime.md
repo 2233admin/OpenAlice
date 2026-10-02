@@ -168,13 +168,8 @@ startup against the built desktop bundle. Pass `--app-path <packaged executable>
 to exercise the unsigned package. The cases isolate Supervisor, project state,
 and Electron profile, verify the client-only boundary without adopting an
 unrelated Runtime, then stop the private process group and remove test state.
-The fresh-user `electron:smoke:onboarding` gate waits for asynchronous Chat setup,
-checks the empty vault and missing native login, then drives Settings → AI Provider
-through Add, a rejected key, a successful HTTP test against the local deterministic
-provider, and Save. It reads back the saved credential, binds it to Chat, requires
-`ready/launcher-vault`, and verifies a separate native Pi Chat reply. A terminal
-readiness failure or an exit-zero process without the expected reply fails the gate.
-The mock also requires observed credential-test and native reply requests.
+The fresh-user `electron:smoke:onboarding` gate retains real asynchronous Workspace
+and credential readiness checks; it no longer expects the retired wizard.
 
 Every temporary packaged smoke (including interactive and Workspace modes) constructs
 its child environment from a host-plumbing allowlist, isolated roots and explicit
@@ -189,8 +184,6 @@ root. The sentinel integration verifies the real spawn environment, Pi trust wri
 and session-title lookup against a disposable inherited parent. Native reply/session
 persistence is validated with managed Pi; this does not certify every third-party
 CLI's optional external configuration, plugins or arbitrary path overrides.
-Onboarding can run with an unsigned Linux package; this does not replace macOS ARM
-packaging, signing, or notarization acceptance.
 
 ## Current Platform Payloads
 
