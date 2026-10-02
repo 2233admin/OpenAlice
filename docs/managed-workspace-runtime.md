@@ -171,20 +171,6 @@ unrelated Runtime, then stop the private process group and remove test state.
 The fresh-user `electron:smoke:onboarding` gate retains real asynchronous Workspace
 and credential readiness checks; it no longer expects the retired wizard.
 
-Every temporary packaged smoke (including interactive and Workspace modes) constructs
-its child environment from a host-plumbing allowlist, isolated roots and explicit
-runner flags. Ambient provider keys, tokens, endpoints and native config overrides
-are not inherited; a native missing-login probe cannot use the caller's provider
-authentication. Build/install subprocesses retain their normal tool environment.
-Temporary app launches own OS-home/XDG, Pi, OpenAlice, Supervisor, global, and
-Electron roots beneath their smoke root. The shared environment owner overrides the known Codex, Claude, Cursor and Grok directory variables and
-clears OMP profile selectors. Independent `PI_CODING_AGENT_SESSION_DIR` is cleared
-so Pi and its adapter use the same default session layout under the isolated Pi
-root. The sentinel integration verifies the real spawn environment, Pi trust writer
-and session-title lookup against a disposable inherited parent. Native reply/session
-persistence is validated with managed Pi; this does not certify every third-party
-CLI's optional external configuration, plugins or arbitrary path overrides.
-
 ## Current Platform Payloads
 
 ### macOS packaged app
@@ -689,6 +675,17 @@ and Workspace acceptance profiles always require isolation. The current option
 contract lives in `scripts/desktop-packaged-smoke.mjs` and
 `scripts/desktop-packaged-smoke-plan.mjs`; do not infer defaults from an old
 command transcript.
+
+Temporary packaged app launches inherit only host plumbing and explicit runner
+flags. OS-home/XDG, Pi, OpenAlice, Supervisor, global, and Electron state stays
+beneath the smoke root; ambient provider credentials, endpoints and native config
+overrides are excluded. Build/install subprocesses retain their normal environment.
+Known Codex, Claude, Cursor and Grok directory overrides also point under that root.
+`PI_CODING_AGENT_SESSION_DIR` and OMP profile selectors are cleared so Pi writes
+and adapter reads use the same isolated default layout. The sentinel integration
+checks the spawned environment, Pi trust writes and session-title lookup against
+disposable inherited directories. This does not certify every third-party CLI's
+optional external configuration or plugins.
 
 For a resource-layout failure, inspect an unsigned persistent package:
 
