@@ -1,11 +1,16 @@
 import { http, HttpResponse } from 'msw'
-import type { NewsCollectorConfig, NewsCollectorFeed } from '../../api/types'
+import type { NewsCollectorConfig } from '../../api/types'
 import { createDemoNewsConfig } from '../fixtures/newsConfig'
+import { getNewsFeedPresets, newsCollectorSchema } from '../../../../src/domain/news/config'
 
 let demoNewsConfig = createDemoNewsConfig()
 
 export function resetDemoNewsConfig(): void {
   demoNewsConfig = createDemoNewsConfig()
+}
+
+export function getDemoNewsConfig(): NewsCollectorConfig {
+  return demoNewsConfig
 }
 
 export const demoCredentialPresets = [
@@ -262,10 +267,11 @@ export const configKeysHandlers = [
   }),
   http.put('/api/config/news', async ({ request }) => {
     const body = await request.json().catch(() => null)
-    if (!isNewsCollectorConfig(body)) {
+    const validated = newsCollectorSchema.safeParse(body)
+    if (!validated.success) {
       return HttpResponse.json({ error: 'invalid_news_config' }, { status: 400 })
     }
-    demoNewsConfig = structuredClone(body)
+    demoNewsConfig = validated.data
     return HttpResponse.json(demoNewsConfig)
   }),
 
@@ -290,6 +296,7 @@ export const configKeysHandlers = [
   ),
 
   http.get('/api/config/presets', () => HttpResponse.json({ presets: demoCredentialPresets })),
+  http.get('/api/config/news-presets', () => HttpResponse.json({ feeds: getNewsFeedPresets() })),
 
   // Credential vault (AI Provider page) — a small representative set so the
   // page (and the per-agent default pickers) render with content in the demo.
@@ -338,42 +345,3 @@ export const configKeysHandlers = [
     return HttpResponse.json({ agent: typeof body.agent === 'string' ? body.agent : null })
   }),
 ]
-
-function isNewsCollectorConfig(value: unknown): value is NewsCollectorConfig {
-  if (!isRecord(value)) return false
-  return typeof value.enabled === 'boolean'
-    && isPositiveInteger(value.intervalMinutes)
-    && isPositiveInteger(value.maxInMemory)
-    && isPositiveInteger(value.retentionDays)
-    && Array.isArray(value.feeds)
-    && value.feeds.every(isNewsCollectorFeed)
-}
-
-function isNewsCollectorFeed(value: unknown): value is NewsCollectorFeed {
-  if (!isRecord(value)) return false
-  return typeof value.name === 'string'
-    && typeof value.url === 'string'
-    && isUrl(value.url)
-    && typeof value.source === 'string'
-    && (value.categories === undefined
-      || (Array.isArray(value.categories) && value.categories.every((item) => typeof item === 'string')))
-    && (value.description === undefined || typeof value.description === 'string')
-    && (value.enabled === undefined || typeof value.enabled === 'boolean')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0
-}
-
-function isUrl(value: string): boolean {
-  try {
-    new URL(value)
-    return true
-  } catch {
-    return false
-  }
-}

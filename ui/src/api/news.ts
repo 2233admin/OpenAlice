@@ -1,5 +1,5 @@
 import { fetchJson } from './client'
-import type { NewsListResponse } from './types'
+import type { NewsCollectorCollectResult, NewsCollectorStatusResponse, NewsListResponse } from './types'
 
 export interface NewsQuery {
   lookback?: string
@@ -23,5 +23,13 @@ export const newsApi = {
     if (params?.symbol) qs.set('symbol', params.symbol)
     const query = qs.toString()
     return fetchJson(`/api/news${query ? `?${query}` : ''}`, signal ? { signal } : undefined)
+  },
+
+  async getCollectorStatus(signal?: AbortSignal): Promise<NewsCollectorStatusResponse> {
+    return fetchJson<NewsCollectorStatusResponse>('/api/news/collector', signal ? { signal } : undefined)
+  },
+
+  async collect(signal?: AbortSignal): Promise<NewsCollectorCollectResult> {
+    return fetchJson<NewsCollectorCollectResult>('/api/news/collect', { method: 'POST', signal })
   },
 }

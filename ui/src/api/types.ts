@@ -236,9 +236,11 @@ export interface McpConfig {
 // ==================== News Collector ====================
 
 export interface NewsCollectorFeed {
+  id?: string
   name: string
   url: string
   source: string
+  rsshubRoute?: string
   categories?: string[]
   description?: string
   enabled?: boolean
@@ -249,7 +251,41 @@ export interface NewsCollectorConfig {
   intervalMinutes: number
   maxInMemory: number
   retentionDays: number
+  rsshubBaseUrl: string
   feeds: NewsCollectorFeed[]
+}
+
+export interface NewsCollectorPresetsResponse {
+  feeds: NewsCollectorFeed[]
+}
+
+export type NewsCollectorFeedState =
+  | 'disabled'
+  | 'never_attempted'
+  | 'checking'
+  | 'healthy'
+  | 'error'
+
+export interface NewsCollectorFeedStatus {
+  id?: string
+  source: string
+  url: string
+  name: string
+  state: NewsCollectorFeedState
+  lastAttemptAt: number | null
+  lastSuccessAt: number | null
+  lastItemCount: number | null
+  lastNewItemCount: number | null
+  lastError: string | null
+}
+
+export interface NewsCollectorStatusResponse {
+  feeds: NewsCollectorFeedStatus[]
+}
+
+export interface NewsCollectorCollectResult {
+  total: number
+  new: number
 }
 
 // ==================== News Articles ====================

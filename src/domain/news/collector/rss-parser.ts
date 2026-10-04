@@ -20,16 +20,22 @@ export interface ParsedFeedItem {
  * Fetch a feed URL and return parsed items.
  * Retries once after a 2s delay on failure.
  */
-export async function fetchAndParseFeed(url: string, retries = 1): Promise<ParsedFeedItem[]> {
+export async function fetchAndParseFeed(url: string, retries = 1, rejectRedirects = false): Promise<ParsedFeedItem[]> {
   let lastError: unknown
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, {
         signal: AbortSignal.timeout(15_000),
+        ...(rejectRedirects ? { redirect: 'error' as const } : {}),
         headers: { 'User-Agent': 'OpenAlice/1.0 NewsCollector' },
       })
       if (!res.ok) throw new Error(`RSS fetch failed: ${res.status} ${res.statusText}`)
       const xml = await res.text()
+      const document = xml.trim().replace(/^<\?xml[\s\S]*?\?>\s*/i, '').replace(/^(?:<!--[\s\S]*?-->\s*)*/, '')
+      if (!/^<(?:rss|(?:[\w.-]+:)?feed|rdf:RDF)(?:\s|>)/i.test(document) ||
+          !/<\/(?:rss|(?:[\w.-]+:)?feed|rdf:RDF)>\s*$/i.test(document)) {
+        throw new Error('RSS response failed: expected an RSS or Atom document')
+      }
       return parseRSSXml(xml)
     } catch (err) {
       lastError = err

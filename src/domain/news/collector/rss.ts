@@ -9,11 +9,27 @@ import { fetchAndParseFeed } from './rss-parser.js'
 import { computeDedupKey, type NewsCollectorStore } from '../store.js'
 import type { RSSFeedConfig } from '../types.js'
 import type { NewsRecord } from '../types.js'
+import { DEFAULT_RSSHUB_BASE_URL, resolveNewsFeedUrl } from '../config.js'
+
+interface FeedHealth {
+  state: 'never_attempted' | 'checking' | 'healthy' | 'error'
+  lastAttemptAt: number | null
+  lastSuccessAt: number | null
+  lastItemCount: number | null
+  lastNewItemCount: number | null
+  lastError: string | null
+}
+
+function initialHealth(): FeedHealth {
+  return { state: 'never_attempted', lastAttemptAt: null, lastSuccessAt: null, lastItemCount: null, lastNewItemCount: null, lastError: null }
+}
 
 export interface CollectorOpts {
   store: NewsCollectorStore
   feeds: RSSFeedConfig[]
   intervalMs: number
+  rsshubBaseUrl?: string
+  enabled?: boolean
   /** Optional product activity sink installed by the composition root. */
   onIngested?: (record: NewsRecord) => void | Promise<void>
 }
@@ -24,6 +40,10 @@ export class NewsCollector {
   private feeds: RSSFeedConfig[]
   private intervalMs: number
   private onIngested?: (record: NewsRecord) => void | Promise<void>
+  private rsshubBaseUrl: string
+  private enabled: boolean
+  private configurationChain: Promise<void> = Promise.resolve()
+  private health = new Map<RSSFeedConfig, FeedHealth>()
   /**
    * In-flight guard: if a fetchAll is already running when the next interval
    * tick fires, share the existing promise instead of starting a second pass.
@@ -36,10 +56,47 @@ export class NewsCollector {
     this.feeds = opts.feeds
     this.intervalMs = opts.intervalMs
     this.onIngested = opts.onIngested
+    this.rsshubBaseUrl = opts.rsshubBaseUrl ?? DEFAULT_RSSHUB_BASE_URL
+    this.enabled = opts.enabled ?? true
+  }
+
+  /** Serialize edits with collection so old requests finish before new config is installed. */
+  configure(opts: Pick<CollectorOpts, 'feeds' | 'intervalMs' | 'rsshubBaseUrl'> & { enabled: boolean }): Promise<void> {
+    const next = this.configurationChain.catch(() => {}).then(async () => {
+      this.stop()
+      await this.fetchInFlight
+      const previous = this.getStatus()
+      this.feeds = opts.feeds
+      this.intervalMs = opts.intervalMs
+      this.rsshubBaseUrl = opts.rsshubBaseUrl ?? DEFAULT_RSSHUB_BASE_URL
+      this.enabled = opts.enabled
+      this.health.clear()
+      for (const feed of this.feeds) {
+        const url = resolveNewsFeedUrl(feed, this.rsshubBaseUrl)
+        const prior = feed.id ? previous.find((row) => row.id === feed.id && row.url === url) : undefined
+        this.health.set(feed, prior ? { state: prior.state === 'disabled' ? 'never_attempted' : prior.state, lastAttemptAt: prior.lastAttemptAt, lastSuccessAt: prior.lastSuccessAt, lastItemCount: prior.lastItemCount, lastNewItemCount: prior.lastNewItemCount, lastError: prior.lastError } : initialHealth())
+      }
+      if (this.enabled) this.start()
+    })
+    this.configurationChain = next
+    return next
+  }
+
+  /** Process-local diagnostics; collection history is not persisted. */
+  getStatus() {
+    return this.feeds.map((feed) => ({
+      ...this.health.get(feed) ?? initialHealth(),
+      id: feed.id,
+      name: feed.name,
+      source: feed.source,
+      url: resolveNewsFeedUrl(feed, this.rsshubBaseUrl),
+      state: !this.enabled || feed.enabled === false ? 'disabled' as const : (this.health.get(feed)?.state ?? 'never_attempted'),
+    }))
   }
 
   /** Start periodic collection. Fetches immediately, then at interval. */
   start(): void {
+    if (!this.enabled || this.timer) return
     this.fetchAll().catch((err) =>
       console.warn(`news-collector: initial fetch failed: ${err instanceof Error ? err.message : err}`),
     )
@@ -65,6 +122,8 @@ export class NewsCollector {
    * Concurrent calls share the in-flight promise (no overlapping fetch passes).
    */
   async fetchAll(): Promise<{ total: number; new: number }> {
+    await this.configurationChain
+    if (!this.enabled) return { total: 0, new: 0 }
     if (this.fetchInFlight) return this.fetchInFlight
     this.fetchInFlight = this._fetchAllImpl()
     try {
@@ -81,11 +140,24 @@ export class NewsCollector {
     const activeFeeds = this.feeds.filter((f) => f.enabled !== false)
 
     for (const feed of activeFeeds) {
+      const health = this.health.get(feed) ?? initialHealth()
+      this.health.set(feed, health)
+      health.state = 'checking'
+      health.lastAttemptAt = Date.now()
       try {
         const { fetched, ingested } = await this.fetchFeed(feed)
         totalItems += fetched
         totalNew += ingested
+        health.state = 'healthy'
+        health.lastSuccessAt = Date.now()
+        health.lastItemCount = fetched
+        health.lastNewItemCount = ingested
+        health.lastError = null
       } catch (err) {
+        health.state = 'error'
+        // Do not expose request URLs, query parameters or upstream response bodies.
+        health.lastError = err instanceof Error && /^RSS (fetch|response) failed:/.test(err.message)
+          ? err.message : 'Feed request, parsing or ingestion failed'
         console.warn(
           `news-collector: failed to fetch ${feed.name} (${feed.url}): ${err instanceof Error ? err.message : err}`,
         )
@@ -103,7 +175,7 @@ export class NewsCollector {
 
   /** Fetch a single feed and ingest its items. */
   private async fetchFeed(feed: RSSFeedConfig): Promise<{ fetched: number; ingested: number }> {
-    const items = await fetchAndParseFeed(feed.url)
+    const items = await fetchAndParseFeed(resolveNewsFeedUrl(feed, this.rsshubBaseUrl), 1, Boolean(feed.rsshubRoute))
     let ingested = 0
 
     for (const item of items) {

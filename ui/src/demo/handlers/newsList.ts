@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw'
+import { resolveNewsFeedUrl } from '../../../../src/domain/news/config'
 
 import type { NewsListResponse } from '../../api/types'
+import { getDemoNewsConfig } from './configKeys'
 import { demoNewsArticles } from '../fixtures/news'
 
 const DEFAULT_LOOKBACK = '24h'
@@ -89,6 +91,29 @@ export const newsListHandlers = [
       lookback: startText ? null : lookback,
     }
     return HttpResponse.json(body)
+  }),
+  http.get('/api/news/collector', () => {
+    const config = getDemoNewsConfig()
+    return HttpResponse.json({
+      feeds: config.feeds.map((feed) => ({
+        id: feed.id,
+        source: feed.source,
+        url: feed.rsshubRoute ? resolveNewsFeedUrl(feed, config.rsshubBaseUrl) : feed.url,
+        name: feed.name,
+        state: !config.enabled || feed.enabled === false ? 'disabled' : 'never_attempted',
+        lastAttemptAt: null,
+        lastSuccessAt: null,
+        lastItemCount: null,
+        lastNewItemCount: null,
+        lastError: null,
+      })),
+    })
+  }),
+  http.post('/api/news/collect', () => {
+    if (!getDemoNewsConfig().enabled) {
+      return HttpResponse.json({ error: 'News collection is disabled' }, { status: 409 })
+    }
+    return HttpResponse.json({ error: 'Demo mode does not fetch external news' }, { status: 501 })
   }),
 ]
 

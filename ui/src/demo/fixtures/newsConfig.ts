@@ -6,6 +6,7 @@ export function createDemoNewsConfig(): NewsCollectorConfig {
     intervalMinutes: 10,
     maxInMemory: 2000,
     retentionDays: 7,
+    rsshubBaseUrl: 'http://127.0.0.1:1200',
     feeds: [
       {
         name: 'Federal Reserve Press',

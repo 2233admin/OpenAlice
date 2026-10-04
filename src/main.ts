@@ -418,21 +418,24 @@ async function main() {
   // Optional products actively install their own journal producer after the
   // shared Workspace service is ready. NanoAlice can omit News entirely; the
   // journal core never imports or starts the collector.
-  if (config.news.enabled && config.news.feeds.length > 0) {
-    const newsActivity = workspaceServiceRef.current?.activityJournal.registerFamily({
-      family: 'news',
-      types: ['news.ingested'] as const,
-    })
-    newsCollector = new NewsCollector({
-      store: newsStore,
-      feeds: config.news.feeds,
-      intervalMs: config.news.intervalMinutes * 60 * 1000,
-      ...(newsActivity ? {
-        onIngested: async (record) => {
-          await newsActivity.record('news.ingested', newsActivityPayload(record))
-        },
-      } : {}),
-    })
+  const newsActivity = workspaceServiceRef.current?.activityJournal.registerFamily({
+    family: 'news',
+    types: ['news.ingested'] as const,
+  })
+  newsCollector = new NewsCollector({
+    store: newsStore,
+    feeds: config.news.feeds,
+    rsshubBaseUrl: config.news.rsshubBaseUrl,
+    enabled: config.news.enabled,
+    intervalMs: config.news.intervalMinutes * 60 * 1000,
+    ...(newsActivity ? {
+      onIngested: async (record) => {
+        await newsActivity.record('news.ingested', newsActivityPayload(record))
+      },
+    } : {}),
+  })
+  ctx.newsCollector = newsCollector
+  if (config.news.enabled) {
     newsCollector.start()
     const activeCount = config.news.feeds.filter((f) => f.enabled !== false).length
     console.log(`news-collector: started (${activeCount}/${config.news.feeds.length} feeds active, every ${config.news.intervalMinutes}m)`)

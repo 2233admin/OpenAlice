@@ -11,6 +11,13 @@ const MAX_LIMIT = 200
 export function createNewsRoutes(ctx: EngineContext) {
   const app = new Hono()
 
+  app.get('/collector', (c) => c.json({ feeds: ctx.newsCollector?.getStatus() ?? [] }))
+
+  app.post('/collect', async (c) => {
+    if (!ctx.newsCollector || !ctx.config.news.enabled) return c.json({ error: 'News collection is disabled' }, 409)
+    return c.json(await ctx.newsCollector.fetchAll())
+  })
+
   app.get('/', async (c) => {
     if (!ctx.newsProvider) {
       return c.json({ error: 'News provider not available' }, 503)
