@@ -276,4 +276,275 @@ describe('NewsCollector RSS configuration', () => {
     const duplicate = collector.getStatus().find((status) => status.source === 'status-source')
     expect(duplicate).toMatchObject({ lastItemCount: 1, lastNewItemCount: 0 })
   })
+  it('does not carry health over when a source changes with the same feed ID and URL', async () => {
+    const originalFeed: RSSFeedConfig = {
+      id: 'shared-feed',
+      name: 'Original source',
+      source: 'original-source',
+      url: origin + '/shared/feed',
+    }
+    let failing = false
+    reply = (pathname, response) => {
+      if (pathname !== '/shared/feed') {
+        response.writeHead(404).end()
+      } else if (failing) {
+        response.writeHead(503).end('unavailable')
+      } else {
+        sendFeed(response, rssItem('shared-item', 'Original source article'))
+      }
+    }
+
+    const collector = createCollector([originalFeed], { enabled: true })
+    await collector.fetchAll()
+    const originalStatus = collector.getStatus().find((status) => status.source === 'original-source')
+    expect(originalStatus).toMatchObject({
+      state: 'healthy',
+      lastAttemptAt: expect.any(Number),
+      lastSuccessAt: expect.any(Number),
+      lastItemCount: 1,
+      lastNewItemCount: 1,
+      lastError: null,
+    })
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Original source article', source: 'original-source' },
+    ])
+
+    failing = true
+    const changedFeed: RSSFeedConfig = { ...originalFeed, source: 'new-source' }
+    await collector.configure(config([changedFeed], true))
+    expect(await collector.fetchAll()).toEqual({ total: 0, new: 0 })
+
+    expect(collector.getStatus()).toEqual([
+      expect.objectContaining({
+        id: 'shared-feed',
+        source: 'new-source',
+        url: origin + '/shared/feed',
+        state: 'error',
+        lastAttemptAt: expect.any(Number),
+        lastSuccessAt: null,
+        lastItemCount: null,
+        lastNewItemCount: null,
+        lastError: expect.stringMatching(/^RSS fetch failed: 503\b/),
+      }),
+    ])
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Original source article', source: 'original-source' },
+    ])
+  })
+
+  it('retains health after an interval-only edit recreates a legacy feed without an ID', async () => {
+    const legacyFeed: RSSFeedConfig = {
+      name: 'Legacy feed',
+      source: 'legacy-source',
+      url: origin + '/legacy/feed',
+    }
+    let failing = false
+    reply = (pathname, response) => {
+      if (pathname !== '/legacy/feed') {
+        response.writeHead(404).end()
+      } else if (failing) {
+        response.writeHead(503).end('unavailable')
+      } else {
+        sendFeed(response, rssItem('legacy-item', 'Legacy article'))
+      }
+    }
+
+    const collector = createCollector([legacyFeed], { enabled: true })
+    await collector.fetchAll()
+    const successful = collector.getStatus().find((status) => status.source === 'legacy-source')
+    expect(successful).toMatchObject({
+      id: undefined,
+      state: 'healthy',
+      lastAttemptAt: expect.any(Number),
+      lastSuccessAt: expect.any(Number),
+      lastItemCount: 1,
+      lastNewItemCount: 1,
+      lastError: null,
+    })
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Legacy article', source: 'legacy-source' },
+    ])
+
+    failing = true
+    const recreatedFeed: RSSFeedConfig = { ...legacyFeed }
+    await collector.configure({
+      feeds: [recreatedFeed],
+      intervalMs: COLLECTION_INTERVAL_MS + 1,
+      enabled: true,
+    })
+    expect(await collector.fetchAll()).toEqual({ total: 0, new: 0 })
+
+    expect(collector.getStatus()).toEqual([
+      expect.objectContaining({
+        id: undefined,
+        source: 'legacy-source',
+        url: origin + '/legacy/feed',
+        state: 'error',
+        lastAttemptAt: expect.any(Number),
+        lastSuccessAt: successful?.lastSuccessAt,
+        lastItemCount: 1,
+        lastNewItemCount: 1,
+        lastError: expect.stringMatching(/^RSS fetch failed: 503\b/),
+      }),
+    ])
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Legacy article', source: 'legacy-source' },
+    ])
+  })
+
+  it('resets ambiguous no-ID duplicate health histories after reconfiguration', async () => {
+    const firstFeed: RSSFeedConfig = {
+      name: 'First legacy source',
+      source: 'ambiguous-source',
+      url: origin + '/ambiguous/feed',
+    }
+    const secondFeed: RSSFeedConfig = {
+      name: 'Second legacy source',
+      source: 'ambiguous-source',
+      url: origin + '/ambiguous/feed',
+    }
+    reply = (pathname, response) => {
+      if (pathname === '/ambiguous/feed') sendFeed(response, rssItem('ambiguous-item', 'Ambiguous article'))
+      else response.writeHead(404).end()
+    }
+
+    const collector = createCollector([firstFeed, secondFeed], { enabled: true })
+    expect(await collector.fetchAll()).toEqual({ total: 2, new: 1 })
+    expect(collector.getStatus().map((status) => ({
+      name: status.name,
+      state: status.state,
+      lastSuccessAt: status.lastSuccessAt,
+      lastItemCount: status.lastItemCount,
+      lastNewItemCount: status.lastNewItemCount,
+      lastError: status.lastError,
+    }))).toEqual([
+      {
+        name: 'First legacy source',
+        state: 'healthy',
+        lastSuccessAt: expect.any(Number),
+        lastItemCount: 1,
+        lastNewItemCount: 1,
+        lastError: null,
+      },
+      {
+        name: 'Second legacy source',
+        state: 'healthy',
+        lastSuccessAt: expect.any(Number),
+        lastItemCount: 1,
+        lastNewItemCount: 0,
+        lastError: null,
+      },
+    ])
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Ambiguous article', source: 'ambiguous-source' },
+    ])
+
+    reply = (pathname, response) => {
+      if (pathname === '/ambiguous/feed') response.writeHead(503).end('unavailable')
+      else response.writeHead(404).end()
+    }
+    await collector.configure(config([{ ...firstFeed }, { ...secondFeed }], true))
+    expect(await collector.fetchAll()).toEqual({ total: 0, new: 0 })
+
+    expect(collector.getStatus()).toEqual([
+      expect.objectContaining({
+        id: undefined,
+        name: 'First legacy source',
+        source: 'ambiguous-source',
+        url: origin + '/ambiguous/feed',
+        state: 'error',
+        lastAttemptAt: expect.any(Number),
+        lastSuccessAt: null,
+        lastItemCount: null,
+        lastNewItemCount: null,
+        lastError: expect.stringMatching(/^RSS fetch failed: 503\b/),
+      }),
+      expect.objectContaining({
+        id: undefined,
+        name: 'Second legacy source',
+        source: 'ambiguous-source',
+        url: origin + '/ambiguous/feed',
+        state: 'error',
+        lastAttemptAt: expect.any(Number),
+        lastSuccessAt: null,
+        lastItemCount: null,
+        lastNewItemCount: null,
+        lastError: expect.stringMatching(/^RSS fetch failed: 503\b/),
+      }),
+    ])
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Ambiguous article', source: 'ambiguous-source' },
+    ])
+  })
+
+  it('preserves last success through master disable and re-enable before an HTTP failure', async () => {
+    const feed: RSSFeedConfig = {
+      id: 'master-toggle',
+      name: 'Master toggle feed',
+      source: 'master-toggle-source',
+      url: origin + '/master-toggle/feed',
+    }
+    let failing = false
+    reply = (pathname, response) => {
+      if (pathname !== '/master-toggle/feed') response.writeHead(404).end()
+      else if (failing) response.writeHead(503).end('unavailable')
+      else sendFeed(response, rssItem('master-toggle-item', 'Master toggle article'))
+    }
+
+    const collector = createCollector([feed], { enabled: true })
+    await collector.fetchAll()
+    const successful = collector.getStatus()[0]
+    expect(successful).toMatchObject({
+      id: 'master-toggle',
+      source: 'master-toggle-source',
+      state: 'healthy',
+      lastAttemptAt: expect.any(Number),
+      lastSuccessAt: expect.any(Number),
+      lastItemCount: 1,
+      lastNewItemCount: 1,
+      lastError: null,
+    })
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Master toggle article', source: 'master-toggle-source' },
+    ])
+
+    await collector.configure(config([{ ...feed }], false))
+    expect(await collector.fetchAll()).toEqual({ total: 0, new: 0 })
+    expect(requests).toEqual(['/master-toggle/feed'])
+    expect(collector.getStatus()).toEqual([
+      expect.objectContaining({
+        id: 'master-toggle',
+        source: 'master-toggle-source',
+        url: origin + '/master-toggle/feed',
+        state: 'disabled',
+        lastAttemptAt: successful?.lastAttemptAt,
+        lastSuccessAt: successful?.lastSuccessAt,
+        lastItemCount: 1,
+        lastNewItemCount: 1,
+        lastError: null,
+      }),
+    ])
+
+    failing = true
+    await collector.configure(config([{ ...feed }], true))
+    expect(await collector.fetchAll()).toEqual({ total: 0, new: 0 })
+
+    expect(collector.getStatus()).toEqual([
+      expect.objectContaining({
+        id: 'master-toggle',
+        source: 'master-toggle-source',
+        url: origin + '/master-toggle/feed',
+        state: 'error',
+        lastAttemptAt: expect.any(Number),
+        lastSuccessAt: successful?.lastSuccessAt,
+        lastItemCount: 1,
+        lastNewItemCount: 1,
+        lastError: expect.stringMatching(/^RSS fetch failed: 503\b/),
+      }),
+    ])
+    expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
+      { title: 'Master toggle article', source: 'master-toggle-source' },
+    ])
+  })
+
 })

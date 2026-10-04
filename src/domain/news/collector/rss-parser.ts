@@ -31,9 +31,7 @@ export async function fetchAndParseFeed(url: string, retries = 1, rejectRedirect
       })
       if (!res.ok) throw new Error(`RSS fetch failed: ${res.status} ${res.statusText}`)
       const xml = await res.text()
-      const document = xml.trim().replace(/^<\?xml[\s\S]*?\?>\s*/i, '').replace(/^(?:<!--[\s\S]*?-->\s*)*/, '')
-      if (!/^<(?:rss|(?:[\w.-]+:)?feed|rdf:RDF)(?:\s|>)/i.test(document) ||
-          !/<\/(?:rss|(?:[\w.-]+:)?feed|rdf:RDF)>\s*$/i.test(document)) {
+      if (!hasFeedEnvelope(xml)) {
         throw new Error('RSS response failed: expected an RSS or Atom document')
       }
       return parseRSSXml(xml)
@@ -43,6 +41,50 @@ export async function fetchAndParseFeed(url: string, retries = 1, rejectRedirect
     }
   }
   throw lastError
+}
+
+/** Recognize the supported feed envelope, not full XML/RFC validity. */
+function hasFeedEnvelope(xml: string): boolean {
+  const token = /<!--[^]*?-->|<!\[CDATA\[[^]*?\]\]>|<\?[^]*?\?>|<\/?[\w.:-]+(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*\/?>|[^<]+/y
+  const stack: string[] = []
+  let root: string | undefined
+  let closed = false
+  let channel = false
+  let offset = 0
+  while (offset < xml.length) {
+    token.lastIndex = offset
+    const match = token.exec(xml)
+    if (!match) return false
+    const part = match[0]
+    offset = token.lastIndex
+    if (part.startsWith('<!--') || part.startsWith('<?')) continue
+    if (part.startsWith('<![CDATA[')) {
+      if (!stack.length) return false
+      continue
+    }
+    if (!part.startsWith('<')) {
+      if (!stack.length && part.trim()) return false
+      continue
+    }
+    const name = /^<\/?([\w.:-]+)/.exec(part)![1]
+    if (part.startsWith('</')) {
+      if (stack.pop() !== name) return false
+      if (!stack.length) closed = true
+      continue
+    }
+    if (closed) return false
+    if (!root) {
+      root = name
+      if (!/^(?:rss|(?:[\w.-]+:)?feed|rdf:RDF)$/.test(root)) return false
+    }
+    if (stack.length === 1 && name === 'channel') channel = true
+    if (/\/\s*>$/.test(part)) {
+      if (!stack.length) closed = true
+    } else {
+      stack.push(name)
+    }
+  }
+  return closed && !stack.length && (root === 'rss' || root === 'rdf:RDF' ? channel : true)
 }
 
 /**

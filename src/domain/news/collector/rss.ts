@@ -24,6 +24,10 @@ function initialHealth(): FeedHealth {
   return { state: 'never_attempted', lastAttemptAt: null, lastSuccessAt: null, lastItemCount: null, lastNewItemCount: null, lastError: null }
 }
 
+function healthIdentity(feed: RSSFeedConfig, baseUrl: string): string {
+  return JSON.stringify([feed.id ?? null, feed.source, resolveNewsFeedUrl(feed, baseUrl)])
+}
+
 export interface CollectorOpts {
   store: NewsCollectorStore
   feeds: RSSFeedConfig[]
@@ -65,16 +69,24 @@ export class NewsCollector {
     const next = this.configurationChain.catch(() => {}).then(async () => {
       this.stop()
       await this.fetchInFlight
-      const previous = this.getStatus()
+      const previous = new Map<string, FeedHealth | null>()
+      for (const feed of this.feeds) {
+        const key = healthIdentity(feed, this.rsshubBaseUrl)
+        previous.set(key, previous.has(key) ? null : this.health.get(feed) ?? initialHealth())
+      }
       this.feeds = opts.feeds
       this.intervalMs = opts.intervalMs
       this.rsshubBaseUrl = opts.rsshubBaseUrl ?? DEFAULT_RSSHUB_BASE_URL
       this.enabled = opts.enabled
       this.health.clear()
-      for (const feed of this.feeds) {
-        const url = resolveNewsFeedUrl(feed, this.rsshubBaseUrl)
-        const prior = feed.id ? previous.find((row) => row.id === feed.id && row.url === url) : undefined
-        this.health.set(feed, prior ? { state: prior.state === 'disabled' ? 'never_attempted' : prior.state, lastAttemptAt: prior.lastAttemptAt, lastSuccessAt: prior.lastSuccessAt, lastItemCount: prior.lastItemCount, lastNewItemCount: prior.lastNewItemCount, lastError: prior.lastError } : initialHealth())
+      const identities = this.feeds.map((feed) => healthIdentity(feed, this.rsshubBaseUrl))
+      const counts = new Map<string, number>()
+      for (const key of identities) counts.set(key, (counts.get(key) ?? 0) + 1)
+      for (let i = 0; i < this.feeds.length; i++) {
+        const key = identities[i]
+        // Ambiguous legacy duplicates cannot safely inherit another row's history.
+        const prior = counts.get(key) === 1 ? previous.get(key) : null
+        this.health.set(this.feeds[i], prior ?? initialHealth())
       }
       if (this.enabled) this.start()
     })
@@ -159,7 +171,7 @@ export class NewsCollector {
         health.lastError = err instanceof Error && /^RSS (fetch|response) failed:/.test(err.message)
           ? err.message : 'Feed request, parsing or ingestion failed'
         console.warn(
-          `news-collector: failed to fetch ${feed.name} (${feed.url}): ${err instanceof Error ? err.message : err}`,
+          `news-collector: failed to fetch ${feed.name} (${resolveNewsFeedUrl(feed, this.rsshubBaseUrl)}): ${err instanceof Error ? err.message : err}`,
         )
       }
     }
