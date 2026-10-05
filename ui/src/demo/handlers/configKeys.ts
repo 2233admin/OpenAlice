@@ -1,16 +1,56 @@
 import { http, HttpResponse } from 'msw'
-import type { NewsCollectorConfig } from '../../api/types'
-import { createDemoNewsConfig } from '../fixtures/newsConfig'
+
 import { getNewsFeedPresets, newsCollectorSchema } from '../../../../src/domain/news/config'
+import { createDemoNewsConfig } from '../fixtures/newsConfig'
+
+import type { InstalledModule } from '../../../../src/domain/news/modules/contract'
+import type { DemoNewsCollectorConfig } from '../fixtures/newsConfig'
 
 let demoNewsConfig = createDemoNewsConfig()
+export const demoNewsInstalledModules = new Map<string, InstalledModule>()
+let demoRssHubCredential: { baseUrl: string; key: string } | null = null
 
 export function resetDemoNewsConfig(): void {
   demoNewsConfig = createDemoNewsConfig()
+  demoNewsInstalledModules.clear()
+  demoRssHubCredential = null
 }
 
-export function getDemoNewsConfig(): NewsCollectorConfig {
+export function getDemoNewsConfig(): DemoNewsCollectorConfig {
   return demoNewsConfig
+}
+
+function canonicalDemoRssHubBaseUrl(value: string): string {
+  const url = new URL(value)
+  if (!(['http:', 'https:'].includes(url.protocol)) || url.username || url.password || url.search || url.hash) {
+    throw new Error('Invalid RSSHub base URL')
+  }
+  return url.href.replace(/\/+$/, '')
+}
+
+export function assertDemoRssHubBaseUrl(value: string): void {
+  if (demoRssHubCredential && demoRssHubCredential.baseUrl !== canonicalDemoRssHubBaseUrl(value)) {
+    throw new Error('Clear the RSSHub credential before changing its instance')
+  }
+}
+
+export function getDemoRssHubKeyStatus() {
+  return { configured: !!demoRssHubCredential, available: true, baseUrl: demoRssHubCredential?.baseUrl ?? null }
+}
+
+export function updateDemoRssHubKey(operation: 'set' | 'clear', key?: string) {
+  if (operation === 'clear') {
+    demoRssHubCredential = null
+    return getDemoRssHubKeyStatus()
+  }
+  if (!key || key.length > 4096 || /[\r\n\0]/.test(key)) throw new Error('Enter a valid RSSHub key')
+  const baseUrl = canonicalDemoRssHubBaseUrl(demoNewsConfig.rsshubBaseUrl)
+  const url = new URL(baseUrl)
+  if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+    throw new Error('RSSHub credentials require HTTPS outside loopback')
+  }
+  demoRssHubCredential = { baseUrl, key }
+  return getDemoRssHubKeyStatus()
 }
 
 export const demoCredentialPresets = [
@@ -235,6 +275,32 @@ function isValidDuration(value: string): boolean {
 }
 
 export const configKeysHandlers = [
+  // Demo credentials stay in memory; this status never probes RSSHub or returns the key.
+  http.get('/api/news/rsshub-key', () => HttpResponse.json(getDemoRssHubKeyStatus())),
+  http.put('/api/news/rsshub-key', async ({ request }) => {
+    const body = await request.json().catch(() => null) as unknown
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return HttpResponse.json({ error: 'Invalid RSSHub key operation' }, { status: 400 })
+    }
+    const input = body as { operation?: unknown; key?: unknown }
+    if (!Object.keys(input).every((field) => field === 'operation' || field === 'key')) {
+      return HttpResponse.json({ error: 'Invalid RSSHub key operation' }, { status: 400 })
+    }
+    if (input.operation === 'clear') {
+      if (Object.hasOwn(input, 'key') && typeof input.key !== 'string') {
+        return HttpResponse.json({ error: 'Invalid RSSHub key operation' }, { status: 400 })
+      }
+      return HttpResponse.json(updateDemoRssHubKey('clear'))
+    }
+    if (input.operation !== 'set' || typeof input.key !== 'string') {
+      return HttpResponse.json({ error: 'Invalid RSSHub key operation' }, { status: 400 })
+    }
+    try {
+      return HttpResponse.json(updateDemoRssHubKey('set', input.key))
+    } catch (error) {
+      return HttpResponse.json({ error: error instanceof Error ? error.message : 'Invalid RSSHub key' }, { status: 400 })
+    }
+  }),
   http.all('/api/config/credentials/:slug/models', ({ params }) => HttpResponse.json({
     discoverySupported: true, source: 'snapshot', fetchedAt: Date.now(), refreshing: false, error: null,
     models: String(params.slug).startsWith('minimax-')
@@ -267,9 +333,31 @@ export const configKeysHandlers = [
   }),
   http.put('/api/config/news', async ({ request }) => {
     const body = await request.json().catch(() => null)
+    if (
+      !body
+      || typeof body !== 'object'
+      || Array.isArray(body)
+      || !Object.hasOwn(body, 'modules')
+      || !Object.hasOwn(body, 'subscriptions')
+    ) {
+      return HttpResponse.json({ error: 'invalid_news_config' }, { status: 400 })
+    }
     const validated = newsCollectorSchema.safeParse(body)
     if (!validated.success) {
       return HttpResponse.json({ error: 'invalid_news_config' }, { status: 400 })
+    }
+    if (validated.data.modules.some((selection) => {
+      const installed = demoNewsInstalledModules.get(selection.contentHash)
+      return !installed
+        || installed.manifest.moduleId !== selection.moduleId
+        || (selection.enabled && !installed.approved)
+    })) {
+      return HttpResponse.json({ error: 'invalid_news_config' }, { status: 400 })
+    }
+    try {
+      assertDemoRssHubBaseUrl(validated.data.rsshubBaseUrl)
+    } catch (error) {
+      return HttpResponse.json({ error: error instanceof Error ? error.message : 'Invalid RSSHub base URL' }, { status: 409 })
     }
     demoNewsConfig = validated.data
     return HttpResponse.json(demoNewsConfig)

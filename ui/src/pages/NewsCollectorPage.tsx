@@ -9,6 +9,7 @@ import { useConfigPage } from '../hooks/useConfigPage'
 import { PageHeader } from '../components/PageHeader'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
+import { NewsModulesSection, RssHubKeySection } from '../components/news-modules/NewsModulesSection'
 
 const DEFAULT_NEWS_CONFIG: NewsCollectorConfig = {
   enabled: true,
@@ -17,6 +18,8 @@ const DEFAULT_NEWS_CONFIG: NewsCollectorConfig = {
   retentionDays: 7,
   rsshubBaseUrl: 'http://127.0.0.1:1200',
   feeds: [],
+  modules: [],
+  subscriptions: [],
 }
 
 const STATUS_POLL_INTERVAL_MS = 5_000
@@ -182,6 +185,15 @@ function CollectorSettings() {
         />
 
       </div>
+      <RssHubKeySection />
+      {config && <NewsModulesSection
+        selections={cfg.modules}
+        subscriptions={cfg.subscriptions}
+        onSelectionsChange={(modules) => updateConfigImmediate({ modules })}
+        onSubscriptionsChange={(subscriptions) => updateConfigImmediate({ subscriptions })}
+        collectorEnabled={enabled}
+        saveStatus={status}
+      />}
 
       <CollectionStatusSection
         feeds={statusFeeds}
@@ -381,11 +393,7 @@ function FeedEditor({
       id: feed?.id || crypto.randomUUID(),
       name: name.trim(),
       source: source.trim(),
-      url: sourceType === 'direct'
-        ? url.trim()
-        : feed?.rsshubRoute
-          ? feed.url
-          : new URL(normalizedRoute, baseUrl as string).href,
+      url: sourceType === 'direct' ? url.trim() : new URL(normalizedRoute, baseUrl as string).href,
       enabled: feed?.enabled ?? true,
     }
     if (sourceType === 'rsshub') next.rsshubRoute = normalizedRoute

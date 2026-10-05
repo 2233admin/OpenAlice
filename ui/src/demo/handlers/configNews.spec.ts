@@ -45,8 +45,10 @@ describe('demo News Collector config', () => {
     })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual(next)
-    expect((await loadConfig()).news).toEqual(next)
+    const saved = await response.json() as NewsCollectorConfig
+    expect(saved).toMatchObject(next)
+    expect(saved.feeds.at(-1)?.id).toEqual(expect.any(String))
+    expect((await loadConfig()).news).toEqual(saved)
   })
 
   it('rejects invalid feed URLs like the production schema', async () => {

@@ -252,6 +252,8 @@ export interface NewsCollectorConfig {
   maxInMemory: number
   retentionDays: number
   rsshubBaseUrl: string
+  modules: ModuleSelection[]
+  subscriptions: NewsSubscription[]
   feeds: NewsCollectorFeed[]
 }
 
@@ -286,6 +288,69 @@ export interface NewsCollectorStatusResponse {
 export interface NewsCollectorCollectResult {
   total: number
   new: number
+}
+
+// ==================== News Modules ====================
+
+export interface ModuleSelection {
+  moduleId: string
+  contentHash: string
+  enabled: boolean
+}
+
+export interface NewsSubscription {
+  id: string
+  moduleId: string
+  sourceKey: string
+  name: string
+  source: string
+  enabled: boolean
+  params: Record<string, string | number | boolean>
+  categories: string[]
+}
+
+export interface NewsModuleManifest {
+  abiVersion: 1
+  moduleId: string
+  version: string
+  name: string
+  description: string
+  entry: string
+  sources: Array<{
+    key: string
+    name: string
+    parameters: Array<{ key: string; label: string; type: 'string' | 'number' | 'boolean'; required: boolean }>
+  }>
+}
+
+export interface NewsModuleArtifact {
+  manifest: NewsModuleManifest
+  files: Record<string, string>
+}
+
+export interface InstalledModule {
+  manifest: NewsModuleManifest
+  contentHash: string
+  approved: boolean
+}
+
+export interface ModuleStatus {
+  moduleId: string | null
+  manifest: NewsModuleManifest | null
+  contentHash: string
+  installed: boolean
+  approved: boolean
+  desiredEnabled: boolean
+  loaded: boolean
+  loadedHash: string | null
+  state: 'disabled' | 'running' | 'failed' | 'unapproved' | 'missing' | 'invalid'
+  lastError: string | null
+}
+
+export interface RssHubKeyStatus {
+  configured: boolean
+  available: boolean
+  baseUrl: string | null
 }
 
 // ==================== News Articles ====================

@@ -12,7 +12,7 @@ import {
 // runs go through headless workspace dispatch (cron → workspace).
 import { loadConfig, readMarketDataConfig } from './core/config.js'
 import { printLegacyDataNotice } from './core/legacy-data-notice.js'
-import { userDataHome } from '@/core/paths.js'
+import { userDataHome, dataPath } from '@/core/paths.js'
 import { resolveLauncherRoot } from '@/workspaces/config.js'
 import type { Plugin, EngineContext } from './core/types.js'
 import { McpPlugin } from './server/mcp.js'
@@ -79,6 +79,8 @@ import { artifactConversationToolFactories } from './tool/conversation-artifacts
 import { createToolCallLog } from './core/tool-call-log.js'
 import { NewsCollectorStore, NewsCollector } from './domain/news/index.js'
 import { createNewsArchiveTools } from './tool/news.js'
+import { NewsModuleManager } from './domain/news/modules/manager.js'
+import { RssHubSecretStore } from './domain/news/modules/secrets.js'
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 let runtimeLock: OpenAliceRuntimeLock | null = null
@@ -262,9 +264,7 @@ async function main() {
   if (etfClient) {
     toolCenter.register(createEtfTools(etfClient), 'etf')
   }
-  if (config.news.enabled) {
-    toolCenter.register(createNewsArchiveTools(newsStore), 'rss')
-  }
+  toolCenter.register(createNewsArchiveTools(newsStore), 'rss')
   // v1 calculateIndicator (createAnalysisTools) is retired from the tool surface
   // — calculateQuant (v2, barId-keyed) supersedes it and the two descriptions
   // confused the model / bloated context. The code remains for now.
@@ -428,6 +428,10 @@ async function main() {
     rsshubBaseUrl: config.news.rsshubBaseUrl,
     enabled: config.news.enabled,
     intervalMs: config.news.intervalMinutes * 60 * 1000,
+    manager: new NewsModuleManager({ directory: dataPath('news-modules') }),
+    secrets: new RssHubSecretStore(dataPath('news-modules')),
+    modules: config.news.modules,
+    subscriptions: config.news.subscriptions,
     ...(newsActivity ? {
       onIngested: async (record) => {
         await newsActivity.record('news.ingested', newsActivityPayload(record))
@@ -435,6 +439,8 @@ async function main() {
     } : {}),
   })
   ctx.newsCollector = newsCollector
+  try { await newsCollector.initialize() }
+  catch { console.warn('news-collector: optional module startup unavailable; native RSS remains usable') }
   if (config.news.enabled) {
     newsCollector.start()
     const activeCount = config.news.feeds.filter((f) => f.enabled !== false).length
@@ -451,16 +457,19 @@ async function main() {
 
   let stopped = false
   const shutdown = async () => {
+    if (stopped) return
     stopped = true
     await removeCliEndpoint()
-    newsCollector?.stop()
+    let exitCode = 0
+    try { await newsCollector?.close() }
+    catch { exitCode = 1; console.error('news-collector: worker shutdown not confirmed; ownership retained for recovery') }
     for (const plugin of [...corePlugins, ...optionalPlugins.values()]) {
       await plugin.stop()
     }
     await newsStore.close()
     await toolCallLog.close()
     await releaseRuntimeLock()
-    process.exit(0)
+    process.exit(exitCode)
   }
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)

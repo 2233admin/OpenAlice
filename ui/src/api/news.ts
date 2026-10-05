@@ -1,5 +1,5 @@
-import { fetchJson } from './client'
-import type { NewsCollectorCollectResult, NewsCollectorStatusResponse, NewsListResponse } from './types'
+import { fetchJson, headers } from './client'
+import type { InstalledModule, ModuleStatus, NewsCollectorCollectResult, NewsCollectorStatusResponse, NewsListResponse, NewsModuleArtifact, RssHubKeyStatus } from './types'
 
 export interface NewsQuery {
   lookback?: string
@@ -31,5 +31,33 @@ export const newsApi = {
 
   async collect(signal?: AbortSignal): Promise<NewsCollectorCollectResult> {
     return fetchJson<NewsCollectorCollectResult>('/api/news/collect', { method: 'POST', signal })
+  },
+
+  async getModules(signal?: AbortSignal): Promise<{ modules: ModuleStatus[] }> {
+    return fetchJson('/api/news/modules', signal ? { signal } : undefined)
+  },
+
+  async importModule(artifact: NewsModuleArtifact, signal?: AbortSignal): Promise<InstalledModule> {
+    return fetchJson('/api/news/modules', { method: 'POST', headers, body: JSON.stringify({ artifact }), signal })
+  },
+
+  async approveModule(hash: string, signal?: AbortSignal): Promise<InstalledModule> {
+    return fetchJson(`/api/news/modules/${encodeURIComponent(hash)}/approve`, { method: 'POST', signal })
+  },
+
+  async retryModule(hash: string, signal?: AbortSignal): Promise<{ modules: ModuleStatus[] }> {
+    return fetchJson(`/api/news/modules/${encodeURIComponent(hash)}/retry`, { method: 'POST', signal })
+  },
+
+  async uninstallModule(hash: string, signal?: AbortSignal): Promise<{ ok: true }> {
+    return fetchJson(`/api/news/modules/${encodeURIComponent(hash)}`, { method: 'DELETE', signal })
+  },
+
+  async getRssHubKeyStatus(signal?: AbortSignal): Promise<RssHubKeyStatus> {
+    return fetchJson('/api/news/rsshub-key', signal ? { signal } : undefined)
+  },
+
+  async updateRssHubKey(operation: 'set' | 'clear', key?: string, signal?: AbortSignal): Promise<RssHubKeyStatus> {
+    return fetchJson('/api/news/rsshub-key', { method: 'PUT', headers, body: JSON.stringify({ operation, key }), signal })
   },
 }

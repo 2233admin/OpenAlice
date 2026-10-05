@@ -40,4 +40,12 @@ describe('news collector configuration', () => {
       }],
     }).success).toBe(false)
   })
+
+  it('rejects credentials in an explicit RSSHub companion URL but preserves ordinary URL query parameters', () => {
+    const route = { name: 'RSSHub', source: 'rsshub', rsshubRoute: 'cls/telegraph' }
+    expect(newsCollectorSchema.safeParse({ feeds: [{ ...route, url: 'https://rsshub.invalid/feed?key=secret' }] }).success).toBe(false)
+    expect(newsCollectorSchema.safeParse({ feeds: [{ ...route, url: 'https://rsshub.invalid/feed?code=secret' }] }).success).toBe(false)
+    expect(newsCollectorSchema.safeParse({ feeds: [{ ...route, url: 'https://rsshub.invalid/feed?display=full' }] }).success).toBe(true)
+    expect(newsCollectorSchema.safeParse({ feeds: [{ name: 'Direct', source: 'direct', url: 'https://direct.invalid/feed?key=owned&code=owned' }] }).success).toBe(true)
+  })
 })

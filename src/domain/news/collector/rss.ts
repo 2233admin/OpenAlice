@@ -1,225 +1,127 @@
-/**
- * News Collector — RSS fetch service
- *
- * A code-level setInterval service (not AI-driven cron) that periodically
- * fetches configured RSS feeds and ingests new items into the store.
- */
-
-import { fetchAndParseFeed } from './rss-parser.js'
+import { fetchAndParseFeed, cleanText } from './rss-parser.js'
 import { computeDedupKey, type NewsCollectorStore } from '../store.js'
-import type { RSSFeedConfig } from '../types.js'
-import type { NewsRecord } from '../types.js'
+import type { RSSFeedConfig, NewsRecord } from '../types.js'
 import { DEFAULT_RSSHUB_BASE_URL, resolveNewsFeedUrl } from '../config.js'
+import { batchSchema, type ModuleSelection, type NewsSubscription } from '../modules/contract.js'
+import type { NewsModuleManager } from '../modules/manager.js'
+import type { RssHubSecretStore } from '../modules/secrets.js'
 
 interface FeedHealth {
-  state: 'never_attempted' | 'checking' | 'healthy' | 'error'
-  lastAttemptAt: number | null
-  lastSuccessAt: number | null
-  lastItemCount: number | null
-  lastNewItemCount: number | null
-  lastError: string | null
+  state:'never_attempted'|'checking'|'healthy'|'error'; lastAttemptAt:number|null;lastSuccessAt:number|null;lastItemCount:number|null;lastNewItemCount:number|null;lastError:string|null
 }
-
-function initialHealth(): FeedHealth {
-  return { state: 'never_attempted', lastAttemptAt: null, lastSuccessAt: null, lastItemCount: null, lastNewItemCount: null, lastError: null }
-}
-
-function healthIdentity(feed: RSSFeedConfig, baseUrl: string): string {
-  return JSON.stringify([feed.id ?? null, feed.source, resolveNewsFeedUrl(feed, baseUrl)])
-}
-
+const initialHealth=():FeedHealth=>({state:'never_attempted',lastAttemptAt:null,lastSuccessAt:null,lastItemCount:null,lastNewItemCount:null,lastError:null})
+function healthIdentity(feed:RSSFeedConfig,base:string):string{return JSON.stringify([feed.id??null,feed.source,resolveNewsFeedUrl(feed,base)])}
 export interface CollectorOpts {
-  store: NewsCollectorStore
-  feeds: RSSFeedConfig[]
-  intervalMs: number
-  rsshubBaseUrl?: string
-  enabled?: boolean
-  /** Optional product activity sink installed by the composition root. */
-  onIngested?: (record: NewsRecord) => void | Promise<void>
+  store:NewsCollectorStore;feeds:RSSFeedConfig[];intervalMs:number;rsshubBaseUrl?:string;enabled?:boolean
+  manager?:NewsModuleManager;modules?:ModuleSelection[];subscriptions?:NewsSubscription[];secrets?:RssHubSecretStore
+  onIngested?:(record:NewsRecord)=>void|Promise<void>
 }
+interface CollectorConfiguration {feeds:RSSFeedConfig[];intervalMs:number;rsshubBaseUrl?:string;enabled:boolean;modules?:ModuleSelection[];subscriptions?:NewsSubscription[];maxInMemory?:number;retentionDays?:number}
+type RuntimeRow = {kind:'rss';feed:RSSFeedConfig;identity:string;moduleId:string}|{kind:'module';subscription:NewsSubscription;identity:string;moduleId:string}
 
+/** One serialized coordinator, one scheduling queue and one durable ingestion path. */
 export class NewsCollector {
-  private timer: ReturnType<typeof setInterval> | null = null
-  private store: NewsCollectorStore
-  private feeds: RSSFeedConfig[]
-  private intervalMs: number
-  private onIngested?: (record: NewsRecord) => void | Promise<void>
-  private rsshubBaseUrl: string
-  private enabled: boolean
-  private configurationChain: Promise<void> = Promise.resolve()
-  private health = new Map<RSSFeedConfig, FeedHealth>()
-  /**
-   * In-flight guard: if a fetchAll is already running when the next interval
-   * tick fires, share the existing promise instead of starting a second pass.
-   * Prevents duplicate HTTP work when network latency exceeds intervalMs.
-   */
-  private fetchInFlight: Promise<{ total: number; new: number }> | null = null
-
-  constructor(opts: CollectorOpts) {
-    this.store = opts.store
-    this.feeds = opts.feeds
-    this.intervalMs = opts.intervalMs
-    this.onIngested = opts.onIngested
-    this.rsshubBaseUrl = opts.rsshubBaseUrl ?? DEFAULT_RSSHUB_BASE_URL
-    this.enabled = opts.enabled ?? true
-  }
-
-  /** Serialize edits with collection so old requests finish before new config is installed. */
-  configure(opts: Pick<CollectorOpts, 'feeds' | 'intervalMs' | 'rsshubBaseUrl'> & { enabled: boolean }): Promise<void> {
-    const next = this.configurationChain.catch(() => {}).then(async () => {
-      this.stop()
-      await this.fetchInFlight
-      const previous = new Map<string, FeedHealth | null>()
-      for (const feed of this.feeds) {
-        const key = healthIdentity(feed, this.rsshubBaseUrl)
-        previous.set(key, previous.has(key) ? null : this.health.get(feed) ?? initialHealth())
-      }
-      this.feeds = opts.feeds
-      this.intervalMs = opts.intervalMs
-      this.rsshubBaseUrl = opts.rsshubBaseUrl ?? DEFAULT_RSSHUB_BASE_URL
-      this.enabled = opts.enabled
-      this.health.clear()
-      const identities = this.feeds.map((feed) => healthIdentity(feed, this.rsshubBaseUrl))
-      const counts = new Map<string, number>()
-      for (const key of identities) counts.set(key, (counts.get(key) ?? 0) + 1)
-      for (let i = 0; i < this.feeds.length; i++) {
-        const key = identities[i]
-        // Ambiguous legacy duplicates cannot safely inherit another row's history.
-        const prior = counts.get(key) === 1 ? previous.get(key) : null
-        this.health.set(this.feeds[i], prior ?? initialHealth())
-      }
-      if (this.enabled) this.start()
+  private timer:NodeJS.Timeout|null=null
+  private config:CollectorConfiguration
+  private chain:Promise<void>=Promise.resolve()
+  private fetchInFlight:Promise<{total:number;new:number}>|null=null
+  private health=new Map<RuntimeRow,FeedHealth>()
+  private runtimeRows:RuntimeRow[]
+  private closed=false
+  constructor(private readonly opts:CollectorOpts){this.config={...opts,enabled:opts.enabled??true,modules:opts.modules??[],subscriptions:opts.subscriptions??[]};this.runtimeRows=this.buildRows(this.config)}
+  private exclusive<T>(action:()=>Promise<T>,allowClosed=false):Promise<T>{const next=this.chain.then(()=>{if(this.closed&&!allowClosed)throw new Error('News collector closed');return action()});this.chain=next.then(()=>{},()=>{});return next}
+  async initialize():Promise<void>{await this.exclusive(async()=>{await this.opts.manager?.configure(this.runtimeModules(this.config),this.config.subscriptions??[],true)})}
+  private runtimeModules(c:CollectorConfiguration){return (c.modules??[]).map(m=>({...m,enabled:c.enabled&&m.enabled}))}
+  configure(next:CollectorConfiguration,persist?:()=>Promise<void>):Promise<void>{
+    return this.exclusive(async()=>{
+      const old=this.config;this.stop()
+      try{
+        if ((next.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL).replace(/\/+$/,'') !== (old.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL).replace(/\/+$/,'')) await this.opts.secrets?.assertBase(next.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL)
+        // Manager validates the complete candidate once before any worker cutover.
+        await this.opts.manager?.configure(this.runtimeModules(next),next.subscriptions??[])
+        await persist?.()
+        this.config={...next,modules:next.modules??[],subscriptions:next.subscriptions??[]}
+        if(next.maxInMemory!==undefined && next.retentionDays!==undefined)this.opts.store.configureMemory(next.maxInMemory,next.retentionDays)
+        const previous=new Map<string,FeedHealth|null>()
+        for(const row of this.runtimeRows)previous.set(row.identity,previous.has(row.identity)?null:this.health.get(row)??initialHealth())
+        this.runtimeRows=this.buildRows(this.config)
+        const counts=new Map<string,number>()
+        for(const row of this.runtimeRows)counts.set(row.identity,(counts.get(row.identity)??0)+1)
+        this.health=new Map(this.runtimeRows.map(row=>[row,counts.get(row.identity)===1?previous.get(row.identity)??initialHealth():initialHealth()]))
+      }catch(error){
+        try{await this.opts.manager?.configure(this.runtimeModules(old),old.subscriptions??[])}catch{throw new Error('News configuration failed and module recovery is unavailable')}
+        throw error
+      }finally{if(this.config.enabled&&!this.closed)this.start()}
     })
-    this.configurationChain = next
-    return next
   }
-
-  /** Process-local diagnostics; collection history is not persisted. */
-  getStatus() {
-    return this.feeds.map((feed) => ({
-      ...this.health.get(feed) ?? initialHealth(),
-      id: feed.id,
-      name: feed.name,
-      source: feed.source,
-      url: resolveNewsFeedUrl(feed, this.rsshubBaseUrl),
-      state: !this.enabled || feed.enabled === false ? 'disabled' as const : (this.health.get(feed)?.state ?? 'never_attempted'),
-    }))
+  private rows():RuntimeRow[]{return this.runtimeRows}
+  private buildRows(config:CollectorConfiguration):RuntimeRow[]{
+    const base=config.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL
+    return [
+      ...config.feeds.map(feed=>({kind:'rss' as const,feed,identity:healthIdentity(feed,base),moduleId:feed.rsshubRoute?'builtin.rsshub':'builtin.rss'})),
+      ...(config.subscriptions??[]).map(subscription=>({kind:'module' as const,subscription,identity:JSON.stringify([subscription.id,subscription.moduleId,config.modules?.find(module=>module.moduleId===subscription.moduleId)?.contentHash??null,subscription.sourceKey,subscription.source,subscription.params]),moduleId:subscription.moduleId})),
+    ]
   }
-
-  /** Start periodic collection. Fetches immediately, then at interval. */
-  start(): void {
-    if (!this.enabled || this.timer) return
-    this.fetchAll().catch((err) =>
-      console.warn(`news-collector: initial fetch failed: ${err instanceof Error ? err.message : err}`),
-    )
-    this.timer = setInterval(
-      () => this.fetchAll().catch((err) =>
-        console.warn(`news-collector: periodic fetch failed: ${err instanceof Error ? err.message : err}`),
-      ),
-      this.intervalMs,
-    )
+  getStatus(){return this.rows().map(row=>{
+    const feed=row.kind==='rss'?row.feed:row.subscription
+    const enabled=this.config.enabled && feed.enabled!==false && (row.kind==='rss'||this.config.modules?.some(m=>m.moduleId===row.moduleId&&m.enabled))
+    return {...this.health.get(row)??initialHealth(),id:feed.id,name:feed.name,source:feed.source,moduleId:row.moduleId,
+      url:row.kind==='rss'?resolveNewsFeedUrl(row.feed,this.config.rsshubBaseUrl):'',state:!enabled?'disabled' as const:this.health.get(row)?.state??'never_attempted'}
+  })}
+  getModules(){return this.exclusive(async()=>this.opts.manager?.list(this.config.modules??[])??[],true)}
+  importModule(value:unknown){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');return this.opts.manager.importArtifact(value)})}
+  approveModule(hash:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');return this.opts.manager.approve(hash)})}
+  retryModule(hash:string){return this.exclusive(async()=>{if(!this.config.enabled||!this.opts.manager)throw new Error('News collection disabled');await this.opts.manager.retry(hash);return this.opts.manager.list(this.config.modules??[])})}
+  uninstallModule(hash:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');await this.opts.manager.uninstall(hash)})}
+  async getRssHubKeyStatus(){return this.opts.secrets?.status()??{configured:false,available:true,baseUrl:null}}
+  updateRssHubKey(operation:'set'|'clear',key?:string){return this.exclusive(async()=>{if(!this.opts.secrets)throw new Error('RSSHub secret store unavailable');if(operation==='clear')await this.opts.secrets.clear();else await this.opts.secrets.set(this.config.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL,key??'');return this.opts.secrets.status()})}
+  start():void{
+    if(this.closed||!this.config.enabled||this.timer)return
+    void this.fetchAll().catch(()=>console.warn('news-collector: collection failed'))
+    this.timer=setInterval(()=>{void this.fetchAll().catch(()=>console.warn('news-collector: collection failed'))},this.config.intervalMs)
   }
-
-  /** Stop periodic collection. */
-  stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
+  stop():void{if(this.timer){clearInterval(this.timer);this.timer=null}}
+  async close():Promise<void>{this.closed=true;this.stop();await this.exclusive(async()=>{await this.opts.manager?.close()},true)}
+  fetchAll():Promise<{total:number;new:number}>{
+    if(this.fetchInFlight)return this.fetchInFlight
+    const result=this.exclusive(()=>this.collectRows())
+    this.fetchInFlight=result
+    void result.then(()=>{if(this.fetchInFlight===result)this.fetchInFlight=null},()=>{if(this.fetchInFlight===result)this.fetchInFlight=null})
+    return result
+  }
+  private async collectRows():Promise<{total:number;new:number}>{
+    if(!this.config.enabled||this.closed)return {total:0,new:0}
+    let total=0,added=0
+    for(const row of this.rows()){
+      const feed=row.kind==='rss'?row.feed:row.subscription
+      if(feed.enabled===false || (row.kind==='module'&&!this.config.modules?.some(m=>m.moduleId===row.moduleId&&m.enabled)))continue
+      const health=this.health.get(row)??initialHealth();this.health.set(row,health);health.state='checking';health.lastAttemptAt=Date.now()
+      try{
+        const inputs=row.kind==='rss'?await this.rssInputs(row.feed):await this.moduleInputs(row.subscription)
+        total+=inputs.length;health.lastItemCount=inputs.length;health.lastNewItemCount=0
+        // Batch validation precedes every append; report any durable prefix honestly.
+        for(const input of inputs){const record=await this.opts.store.ingestRecord(input);if(record){added++;health.lastNewItemCount++;await this.opts.onIngested?.(record)}}
+        health.state='healthy';health.lastSuccessAt=Date.now();health.lastError=null
+      }catch(error){health.state='error';health.lastError=row.kind==='rss'&&error instanceof Error&&/^RSS (fetch|response) failed:/.test(error.message)?error.message:'News request, module processing or ingestion failed';console.warn('news-collector: source collection failed')}
     }
+    return {total,new:added}
   }
-
-  /**
-   * Fetch all active feeds once. Disabled feeds are skipped. Returns counts.
-   *
-   * Concurrent calls share the in-flight promise (no overlapping fetch passes).
-   */
-  async fetchAll(): Promise<{ total: number; new: number }> {
-    await this.configurationChain
-    if (!this.enabled) return { total: 0, new: 0 }
-    if (this.fetchInFlight) return this.fetchInFlight
-    this.fetchInFlight = this._fetchAllImpl()
-    try {
-      return await this.fetchInFlight
-    } finally {
-      this.fetchInFlight = null
-    }
+  private async rssInputs(feed:RSSFeedConfig){
+    let url=resolveNewsFeedUrl(feed,this.config.rsshubBaseUrl)
+    if(feed.rsshubRoute){const key=await this.opts.secrets?.get(this.config.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL);if(key){const request=new URL(url);request.searchParams.set('key',key);url=request.href}}
+    const items=await fetchAndParseFeed(url,1,Boolean(feed.rsshubRoute))
+    return items.map(item=>{
+      const dedupKey=computeDedupKey({guid:item.guid??undefined,link:item.link??undefined,title:item.title,content:item.content})
+      return {title:item.title,content:item.content,pubTime:item.pubDate??new Date(),dedupKey,metadata:{source:feed.source,link:item.link,guid:item.guid,ingestSource:'rss',dedupKey,producerId:feed.rsshubRoute?'builtin.rsshub':'builtin.rss',...(feed.categories?{categories:feed.categories.join(',')}:{}),...(item.image?{image:item.image}:{})}}
+    })
   }
-
-  private async _fetchAllImpl(): Promise<{ total: number; new: number }> {
-    let totalItems = 0
-    let totalNew = 0
-
-    const activeFeeds = this.feeds.filter((f) => f.enabled !== false)
-
-    for (const feed of activeFeeds) {
-      const health = this.health.get(feed) ?? initialHealth()
-      this.health.set(feed, health)
-      health.state = 'checking'
-      health.lastAttemptAt = Date.now()
-      try {
-        const { fetched, ingested } = await this.fetchFeed(feed)
-        totalItems += fetched
-        totalNew += ingested
-        health.state = 'healthy'
-        health.lastSuccessAt = Date.now()
-        health.lastItemCount = fetched
-        health.lastNewItemCount = ingested
-        health.lastError = null
-      } catch (err) {
-        health.state = 'error'
-        // Do not expose request URLs, query parameters or upstream response bodies.
-        health.lastError = err instanceof Error && /^RSS (fetch|response) failed:/.test(err.message)
-          ? err.message : 'Feed request, parsing or ingestion failed'
-        console.warn(
-          `news-collector: failed to fetch ${feed.name} (${resolveNewsFeedUrl(feed, this.rsshubBaseUrl)}): ${err instanceof Error ? err.message : err}`,
-        )
-      }
-    }
-
-    if (totalNew > 0) {
-      console.log(
-        `news-collector: fetched ${totalItems} items from ${activeFeeds.length} active feeds, ${totalNew} new`,
-      )
-    }
-
-    return { total: totalItems, new: totalNew }
-  }
-
-  /** Fetch a single feed and ingest its items. */
-  private async fetchFeed(feed: RSSFeedConfig): Promise<{ fetched: number; ingested: number }> {
-    const items = await fetchAndParseFeed(resolveNewsFeedUrl(feed, this.rsshubBaseUrl), 1, Boolean(feed.rsshubRoute))
-    let ingested = 0
-
-    for (const item of items) {
-      const dedupKey = computeDedupKey({
-        guid: item.guid ?? undefined,
-        link: item.link ?? undefined,
-        title: item.title,
-        content: item.content,
-      })
-
-      const record = await this.store.ingestRecord({
-        title: item.title,
-        content: item.content,
-        pubTime: item.pubDate ?? new Date(),
-        dedupKey,
-        metadata: {
-          source: feed.source,
-          link: item.link,
-          guid: item.guid,
-          ingestSource: 'rss',
-          dedupKey,
-          ...(feed.categories ? { categories: feed.categories.join(',') } : {}),
-          ...(item.image ? { image: item.image } : {}),
-        },
-      })
-
-      if (record) {
-        ingested++
-        await this.onIngested?.(record)
-      }
-    }
-
-    return { fetched: items.length, ingested }
+  private async moduleInputs(subscription:NewsSubscription){
+    if(!this.opts.manager)throw new Error('Module manager unavailable')
+    const items=batchSchema.parse(await this.opts.manager.collect(subscription)),identity=await this.opts.manager.identity(subscription.moduleId)
+    return items.map(item=>{
+      const title=cleanText(item.title),content=item.content,dedupKey='module:'+JSON.stringify([subscription.moduleId,item.externalId])
+      if(!title)throw new Error('Module article has no plain-text title')
+      return{title,content,pubTime:new Date(item.publishedAt),dedupKey,metadata:{source:subscription.source,link:item.url,ingestSource:'module',dedupKey,moduleId:identity.moduleId,moduleVersion:identity.version,contentHash:identity.contentHash,externalId:item.externalId,subscriptionId:subscription.id,categories:subscription.categories.join(',')}}
+    })
   }
 }

@@ -40,7 +40,7 @@ export interface RSSFeedConfig {
 }
 
 /** Discriminator for how a news item was ingested */
-export type IngestSource = 'rss'
+export type IngestSource = 'rss' | 'module'
 
 // ==================== News Provider Interface ====================
 

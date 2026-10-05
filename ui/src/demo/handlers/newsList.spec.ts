@@ -44,6 +44,8 @@ describe('demo News handlers', () => {
       maxInMemory: 2000,
       retentionDays: 7,
       rsshubBaseUrl: 'https://rsshub.example.test/custom/',
+      modules: [],
+      subscriptions: [],
       feeds: [
         {
           id: 'direct',
@@ -123,6 +125,8 @@ describe('demo News handlers', () => {
       maxInMemory: 2000,
       retentionDays: 7,
       rsshubBaseUrl: 'http://127.0.0.1:1200',
+      modules: [],
+      subscriptions: [],
       feeds: [
         {
           id: 'demo',

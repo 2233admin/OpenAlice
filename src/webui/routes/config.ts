@@ -38,7 +38,8 @@ import {
   type AdapterRegistry,
   type CliAdapter,
 } from '../../workspaces/cli-adapter.js'
-import { getNewsFeedPresets } from '../../domain/news/config.js'
+import { getNewsFeedPresets, newsCollectorSchema } from '../../domain/news/config.js'
+import { NewsModuleActivationError, NewsModuleValidationError } from '../../domain/news/modules/manager.js'
 
 interface ConfigRouteOpts {
   ctx?: EngineContext
@@ -447,7 +448,33 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
       if (!validSections.includes(section)) {
         return c.json({ error: `Invalid section "${section}". Valid: ${validSections.join(', ')}` }, 400)
       }
-      const body = await c.req.json()
+      const body = section === 'news' ? await c.req.json().catch(() => null) : await c.req.json()
+      if (section === 'news') {
+        const ctx = opts?.ctx
+        const collector = ctx?.newsCollector
+        if (!ctx || !collector) return c.json({ error: 'News collector unavailable' }, 409)
+        if (!body || typeof body !== 'object' || !Object.hasOwn(body, 'modules') || !Object.hasOwn(body, 'subscriptions')) {
+          return c.json({ error: 'Invalid news configuration' }, 400)
+        }
+        const parsed = newsCollectorSchema.safeParse(body)
+        if (!parsed.success) return c.json({ error: 'Invalid news configuration' }, 400)
+        const pending = newsWriteChain.catch(() => {}).then(async () => {
+          const news = parsed.data
+          await collector.configure({
+            feeds: news.feeds, intervalMs: news.intervalMinutes * 60 * 1000,
+            rsshubBaseUrl: news.rsshubBaseUrl, enabled: news.enabled,
+            modules: news.modules, subscriptions: news.subscriptions,
+            maxInMemory: news.maxInMemory, retentionDays: news.retentionDays,
+          }, async () => { await writeConfigSection('news', news) })
+          ctx.config.news = news
+          return c.json(news)
+        })
+        newsWriteChain = pending.then(() => {}, () => {})
+        return await pending.catch(error => c.json(
+          { error: 'News configuration update failed' },
+          error instanceof NewsModuleValidationError || error instanceof NewsModuleActivationError ? 400 : 500,
+        ))
+      }
       const persist = async () => {
         const validated = await writeConfigSection(section, body)
         // Keep context identity while installing the freshly persisted section.
@@ -455,20 +482,13 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
           const fresh = await loadConfig()
           Object.assign(opts.ctx.config, fresh)
         }
-        if (section === 'news' && opts?.ctx?.newsCollector) {
-          const news = opts.ctx.config.news
-          await opts.ctx.newsCollector.configure({ feeds: news.feeds, intervalMs: news.intervalMinutes * 60 * 1000, rsshubBaseUrl: news.rsshubBaseUrl, enabled: news.enabled })
-        }
         // UTA consumes these sections at boot; retain its supervised restart protocol.
         if (section === 'trading' || section === 'snapshot') {
           triggerUTARestart().catch(() => { /* surfaced via health badges */ })
         }
         return c.json(validated)
       }
-      if (section !== 'news') return await persist()
-      const pending = newsWriteChain.catch(() => {}).then(persist)
-      newsWriteChain = pending.then(() => {}, () => {})
-      return await pending
+      return await persist()
     } catch (err) {
       if (err instanceof Error && err.name === 'ZodError') {
         return c.json({ error: 'Validation failed', details: JSON.parse(err.message) }, 400)

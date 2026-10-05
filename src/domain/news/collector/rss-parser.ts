@@ -16,9 +16,15 @@ export interface ParsedFeedItem {
   image?: string
 }
 
+export const MAX_FEED_RESPONSE_BYTES = 8 * 1024 * 1024
+
+class FeedResponseTooLargeError extends Error {
+  constructor() { super(`RSS response exceeds ${MAX_FEED_RESPONSE_BYTES} bytes`); this.name = 'FeedResponseTooLargeError' }
+}
+
 /**
  * Fetch a feed URL and return parsed items.
- * Retries once after a 2s delay on failure.
+ * Retries once after a 2s delay on failure, except a response rejected by the byte limit.
  */
 export async function fetchAndParseFeed(url: string, retries = 1, rejectRedirects = false): Promise<ParsedFeedItem[]> {
   let lastError: unknown
@@ -29,18 +35,47 @@ export async function fetchAndParseFeed(url: string, retries = 1, rejectRedirect
         ...(rejectRedirects ? { redirect: 'error' as const } : {}),
         headers: { 'User-Agent': 'OpenAlice/1.0 NewsCollector' },
       })
-      if (!res.ok) throw new Error(`RSS fetch failed: ${res.status} ${res.statusText}`)
-      const xml = await res.text()
+      if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`)
+      const xml = await readFeedResponse(res)
       if (!hasFeedEnvelope(xml)) {
         throw new Error('RSS response failed: expected an RSS or Atom document')
       }
       return parseRSSXml(xml)
     } catch (err) {
       lastError = err
+      if (err instanceof FeedResponseTooLargeError) break
       if (attempt < retries) await new Promise((r) => setTimeout(r, 2000))
     }
   }
   throw lastError
+}
+
+async function readFeedResponse(response: Response): Promise<string> {
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_FEED_RESPONSE_BYTES) {
+    await response.body?.cancel()
+    throw new FeedResponseTooLargeError()
+  }
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let total = 0
+  let xml = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > MAX_FEED_RESPONSE_BYTES) {
+        await reader.cancel()
+        throw new FeedResponseTooLargeError()
+      }
+      xml += decoder.decode(value, { stream: true })
+    }
+    return xml + decoder.decode()
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 /** Recognize the supported feed envelope, not full XML/RFC validity. */
@@ -211,7 +246,7 @@ export function safeHttpImageUrl(raw: string | null): string | null {
  * Strip HTML tags first, then decode XML entities.
  * Order matters: &lt;tag&gt; → (strip: no-op) → decode → "<tag>" (preserved)
  */
-function cleanText(raw: string): string {
+export function cleanText(raw: string): string {
   return decodeXmlEntities(stripHtml(raw))
 }
 

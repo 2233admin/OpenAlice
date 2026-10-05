@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod'
+import { moduleSelectionSchema, subscriptionSchema } from './modules/contract.js'
 
 export const DEFAULT_RSSHUB_BASE_URL = 'http://127.0.0.1:1200'
 
@@ -20,6 +21,8 @@ function isHttpUrl(value: string): boolean {
 export const rssHubRouteSchema = z.string().trim().min(1).refine((route) => {
   try {
     if (URL.canParse(route) || /^[\/]|[\\#\s]/.test(route)) return false
+    const query = new URL(route, DEFAULT_RSSHUB_BASE_URL + '/').searchParams
+    if (query.has('key') || query.has('code')) return false
     const path = route.split('?')[0]!
     if (path.split('/').some((part) => ['.', '..'].includes(decodeURIComponent(part)))) return false
     return new URL(route, DEFAULT_RSSHUB_BASE_URL + '/').origin === DEFAULT_RSSHUB_BASE_URL
@@ -43,7 +46,7 @@ const rssHubBaseSchema = z.string().trim().url().refine((value) => {
 }, 'Enter an HTTP(S) instance URL without credentials, query or fragment')
 
 const feedSchema = z.object({
-  id: z.string().trim().min(1).optional(),
+  id: z.string().trim().min(1).default(() => globalThis.crypto.randomUUID()),
   rsshubRoute: rssHubRouteSchema.optional(),
   name: z.string().trim().min(1),
   url: z.string().trim().url().refine(isHttpUrl, 'Enter an HTTP(S) feed URL without credentials'),
@@ -63,6 +66,8 @@ export const newsCollectorSchema = z.object({
   maxInMemory: z.number().int().positive().default(2000),
   /** Items older than this are not loaded into memory on startup */
   retentionDays: z.number().int().positive().default(7),
+  modules: z.array(moduleSelectionSchema).max(128).default([]),
+  subscriptions: z.array(subscriptionSchema).max(1024).default([]),
   /**
    * RSS / Atom feed list.
    *
@@ -304,14 +309,20 @@ export const newsCollectorSchema = z.object({
       description: 'Crypto and web3 news.',
       enabled: false,
     },
-  ]),
-}).superRefine((config, ctx) => {
+  ].map(feed => ({ ...feed, id: 'builtin.rss.' + feed.source + '.' + feed.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') }))),
+}).strict().superRefine((config, ctx) => {
   const ids = new Set<string>()
   config.feeds.forEach((feed, index) => {
+    if (feed.rsshubRoute) {
+      const companion = new URL(feed.url)
+      if (companion.searchParams.has('key') || companion.searchParams.has('code')) ctx.addIssue({ code: 'custom', path: ['feeds', index, 'url'], message: 'RSSHub credentials must not be stored in feed URLs' })
+    }
     if (!feed.id) return
     if (ids.has(feed.id)) ctx.addIssue({ code: 'custom', path: ['feeds', index, 'id'], message: 'Duplicate source ID' })
     ids.add(feed.id)
   })
+  if (new Set(config.modules.map(module => module.moduleId)).size !== config.modules.length) ctx.addIssue({code: 'custom', path: ['modules'], message: 'Duplicate module identity'})
+  if (new Set(config.subscriptions.map(subscription => subscription.id)).size !== config.subscriptions.length) ctx.addIssue({code: 'custom', path: ['subscriptions'], message: 'Duplicate subscription identity'})
 })
 
 export type NewsCollectorConfig = z.infer<typeof newsCollectorSchema>

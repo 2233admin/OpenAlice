@@ -183,6 +183,19 @@ describe('RSSHub news presets', () => {
     expect(onChange).toHaveBeenCalledWith([{ ...feed, name: 'Renamed feed' }])
   })
 
+  it('rebuilds an explicit RSSHub companion URL without retaining credentials', () => {
+    const feed: NewsCollectorFeed = { id: 'rsshub-id', name: 'RSSHub feed', source: 'rsshub', url: 'https://news.example.com/rsshub/cls?key=old&display=full', rsshubRoute: 'cls', enabled: true }
+    const onChange = vi.fn()
+    render(<FeedsSection {...presetProps} feeds={[feed]} onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const editor = within(screen.getByText('Edit source').closest('form') as HTMLFormElement)
+    fireEvent.click(editor.getByRole('button', { name: 'Save' }))
+    const saved = onChange.mock.calls[0][0][0] as NewsCollectorFeed
+    expect(saved.url).toBe('https://news.example.com/rsshub/cls')
+    expect(saved.url).not.toContain('key=')
+    expect(saved.rsshubRoute).toBe('cls')
+  })
+
   it('keeps a legacy absolute RSSHub-looking URL direct until RSSHub is explicitly selected', () => {
     const legacyUrl = 'https://news.example.com/rsshub/cls/telegraph'
     const legacyFeed: NewsCollectorFeed = {
