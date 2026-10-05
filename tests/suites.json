@@ -1279,6 +1279,18 @@
     "scope": "Process identity and shutdown against test-owned native children; no existing runtime ownership."
   },
   {
+    "id": "news-modules",
+    "title": "Alice news module shutdown ownership",
+    "tier": "integration",
+    "owner": "alice",
+    "lane": "hermetic",
+    "areas": [],
+    "files": [
+      "tests/integration/news-modules/alice-shutdown-failure.spec.ts"
+    ],
+    "scope": "Real Alice IPC shutdown with isolated homes and explicit module-close fault injection; no existing runtime ownership."
+  },
+  {
     "id": "desktop-receipts",
     "title": "desktop receipts",
     "tier": "integration",

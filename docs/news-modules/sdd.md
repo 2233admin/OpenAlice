@@ -95,6 +95,7 @@ export const newsModule: {
 Windows 由窄启动器将 CREATE_SUSPENDED 子进程加入 kill-on-close Job Object 后恢复。POSIX 用不导入模块的独立进程组监督器；停止时先枚举可见后代并由叶到根发信号，再确认 PID 退出。已自行 daemonize、在扫描前已脱离父子关系的进程可能不再可归属，因此 POSIX 进程组/树清理不是对抗恶意同用户代码的 OS containment。所有权记录持久保存 PID、启动身份、机器身份和随机任务身份；恢复不凭裸 PID 杀进程。停止失败保留所有权、阻止替换/卸载，退出也报告失败而非宣布已清理；不要把停止 worker 等同于沙箱。
 
 内置 Guardian 和桌面用父进程独占的 child IPC `openalice:shutdown` 请求 Alice 执行同一个幂等关闭函数；不增加 HTTP 停机面。Alice 在 startup await 前捕获请求，关闭函数可用后处理，不丢掉启动途中收到的请求。Windows 的 SIGTERM 不会执行 Node/Bun 的信号清理，故 IPC 是优雅阶段，10 秒后仍未退出保留强制后备。Guardian 在子进程确认退出后才释放 owner，强制后最多再等 2 秒；未确认时保留归属。CLI down 的现有返回条件仍是 Guardian absent，不单独证明新闻 owner 收据消失；实际验收须检查收据、进程和历史，不以请求发出或退出码替代。开发 watch 包装器仍走原树停止路径。
+关闭标志设置后，Guardian/桌面的每个实际 spawn 同步拒绝新增子进程；已跨 await 的启动、重启和回到集成模式检查关闭状态，关闭后才返回的归属直接释放、不发布。桌面 IPC 失败在 POSIX 后备为原生 SIGTERM，在 Windows 等待现有宽限后强制，不因回调错误立即杀树。Alice 收集器关闭未确认或其他清理失败时退出非零且不主动释放 runtime lock；启动异常也先尝试关闭收集器。已退出 PID 的锁会按现有恢复逻辑视为 stale，不能把保留 Alice 锁说成永久阻止接管；worker 的身份收据和 recovery 门禁仍是独立边界。
 
 ## 统一写入和历史
 

@@ -84,6 +84,7 @@ import { RssHubSecretStore } from './domain/news/modules/secrets.js'
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 let runtimeLock: OpenAliceRuntimeLock | null = null
+let newsCollector: NewsCollector | null = null
 
 async function releaseRuntimeLock(): Promise<void> {
   const current = runtimeLock
@@ -322,10 +323,6 @@ async function main(shutdownRequested: Promise<void>) {
   // drives the periodic equity-curve writes. The UTA service starts
   // its own scheduler at boot.
 
-  // ==================== News Collector ====================
-
-  let newsCollector: NewsCollector | null = null
-
   // ==================== Plugins ====================
 
   // Core plugins — always-on, not toggleable at runtime
@@ -459,16 +456,19 @@ async function main(shutdownRequested: Promise<void>) {
   const shutdown = async () => {
     if (stopped) return
     stopped = true
-    await removeCliEndpoint()
     let exitCode = 0
+    try { await removeCliEndpoint() }
+    catch { exitCode = 1; console.error('engine: CLI endpoint cleanup failed') }
     try { await newsCollector?.close() }
     catch { exitCode = 1; console.error('news-collector: worker shutdown not confirmed; ownership retained for recovery') }
-    for (const plugin of [...corePlugins, ...optionalPlugins.values()]) {
-      await plugin.stop()
-    }
-    await newsStore.close()
-    await toolCallLog.close()
-    await releaseRuntimeLock()
+    try {
+      for (const plugin of [...corePlugins, ...optionalPlugins.values()]) {
+        await plugin.stop()
+      }
+      await newsStore.close()
+      await toolCallLog.close()
+      if (exitCode === 0) await releaseRuntimeLock()
+    } catch { exitCode = 1; console.error('engine: shutdown failed; runtime ownership retained for recovery') }
     process.exit(exitCode)
   }
   process.on('SIGINT', shutdown)
@@ -505,9 +505,10 @@ export async function startAliceRuntime(): Promise<void> {
   try {
     await main(shutdownRequested)
   } catch (err) {
-    await releaseRuntimeLock().catch((releaseErr) => {
-      console.error('runtime lock release failed after startup error:', releaseErr)
-    })
+    try {
+      await newsCollector?.close()
+      await releaseRuntimeLock()
+    } catch { console.error('engine: startup cleanup not confirmed; runtime ownership retained for recovery') }
     throw err
   }
 }
