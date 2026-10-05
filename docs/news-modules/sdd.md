@@ -78,6 +78,9 @@ export const newsModule: {
 | PUT `/api/news/rsshub-key` | `{operation:"set",key}` 或 `{operation:"clear"}` → 状态 |
 
 沿用既有后台访问控制，不新增匿名管理入口。desiredEnabled 是配置意图；loaded/loadedHash 仅依据真正就绪的 worker。失败和配置启用不是同一状态，不能由磁盘选择推断加载成功。
+全局 enabled=false 时保留模块的 desiredEnabled 意图，但无既有故障的 worker 正常未运行应为 disabled；全局启用且已批准的所选模块未加载应为 failed。状态判断依据 collector 当前配置和真实 worker/故障记录，不把失败候选遗留的内部选择当作已生效配置。
+
+订阅的封存提示表示未选择可用的已安装版本；不是声称安装清单为空。取消版本选择会停止该模块订阅，但不删除已导入的制品、审批或历史新闻；installed、selected、desiredEnabled、loaded 分别呈现。
 
 ## 加载、切换和故障
 
@@ -90,6 +93,8 @@ export const newsModule: {
 私有 stdio 每行 UTF-8 JSON，每个 worker 同时一个请求。宿主生成单调请求 ID；不接收主动推送、错 ID 或重复结果。console 在 import 前被限制到 stderr；直接写 stdout 会破坏协议并导致故障。模块的 AbortSignal 是合作取消，宿主截止时间仍可强制结束忽略 signal 的代码。
 
 Windows 由窄启动器将 CREATE_SUSPENDED 子进程加入 kill-on-close Job Object 后恢复。POSIX 用不导入模块的独立进程组监督器；停止时先枚举可见后代并由叶到根发信号，再确认 PID 退出。已自行 daemonize、在扫描前已脱离父子关系的进程可能不再可归属，因此 POSIX 进程组/树清理不是对抗恶意同用户代码的 OS containment。所有权记录持久保存 PID、启动身份、机器身份和随机任务身份；恢复不凭裸 PID 杀进程。停止失败保留所有权、阻止替换/卸载，退出也报告失败而非宣布已清理；不要把停止 worker 等同于沙箱。
+
+内置 Guardian 和桌面用父进程独占的 child IPC `openalice:shutdown` 请求 Alice 执行同一个幂等关闭函数；不增加 HTTP 停机面。Alice 在 startup await 前捕获请求，关闭函数可用后处理，不丢掉启动途中收到的请求。Windows 的 SIGTERM 不会执行 Node/Bun 的信号清理，故 IPC 是优雅阶段，10 秒后仍未退出保留强制后备。Guardian 在子进程确认退出后才释放 owner，强制后最多再等 2 秒；未确认时保留归属。CLI down 的现有返回条件仍是 Guardian absent，不单独证明新闻 owner 收据消失；实际验收须检查收据、进程和历史，不以请求发出或退出码替代。开发 watch 包装器仍走原树停止路径。
 
 ## 统一写入和历史
 

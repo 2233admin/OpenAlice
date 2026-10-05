@@ -24,6 +24,18 @@ their existing process ownership, health, restart, lock, signal, and shutdown
 semantics. Bun changes the shipped executable and resource provider, not those
 boundaries.
 
+Built Guardian and Electron request Alice cleanup over their owned child IPC
+channel (`openalice:shutdown`); Windows `child.kill(SIGTERM)` cannot invoke the
+backend signal handler. The same idempotent Alice shutdown closes collectors,
+workers and stores before releasing its lock. Requests received during startup
+are retained until cleanup is available. Guardian waits for child exit
+before releasing its owner, allows 10 seconds before force, then 2 seconds to
+confirm exit; unconfirmed child exit retains ownership for recovery. Electron
+keeps its tree-kill fallback after a 10-second grace period. A sent message is
+not cleanup proof. Forced termination can retain news-worker receipts; CLI
+`down` currently reports Guardian absence, not independent worker-receipt
+verification. Development watch wrappers retain their existing tree-stop path.
+
 On Linux, Guardian's positive PID probe also checks `/proc/<pid>/stat`. It
 parses fields after the final `)` of the process name, which may itself contain
 parentheses or text resembling state fields. A `Z` thread-group leader alone

@@ -2813,7 +2813,7 @@ export const ja: Resources = {
     deselectBeforeUninstall: 'アンインストール前にバージョンの選択を解除し、設定の保存を待ってください。購読は保持されます。',
     subscriptions: 'モジュールの購読',
     subscriptionDescription: 'ソースと型付きパラメータを設定します。削除したモジュールの購読も保管されます。',
-    archived: '保管済み · モジュールなし',
+    archived: '保管済み · インストール済みバージョン未選択',
     enabled: '有効',
     disabled: '無効',
     edit: '編集',

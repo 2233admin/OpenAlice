@@ -475,7 +475,7 @@ describe('NewsCollector RSS configuration', () => {
     expect((await storedItems()).map(({ title, metadata }) => ({ title, source: metadata.source }))).toEqual([
       { title: 'Ambiguous article', source: 'ambiguous-source' },
     ])
-  })
+  }, 10_000) // Two sequential failed feeds each retain the real 2s retry delay.
 
   it('preserves last success through master disable and re-enable before an HTTP failure', async () => {
     const feed: RSSFeedConfig = {

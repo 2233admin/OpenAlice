@@ -34,6 +34,7 @@ import {
   resolveGuardianTradingMode,
   takeoverRequested,
   proxyEnvFromRules,
+  requestAliceShutdown,
   resolveAliceProjectIdentity,
   type GuardianTradingModePlan,
   type RuntimeProcessLock,
@@ -96,7 +97,7 @@ let desktopRelay: WebRelay | null = null
 const DEFAULT_WEB_PORT_START = 47331
 const READY_TIMEOUT_MS = 30_000
 const UTA_READY_TIMEOUT_MS = 15_000
-const SIGTERM_GRACE_MS = 5_000
+const SIGTERM_GRACE_MS = 10_000
 const UTA_RESTART_GRACE_MS = 8_000
 const DATA_HOME_PREFERENCES_FILE = 'openalice-data-home.json'
 const UPDATE_ATTEMPT_FILE = 'openalice-update-attempt.json'
@@ -155,6 +156,10 @@ if (existingOwnerSmokeMode() || process.env['OPENALICE_ELECTRON_SMOKE_STARTUP'] 
 // correct and preserves graceful SIGTERM.
 function killTree(child: ChildProcess, signal: NodeJS.Signals = 'SIGTERM'): void {
   if (child.pid == null) return
+  if (child === alice && signal === 'SIGTERM' && child.connected) {
+    requestAliceShutdown(child, () => killTree(child, 'SIGKILL'))
+    return
+  }
   if (process.platform === 'win32') {
     try { spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']) } catch { /* already gone */ }
   } else {

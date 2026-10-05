@@ -68,7 +68,7 @@ export class NewsCollector {
     return {...this.health.get(row)??initialHealth(),id:feed.id,name:feed.name,source:feed.source,moduleId:row.moduleId,
       url:row.kind==='rss'?resolveNewsFeedUrl(row.feed,this.config.rsshubBaseUrl):'',state:!enabled?'disabled' as const:this.health.get(row)?.state??'never_attempted'}
   })}
-  getModules(){return this.exclusive(async()=>this.opts.manager?.list(this.config.modules??[])??[],true)}
+  getModules(){return this.exclusive(async()=>this.opts.manager?.list(this.config.modules??[],this.config.enabled)??[],true)}
   importModule(value:unknown){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');return this.opts.manager.importArtifact(value)})}
   approveModule(hash:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');return this.opts.manager.approve(hash)})}
   retryModule(hash:string){return this.exclusive(async()=>{if(!this.config.enabled||!this.opts.manager)throw new Error('News collection disabled');await this.opts.manager.retry(hash);return this.opts.manager.list(this.config.modules??[])})}

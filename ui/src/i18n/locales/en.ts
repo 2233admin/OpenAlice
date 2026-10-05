@@ -2852,7 +2852,7 @@ export const en = {
     deselectBeforeUninstall: 'Deselect a version and wait for settings to save before uninstalling it. Subscriptions are retained.',
     subscriptions: 'Module subscriptions',
     subscriptionDescription: 'Configure a source and typed parameters. Uninstalled modules keep their subscriptions archived.',
-    archived: 'Archived · module not installed',
+    archived: 'Archived · no installed version selected',
     enabled: 'Enabled',
     disabled: 'Disabled',
     edit: 'Edit',

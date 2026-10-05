@@ -2816,7 +2816,7 @@ export const zh: Resources = {
     deselectBeforeUninstall: '卸载前取消选择该版本并等待设置保存。订阅会保留。',
     subscriptions: '模块订阅',
     subscriptionDescription: '配置来源和有类型的参数。卸载模块后订阅仍会归档保留。',
-    archived: '已归档 · 模块未安装',
+    archived: '已归档 · 未选择已安装版本',
     enabled: '已启用',
     disabled: '已停用',
     edit: '编辑',

@@ -2820,7 +2820,7 @@ export const zhHant: Resources = {
     deselectBeforeUninstall: '解除安裝前取消選擇此版本並等候設定儲存。訂閱會保留。',
     subscriptions: '模組訂閱',
     subscriptionDescription: '設定來源及具型別的參數。解除安裝模組後，訂閱仍會封存保留。',
-    archived: '已封存 · 模組未安裝',
+    archived: '已封存 · 未選擇已安裝版本',
     enabled: '已啟用',
     disabled: '已停用',
     edit: '編輯',

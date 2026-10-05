@@ -53,13 +53,13 @@ export class NewsModuleManager {
   async importArtifact(value: unknown): Promise<InstalledModule> { return this.registry.importArtifact(value) }
   async approve(hash: string): Promise<InstalledModule> { return this.registry.approve(hash) }
 
-  async list(selections: ModuleSelection[] = this.selections): Promise<ModuleStatus[]> {
+  async list(selections: ModuleSelection[] = this.selections, enabled = true): Promise<ModuleStatus[]> {
     const entries = await this.registry.list()
     const statuses: ModuleStatus[] = []
     for (const entry of entries) {
       const selection = selections.find(selected => selected.contentHash === entry.contentHash)
       const loaded = this.workers.get(entry.contentHash)?.isLoaded() ?? false
-      let failed = !entry.manifest || (!!this.workers.get(entry.contentHash) && !loaded) || (this.selections.some(selected=>selected.contentHash===entry.contentHash&&selected.enabled) && entry.approved && !loaded)
+      let failed = !entry.manifest || (!!this.workers.get(entry.contentHash) && !loaded) || (enabled && selection?.enabled === true && entry.approved && !loaded)
       try { failed ||= await this.failed(entry.contentHash) } catch { failed = true }
       const state = !entry.manifest ? 'invalid' : loaded ? 'running' : failed ? 'failed' : !entry.approved ? 'unapproved' : 'disabled'
       statuses.push({

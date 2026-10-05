@@ -1273,7 +1273,8 @@
     ],
     "package": "@traderalice/guardian-runtime",
     "files": [
-      "tests/integration/guardian-process-control/process-control.spec.ts"
+      "tests/integration/guardian-process-control/process-control.spec.ts",
+      "tests/integration/guardian-process-control/alice-shutdown.spec.ts"
     ],
     "scope": "Process identity and shutdown against test-owned native children; no existing runtime ownership."
   },

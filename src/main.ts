@@ -91,7 +91,7 @@ async function releaseRuntimeLock(): Promise<void> {
   await current?.release()
 }
 
-async function main() {
+async function main(shutdownRequested: Promise<void>) {
   // Before migrations create the new config dir: if this checkout carries a
   // pre-global-root data/ store, tell the user how to adopt it (covers bare
   // `pnpm start`; guardian children get OPENALICE_HOME so this stays quiet).
@@ -473,6 +473,7 @@ async function main() {
   }
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
+  void shutdownRequested.then(shutdown)
 
   // ==================== Tick Loop ====================
 
@@ -482,6 +483,11 @@ async function main() {
 }
 
 export async function startAliceRuntime(): Promise<void> {
+  const shutdownRequested = new Promise<void>((resolveShutdown) => {
+    process.on('message', (message: unknown) => {
+      if (message && typeof message === 'object' && 'type' in message && message.type === 'openalice:shutdown') resolveShutdown()
+    })
+  })
   const guardianPid = positiveInteger(process.env['OPENALICE_GUARDIAN_PID'])
   const guardianStartedAt = positiveInteger(process.env['OPENALICE_GUARDIAN_STARTED_AT'])
   runtimeLock = await acquireOpenAliceRuntimeLocks({
@@ -497,7 +503,7 @@ export async function startAliceRuntime(): Promise<void> {
     },
   })
   try {
-    await main()
+    await main(shutdownRequested)
   } catch (err) {
     await releaseRuntimeLock().catch((releaseErr) => {
       console.error('runtime lock release failed after startup error:', releaseErr)

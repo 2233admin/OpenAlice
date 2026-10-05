@@ -115,6 +115,74 @@ describe('news module configuration HTTP route', () => {
     expect(await retried.json()).toMatchObject({ modules: [expect.objectContaining({ loadedHash: contentHash })] })
   }, 30_000)
 
+  it('retains the approved old selection and reports its failed restoration after a rejected replacement', async () => {
+    const oldEntry = `export const newsModule = { abiVersion: 1, moduleId: 'test.feed', version: '1.0.0', async collect() { return [] } }`
+    const oldImport = await routes.request('/api/news/modules', json('POST', { artifact: artifact(oldEntry) }))
+    expect(oldImport.status).toBe(200)
+    const { contentHash: oldHash } = await oldImport.json() as { contentHash: string }
+    expect((await routes.request(`/api/news/modules/${oldHash}/approve`, { method: 'POST' })).status).toBe(200)
+    const previous = {
+      ...context.config.news, enabled: true, feeds: [],
+      modules: [{ moduleId: 'test.feed', contentHash: oldHash, enabled: true }], subscriptions: [],
+    }
+    expect((await routes.request('/api/config/news', json('PUT', previous))).status).toBe(200)
+    const before = await (await routes.request('/api/news/modules')).json() as { modules: Array<{ contentHash: string; loaded: boolean }> }
+    expect(before.modules.find(module => module.contentHash === oldHash)?.loaded).toBe(true)
+
+    const replacement = await routes.request('/api/news/modules', json('POST', {
+      artifact: artifact("throw new Error('candidate import failed'); export const newsModule = { abiVersion: 1, moduleId: 'test.feed', version: '1.0.0', async collect() { return [] } }"),
+    }))
+    expect(replacement.status).toBe(200)
+    const { contentHash: candidateHash } = await replacement.json() as { contentHash: string }
+    expect(candidateHash).not.toBe(oldHash)
+    expect((await routes.request(`/api/news/modules/${candidateHash}/approve`, { method: 'POST' })).status).toBe(200)
+    const configPath = join(isolatedHome.directory, 'data', 'config', 'news.json')
+    const archivedConfig = await readFile(configPath, 'utf8')
+    expect(archivedConfig).not.toContain(candidateHash)
+    await rm(join(directory, 'modules', oldHash, 'entry.mjs'))
+
+    const refused = await routes.request('/api/config/news', json('PUT', {
+      ...previous, modules: [{ moduleId: 'test.feed', contentHash: candidateHash, enabled: true }],
+    }))
+    expect(await readFile(configPath, 'utf8')).toBe(archivedConfig)
+    expect((await loadConfig()).news).toMatchObject({ modules: previous.modules, subscriptions: [] })
+    expect(context.config.news).toMatchObject({ modules: previous.modules, subscriptions: [] })
+    const { modules } = await (await routes.request('/api/news/modules')).json() as { modules: Array<{ contentHash: string; lastError: string | null }> }
+    expect(modules.find(module => module.contentHash === candidateHash)).toMatchObject({ desiredEnabled: false, loaded: false, state: 'failed' })
+    const oldStatus = modules.find(module => module.contentHash === oldHash)
+    expect(oldStatus).toMatchObject({ approved: true, desiredEnabled: true, loaded: false, loadedHash: null, state: 'failed' })
+    expect(oldStatus?.lastError).toEqual(expect.any(String))
+    expect(refused.ok).toBe(false)
+  }, 45_000)
+
+  it('preserves an enabled module preference while globally disabled and loads it again when re-enabled', async () => {
+    const entry = `export const newsModule = { abiVersion: 1, moduleId: 'test.feed', version: '1.0.0', async collect() { return [] } }`
+    const imported = await routes.request('/api/news/modules', json('POST', { artifact: artifact(entry) }))
+    expect(imported.status).toBe(200)
+    const { contentHash } = await imported.json() as { contentHash: string }
+    expect((await routes.request(`/api/news/modules/${contentHash}/approve`, { method: 'POST' })).status).toBe(200)
+    const enabled = {
+      ...context.config.news, feeds: [], enabled: true,
+      modules: [{ moduleId: 'test.feed', contentHash, enabled: true }], subscriptions: [],
+    }
+    expect((await routes.request('/api/config/news', json('PUT', enabled))).status).toBe(200)
+    expect((await routes.request('/api/config/news', json('PUT', { ...enabled, enabled: false }))).status).toBe(200)
+    expect((await loadConfig()).news).toMatchObject({ enabled: false, modules: enabled.modules })
+    const disabled = await routes.request('/api/news/modules')
+    expect(disabled.status).toBe(200)
+    expect(await disabled.json()).toMatchObject({ modules: [expect.objectContaining({
+      contentHash, approved: true, desiredEnabled: true, loaded: false, loadedHash: null, state: 'disabled', lastError: null,
+    })] })
+
+    expect((await routes.request('/api/config/news', json('PUT', enabled))).status).toBe(200)
+    expect((await loadConfig()).news).toMatchObject({ enabled: true, modules: enabled.modules })
+    const resumed = await routes.request('/api/news/modules')
+    expect(resumed.status).toBe(200)
+    expect(await resumed.json()).toMatchObject({ modules: [expect.objectContaining({
+      contentHash, desiredEnabled: true, loaded: true, loadedHash: contentHash, state: 'running', lastError: null,
+    })] })
+  }, 30_000)
+
   it('requires both module arrays on news saves rather than silently resetting them', async () => {
     for (const missing of ['modules', 'subscriptions'] as const) {
       const invalid = await routes.request('/api/config/news', json('PUT', { ...context.config.news, [missing]: undefined }))
