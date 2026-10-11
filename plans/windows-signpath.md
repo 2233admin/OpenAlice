@@ -22,10 +22,13 @@ Ordered work:
 - [x] Inspect the current Windows package and release candidate order.
 - [x] Prepare the SignPath artifact configuration and reviewed test workflow.
 - [x] Validate XML well-formedness, workflow syntax, repository tooling tests,
-  and root typecheck. The SignPath-hosted schema did not compile with the
-  system `xmllint`, so final config validation remains an account-side test.
-- [ ] Accept the OSS organization invitation; link the GitHub repository,
-  create the project/configuration/test policy, and install a submitter token.
+  and root typecheck. Account-side schema validation now also passes.
+- [x] Accept the OSS organization invitation and verify the existing project,
+  GitHub.com trusted build system, CI submitter, and valid `test-signing` policy.
+  Rotate the CI token into the GitHub `SIGNPATH_API_TOKEN` secret.
+- [x] Create `windows-installer` from the checked-in XML; SignPath reports
+  `VALID` on 2026-10-11. Pin the existing test certificate for CI verification.
+- [x] Configure repository variables and enable the test workflow on `dev`.
 - [ ] Run the GitHub-hosted self-signed test and verify the returned installer.
 - [ ] Publish and review Code signing and privacy policy statements plus team
   roles on public home/download/release surfaces.

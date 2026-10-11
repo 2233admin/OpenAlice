@@ -40,10 +40,13 @@ jobs:
           SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
           SIGNPATH_TEST_POLICY_SLUG: ${{ vars.SIGNPATH_TEST_POLICY_SLUG }}
           SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGNPATH_TEST_CERTIFICATE_THUMBPRINT: ${{ vars.SIGNPATH_TEST_CERTIFICATE_THUMBPRINT }}
         run: |
-          foreach ($name in @('SIGNPATH_API_TOKEN', 'SIGNPATH_ORGANIZATION_ID', 'SIGNPATH_PROJECT_SLUG', 'SIGNPATH_TEST_POLICY_SLUG', 'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG')) {
+          foreach ($name in @('SIGNPATH_API_TOKEN', 'SIGNPATH_ORGANIZATION_ID', 'SIGNPATH_PROJECT_SLUG', 'SIGNPATH_TEST_POLICY_SLUG', 'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG', 'SIGNPATH_TEST_CERTIFICATE_THUMBPRINT')) {
             if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing $name" }
           }
+          if ($env:SIGNPATH_TEST_POLICY_SLUG -ne 'test-signing') { throw 'Only test-signing is allowed' }
+          if ($env:SIGNPATH_TEST_CERTIFICATE_THUMBPRINT -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Invalid test certificate thumbprint' }
 
       - name: Build unsigned Windows installer
         shell: pwsh
@@ -87,7 +90,7 @@ jobs:
 
       - name: Sign with the self-signed test certificate
         id: signpath
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -105,6 +108,7 @@ jobs:
         shell: pwsh
         env:
           INSTALLER_NAME: ${{ steps.installer.outputs.name }}
+          EXPECTED_THUMBPRINT: ${{ vars.SIGNPATH_TEST_CERTIFICATE_THUMBPRINT }}
         run: |
           $unsigned = Join-Path dist/electron-app $env:INSTALLER_NAME
           $signed = Join-Path dist/signpath-signed $env:INSTALLER_NAME
@@ -116,6 +120,27 @@ jobs:
           if ((Get-FileHash $unsigned).Hash -eq (Get-FileHash $signed).Hash) {
             throw 'SignPath returned unchanged installer bytes'
           }
+          $certificate = $signature.SignerCertificate
+          if ($certificate.Thumbprint -ne $env:EXPECTED_THUMBPRINT) { throw 'Unexpected test signing certificate' }
+          if ($certificate.Subject -ne $certificate.Issuer) { throw 'Expected a self-signed test certificate' }
+          # Trust only the pinned test certificate on this disposable runner,
+          # verify the Authenticode digest, and remove that trust afterwards.
+          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
+          $added = $false
+          try {
+            $store.Open('ReadWrite')
+            if (-not ($store.Certificates | Where-Object Thumbprint -eq $certificate.Thumbprint)) {
+              $store.Add($certificate)
+              $added = $true
+            }
+            $verified = Get-AuthenticodeSignature $signed
+            if ($verified.Status -ne 'Valid') { throw "Invalid signature: $($verified.Status): $($verified.StatusMessage)" }
+          } finally {
+            if ($added) { $store.Remove($certificate) }
+            $store.Close()
+          }
+          Write-Host "Verified test certificate thumbprint: $($certificate.Thumbprint)"
+          Write-Host "Signed installer SHA-256: $((Get-FileHash $signed -Algorithm SHA256).Hash)"
           Write-Host "Test signer: $($signature.SignerCertificate.Subject)"
           Write-Host "Windows trust status (self-signed test certificate): $($signature.Status)"
 

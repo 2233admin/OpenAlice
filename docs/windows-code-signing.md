@@ -20,11 +20,16 @@ test alone.
 
 `.github/workflows/signpath-test-windows.yml` builds and smoke-tests the
 Windows installer on a GitHub-hosted runner, uploads the unsigned installer,
-submits it to SignPath under the **self-signed test policy**, checks that the
-returned installer has an Authenticode signer, and retains the signed test
-installer for seven days. It does not create a tag, GitHub Release, updater
+submits it to SignPath under the **self-signed test policy**, checks the returned
+installer against the pinned test certificate, verifies its Authenticode
+signature, and retains the signed test installer for seven days. It does not create a tag, GitHub Release, updater
 feed, or download alias. Its run summary contains the GitHub and SignPath
 request links to send for Foundation review.
+
+Signature verification temporarily trusts only the pinned self-signed
+certificate in the disposable GitHub runner's current-user certificate store,
+requires Windows to report `Valid`, and removes that temporary trust in a
+`finally` block. It never changes trust on the user's computer.
 
 ## Account-side setup
 
@@ -41,9 +46,11 @@ request links to send for Foundation review.
    Do not paste the token into an issue, PR, chat, or tracked file.
 5. Set these GitHub Actions repository variables to the exact values shown in
    SignPath: `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`,
-   `SIGNPATH_TEST_POLICY_SLUG`, and
-   `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`. Set `SIGNPATH_TEST_ENABLED=true`
-   only when the account setup is complete and the test signing request is
+   `SIGNPATH_TEST_POLICY_SLUG`,
+   `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`, and
+   `SIGNPATH_TEST_CERTIFICATE_THUMBPRINT` (the public SHA-1 thumbprint displayed
+   on the test certificate page). The workflow only accepts `test-signing`.
+   Set `SIGNPATH_TEST_ENABLED=true` only when the account setup is complete and the test signing request is
    ready to be submitted.
 6. Merge the reviewed setup PR to `dev`: its change to the workflow or XML
    triggers one test run when `SIGNPATH_TEST_ENABLED=true`. The manual
@@ -61,7 +68,8 @@ Foundation requires product-name and version restrictions on signed binaries.
 Once the self-signed request succeeds, reply to the existing SignPath
 Foundation email with the GitHub workflow URL, SignPath request URL, project
 and artifact configuration names, and the public Code signing policy URL.
-SignPath then reviews the setup and orders/imports the production certificate.
+Ask SignPath to confirm the remaining production certificate issuance/import
+steps; `CSR PENDING` alone does not establish which review steps remain.
 
 Before requesting that review, publish a public **Code signing policy** link
 on the project home and download/release pages. It must identify the release
