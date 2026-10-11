@@ -4,6 +4,23 @@ All notable changes to OpenAlice will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- [Katana Desk](src/workspaces/templates/katana-desk/README.md) research workspace
+  for Claude Code and Codex, using k-atana's eight dotted MCP tool ids and
+  source-attributed freshness/producer receipts. Bootstrap configures an
+  existing kernel without starting trading services or installing dependencies.
+
+### Fixed
+
+- Codex interactive and headless launches now honor workspace `.mcp.json`
+  stdio/HTTP definitions instead of always injecting both OpenAlice servers.
+  Omitted OpenAlice defaults are disabled; malformed configurations fail before
+  launch. Unrelated operator MCP configuration, authentication and model settings
+  are preserved; this is not a sandbox.
+- Interactive workspace command composition now receives the merged adapter
+  environment, matching headless launches when expanding MCP placeholders.
+
 ### 🏗️ Architecture — UTA-split v1
 
 Split the trading domain into a dedicated UTA service co-located with

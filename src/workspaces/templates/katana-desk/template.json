@@ -1,0 +1,9 @@
+{
+  "displayName": "Katana Desk",
+  "groupOrder": 40,
+  "description": "Read-only katana research: receipt-backed data health, scan candidates and desk digest. No trading, book/lake writes or acknowledgement decisions.",
+  "defaultAgents": ["claude", "codex"],
+  "injectMcp": false,
+  "injectPersona": false,
+  "bundledSkills": []
+}

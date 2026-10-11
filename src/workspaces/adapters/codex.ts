@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { z } from 'zod';
 
 import type { BootstrapContext, CliAdapter, OnDiskSession, SpawnContext, WorkspaceAiCred } from '../cli-adapter.js';
 import { readWorkspaceFile, writeWorkspaceFile } from '../file-service.js';
@@ -36,10 +37,9 @@ const CODEX_PROVIDER_NAME = 'workspace';
  *   1. **Default (no override).** Workspace has no `.codex/` directory.
  *      Adapter doesn't set `CODEX_HOME`. Codex reads the user's global
  *      `~/.codex/auth.json` + `~/.codex/config.toml` — exactly what a
- *      vanilla `codex` invocation in any project does. The OpenAlice MCP
- *      servers are wired via per-invocation `-c mcp_servers...url=...`
- *      flags in `composeCommand` below, so MCP is visible without polluting
- *      the user's global config.
+ *      vanilla `codex` invocation in any project does. Workspace MCP
+ *      definitions are translated into per-invocation `-c` overrides,
+ *      without changing the user's global config or provider settings.
  *
  *   2. **Override (user-configured via OpenAlice UI).** Workspace has its
  *      own `.codex/{config.toml, env.json[, auth.json]}`. Adapter sets
@@ -69,14 +69,8 @@ export const codexAdapter: CliAdapter = {
     headless: true,
   },
 
-  /**
-   * Always prepends `-c mcp_servers.openalice.url="..."` and the workspace
-   * scoped `openalice-workspace` server so OpenAlice MCP is visible
-   * per-spawn without writing to `~/.codex/config.toml`. The
-   * flag overrides any same-key entry in the read config.toml (verified
-   * empirically), and adds a new key when none exists — safe in both
-   * default and override modes.
-   */
+  // Both launch modes translate workspace MCP; absent files retain the
+  // legacy OpenAlice defaults. Codex merges overrides with operator config.
   composeCommand(_base: readonly string[], ctx: SpawnContext): readonly string[] {
     const head = codexMcpHead(ctx);
     if (ctx.resume === undefined) return head;
@@ -113,9 +107,7 @@ export const codexAdapter: CliAdapter = {
     }
 
     // Provider override. config.toml carries only model / model_provider /
-    // [model_providers.*] — the OpenAlice MCP server entries are wired per-spawn
-    // via this adapter's `-c mcp_servers...url=...` flags, so we
-    // don't repeat it here.
+    // [model_providers.*] — MCP is wired per-spawn by codexMcpHead.
     let toml = '';
     if (cred.model) toml += `model = ${tomlString(cred.model)}\n`;
     if (cred.baseUrl) toml += `model_provider = "${CODEX_PROVIDER_NAME}"\n`;
@@ -263,17 +255,82 @@ export const codexAdapter: CliAdapter = {
   },
 };
 
-/**
- * The `codex -c mcp_servers.*` head shared by interactive `composeCommand` and
- * headless `composeHeadlessCommand` — so the two never drift on MCP wiring.
- *
- * Reads OPENALICE_MCP_URL / AQ_WS_ID from the spawn-bound env (which service.ts
- * populates with the backend's actual MCP port), NOT process.env — the backend
- * env only carries OPENALICE_MCP_PORT; the URL is composed per-spawn and
- * injected via buildSpawnEnv. Reading process.env here used to fall back to the
- * historical 3001 hardcode and route codex at a dead port.
- */
+const mcpStrings = z.record(z.string(), z.string());
+const workspaceMcpSchema = z.object({
+  mcpServers: z.record(z.string().regex(/^[A-Za-z0-9_-]+$/), z.union([
+    z.object({
+      type: z.literal('stdio').optional(),
+      command: z.string().refine((value) => value.trim().length > 0),
+      args: z.array(z.string()).optional(),
+      env: mcpStrings.optional(),
+    }).strict(),
+    z.object({
+      type: z.enum(['http', 'streamable-http']),
+      url: z.string(),
+      headers: mcpStrings.optional(),
+    }).strict(),
+  ])),
+}).strict();
+
+/** Translate workspace MCP without changing provider/auth or unrelated servers. */
 function codexMcpHead(ctx: SpawnContext): string[] {
+  let source: string | undefined;
+  try {
+    source = readFileSync(join(ctx.cwd, '.mcp.json'), 'utf8');
+  } catch (error) {
+    if (!isENOENT(error)) throw error;
+  }
+  if (source !== undefined) {
+    let input: unknown;
+    try {
+      input = JSON.parse(source);
+    } catch {
+      throw new Error('codex adapter: invalid JSON in .mcp.json');
+    }
+    const parsed = workspaceMcpSchema.safeParse(input);
+    if (!parsed.success) throw new Error('codex adapter: unsupported .mcp.json configuration');
+    const expand = (value: string): string => {
+      const placeholder = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^{}]*))?\}/g;
+      if (value.replace(placeholder, '').includes('${')) {
+        throw new Error('codex adapter: unsupported MCP environment placeholder');
+      }
+      return value.replace(placeholder, (_match, name: string, fallback: string | undefined) => {
+        const replacement = ctx.env[name];
+        if (fallback !== undefined && !replacement) return fallback;
+        if (replacement === undefined) throw new Error(`codex adapter: missing MCP environment variable ${name}`);
+        return replacement;
+      });
+    };
+    const stringMap = (values: Record<string, string>): string =>
+      `{${Object.entries(values).map(([key, value]) => `${mcpTomlString(key)}=${mcpTomlString(expand(value))}`).join(',')}}`;
+    const entries = Object.entries(parsed.data.mcpServers).map(([name, server]) => {
+      const fields = ['enabled=true'];
+      if ('command' in server) {
+        const command = expand(server.command);
+        if (!command.trim()) throw new Error('codex adapter: empty MCP command');
+        fields.push(`command=${mcpTomlString(command)}`);
+        if (server.args) fields.push(`args=[${server.args.map((arg) => mcpTomlString(expand(arg))).join(',')}]`);
+        if (server.env) fields.push(`env=${stringMap(server.env)}`);
+      } else {
+        const url = expand(server.url);
+        if (!URL.canParse(url) || !['http:', 'https:'].includes(new URL(url).protocol)) {
+          throw new Error('codex adapter: MCP URL must be absolute HTTP(S)');
+        }
+        fields.push(`url=${mcpTomlString(url)}`);
+        if (server.headers) fields.push(`http_headers=${stringMap(server.headers)}`);
+      }
+      return `${name}={${fields.join(',')}}`;
+    });
+    for (const name of ['openalice', 'openalice-workspace']) {
+      if (!Object.hasOwn(parsed.data.mcpServers, name)) {
+        // Codex requires a transport even for disabled entries. Port zero is
+        // deliberately inert; this is not a fallback service. Unrelated
+        // operator MCP entries remain untouched by Codex's config merge.
+        entries.push(`${name}={enabled=false,url="http://127.0.0.1:0"}`);
+      }
+    }
+    return ['codex', '-c', `mcp_servers={${entries.join(',')}}`];
+  }
   const mcpUrl = ctx.env['OPENALICE_MCP_URL'];
   if (!mcpUrl) {
     throw new Error('codex adapter: OPENALICE_MCP_URL missing from spawn env');
@@ -294,6 +351,11 @@ function codexMcpHead(ctx: SpawnContext): string[] {
     // ("Invalid MCP server name '\"openalice-workspace\"'").
     `mcp_servers.openalice-workspace.url="${mcpUrl}/${workspaceId}"`,
   ];
+}
+
+function mcpTomlString(value: string): string {
+  if (/[\uD800-\uDFFF]/u.test(value)) throw new Error('codex adapter: invalid Unicode in MCP configuration');
+  return JSON.stringify(value).replace(/\u007f/g, '\\u007f');
 }
 
 const CODEX_ROLLOUT_RE = /^rollout-.*\.jsonl$/;
