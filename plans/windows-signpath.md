@@ -41,14 +41,25 @@ Ordered work:
   [c471d6af-e568-471b-9c5d-4729fa4c601a](https://app.signpath.io/Web/bc3b3092-8ca4-4498-ad25-003b4a539a0b/SigningRequests/c471d6af-e568-471b-9c5d-4729fa4c601a)
   completed on 2026-10-11. Its installer SHA-256 is
   `aea9d0a6b30e49404a8e5e36d41fdc6b16cde511274601f36fd23611b8b00e8f`.
-- [ ] Verify the returned self-signed installer in Windows CI. The first verifier
-  used `CurrentUser\Root`, whose interactive trust prompt stalls a headless
-  runner. Use the disposable runner's `LocalMachine\Root`, retain certificate
-  pinning/cleanup, add a bounded timeout, and rerun before marking acceptance.
+- [x] Verify the returned self-signed installer in Windows CI.
+  [Run 38124632189](https://github.com/TraderAlice/OpenAlice/actions/runs/38124632189)
+  passed the complete build, packaged Workspace smoke, signing, Authenticode
+  verification, and signed-artifact upload on 2026-10-11 at source `dc18f040`.
+  [Request 0aa1f009-5ac7-4026-9420-338d058b947b](https://app.signpath.io/Web/bc3b3092-8ca4-4498-ad25-003b4a539a0b/SigningRequests/0aa1f009-5ac7-4026-9420-338d058b947b)
+  is `Completed`; SignPath's manifest and the Windows verifier agree on the
+  installer SHA-256:
+  `97f4a48b83b4441ad1ab1c7da8cc09a220896976177ac4ec399d2b82b9e6cbf7`.
+  Verification passed with the pinned test certificate and removed temporary
+  `LocalMachine\Root` trust. This resolves the earlier `CurrentUser\Root`
+  consent-dialog stall. The run retains
+  `signpath-signed-test-windows-38124632189` for seven days; it is not a public
+  release artifact.
 - [ ] Publish and review Code signing and privacy policy statements plus team
   roles on public home/download/release surfaces.
 - [ ] Send the tested request/build/policy links to SignPath for production
-  certificate review.
+  certificate review. `Release certificate 2026` still showed `CSR PENDING`
+  when checked on 2026-10-11; no production certificate or release acceptance
+  follows from the successful self-signed test.
 - [ ] Integrate production signing in the Windows release path; regenerate and
   verify update metadata from signed bytes and prove the installed upgrade path.
 
