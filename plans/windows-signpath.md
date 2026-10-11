@@ -29,7 +29,16 @@ Ordered work:
 - [x] Create `windows-installer` from the checked-in XML; SignPath reports
   `VALID` on 2026-10-11. Pin the existing test certificate for CI verification.
 - [x] Configure repository variables and enable the test workflow on `dev`.
-- [ ] Run the GitHub-hosted self-signed test and verify the returned installer.
+- [x] Merge setup PR [#1605](https://github.com/TraderAlice/OpenAlice/pull/1605).
+  [Run 38122997125](https://github.com/TraderAlice/OpenAlice/actions/runs/38122997125)
+  built the Windows installer, passed packaged Workspace acceptance and PE
+  metadata checks, and uploaded the unsigned installer.
+- [ ] Install/authorize the SignPath GitHub App for `TraderAlice/OpenAlice`.
+  The first request failed before signing with `Failed to retrieve GitHub App
+  token`; the organization has no SignPath App installation. The in-app browser
+  requires GitHub login. App permission review/approval remains with the owner.
+- [ ] Re-run the failed job after App installation, then verify the returned
+  self-signed installer and record the SignPath request link.
 - [ ] Publish and review Code signing and privacy policy statements plus team
   roles on public home/download/release surfaces.
 - [ ] Send the tested request/build/policy links to SignPath for production

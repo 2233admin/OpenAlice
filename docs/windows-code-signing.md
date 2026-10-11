@@ -38,6 +38,12 @@ requires Windows to report `Valid`, and removes that temporary trust in a
 2. In the OSS organization, create/link the OpenAlice project to the
    `TraderAlice/OpenAlice` GitHub repository and add GitHub.com as a trusted
    build system. Follow the [official GitHub integration guide](https://docs.signpath.io/trusted-build-systems/github).
+   Install the [SignPath GitHub App](https://github.com/apps/signpath) for the
+   `TraderAlice` organization with access limited to `OpenAlice`. Review the
+   actual permissions on GitHub's authorization page before approving it.
+   This organization's connector requires an App installation; without it the
+   request fails with `Failed to retrieve GitHub App token`, even when the
+   workflow's `actions: read` and `contents: read` permissions are present.
 3. Create an artifact configuration from
    [`signpath/windows-installer.xml`](../signpath/windows-installer.xml), and
    select the provided self-signed test certificate in a test signing policy.
