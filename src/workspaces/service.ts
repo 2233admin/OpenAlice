@@ -252,7 +252,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // adapter wins on key collisions.
     const adapterEnv = adapter.composeEnv?.(spawnCtx) ?? {};
     const env = { ...baseEnv, ...adapterEnv };
-    const command = adapter.composeCommand(config.command, spawnCtx);
+    const command = adapter.composeCommand(config.command, { ...spawnCtx, env });
     const transcriptDir = adapter.transcriptDir ? adapter.transcriptDir(ws.dir) : null;
     return { command, cwd: ws.dir, env, transcriptDir };
   };
