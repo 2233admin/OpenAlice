@@ -33,12 +33,18 @@ Ordered work:
   [Run 38122997125](https://github.com/TraderAlice/OpenAlice/actions/runs/38122997125)
   built the Windows installer, passed packaged Workspace acceptance and PE
   metadata checks, and uploaded the unsigned installer.
-- [ ] Install/authorize the SignPath GitHub App for `TraderAlice/OpenAlice`.
-  The first request failed before signing with `Failed to retrieve GitHub App
-  token`; the organization has no SignPath App installation. The in-app browser
-  requires GitHub login. App permission review/approval remains with the owner.
-- [ ] Re-run the failed job after App installation, then verify the returned
-  self-signed installer and record the SignPath request link.
+- [x] Install/authorize the SignPath GitHub App for `TraderAlice/OpenAlice`.
+  The owner reviewed the repository/organization permissions and installed it
+  on 2026-10-11 with only `OpenAlice` selected. This resolves the first request's
+  `Failed to retrieve GitHub App token` prerequisite failure.
+- [x] Submit the first successful self-signed request after App installation:
+  [c471d6af-e568-471b-9c5d-4729fa4c601a](https://app.signpath.io/Web/bc3b3092-8ca4-4498-ad25-003b4a539a0b/SigningRequests/c471d6af-e568-471b-9c5d-4729fa4c601a)
+  completed on 2026-10-11. Its installer SHA-256 is
+  `aea9d0a6b30e49404a8e5e36d41fdc6b16cde511274601f36fd23611b8b00e8f`.
+- [ ] Verify the returned self-signed installer in Windows CI. The first verifier
+  used `CurrentUser\Root`, whose interactive trust prompt stalls a headless
+  runner. Use the disposable runner's `LocalMachine\Root`, retain certificate
+  pinning/cleanup, add a bounded timeout, and rerun before marking acceptance.
 - [ ] Publish and review Code signing and privacy policy statements plus team
   roles on public home/download/release surfaces.
 - [ ] Send the tested request/build/policy links to SignPath for production
