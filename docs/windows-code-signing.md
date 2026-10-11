@@ -22,14 +22,16 @@ test alone.
 Windows installer on a GitHub-hosted runner, uploads the unsigned installer,
 submits it to SignPath under the **self-signed test policy**, checks the returned
 installer against the pinned test certificate, verifies its Authenticode
-signature, and retains the signed test installer for seven days. It does not create a tag, GitHub Release, updater
-feed, or download alias. Its run summary contains the GitHub and SignPath
+signature, and retains the signed test installer for seven days. It does not
+create a tag, GitHub Release, updater feed, or download alias. Its run summary contains the GitHub and SignPath
 request links to send for Foundation review.
 
 Signature verification temporarily trusts only the pinned self-signed
-certificate in the disposable GitHub runner's current-user certificate store,
+certificate in the disposable GitHub runner's local-machine certificate store,
 requires Windows to report `Valid`, and removes that temporary trust in a
-`finally` block. It never changes trust on the user's computer.
+`finally` block. `CurrentUser\Root` can display a consent dialog, so verification
+uses the hosted runner's administrator access to `LocalMachine\Root` and has
+a five-minute timeout. It never changes trust on the user's computer.
 
 ## Account-side setup
 
@@ -56,8 +58,8 @@ requires Windows to report `Valid`, and removes that temporary trust in a
    `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`, and
    `SIGNPATH_TEST_CERTIFICATE_THUMBPRINT` (the public SHA-1 thumbprint displayed
    on the test certificate page). The workflow only accepts `test-signing`.
-   Set `SIGNPATH_TEST_ENABLED=true` only when the account setup is complete and the test signing request is
-   ready to be submitted.
+   Set `SIGNPATH_TEST_ENABLED=true` only when the account setup is complete and
+   the test signing request is ready to be submitted.
 6. Merge the reviewed setup PR to `dev`: its change to the workflow or XML
    triggers one test run when `SIGNPATH_TEST_ENABLED=true`. The manual
    `workflow_dispatch` trigger will only appear after the workflow also exists

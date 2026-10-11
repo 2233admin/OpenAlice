@@ -105,6 +105,7 @@ jobs:
             version: ${{ toJSON(steps.installer.outputs.version) }}
 
       - name: Verify signed test installer
+        timeout-minutes: 5
         shell: pwsh
         env:
           INSTALLER_NAME: ${{ steps.installer.outputs.name }}
@@ -113,6 +114,7 @@ jobs:
           $unsigned = Join-Path dist/electron-app $env:INSTALLER_NAME
           $signed = Join-Path dist/signpath-signed $env:INSTALLER_NAME
           if (-not (Test-Path $signed)) { throw "Signed installer missing: $signed" }
+          Write-Host "Reading installer Authenticode signature"
           $signature = Get-AuthenticodeSignature $signed
           if (-not $signature.SignerCertificate -or $signature.SignatureType -ne 'Authenticode') {
             throw "Installer has no Authenticode signer: $($signature.Status)"
@@ -125,18 +127,24 @@ jobs:
           if ($certificate.Subject -ne $certificate.Issuer) { throw 'Expected a self-signed test certificate' }
           # Trust only the pinned test certificate on this disposable runner,
           # verify the Authenticode digest, and remove that trust afterwards.
-          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
+          # CurrentUser\Root displays a consent dialog and hangs headless CI.
+          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'LocalMachine')
           $added = $false
           try {
             $store.Open('ReadWrite')
             if (-not ($store.Certificates | Where-Object Thumbprint -eq $certificate.Thumbprint)) {
+              Write-Host "Temporarily trusting the pinned test certificate on the disposable runner"
               $store.Add($certificate)
               $added = $true
             }
+            Write-Host "Verifying installer Authenticode integrity"
             $verified = Get-AuthenticodeSignature $signed
             if ($verified.Status -ne 'Valid') { throw "Invalid signature: $($verified.Status): $($verified.StatusMessage)" }
           } finally {
-            if ($added) { $store.Remove($certificate) }
+            if ($added) {
+              $store.Remove($certificate)
+              Write-Host "Removed temporary test certificate trust"
+            }
             $store.Close()
           }
           Write-Host "Verified test certificate thumbprint: $($certificate.Thumbprint)"
