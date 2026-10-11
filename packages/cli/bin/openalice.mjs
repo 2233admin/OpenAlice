@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveStoredLaunchContext } from '../src/supervisor-config.ts'
 
 import { realpathSync } from 'node:fs'
 import { runDependencySetup } from '../src/dependency-setup.mjs'
@@ -16,7 +17,6 @@ import {
   parseLifecycleArgs,
   runLifecycleCommand,
 } from '../src/lifecycle-command.mjs'
-import { formatLocalStartHelp, parseLocalStartArgs, startLocal } from '../src/local-start.mjs'
 import {
   formatObservabilityHelp,
   parseObservabilityArgs,
@@ -67,7 +67,11 @@ export async function main(argv = process.argv.slice(2)) {
       process.stdout.write(formatRemoteHelp())
       return 0
     }
-    return connectRemote(parseRemoteArgs(args))
+    const options = parseRemoteArgs(args)
+    if (options.mode === 'connect' && !options.planOnly) {
+      throw usageError('Direct SSH browser attach is retired. Run "openalice machine add <user@host> --label <name>" to probe and register the Machine, then run "openalice" and choose its AliceProject in the GUI.')
+    }
+    return connectRemote(options)
   }
   if (command === '--machine') {
     const [selector, ...commandArgs] = args
@@ -79,17 +83,16 @@ export async function main(argv = process.argv.slice(2)) {
       runLocal: async (localArgs) => (await import('../src/main.ts')).main(localArgs),
     })
   }
-  if (!command || command === 'start' || command.startsWith('-')) {
-    const startArgs = command === 'start' ? args : argv
-    if (startArgs.includes('--help') || startArgs.includes('-h')) {
-      process.stdout.write(formatLocalStartHelp())
-      return 0
-    }
-    const options = parseLocalStartArgs(startArgs)
-    await maybeNotifyUpdate({ enabled: options.checkUpdates })
-    return startLocal(options)
+  if (command === 'start') {
+    throw usageError('"openalice start" is retired. Run "openalice" for the TUI and relay GUI, or "openalice run" for a foreground Runtime without a GUI.')
   }
-  if (['up', 'run', 'down', 'status', 'open'].includes(command)) {
+  if (!command || command.startsWith('-')) {
+    return (await import('../src/main.ts')).main(argv)
+  }
+  if (command === 'open') {
+    throw usageError('"openalice open" is retired. Run "openalice" for the TUI and relay GUI, or "openalice relay" for a GUI without the TUI.')
+  }
+  if (['up', 'run', 'down', 'status'].includes(command)) {
     if (args.includes('--help') || args.includes('-h')) {
       process.stdout.write(formatLifecycleHelp(command))
       return 0
@@ -131,7 +134,9 @@ Prints a completion script to stdout without modifying shell configuration.
       process.stdout.write(formatServerHelp())
       return 0
     }
-    return runServerCommand(action, parseServerArgs(action, serverArgs))
+    const options = parseServerArgs(action, serverArgs)
+    const context = await resolveStoredLaunchContext({ ...(options.homeRoot ? { home: options.homeRoot } : {}) })
+    return runServerCommand(action, { ...options, homeRoot: context.home })
   }
   if (command === 'update') {
     if (args.includes('--help') || args.includes('-h')) {
@@ -186,6 +191,10 @@ Prints a completion script to stdout without modifying shell configuration.
   error.code = 'EUSAGE'
   error.exitCode = 2
   throw error
+}
+
+function usageError(message) {
+  return Object.assign(new Error(message), { code: 'EUSAGE', exitCode: 2 })
 }
 
 function installedRuntimeInfo(productVersion) {

@@ -1119,10 +1119,10 @@ export function createWorkspaceRoutes(
     }
   });
 
-  app.get('/project-setup', async (c) => c.json(await readProjectWorkspaceSetup()));
+  app.get('/project-setup', async (c) => c.json(await readProjectWorkspaceSetup(undefined, svc)));
   app.post('/project-setup/retry', async (c) => {
     await prepareProjectWorkspaces(svc);
-    return c.json(await readProjectWorkspaceSetup());
+    return c.json(await readProjectWorkspaceSetup(undefined, svc));
   });
 
   app.post('/chat/initialize', async (c) => {
@@ -1516,7 +1516,7 @@ export function createWorkspaceRoutes(
       if (err instanceof z.ZodError) return c.json({ error: 'bad_request', message: 'Invalid Skill operation' }, 400);
       if (err instanceof TemplateUpgradeError) {
         const status = err.code === 'not_found' ? 404
-          : err.code === 'busy' || err.code === 'staged_changes' || err.code === 'stale_plan'
+          : err.code === 'busy' || err.code === 'staged_changes' || err.code === 'stale_plan' || err.code === 'blocked'
             ? 409
             : 400;
         return c.json({ error: err.code, message: err.message, plan: err.plan }, status);
@@ -1533,11 +1533,17 @@ export function createWorkspaceRoutes(
     if (!validId(id)) return c.json({ error: 'not_found' }, 404);
     try {
       const preferences = await readHarnessPreference();
+      const template = svc.registry.get(id)?.template;
+      // AQ/AP discovery includes stable upstream tags even with auto-apply off.
+      // Manual review must expose those same candidates; permission to merge
+      // still requires the exact reviewed digest and all source-owner guards.
+      const includeUnverified = preferences.showUnverifiedHarnessReleases
+        || template === 'auto-quant-v2' || template === 'auto-prediction';
       const targetVersion = c.req.query('targetVersion');
       return c.json({
         plan: await svc.sourceUpgrades.plan(
           id,
-          preferences.showUnverifiedHarnessReleases,
+          includeUnverified,
           targetVersion || undefined,
         ),
       });
@@ -1563,9 +1569,15 @@ export function createWorkspaceRoutes(
     }
     try {
       const preferences = await readHarnessPreference();
+      const template = svc.registry.get(id)?.template;
+      // AQ/AP discovery includes stable upstream tags even with auto-apply off.
+      // Manual review must expose those same candidates; permission to merge
+      // still requires the exact reviewed digest and all source-owner guards.
+      const includeUnverified = preferences.showUnverifiedHarnessReleases
+        || template === 'auto-quant-v2' || template === 'auto-prediction';
       const result = await svc.sourceUpgrades.apply(
         id,
-        preferences.showUnverifiedHarnessReleases,
+        includeUnverified,
         { planDigest: fields['planDigest'], targetVersion: fields['targetVersion'] },
       );
       return c.json({ result, workspace: await svc.publicMeta(svc.registry.get(id)!) });

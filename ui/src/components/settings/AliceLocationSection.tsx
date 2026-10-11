@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { ChevronDown, ChevronRight, Monitor, RefreshCw, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -23,12 +23,15 @@ export function AliceLocationSection() {
   const [returningIntegrated, setReturningIntegrated] = useState(false)
   const [switchError, setSwitchError] = useState<string | null>(null)
   const desktopConnection = window.openAlice?.desktopConnection
+  useEffect(() => {
+    if (desktopConnection || relay.status) void relay.refresh()
+  }, [desktopConnection, relay.status?.target?.machine, relay.status?.target?.project, relay.refresh])
   const canChoose = Boolean(relay.status || desktopConnection || connection.kind === 'electron')
-  const remote = connection.kind === 'remote' || (relay.status?.target?.machine !== undefined && relay.status.target.machine !== 'local')
+  const remote = relay.status?.target?.machine !== undefined && relay.status.target.machine !== 'local'
   const electron = connection.kind === 'electron'
   const relayMachine = relay.status?.target?.machine
   const machine = relay.status?.target?.machineName ?? (relayMachine && relayMachine !== 'local' ? relayMachine : undefined)
-    ?? (connection.kind === 'remote' ? connection.target : t('settings.backendConnection.thisMachine'))
+    ?? t('settings.backendConnection.thisMachine')
   const projectName = project?.displayName
     ?? (loading ? t('settings.backendConnection.checking') : t('settings.backendConnection.projectUnavailable'))
   const status = loading
@@ -41,10 +44,10 @@ export function AliceLocationSection() {
     : remote ? t('settings.backendConnection.remoteMode') : t('settings.backendConnection.separated')
   const transport = electron ? 'Electron IPC' : relay.status
     ? desktopConnection ? 'Electron relay' : 'Local CLI relay'
-    : connection.kind === 'remote' ? 'SSH tunnel' : 'Loopback HTTP'
+    : 'Loopback HTTP'
   const clientEndpoint = electron ? 'app://openalice' : relay.status
     ? window.location.host
-    : connection.kind === 'remote' ? connection.localEndpoint : connection.endpoint
+    : connection.endpoint
 
   return (
     <ConfigSection title={t('settings.backendConnection.title')}>
@@ -61,7 +64,7 @@ export function AliceLocationSection() {
             {status} · {mode}
           </p>
         </div>
-        {(canChoose || connection.kind === 'remote') && (
+        {canChoose && (
           <Button type="button" variant="outline" size="sm" className="min-h-10 self-start sm:min-h-8 sm:self-auto"
             onClick={() => canChoose ? setChooserOpen(true) : setShowInstructions((value) => !value)}
             aria-expanded={canChoose ? chooserOpen : showInstructions}
@@ -70,6 +73,17 @@ export function AliceLocationSection() {
           </Button>
         )}
       </div>
+
+      {canChoose && <div className="flex min-w-0 flex-col gap-2 border-b border-border/60 py-3 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-medium text-foreground">{t('settings.backendConnection.startupDefault')}</p>
+          <p className="truncate text-[12px] text-muted-foreground">{relay.startup?.target
+            ? `${relay.fleet.find((item) => item.key === relay.startup?.target?.machine)?.displayName ?? relay.startup.target.machine} / ${relay.fleet.find((item) => item.key === relay.startup?.target?.machine)?.projects.find((item) => item.key === relay.startup?.target?.project)?.displayName ?? relay.startup.target.project}`
+            : t('settings.backendConnection.noStartupDefault', 'Choose a location on the next launch')}</p>
+          {relay.startup?.error && <p role="alert" className="mt-1 text-[12px] text-destructive">{relay.startup.error}</p>}
+        </div>
+
+      </div>}
 
       {showInstructions && !electron && !relay.status && (
         <div id={instructionsId} className="border-b border-border/60 py-3 text-[12px] leading-relaxed">
@@ -96,7 +110,6 @@ export function AliceLocationSection() {
             {project && <Detail label={t('settings.about.aliceProject.appRoot')} value={project.appRoot ?? t('settings.about.aliceProject.runtimeManaged')} mono />}
             <Detail label={t('settings.backendConnection.transport')} value={transport} />
             <Detail label={t('settings.backendConnection.clientEndpoint')} value={clientEndpoint} mono />
-            {connection.kind === 'remote' && !relay.status && <Detail label={t('settings.backendConnection.remoteEndpoint')} value={`127.0.0.1:${connection.runtimePort}`} mono />}
           </dl>
           <p className="mt-4 text-[12px] leading-relaxed text-muted-foreground">
             {remote ? t(desktopConnection ? 'settings.backendConnection.electronRemoteNote' : 'settings.backendConnection.remoteNote')

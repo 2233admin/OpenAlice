@@ -6,7 +6,7 @@ import { ToastProvider } from './components/Toast'
 import { TooltipProvider } from './components/ui/tooltip'
 import { AuthProvider } from './auth/AuthContext'
 import { AuthGate } from './auth/AuthGate'
-import { clearDirectTunnelContextForRelay, initializeBackendConnection } from './auth/backendConnection'
+import { initializeBackendConnection } from './auth/backendConnection'
 import { installBackendRequestObserver } from './auth/backendConnectivity'
 import { getRelayStatus, monitorRelayGeneration } from './hooks/useRelayConnection'
 import { RelaySetup } from './components/RelaySetup'
@@ -24,10 +24,14 @@ if (import.meta.env.VITE_DEMO_MODE && window.location.protocol !== 'app:') {
   await import('./demo/recorder')
 }
 
-const relayStatus = window.openAlice?.runtime ? null : await getRelayStatus()
-if (relayStatus) clearDirectTunnelContextForRelay()
+// The desktop preload is present in both integrated and separated modes.
+// Query its client-owned connection state so a detached relay can show the
+// startup selector before any backend-owned UI mounts.
+const relayStatus = window.openAlice?.desktopConnection
+  ? await window.openAlice.desktopConnection.status()
+  : window.openAlice?.runtime ? null : await getRelayStatus()
 initializeBackendConnection()
-if (relayStatus && !import.meta.env.VITE_DEMO_MODE) monitorRelayGeneration(relayStatus)
+if (relayStatus && window.location.protocol !== 'app:' && !import.meta.env.VITE_DEMO_MODE) monitorRelayGeneration(relayStatus)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -35,7 +39,7 @@ createRoot(document.getElementById('root')!).render(
       <TooltipProvider delay={250} timeout={300}>
         <ToastProvider>
           <AuthProvider>
-            <AuthGate>
+            <AuthGate initialRelayStatus={relayStatus} relayExpected={!import.meta.env.VITE_DEMO_MODE && !window.openAlice?.runtime && (import.meta.env.VITE_OPENALICE_DEV_RELAY === '1' || !import.meta.env.DEV || !!window.openAlice?.desktopConnection)}>
               <App />
             </AuthGate>
           </AuthProvider>
