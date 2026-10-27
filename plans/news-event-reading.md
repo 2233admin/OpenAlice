@@ -1,41 +1,71 @@
 # News event reading and unified acquisition
 
-Current readiness delivery (2026-10-28): the maintainer requested fixing the
-existing readiness gaps and delivering the PR under repository rules. New
-official feeds, company/commodity-report acquisition, X/FMP and wider-region or
-WeChat channels are deferred. Scope integration and PR delivery are authorized;
-Draft review/acceptance and previously rejected fixture cleanup remain separate.
+Current readiness delivery (2026-10-28): the maintainer authorized fixing the
+existing News readiness gaps and PR delivery under repository rules. New official
+feeds, company/commodity-report acquisition, X/FMP and wider-region or WeChat
+channels are deferred. Existing Draft review/acceptance and rejected fixture
+cleanup remain separate.
 
-Work is isolated on `fix/news-readiness-20261028` in managed worktree `b3f6`,
-based on actual PR head `129fb4203`; current upstream dev `006fffd59` was merged
-as `132e899dd`, preserving the landing exclusion and worker build. Shared original
-checkout/data remain in place. Code Intel failed once (missing DAG capability
-registry); scoped reads supplied the code evidence.
+The candidate is isolated on `fix/news-readiness-20261028` in managed worktree
+`b3f6`, based on PR #1767 head `129fb4203`, with current upstream dev
+`006fffd59` merged as `132e899dd`. Source was frozen at `b49e45eae16b149114a254054d25b59475b4bc68`.
+The final recording change only updates this plan and its index. Delivery uses
+the existing [Draft PR #1767](https://github.com/TraderAlice/OpenAlice/pull/1767)
+to `dev`; no duplicate PR, merge or release. The original shared checkout and
+its unrelated work remain in place. Code Intel failed once (missing DAG
+capability registry); bounded direct reads supplied code evidence.
 
-New fixes cover source URL/tab/remount/history persistence, including category
-and relationship transitions; RSS content precedence and empty/entity-only
-fallback; feed-provenance labels and raw publication wording; unknown-timezone
-handling; and five country identities already present in collected events
-(AE/QA/IL/HT/SV). Chat guidance is 1.8.13. No subscription was added, and original
-evidence and cross-event assignment validation stay intact.
+Implemented: source URL/tab/remount/history persistence, including category and
+relationship transitions; RSS full-content precedence and empty/entity-only
+fallback; declared feed-content/summary labels; raw publication wording and
+unknown-timezone handling; AE/QA/IL/HT/SV identities already present in collected
+events. Chat guidance is 1.8.13. No subscription was added. Original evidence,
+human marks and cross-event assignment validation remain intact. X/FMP prototype
+artifacts and their acquisition-only suite are excluded from this candidate.
 
-Observed RED/GREEN and local checks: 67 combined News cases; independent review
-found two P2 issues which were reproduced, fixed and covered by 66 focused
-checks. Root/tests/UI typechecks and backend/UI builds pass after package setup.
-The first complete test run is retained at
-`F:/temp/openalice-news-readiness-20261028/full-suite.json` (947 files, 7918 passed,
-51 failed, 152 skipped, plus missing Electron initialization). Forty-eight failed
-assertions lacked the Windows Git path in the fresh checkout. Electron setup
-then succeeded; three fixture failures were traced to missing native assessments,
-POSIX-only path expectation and a missing Windows installer. Their fixes preserve
-production validation. Targeted retests and final full acceptance are pending;
-this first run is not final-head evidence.
+Verification on the clean frozen source: complete default suite exit 0,
+947 files / 7978 passed / 0 failed / 152 skipped. Critical-local exit 0,
+15/15 required assertions passed (18 actual assertions across two lanes).
+Root/tests/UI typechecks and backend/worker/UI builds exit 0. Independent
+read-only review identified two P2 defects; both had observed RED/GREEN and
+66 focused checks passed after repair. The earlier full-run failures were
+reproduced and fixed as Windows environment/fixture issues, without relaxing
+production validation. Final receipts supersede that earlier failing run.
 
-Two actual continuing events were independently checked against originals:
-Qinghai's automatic 4.6 estimate/formal 4.9 measurement, and Qatar/Russia arrival/
-meeting reports. They retain separate developments. These examples do not prove
-general financial accuracy. Existing #17 cleanup was not retried. The 24-hour
-observation and remaining platform/artifact gates remain open.
+Actual built UI `index-BIULOqvM.js` at preview port 47359: source selection
+survives 1440px -> 375px -> 1440px, category/Hot/relationship transitions,
+Clear/back and refresh. Both document widths match their viewport. Newly
+collected real reports render Feed summary. No browser errors were recorded.
+Runtime PID 80500 uses this candidate and the existing isolated home; twelve
+sources collect every minute and the ordinary native Issue runs every five
+minutes. A post-restart native batch completed. Only the two owned News Workspace
+reference copies were updated after exact-byte guards and backup; three personal
+Workspaces were not changed. The original 736988 archive bytes, configuration,
+human reading state and protected historical files were checked unchanged;
+new legitimate records append. Passive observer PID 80384 remains running.
+
+Two real continuing events were independently read: Qinghai automatic 4.6/formal
+4.9 measurement and Qatar/Russia arrival/meeting. Every inspected association
+digest and excerpt matched an original. This is a two-case audit, not a general
+accuracy claim. Old Qatar unresolved state remains until native reassessment;
+adding a supported code does not silently rewrite old evidence or infer a ticker.
+
+Still open: #17's historical shared-original fixture conflict (prior cleanup
+automatic approval rejected with `blocked by policy`; no retry), completion of
+the passive 24-hour window (maintenance around 20:58-21:00 UTC excluded),
+broader semantic evaluation, and final-current-head compiled CLI, standard
+Electron/literal tray and isolated remote acceptance. Prior artifact receipts
+do not certify this head; standard Spectre/toolchain and remote conditions remain
+unsatisfied. Keep the PR Draft. Missing publisher bodies are visible, not fetched
+or reconstructed by this change.
+
+Local evidence: `F:/temp/openalice-news-readiness-20261028/delivery-receipt.json`,
+`full-suite-final.json`, `critical-final.json`, `live-event-audit.json`, browser
+assertion outputs and desktop/narrow/provenance screenshots. #16 has a source
+fix and real acceptance ready for the existing PR; it is not closed before merge.
+
+The sections below are historical increments; later decisions above supersede
+their old no-push/iteration-hold status statements.
 
 Current PR-routing increment (2026-10-28): the maintainer asked whether the
 remaining work is bounded and can be assigned to project PRs. Recovered the
