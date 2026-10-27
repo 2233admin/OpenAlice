@@ -32,4 +32,3 @@ export type NewsAssociationInput = z.infer<typeof newsAssociationInputSchema>
 export type NewsAssociationAsset = z.infer<typeof newsAssetSchema>
 export type NewsAssociationRecord = z.infer<typeof newsAssociationRecordSchema>
 export type NewsAssociationView = { status: 'unassessed' | 'current' | 'needs-review'; current?: NewsAssociationRecord['history'][number] }
-
