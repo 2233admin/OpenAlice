@@ -15,6 +15,7 @@ GitHub navigation.
 | [[docs/update-lifecycle.md]] | [Update lifecycle](update-lifecycle.md) | Shared inventory, exact-target planning, durable owner coordination and rehearsal |
 | [[docs/testing.md]] | [Testing](testing.md) | Unit/integration/E2E scope and suite registration, required gates/run receipts, ownership, execution conditions, selectors, and package-local semantics |
 | [[docs/managed-workspace-runtime.md]] | [Managed Workspace runtime](managed-workspace-runtime.md) | Electron packaging, local package diagnostics, managed Pi, PortableGit/Bash, runtime profile, Workspace PATH |
+| [[docs/windows-code-signing.md]] | [Windows code signing](windows-code-signing.md) | SignPath Foundation onboarding test, account setup, signed release boundary |
 | [[docs/harness-web-surfaces.md]] | [Harness web surfaces](harness-web-surfaces.md) | Harness manifests, managed Studio ports, readiness, routing, transport, lifecycle, and embedding |
 | [[docs/model-semantics-and-runtime-injection.md]] | [Model semantics and runtime injection](model-semantics-and-runtime-injection.md) | AI credential access, model semantics, Workspace selection, and native Agent projection |
 | [[docs/broker-packs.md]] | [Broker Packs](broker-packs.md) | Optional broker SDK packaging, UI installation, activation, runtime loading, release assets |
@@ -25,6 +26,7 @@ GitHub navigation.
 | [[docs/data-locations.md]] | [Data locations](data-locations.md) | Complete-home ownership, shared Default selection, concurrent AliceProjects, and directory safety |
 | [[docs/remote-access.md]] | [Remote Runtime and access](remote-access.md) | Server lifecycle, SSH transport, managed remote bootstrap, client authority, and staged Studio protocol |
 | [[docs/demo-mode.md]] | [Demo mode](demo-mode.md) | Shared mock data, isolated native Electron preview and demo smoke |
+| [[docs/landing.md]] | [Public website](landing.md) | Website source and public content, media preparation, independent builds and deployment configuration |
 | [[docs/desktop-companion.md]] | [Desktop companion](desktop-companion.md) | Alice floating window, native lifecycle, interaction, assets and platform acceptance |
 | [[docs/inbox-content.md]] | [Inbox content](inbox-content.md) | Markdown publication, shared file references, migration and UI hook |
 | [[docs/connector-service.md]] | [Connector Service](connector-service.md) | Optional external Inbox projection, adapters, secrets, health, Guardian lifecycle |
