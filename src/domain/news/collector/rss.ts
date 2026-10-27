@@ -2,14 +2,16 @@ import { fetchAndParseFeed, cleanText } from './rss-parser.js'
 import { computeDedupKey, type NewsCollectorStore } from '../store.js'
 import type { RSSFeedConfig, NewsRecord } from '../types.js'
 import { DEFAULT_RSSHUB_BASE_URL, resolveNewsFeedUrl } from '../config.js'
-import { batchSchema, type ModuleSelection, type NewsSubscription } from '../modules/contract.js'
+import { batchSchema, collectionBatchSchema, type ModuleMaterial, type ModuleSelection, type NewsSubscription } from '../modules/contract.js'
+import { NewsModuleRequestError } from '../modules/host.js'
 import type { NewsModuleManager } from '../modules/manager.js'
 import type { RssHubSecretStore } from '../modules/secrets.js'
 
 interface FeedHealth {
   state:'never_attempted'|'checking'|'healthy'|'error'; lastAttemptAt:number|null;lastSuccessAt:number|null;lastItemCount:number|null;lastNewItemCount:number|null;lastError:string|null
+  lastPublishedAt:number|null;lastUndatedItemCount:number|null;lastEmptyContentCount:number|null;lastEmptyItemCount:number|null;lastDurationMs:number|null
 }
-const initialHealth=():FeedHealth=>({state:'never_attempted',lastAttemptAt:null,lastSuccessAt:null,lastItemCount:null,lastNewItemCount:null,lastError:null})
+const initialHealth=():FeedHealth=>({state:'never_attempted',lastAttemptAt:null,lastSuccessAt:null,lastItemCount:null,lastNewItemCount:null,lastError:null,lastPublishedAt:null,lastUndatedItemCount:null,lastEmptyContentCount:null,lastEmptyItemCount:null,lastDurationMs:null})
 function healthIdentity(feed:RSSFeedConfig,base:string):string{return JSON.stringify([feed.id??null,feed.source,resolveNewsFeedUrl(feed,base)])}
 export interface CollectorOpts {
   store:NewsCollectorStore;feeds:RSSFeedConfig[];intervalMs:number;rsshubBaseUrl?:string;enabled?:boolean
@@ -73,6 +75,8 @@ export class NewsCollector {
   approveModule(hash:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');return this.opts.manager.approve(hash)})}
   retryModule(hash:string){return this.exclusive(async()=>{if(!this.config.enabled||!this.opts.manager)throw new Error('News collection disabled');await this.opts.manager.retry(hash);return this.opts.manager.list(this.config.modules??[])})}
   uninstallModule(hash:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');await this.opts.manager.uninstall(hash)})}
+  getModuleCredentials(hash:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');return this.opts.manager.credentialStatus(hash)})}
+  updateModuleCredential(hash:string,key:string,operation:'set'|'clear',value?:string){return this.exclusive(async()=>{if(!this.opts.manager)throw new Error('Module manager unavailable');if(operation==='clear')await this.opts.manager.clearCredential(hash,key);else await this.opts.manager.setCredential(hash,key,value??'');return this.opts.manager.credentialStatus(hash)})}
   async getRssHubKeyStatus(){return this.opts.secrets?.status()??{configured:false,available:true,baseUrl:null}}
   updateRssHubKey(operation:'set'|'clear',key?:string){return this.exclusive(async()=>{if(!this.opts.secrets)throw new Error('RSSHub secret store unavailable');if(operation==='clear')await this.opts.secrets.clear();else await this.opts.secrets.set(this.config.rsshubBaseUrl??DEFAULT_RSSHUB_BASE_URL,key??'');return this.opts.secrets.status()})}
   start():void{
@@ -97,12 +101,21 @@ export class NewsCollector {
       if(feed.enabled===false || (row.kind==='module'&&!this.config.modules?.some(m=>m.moduleId===row.moduleId&&m.enabled)))continue
       const health=this.health.get(row)??initialHealth();this.health.set(row,health);health.state='checking';health.lastAttemptAt=Date.now()
       try{
-        const inputs=row.kind==='rss'?await this.rssInputs(row.feed):await this.moduleInputs(row.subscription)
+        const batch=row.kind==='rss'?{inputs:await this.rssInputs(row.feed),commit:undefined}:await this.moduleInputs(row.subscription)
+        const inputs=batch.inputs
         total+=inputs.length;health.lastItemCount=inputs.length;health.lastNewItemCount=0
+        const material=inputs.filter(input=>input.title.trim()||input.content.trim())
         // Batch validation precedes every append; report any durable prefix honestly.
-        for(const input of inputs){const record=await this.opts.store.ingestRecord(input);if(record){added++;health.lastNewItemCount++;await this.opts.onIngested?.(record)}}
+        for(const input of material){const record=await this.opts.store.ingestRecord(input);if(record){added++;health.lastNewItemCount++;await this.opts.onIngested?.(record)}}
+        await batch.commit?.()
+        const dated=material.filter(input=>input.metadata.timeBasis!=='collection').map(input=>input.pubTime.getTime()).filter(Number.isFinite)
+        health.lastPublishedAt=dated.length?dated.reduce((latest,time)=>Math.max(latest,time),-Infinity):null
+        health.lastUndatedItemCount=material.length-dated.length
+        health.lastEmptyContentCount=material.filter(input=>!input.content.trim()).length
+        health.lastEmptyItemCount=inputs.length-material.length
         health.state='healthy';health.lastSuccessAt=Date.now();health.lastError=null
-      }catch(error){health.state='error';health.lastError=row.kind==='rss'&&error instanceof Error&&/^RSS (fetch|response) failed:/.test(error.message)?error.message:'News request, module processing or ingestion failed';console.warn('news-collector: source collection failed')}
+      }catch(error){health.state='error';health.lastError=error instanceof NewsModuleRequestError?error.message:row.kind==='rss'&&error instanceof Error&&/^RSS (fetch|response) failed:/.test(error.message)?error.message:'News request, module processing or ingestion failed';console.warn('news-collector: source collection failed')}
+      finally{health.lastDurationMs=Math.max(0,Date.now()-health.lastAttemptAt!)}
     }
     return {total,new:added}
   }
@@ -112,16 +125,23 @@ export class NewsCollector {
     const items=await fetchAndParseFeed(url,1,Boolean(feed.rsshubRoute))
     return items.map(item=>{
       const dedupKey=computeDedupKey({guid:item.guid??undefined,link:item.link??undefined,title:item.title,content:item.content})
-      return {title:item.title,content:item.content,pubTime:item.pubDate??new Date(),dedupKey,metadata:{source:feed.source,link:item.link,guid:item.guid,ingestSource:'rss',dedupKey,producerId:feed.rsshubRoute?'builtin.rsshub':'builtin.rss',...(feed.categories?{categories:feed.categories.join(',')}:{}),...(item.image?{image:item.image}:{})}}
+      return {title:item.title,content:item.content,pubTime:item.pubDate??new Date(),dedupKey,metadata:{source:feed.source,link:item.link,guid:item.guid,ingestSource:'rss',dedupKey,timeBasis:item.pubDate?'publication':'collection',contentBasis:item.contentBasis,...(item.pubDateRaw?{publicationTimeRaw:item.pubDateRaw}:{}),producerId:feed.rsshubRoute?'builtin.rsshub':'builtin.rss',...(feed.categories?{categories:feed.categories.join(',')}:{}),...(item.image?{image:item.image}:{})}}
     })
   }
   private async moduleInputs(subscription:NewsSubscription){
     if(!this.opts.manager)throw new Error('Module manager unavailable')
-    const items=batchSchema.parse(await this.opts.manager.collect(subscription)),identity=await this.opts.manager.identity(subscription.moduleId)
-    return items.map(item=>{
+    const result=await this.opts.manager.collect(subscription),identity=await this.opts.manager.identity(subscription.moduleId)
+    const batch=Array.isArray(result)?null:collectionBatchSchema.parse(result)
+    const items:ModuleMaterial[]=batch?batch.items:batchSchema.parse(result)
+    const inputs=items.map(item=>{
       const title=cleanText(item.title),content=item.content,dedupKey='module:'+JSON.stringify([subscription.moduleId,item.externalId])
       if(!title)throw new Error('Module article has no plain-text title')
-      return{title,content,pubTime:new Date(item.publishedAt),dedupKey,metadata:{source:subscription.source,link:item.url,ingestSource:'module',dedupKey,moduleId:identity.moduleId,moduleVersion:identity.version,contentHash:identity.contentHash,externalId:item.externalId,subscriptionId:subscription.id,categories:subscription.categories.join(',')}}
+      const rich:Record<string,string>={}
+      for(const key of ['publisher','author','kind','role','language'] as const)if(item[key]!==undefined)rich[key]=item[key]
+      for(const key of ['symbols','media','quote'] as const)if(item[key]!==undefined)rich[key]=JSON.stringify(item[key])
+      const image=item.media?.find(media=>media.type==='image')?.url
+      return{title,content,pubTime:new Date(item.publishedAt),dedupKey,metadata:{...rich,...(image?{image}:{}),timeBasis:'publication',source:subscription.source,link:item.url,ingestSource:'module',dedupKey,moduleId:identity.moduleId,moduleVersion:identity.version,contentHash:identity.contentHash,externalId:item.externalId,subscriptionId:subscription.id,categories:subscription.categories.join(',')}}
     })
+    return {inputs,commit:batch?()=>this.opts.manager!.commitCheckpoint(subscription,batch.checkpoint):undefined}
   }
 }

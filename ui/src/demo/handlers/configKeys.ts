@@ -8,11 +8,13 @@ import type { DemoNewsCollectorConfig } from '../fixtures/newsConfig'
 
 let demoNewsConfig = createDemoNewsConfig()
 export const demoNewsInstalledModules = new Map<string, InstalledModule>()
+export const demoNewsCredentialFlags = new Map<string, Set<string>>()
 let demoRssHubCredential: { baseUrl: string; key: string } | null = null
 
 export function resetDemoNewsConfig(): void {
   demoNewsConfig = createDemoNewsConfig()
   demoNewsInstalledModules.clear()
+  demoNewsCredentialFlags.clear()
   demoRssHubCredential = null
 }
 

@@ -9,9 +9,11 @@
 export interface ParsedFeedItem {
   title: string
   content: string
+  contentBasis: 'feed-content' | 'feed-summary' | 'missing'
   link: string | null
   guid: string | null
   pubDate: Date | null
+  pubDateRaw?: string
   /** Safe HTTP(S) image URL when the feed supplied one. */
   image?: string
 }
@@ -133,23 +135,30 @@ export function parseRSSXml(xml: string): ParsedFeedItem[] {
   let match: RegExpExecArray | null
   while ((match = itemRegex.exec(xml)) !== null) {
     const block = match[1]
-    const contentRaw = extractTagRaw(block, 'content:encoded')
-      ?? extractTagRaw(block, 'description')
-      ?? extractTagRaw(block, 'summary')
-      ?? extractTagRaw(block, 'content')
-      ?? ''
+    let contentRaw = ''
+    let content = ''
+    let contentBasis: ParsedFeedItem['contentBasis'] = 'missing'
+    for (const contentTag of ['content:encoded', 'content', 'description', 'summary']) {
+      if (extractTagRaw(block, contentTag) === null) continue
+      const isHtml = !/^<entry[\s>]/i.test(match[0]) || contentTag === 'content:encoded' || extractAttr(block, contentTag, 'type') === 'html'
+      // XML-escaped HTML needs its outer layer decoded before tags are stripped; Atom text keeps literal markup.
+      contentRaw = (isHtml ? extractTag(block, contentTag) : extractTagRaw(block, contentTag)) ?? ''
+      content = cleanText(contentRaw)
+      if (!content) continue
+      contentBasis = contentTag === 'content' || contentTag === 'content:encoded' ? 'feed-content' : 'feed-summary'
+      break
+    }
     const image = extractImage(block, contentRaw)
+    const pubDateRaw = extractTag(block, 'pubDate') ?? extractTag(block, 'published') ?? extractTag(block, 'updated')
 
     items.push({
-      title: cleanText(extractTagRaw(block, 'title') ?? ''),
-      content: cleanText(contentRaw),
+      title: cleanRssHeadline(cleanText(extractTagRaw(block, 'title') ?? '')),
+      content,
+      contentBasis,
       link: extractTag(block, 'link') ?? extractAttr(block, 'link', 'href'),
       guid: extractTag(block, 'guid') ?? extractTag(block, 'id'),
-      pubDate: parseDate(
-        extractTag(block, 'pubDate')
-        ?? extractTag(block, 'published')
-        ?? extractTag(block, 'updated'),
-      ),
+      pubDate: parseDate(pubDateRaw),
+      ...(pubDateRaw ? { pubDateRaw } : {}),
       ...(image ? { image } : {}),
     })
   }
@@ -247,7 +256,13 @@ export function safeHttpImageUrl(raw: string | null): string | null {
  * Order matters: &lt;tag&gt; → (strip: no-op) → decode → "<tag>" (preserved)
  */
 export function cleanText(raw: string): string {
-  return decodeXmlEntities(stripHtml(raw))
+  return decodeXmlEntities(stripHtml(raw)).trim()
+}
+
+/** RSSHub can leave escaped formatting in headlines; unknown literal tags stay text. */
+export function cleanRssHeadline(title: string): string {
+  return title.replace(/<\/?(b|strong|i|em|span|br|p|div)(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>/gi,
+    (_, tag: string) => /^(?:br|p|div)$/i.test(tag) ? ' ' : '').replace(/[ \t]{2,}/g, ' ').trim()
 }
 
 /**
@@ -286,29 +301,30 @@ function extractAttr(xml: string, tag: string, attr: string): string | null {
  */
 function parseDate(dateStr: string | null): Date | null {
   if (!dateStr) return null
+  // An unzoned source date must not inherit the collector machine's timezone.
+  if (!/(?:Z|[+-]\d{2}:?\d{2}|\b(?:UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT))\s*$/i.test(dateStr)) return null
   const d = new Date(dateStr)
   return isNaN(d.getTime()) ? null : d
 }
 
 /**
- * Decode common XML entities.
+ * Decode common text entities once so nested escapes keep their meaning.
  */
 function decodeXmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+  const named: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&nbsp;': '\u00a0' }
+  return text.replace(/&(?:amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-fA-F]+);/g, entity => {
+    if (named[entity] !== undefined) return named[entity]
+    const hex = entity.startsWith('&#x')
+    const code = Number.parseInt(entity.slice(hex ? 3 : 2, -1), hex ? 16 : 10)
+    return code >= 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : entity
+  })
 }
 
 /**
  * Strip HTML tags from a string (best-effort, for summaries).
  */
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, '').trim()
+  return html.replace(/<!--[\s\S]*?-->|<\/?[a-z][\w:.-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>/gi, '').trim()
 }
 
 /**

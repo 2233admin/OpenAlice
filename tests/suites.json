@@ -1,5 +1,15 @@
 [
   {
+    "id": "news-reading",
+    "title": "Native news-event preparation and reading",
+    "tier": "integration",
+    "owner": "alice",
+    "lane": "hermetic",
+    "areas": [],
+    "files": ["tests/integration/news-reading/preparation.spec.ts", "tests/integration/news-reading/continuous.spec.ts"],
+    "scope": "Real event tools, file-backed archive/story/reading state and HTTP projection with local originals. Covers preparation recovery, review protection and discovery persistence. No native-agent inference or live-provider coverage."
+  },
+  {
     "id": "alice-uta",
     "title": "Alice to UTA carrier and trading permission",
     "tier": "integration",

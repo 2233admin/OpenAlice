@@ -31,6 +31,11 @@ the durable truth after it changes. Git history is the archive.
 
 - [[plans/windows-signpath.md]] — SignPath Foundation self-signed onboarding,
   public signing policy, and production Windows release integration.
+- [[plans/news-event-reading.md]] — Remaining P0 outcomes and follow-up PR scopes are recorded in [Draft PR #1767's verified task comment](https://github.com/TraderAlice/OpenAlice/pull/1767#issuecomment-6451394842); its remote head/body/Draft state are unchanged. No new issue graph or follow-up PR was created. The eight News/analytics tickets #8–#15 remain locally accepted on the held branch. The 49-source classification increment passed 31 focused cases, root/UI typechecks, both builds and actual desktop/narrow reading. Current configuration enables twelve feeds (including jrj-us) every minute in preview port 47359 through one collector and an operator-owned RSSHub. Native preparation runs every five minutes; the prior seven-run acceptance produced sixteen new evidence-linked events and repaired two eligible older events. Original evidence and human state are preserved. Passive 24-hour observation continues; body/time quality, review/follow-up closure, relationship evaluation, final integration/package evidence and X/FMP remain open. Existing defects are #16/#17. No source commit/push/new PR/merge/release.
+
+- [[plans/news-module-injection-research.md]] — Approved News Modules and RSSHub key work on Draft PR #1767; current remote acceptance is incomplete, no merge or release.
+- [[plans/news-management-experiment.md]] — Local source-editing and shared RSSHub endpoint experiment, isolated user home, real collector/UI acceptance; no PR or publishing.
+
 - [[plans/settings-machines-dialog.md]] — Move machine management into General / Machines and replace inline SSH setup with a reviewed dialog; Draft PR only.
 
 - [[plans/review-updates-shared-plan.md]] — Share automatic/manual update review

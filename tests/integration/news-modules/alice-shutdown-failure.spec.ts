@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,11 +10,11 @@ import { describe, expect, it } from 'vitest'
 
 const fixture = fileURLToPath(new URL('./alice-shutdown-fixture.ts', import.meta.url))
 
-function deadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+function deadline<T>(promise: Promise<T>, ms: number, label: () => string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
   return Promise.race([
     promise,
-    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(label)), ms) }),
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(label())), ms) }),
   ]).finally(() => clearTimeout(timer))
 }
 
@@ -31,6 +32,11 @@ describe('Alice news module shutdown ownership', () => {
       writeFile(join(equityCacheDir, 'symbols.json'), JSON.stringify({ cachedAt: new Date().toISOString(), sources: ['sec'], count: 0, entries: [] })),
     ])
 
+    const connector = createServer((_, response) => response.writeHead(503).end())
+    connector.listen(0, '127.0.0.1')
+    await once(connector, 'listening')
+    const connectorAddress = connector.address()
+    if (!connectorAddress || typeof connectorAddress === 'string') throw new Error('Missing isolated Connector port')
     const child = spawn(process.execPath, ['--import', 'tsx', fixture], {
       cwd: process.cwd(),
       env: {
@@ -46,12 +52,15 @@ describe('Alice news module shutdown ownership', () => {
         OPENALICE_MCP_ENABLED: '0',
         OPENALICE_LOCAL_CLI_ON_WEB: '1',
         OPENALICE_WEB_TRANSPORT: 'ipc',
+        OPENALICE_CONNECTOR_URL: `http://127.0.0.1:${connectorAddress.port}`,
         OPENALICE_TOOL_SOCKET: '',
         OPENALICE_TEST_FAIL_MODULE_CLOSE: closeFails ? '1' : '0',
       },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
     let output = ''
+    // Startup auth banners are private test state, not failure diagnostics.
+    const diagnostics = () => output.split(/\r?\n/).filter(line => /^(?:news-test:|engine:|news-collector:|uta:|equity:|fatal:|plugin started:|web plugin listening)/.test(line)).slice(-20).join('\n')
     try {
       const ready = new Promise<void>((resolve, reject) => {
         const capture = (chunk: Buffer) => {
@@ -61,11 +70,12 @@ describe('Alice news module shutdown ownership', () => {
         child.stdout!.on('data', capture)
         child.stderr!.on('data', capture)
         child.once('exit', (code, signal) => reject(new Error(`Alice exited before readiness (code=${code}, signal=${signal}):
-${output}`)))
+${diagnostics()}`)))
         child.once('error', reject)
       })
-      await deadline(ready, 45_000, `Alice did not start:
-${output}`)
+      // Source initialization imports every provider before the shutdown behavior can run.
+      await deadline(ready, 150_000, () => `Alice did not start:
+${diagnostics()}`)
 
       const lockDirs = [join(home, 'workspaces', 'state', 'runtime.lock'), join(home, 'state', 'runtime.lock')]
       for (const lockDir of lockDirs) {
@@ -75,8 +85,8 @@ ${output}`)
 
       const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>
       child.send({ type: 'openalice:shutdown' })
-      const [code, signal] = await deadline(exited, 15_000, `Alice did not finish IPC shutdown:
-${output}`)
+      const [code, signal] = await deadline(exited, 15_000, () => `Alice did not finish IPC shutdown:
+${diagnostics()}`)
       expect(signal).toBeNull()
       expect(existsSync(join(home, 'state', 'module-close-attempted'))).toBe(closeFails)
       expect(code).toBe(exitCode)
@@ -92,10 +102,11 @@ ${output}`)
       if (child.pid && child.exitCode === null && child.signalCode === null) {
         const exited = once(child, 'exit')
         child.kill('SIGKILL')
-        await deadline(exited, 5_000, `Alice test child would not exit:
-${output}`)
+        await deadline(exited, 5_000, () => `Alice test child would not exit:
+${diagnostics()}`)
       }
+      await new Promise<void>(resolve => connector.close(() => resolve()))
       await rm(home, { recursive: true, force: true })
     }
-  }, 65_000)
+  }, 170_000)
 })

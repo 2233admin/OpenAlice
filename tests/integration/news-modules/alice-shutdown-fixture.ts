@@ -10,4 +10,6 @@ if (process.env['OPENALICE_TEST_FAIL_MODULE_CLOSE'] === '1') {
 }
 
 // Patch the real module boundary before Alice imports and constructs the collector.
+console.log('news-test: manager imported')
 await import('../../../src/main.js')
+console.log('news-test: main imported')

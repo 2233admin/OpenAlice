@@ -1,10 +1,11 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ConfigSection, Field, inputClass } from '../form'
 import { Toggle } from '../Toggle'
 import { Button } from '../ui/button'
+import { ModuleCredentials } from './ModuleCredentials'
 
 type Selection = { moduleId: string; contentHash: string; enabled: boolean }
 type Subscription = {
@@ -14,7 +15,7 @@ type Subscription = {
 type Parameter = { key: string; label: string; type: 'string' | 'number' | 'boolean'; required: boolean }
 type Source = { key: string; name: string; parameters: Parameter[] }
 type ModuleStatus = {
-  moduleId: string | null; manifest: { moduleId: string; version: string; name: string; description: string; entry: string; sources: Source[] } | null
+  moduleId: string | null; manifest: { abiVersion?: 1 | 2; credentials?: Array<{ key: string; label: string }>; moduleId: string; version: string; name: string; description: string; entry: string; sources: Source[] } | null
   contentHash: string; installed: boolean; approved: boolean; desiredEnabled: boolean; loaded: boolean
   loadedHash: string | null; state: 'disabled' | 'running' | 'failed' | 'unapproved' | 'missing' | 'invalid'; lastError: string | null
 }
@@ -30,6 +31,8 @@ export function RssHubKeySection() {
   const [error, setError] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [invalid, setInvalid] = useState(false)
+  const [message, setMessage] = useState('')
   useEffect(() => {
     let active = true
     void api.news.getRssHubKeyStatus().then(value => { if (active) { setStatus(value); setError(null) } })
@@ -37,30 +40,41 @@ export function RssHubKeySection() {
     return () => { active = false }
   }, [refreshKey])
   const update = async (operation: 'set' | 'clear') => {
+    if (busy) return
     setBusy(true)
     setError(null)
+    setMessage(t('common.saving'))
     try {
       const result = await api.news.updateRssHubKey(operation, operation === 'set' ? key : undefined)
       setStatus(result)
       setKey('')
       setConfirmClear(false)
-    } catch (cause) { setError(errorText(cause)) }
+      setMessage(t(operation === 'set' ? 'newsModules.keySaved' : 'newsModules.keyCleared'))
+    } catch (cause) { setMessage(''); setError(errorText(cause)) }
     finally { setBusy(false) }
   }
   return <ConfigSection title={t('newsModules.rssHubKey')} description={t('newsModules.rssHubKeyDescription')}>
-    {status && <p className="mb-3 text-[12px] text-muted-foreground" role="status">
+    <p className="mb-3 text-[12px] text-muted-foreground" role="status">{status && <>
       {status.available ? status.configured ? t('newsModules.keyConfigured', { baseUrl: status.baseUrl ?? '' }) : t('newsModules.keyMissing') : t('newsModules.keyUnavailable')}
-    </p>}
-    <form onSubmit={event => { event.preventDefault(); if (key.trim()) void update('set') }}>
+    </>}</p>
+    <form noValidate onSubmit={event => {
+      event.preventDefault()
+      if (busy) return
+      setInvalid(!key.trim())
+      if (!key.trim()) { requestAnimationFrame(() => document.getElementById('news-rsshub-secret')?.focus()); return }
+      void update('set')
+    }}>
       <Field label={t('newsModules.keyInput')} controlId="news-rsshub-secret">
-        <input id="news-rsshub-secret" type="password" autoComplete="off" className={inputClass} value={key} onChange={event => setKey(event.target.value)} maxLength={4096} required />
+        <input id="news-rsshub-secret" name="credential" type="password" autoComplete="off" className={inputClass} value={key} onChange={event => setKey(event.target.value)} maxLength={4096} required readOnly={busy} aria-invalid={invalid} aria-describedby={invalid ? 'news-rsshub-secret-error' : undefined} />
+        {invalid && <p id="news-rsshub-secret-error" className="text-xs text-destructive">{t('newsModules.keyRequired')}</p>}
       </Field>
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" variant="outline" disabled={busy || !key.trim()}>{t('newsModules.keySet')}</Button>
+        <Button type="submit" variant="outline" aria-disabled={busy} className="aria-disabled:opacity-50">{t('newsModules.keySet')}</Button>
         <Button type="button" variant="outline" disabled={busy || !status?.configured} onClick={() => setConfirmClear(true)}>{t('newsModules.keyClear')}</Button>
         {error && <Button type="button" variant="outline" onClick={() => setRefreshKey(value => value + 1)}>{t('newsModules.retry')}</Button>}
       </div>
     </form>
+    <p role="status" className="text-xs text-muted-foreground">{message}</p>
     {error && <p role="alert" className="mt-2 text-[12px] text-destructive">{error}</p>}
     {confirmClear && <ConfirmDialog title={t('newsModules.keyClearTitle')} message={t('newsModules.keyClearWarning')} confirmLabel={t('newsModules.keyClear')} onConfirm={() => update('clear')} onClose={() => setConfirmClear(false)} />}
   </ConfigSection>
@@ -82,6 +96,7 @@ function SubscriptionEditor({ initial, modules, selections, onSave, onCancel }: 
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
   const [params, setParams] = useState<Subscription['params']>(initial?.params ?? {})
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
   const manifest = selectedModules.find(module => module.moduleId === moduleId)?.manifest
   const definition = manifest?.sources.find(item => item.key === sourceKey)
   const changeModule = (next: string) => {
@@ -94,10 +109,17 @@ function SubscriptionEditor({ initial, modules, selections, onSave, onCancel }: 
   }
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (!definition || !name.trim() || !source.trim()) return
+    if (!definition) return
+    setSubmitted(true)
+    if (!name.trim() || !source.trim()) {
+      requestAnimationFrame(() => document.getElementById(prefix + (!name.trim() ? '-name' : '-source'))?.focus())
+      return
+    }
     const parsedCategories = categories.split(',').map(category => category.trim()).filter(Boolean)
     if (parsedCategories.length > 32 || parsedCategories.some(category => category.length > 80)) {
-      setValidationError(t('newsModules.categoriesInvalid')); return
+      setValidationError(t('newsModules.categoriesInvalid'))
+      requestAnimationFrame(() => document.getElementById(prefix + '-categories')?.focus())
+      return
     }
     setValidationError(null)
     const typed: Subscription['params'] = {}
@@ -127,10 +149,12 @@ function SubscriptionEditor({ initial, modules, selections, onSave, onCancel }: 
         </select>
       </Field>
       <Field label={t('newsModules.subscriptionName')} controlId={prefix + '-name'}>
-        <input id={prefix + '-name'} className={inputClass} value={name} maxLength={200} required onChange={event => setName(event.target.value)} />
+        <input id={prefix + '-name'} className={inputClass} value={name} maxLength={200} required onChange={event => setName(event.target.value)} aria-invalid={submitted && !name.trim()} aria-describedby={submitted && !name.trim() ? prefix + '-name-error' : undefined} />
+        {submitted && !name.trim() && <p id={prefix + '-name-error'} className="text-xs text-destructive">{t('newsModules.valueRequired')}</p>}
       </Field>
       <Field label={t('newsModules.sourceLabel')} controlId={prefix + '-source'}>
-        <input id={prefix + '-source'} className={inputClass} value={source} maxLength={128} required onChange={event => setSource(event.target.value)} />
+        <input id={prefix + '-source'} className={inputClass} value={source} maxLength={128} required onChange={event => setSource(event.target.value)} aria-invalid={submitted && !source.trim()} aria-describedby={submitted && !source.trim() ? prefix + '-source-error' : undefined} />
+        {submitted && !source.trim() && <p id={prefix + '-source-error'} className="text-xs text-destructive">{t('newsModules.valueRequired')}</p>}
       </Field>
     </div>
     {definition?.parameters.map(parameter => <Field key={parameter.key} label={parameter.label + (parameter.required ? ' *' : '')} controlId={prefix + '-' + parameter.key}>
@@ -139,17 +163,18 @@ function SubscriptionEditor({ initial, modules, selections, onSave, onCancel }: 
         : <input id={prefix + '-' + parameter.key} className={inputClass} type={parameter.type === 'number' ? 'number' : 'text'} step={parameter.type === 'number' ? 'any' : undefined} required={parameter.required} maxLength={parameter.type === 'string' ? 4096 : undefined} value={params[parameter.key] === undefined ? '' : String(params[parameter.key])} onChange={event => setParams(previous => ({ ...previous, [parameter.key]: event.target.value }))} />}
     </Field>)}
     <Field label={t('newsModules.categories')} description={t('newsModules.categoriesHint')} controlId={prefix + '-categories'}>
-      <input id={prefix + '-categories'} className={inputClass} value={categories} onChange={event => setCategories(event.target.value)} />
-    {validationError && <p role="alert" className="text-[12px] text-destructive">{validationError}</p>}
+      <input id={prefix + '-categories'} className={inputClass} value={categories} onChange={event => setCategories(event.target.value)} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? prefix + '-categories-error' : undefined} />
+    {validationError && <p id={prefix + '-categories-error'} className="text-[12px] text-destructive">{validationError}</p>}
     </Field>
     <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} />{t('newsModules.subscriptionEnabled')}</label>
     <div className="flex gap-2"><Button type="submit" variant="outline" disabled={!definition}>{t('newsModules.save')}</Button><Button type="button" variant="ghost" onClick={onCancel}>{t('newsModules.cancel')}</Button></div>
   </form>
 }
 
-export function NewsModulesSection({ selections, subscriptions, onSelectionsChange, onSubscriptionsChange, collectorEnabled, saveStatus }: {
+export function NewsModulesSection({ selections, subscriptions, onSelectionsChange, onSubscriptionsChange, collectorEnabled, saveStatus, autoRefresh = true, refreshToken = 0 }: {
   selections: Selection[]; subscriptions: Subscription[]; onSelectionsChange: (next: Selection[]) => void
   onSubscriptionsChange: (next: Subscription[]) => void; collectorEnabled: boolean; saveStatus: 'idle' | 'saving' | 'saved' | 'error'
+  autoRefresh?: boolean; refreshToken?: number
 }) {
   const { t } = useTranslation()
   const [modules, setModules] = useState<ModuleStatus[]>([])
@@ -164,6 +189,8 @@ export function NewsModulesSection({ selections, subscriptions, onSelectionsChan
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [pendingSelectionSave, setPendingSelectionSave] = useState(false)
   const [sawSelectionSave, setSawSelectionSave] = useState(false)
+  const autoRefreshRef = useRef(autoRefresh)
+  autoRefreshRef.current = autoRefresh
   useEffect(() => {
     if (!pendingSelectionSave) return
     if (saveStatus === 'saving') setSawSelectionSave(true)
@@ -172,17 +199,17 @@ export function NewsModulesSection({ selections, subscriptions, onSelectionsChan
   const [refreshKey, setRefreshKey] = useState(0)
   useEffect(() => {
     let active = true
-    const refresh = async () => {
+    const refresh = async (automatic = false) => {
       try {
         const result = await api.news.getModules()
-        if (active) { setModules(result.modules); setError(null) }
-      } catch (cause) { if (active) setError(errorText(cause)) }
+        if (active && (!automatic || autoRefreshRef.current)) { setModules(result.modules); setError(null) }
+      } catch (cause) { if (active && (!automatic || autoRefreshRef.current)) setError(errorText(cause)) }
       finally { if (active) setLoading(false) }
     }
     void refresh()
-    const timer = window.setInterval(() => { void refresh() }, 5_000)
+    const timer = window.setInterval(() => { if (autoRefreshRef.current) void refresh(true) }, 5_000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [refreshKey])
+  }, [refreshKey, refreshToken])
   const refresh = () => setRefreshKey(value => value + 1)
   const act = async (action: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true); setError(null)
@@ -216,7 +243,7 @@ export function NewsModulesSection({ selections, subscriptions, onSelectionsChan
       <Button type="submit" variant="outline" disabled={busy}>{t('newsModules.import')}</Button>
     </form>
     {error && <div role="alert" className="mb-3 text-[12px] text-destructive">{error} <Button type="button" variant="outline" size="sm" onClick={refresh}>{t('newsModules.retry')}</Button></div>}
-    {loading && <p role="status" className="text-[12px] text-muted-foreground">{t('newsModules.loading')}</p>}
+    <p role="status" className="text-[12px] text-muted-foreground">{loading ? t('newsModules.loading') : ''}</p>
     {!loading && modules.length === 0 && <p className="text-[12px] text-muted-foreground">{t('newsModules.noModules')}</p>}
     <div className="space-y-3">
       {ids.map(id => {
@@ -244,6 +271,7 @@ export function NewsModulesSection({ selections, subscriptions, onSelectionsChan
             <p>{t('newsModules.approved')}: {module.approved ? t('newsModules.yes') : t('newsModules.no')} · {t('newsModules.desired')}: {module.desiredEnabled ? t('newsModules.yes') : t('newsModules.no')} · {t('newsModules.loaded')}: {module.loaded ? t('newsModules.yes') : t('newsModules.no')}</p>
             <p className="break-all">{t('newsModules.loadedHash')}: {module.loadedHash ?? '—'}</p>
             {module.lastError && <p role="alert" className="text-destructive">{module.lastError}</p>}
+            {module.approved && module.manifest?.abiVersion === 2 && Boolean(module.manifest.credentials?.length) && <ModuleCredentials key={module.contentHash} hash={module.contentHash} />}
             <div className="mt-2 flex flex-wrap gap-2">
               {module.installed && module.manifest && !module.approved && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => { setApprovalInput(''); setApprovalError(null); setPendingApprove(module) }}>{t('newsModules.approve')}</Button>}
               {module.state === 'failed' && module.desiredEnabled && module.installed && <Button type="button" size="sm" variant="outline" disabled={busy || !collectorEnabled} onClick={() => void act(() => api.news.retryModule(module.contentHash))}>{t('newsModules.retryModule')}</Button>}
@@ -270,7 +298,7 @@ export function NewsModulesSection({ selections, subscriptions, onSelectionsChan
       {editing === 'new' ? <SubscriptionEditor modules={modules} selections={selections} onSave={next => { onSubscriptionsChange([...subscriptions, next]); setEditing(null) }} onCancel={() => setEditing(null)} />
         : <Button type="button" variant="outline" disabled={!modules.some(module => module.manifest && module.approved && selections.some(selection => selection.moduleId === module.moduleId && selection.contentHash === module.contentHash))} onClick={() => setEditing('new')}>{t('newsModules.addSubscription')}</Button>}
     </div>
-    {pendingApprove && <ConfirmDialog title={t('newsModules.approveTitle')} message={<div className="space-y-2"><p>{t('newsModules.trustWarning')}</p><pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(pendingApprove.manifest, null, 2)}</pre><p className="break-all font-mono">{pendingApprove.contentHash}</p><label className="block" htmlFor="news-approval-hash">{t('newsModules.approvalPrompt')}</label><input id="news-approval-hash" className={inputClass} spellCheck={false} autoComplete="off" value={approvalInput} onChange={event => { setApprovalInput(event.target.value); setApprovalError(null) }} />{approvalError && <p role="alert" className="text-destructive">{approvalError}</p>}{error && <p role="alert" className="text-destructive">{error}</p>}</div>} confirmLabel={t('newsModules.approveHash')} variant="primary" onConfirm={async () => { if (approvalInput !== pendingApprove.contentHash) { setApprovalError(t('newsModules.approvalMismatch')); return } if (await act(() => api.news.approveModule(pendingApprove.contentHash))) { setPendingApprove(null); setApprovalInput('') } }} onClose={() => { setPendingApprove(null); setApprovalInput(''); setApprovalError(null) }} />
+    {pendingApprove && <ConfirmDialog title={t('newsModules.approveTitle')} message={<div className="space-y-2"><p>{t('newsModules.trustWarning')}</p><pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(pendingApprove.manifest, null, 2)}</pre><p className="break-all font-mono">{pendingApprove.contentHash}</p><label className="block" htmlFor="news-approval-hash">{t('newsModules.approvalPrompt')}</label><input id="news-approval-hash" name="approvalHash" aria-invalid={Boolean(approvalError)} aria-describedby={approvalError ? "news-approval-hash-error" : undefined} className={inputClass} spellCheck={false} autoComplete="off" value={approvalInput} onChange={event => { setApprovalInput(event.target.value); setApprovalError(null) }} />{approvalError && <p id="news-approval-hash-error" className="text-destructive">{approvalError}</p>}{error && <p role="alert" className="text-destructive">{error}</p>}</div>} confirmLabel={t('newsModules.approveHash')} variant="primary" onConfirm={async () => { if (approvalInput !== pendingApprove.contentHash) { setApprovalError(t('newsModules.approvalMismatch')); requestAnimationFrame(() => document.getElementById('news-approval-hash')?.focus()); return } if (await act(() => api.news.approveModule(pendingApprove.contentHash))) { setPendingApprove(null); setApprovalInput('') } }} onClose={() => { setPendingApprove(null); setApprovalInput(''); setApprovalError(null) }} />
     }
     {pendingUninstall && <ConfirmDialog title={t('newsModules.uninstallTitle')} message={<div className="space-y-2"><p>{t('newsModules.uninstallWarning')}</p><p className="break-all font-mono">{pendingUninstall.contentHash}</p>{error && <p role="alert" className="text-destructive">{error}</p>}</div>} confirmLabel={t('newsModules.uninstall')} onConfirm={async () => { if (await act(() => api.news.uninstallModule(pendingUninstall.contentHash))) setPendingUninstall(null) }} onClose={() => setPendingUninstall(null)} />}
     {pendingRemove && <ConfirmDialog title={t('newsModules.removeTitle')} message={t('newsModules.removeWarning', { name: pendingRemove.name })} confirmLabel={t('newsModules.remove')} onConfirm={() => { onSubscriptionsChange(subscriptions.filter(item => item.id !== pendingRemove.id)); setPendingRemove(null) }} onClose={() => setPendingRemove(null)} />}

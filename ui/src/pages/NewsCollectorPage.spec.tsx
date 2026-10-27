@@ -2,20 +2,22 @@
 // @vitest-environment-options {"url":"http://127.0.0.1:1200/"}
 
 import { useState } from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NewsCollectorFeed } from '../api/types'
+import type { NewsCollectorFeed, NewsCollectorPreset } from '../api/types'
 import { FeedsSection } from './NewsCollectorPage'
+import { i18n } from '../i18n'
 
 let nextId = 0
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage('en')
   nextId = 0
   vi.stubGlobal('crypto', { randomUUID: () => String(++nextId) })
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-const presets: NewsCollectorFeed[] = [
-  { name: '财联社 · 电报', source: 'CLS', url: 'https://news.example.com/rsshub/cls/telegraph', rsshubRoute: 'cls/telegraph', enabled: true },
+const presets: NewsCollectorPreset[] = [
+  { name: '财联社 · 电报', source: 'CLS', url: 'https://news.example.com/rsshub/cls/telegraph', rsshubRoute: 'cls/telegraph', enabled: true, regions: ['cn'], markets: ['markets'] },
   { name: '格隆汇 · 实时快讯', source: 'gelonghui', url: 'https://news.example.com/rsshub/gelonghui/live', rsshubRoute: 'gelonghui/live', enabled: true },
   { name: 'Example Direct', source: 'example-direct', url: 'https://direct.example.com/feed.xml', enabled: true },
 ]
@@ -26,11 +28,6 @@ const presetProps = {
   presetsError: null,
   onRetryPresets: () => {},
   rsshubBaseUrl: 'https://news.example.com/rsshub',
-}
-
-function choosePreset(name: string) {
-  const option = screen.getByRole('option', { name }) as HTMLOptionElement
-  fireEvent.change(screen.getByLabelText('News source preset'), { target: { value: option.value } })
 }
 
 describe('NewsCollectorPage feed editor', () => {
@@ -70,7 +67,7 @@ describe('NewsCollectorPage feed editor', () => {
     expect(screen.queryByRole('heading', { name: 'Remove Federal Reserve Press?' })).toBeNull()
   })
 
-  it('rejects an invalid feed URL before submitting the feed', () => {
+  it('rejects an invalid feed URL before submitting the feed', async () => {
     const onChange = vi.fn()
     render(<FeedsSection {...presetProps} feeds={[]} onChange={onChange} />)
 
@@ -89,6 +86,8 @@ describe('NewsCollectorPage feed editor', () => {
 
     fireEvent.click(addButton)
     expect(urlInput.getAttribute('aria-invalid')).toBe('true')
+    await waitFor(() => expect(document.activeElement).toBe(urlInput))
+    expect(document.getElementById(urlInput.getAttribute('aria-describedby')!)?.textContent).toContain('HTTP(S)')
     expect(screen.getByRole('alert')).toBeTruthy()
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -139,10 +138,11 @@ describe('RSSHub news presets', () => {
       )
     }
     render(<Editor />)
-    choosePreset('RSSHub · 财联社 · 电报')
-    fireEvent.click(screen.getByRole('button', { name: 'Add preset' }))
-    choosePreset('RSSHub · 格隆汇 · 实时快讯')
-    fireEvent.click(screen.getByRole('button', { name: 'Add preset' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add source: 财联社 · 电报' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add source: 格隆汇 · 实时快讯' }))
+    const savedCls = onFeedsChange.mock.lastCall![0].find((feed: NewsCollectorFeed) => feed.source === 'CLS')
+    expect(savedCls).not.toHaveProperty('regions')
+    expect(savedCls).not.toHaveProperty('markets')
 
     expect(screen.getByText((text) => text.includes('cls/telegraph'))).toBeTruthy()
     expect(screen.getByText((text) => text.includes('gelonghui/live'))).toBeTruthy()
@@ -168,7 +168,7 @@ describe('RSSHub news presets', () => {
     const { rerender } = render(<FeedsSection {...presetProps} feeds={[feed]} onChange={onChange} />)
     rerender(<FeedsSection {...presetProps} presets={[]} presetsLoading feeds={[feed]} onChange={onChange} />)
     expect(screen.getByText('https://example.com/rss')).toBeTruthy()
-    expect((screen.getByLabelText('News source preset') as HTMLSelectElement).disabled).toBe(true)
+    expect((screen.getByRole('searchbox', { name: 'Find a source' }) as HTMLInputElement).disabled).toBe(true)
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -247,7 +247,7 @@ describe('RSSHub news presets', () => {
   ])('rejects %s in an RSSHub route before adding the feed', (_kind, route) => {
     const onChange = vi.fn()
     render(<FeedsSection {...presetProps} feeds={[]} onChange={onChange} />)
-    const editor = within(screen.getByText('Add source').closest('form') as HTMLFormElement)
+    const editor = within(screen.getByRole('form', { name: 'Add source' }))
     fireEvent.change(editor.getByRole('textbox', { name: 'Name' }), { target: { value: 'Unsafe route' } })
     fireEvent.change(editor.getByRole('textbox', { name: 'Source tag' }), { target: { value: 'unsafe-route' } })
     fireEvent.change(editor.getByRole('combobox', { name: 'Source type' }), { target: { value: 'rsshub' } })
@@ -264,7 +264,7 @@ describe('RSSHub news presets', () => {
   it('rejects a credential-bearing direct URL before adding the feed', () => {
     const onChange = vi.fn()
     render(<FeedsSection {...presetProps} feeds={[]} onChange={onChange} />)
-    const editor = within(screen.getByText('Add source').closest('form') as HTMLFormElement)
+    const editor = within(screen.getByRole('form', { name: 'Add source' }))
     fireEvent.change(editor.getByRole('textbox', { name: 'Name' }), { target: { value: 'Private feed' } })
     fireEvent.change(editor.getByRole('textbox', { name: 'Source tag' }), { target: { value: 'private-feed' } })
     const urlInput = editor.getByRole('textbox', { name: 'Feed URL' })
@@ -282,7 +282,6 @@ describe('RSSHub news presets', () => {
     render(<FeedsSection {...presetProps} feeds={[{
       id: 'original-id', name: 'My CLS', source: 'CLS', url: 'https://old.example.com/cls/telegraph', rsshubRoute: 'cls/telegraph', enabled: false,
     }]} onChange={onChange} />)
-    choosePreset('RSSHub · 财联社 · 电报')
     const add = screen.getByRole('button', { name: 'Already added' })
     expect(add.hasAttribute('disabled')).toBe(true)
     fireEvent.click(add)

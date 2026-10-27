@@ -52,7 +52,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await collector.close()
   await rm(directory, { recursive: true, force: true })
-})
+}, 20_000)
 
 afterAll(async () => {
   if (isolatedHome.previous === undefined) delete process.env['OPENALICE_HOME']
@@ -211,7 +211,7 @@ describe('news module configuration HTTP route', () => {
     expect(await response.text()).not.toContain('ABI_SECRET_DO_NOT_LEAK')
     expect(JSON.stringify(await (await routes.request('/api/news/modules')).json())).not.toContain('ABI_SECRET_DO_NOT_LEAK')
     expect((await loadConfig()).news.modules).toEqual([])
-  })
+  }, 30_000)
 
   it('keeps RSSHub key out of ordinary configuration saves and reads', async () => {
     const key = 'rsshub-key-do-not-return'

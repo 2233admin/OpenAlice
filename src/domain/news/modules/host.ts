@@ -4,12 +4,15 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import { defaultProcessController, terminateProcessTree } from '@traderalice/guardian-runtime'
-import { batchSchema, NEWS_MODULE_LIMITS, type ModuleItem, type NewsSubscription } from './contract.js'
-import { WINDOWS_NEWS_JOB, WINDOWS_NEWS_STOP, windowsCommandLine } from './windows-job.js'
+import { collectionResultSchema, NEWS_MODULE_LIMITS, type ModuleCollection, type NewsCheckpoint, type NewsSubscription } from './contract.js'
+import { WINDOWS_NEWS_JOB, WINDOWS_NEWS_STOP, WINDOWS_NEWS_HELPER_TIMEOUT_MS, windowsCommandLine } from './windows-job.js'
 
 const execFileAsync = promisify(execFile)
 interface OwnerReceipt { pid:number; startedAt:number|null; machineId:string; jobName:string }
-interface Pending { id:number; resolve:(v:ModuleItem[])=>void; reject:(e:Error)=>void; timer:NodeJS.Timeout }
+interface Pending { id:number; resolve:(v:ModuleCollection)=>void; reject:(e:Error)=>void; timer:NodeJS.Timeout }
+export class NewsModuleRequestError extends Error {
+  constructor() { super('News provider request failed; check access, quota and source parameters'); this.name = 'NewsModuleRequestError' }
+}
 
 export class NewsWorkerHost {
   private child: ChildProcessWithoutNullStreams | null = null
@@ -22,6 +25,7 @@ export class NewsWorkerHost {
   private stopInFlight: Promise<void> | null = null
   private readonly jobName = 'Local\\OpenAliceNews-' + randomUUID()
   private readonly receipt: string
+  private abiVersion: 1 | 2 = 1
 
   constructor(
     private readonly directory:string, readonly hash:string,
@@ -38,7 +42,7 @@ export class NewsWorkerHost {
       await execFileAsync(this.powerShell(), [
         '-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',
         Buffer.from(WINDOWS_NEWS_STOP,'utf16le').toString('base64'),
-      ], { env:{SystemRoot:process.env.SystemRoot,OPENALICE_NEWS_JOB_NAME:jobName},windowsHide:true,timeout:5000,maxBuffer:65536 })
+      ], { env:{SystemRoot:process.env.SystemRoot,TEMP:process.env.TEMP,TMP:process.env.TMP,OPENALICE_NEWS_JOB_NAME:jobName},windowsHide:true,timeout:WINDOWS_NEWS_HELPER_TIMEOUT_MS,maxBuffer:65536 })
       if (terminateRoot && defaultProcessController.isAlive(pid)) await terminateProcessTree(pid,{gracefulMs:1000,forceMs:2000})
     } else if (terminateRoot) {
       await terminateProcessTree(pid,{gracefulMs:1000,forceMs:2000})
@@ -64,10 +68,11 @@ export class NewsWorkerHost {
     await rm(this.receipt,{force:true})
   }
 
-  async start(entry:string,moduleId:string,version:string):Promise<void> {
+  async start(entry:string,moduleId:string,version:string,abiVersion:1|2=1):Promise<void> {
     await this.recover()
     this.faulted=false;this.stopping=false;this.stopInFlight=null
-    const args=[...this.launch.args,entry,moduleId,version]
+    this.abiVersion=abiVersion
+    const args=[...this.launch.args,'--news-abi='+abiVersion,entry,moduleId,version]
     const env:NodeJS.ProcessEnv={}
     for(const key of ['PATH','Path','SystemRoot','WINDIR','TEMP','TMP','TMPDIR','LANG','LC_ALL','ELECTRON_RUN_AS_NODE']) if(process.env[key])env[key]=process.env[key]
     if(process.versions.electron)env.ELECTRON_RUN_AS_NODE='1'
@@ -84,7 +89,7 @@ export class NewsWorkerHost {
     this.childClosed=false
     child.once('close',()=>{this.childClosed=true})
     this.child=child
-    let buffer=Buffer.alloc(0), stderr=0
+    let buffer=Buffer.alloc(0), stderr=0, awaitingSupervisor=process.platform==='win32'
     child.stdout.on('data',(chunk:Buffer)=>{
       if(this.faulted)return
       if(buffer.length+chunk.length>NEWS_MODULE_LIMITS.response){buffer=Buffer.alloc(0);this.fail();return}
@@ -94,15 +99,27 @@ export class NewsWorkerHost {
         const line=buffer.subarray(0,newline);buffer=buffer.subarray(newline+1)
         try {
           const message=JSON.parse(line.toString('utf8'))
+          if(awaitingSupervisor && this.pending?.id===-1) {
+            if(message.type!=='supervisor-ready')throw new Error('Invalid supervisor response')
+            awaitingSupervisor=false
+            clearTimeout(this.pending.timer)
+            this.pending.timer=setTimeout(()=>this.fail(),NEWS_MODULE_LIMITS.startupMs)
+            continue
+          }
           if(!this.ready && this.pending?.id===-1 && message.type==='ready'){this.ready=true;this.resolvePending([]);continue}
-          if(!this.pending || message.id!==this.pending.id || message.error)throw new Error('Invalid module response')
-          this.resolvePending(batchSchema.parse(message.items))
+          if(!this.pending || message.id!==this.pending.id)throw new Error('Invalid module response')
+          if(message.error && this.abiVersion===2 && message.retryable===true){
+            const pending=this.pending;this.pending=null;clearTimeout(pending.timer);pending.reject(new NewsModuleRequestError());continue
+          }
+          if(message.error)throw new Error('Module collection failed')
+          this.resolvePending(collectionResultSchema(this.abiVersion).parse(this.abiVersion===1?message.items:message.result))
         } catch {this.fail();return}
       }
     })
     child.stderr.on('data',(chunk:Buffer)=>{if(this.faulted)return;stderr+=chunk.length;if(stderr>NEWS_MODULE_LIMITS.stderr)this.fail()})
     child.once('error',()=>this.fail());child.once('exit',()=>this.fail())
-    const startup=this.waitFor(-1,NEWS_MODULE_LIMITS.startupMs)
+    // Windows compiles its Job Object helper before any module code can run.
+    const startup=this.waitFor(-1,awaitingSupervisor?WINDOWS_NEWS_HELPER_TIMEOUT_MS:NEWS_MODULE_LIMITS.startupMs)
     void startup.catch(()=>{}) // Attach immediately while collecting the owned PID receipt.
     await mkdir(this.directory,{recursive:true})
     if(!child.pid){this.fail();await startup;return}
@@ -111,13 +128,13 @@ export class NewsWorkerHost {
     await startup
   }
 
-  private waitFor(id:number,ms:number):Promise<ModuleItem[]> {
-    let resolve!:(value:ModuleItem[])=>void,reject!:(reason:Error)=>void
-    const promise=new Promise<ModuleItem[]>((res,rej)=>{resolve=res;reject=rej})
+  private waitFor(id:number,ms:number):Promise<ModuleCollection> {
+    let resolve!:(value:ModuleCollection)=>void,reject!:(reason:Error)=>void
+    const promise=new Promise<ModuleCollection>((res,rej)=>{resolve=res;reject=rej})
     this.pending={id,resolve,reject,timer:setTimeout(()=>this.fail(),ms)}
     return promise
   }
-  private resolvePending(value:ModuleItem[]):void {
+  private resolvePending(value:ModuleCollection):void {
     const pending=this.pending;this.pending=null
     if(pending){clearTimeout(pending.timer);pending.resolve(value)}
   }
@@ -130,9 +147,9 @@ export class NewsWorkerHost {
         .catch(()=>console.warn('news-module: worker failure cleanup was not confirmed; ownership retained'))
     }
   }
-  async collect(subscription:NewsSubscription):Promise<ModuleItem[]> {
+  async collect(subscription:NewsSubscription,context?:{checkpoint:NewsCheckpoint;credentials:Record<string,string>}):Promise<ModuleCollection> {
     if(!this.ready || !this.child || this.pending)throw new Error('Module worker unavailable')
-    const id=++this.nextId,line=JSON.stringify({id,sourceKey:subscription.sourceKey,params:subscription.params})+'\n'
+    const id=++this.nextId,line=JSON.stringify({id,sourceKey:subscription.sourceKey,params:subscription.params,...(this.abiVersion===2?context:{})})+'\n'
     if(Buffer.byteLength(line)>NEWS_MODULE_LIMITS.request)throw new Error('Module request exceeds limit')
     const reply=this.waitFor(id,NEWS_MODULE_LIMITS.collectMs)
     this.child.stdin.write(line,error=>{if(error)this.fail()})

@@ -82,6 +82,7 @@ export type {
   ModuleSelection,
   NewsSubscription,
   NewsModuleManifest,
+  NewsModuleCredential,
   NewsModuleArtifact,
   InstalledModule,
   ModuleStatus,

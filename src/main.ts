@@ -1,4 +1,5 @@
 import { newsActivityPayload } from './domain/news/activity.js'
+import type { NewsFollowUpdate } from './domain/news/reading-contract.js'
 import { publishCliEndpoint } from './server/cli-endpoint.js'
 import { createMarketBarsTools } from './tool/market-bars.js'
 import {
@@ -78,7 +79,8 @@ import { conversationToolFactories } from './tool/conversation.js'
 import { artifactConversationToolFactories } from './tool/conversation-artifacts.js'
 import { createToolCallLog } from './core/tool-call-log.js'
 import { NewsCollectorStore, NewsCollector } from './domain/news/index.js'
-import { createNewsArchiveTools } from './tool/news.js'
+import { createNewsArchiveTools, createNewsReadingTools } from './tool/news.js'
+import { NewsStoryStore } from './domain/news/stories.js'
 import { NewsModuleManager } from './domain/news/modules/manager.js'
 import { RssHubSecretStore } from './domain/news/modules/secrets.js'
 
@@ -170,6 +172,17 @@ async function main(shutdownRequested: Promise<void>) {
     retentionDays: config.news.retentionDays,
   })
   await newsStore.init()
+  let onNewsFollowUpdate: ((update: NewsFollowUpdate) => Promise<unknown>) | undefined
+  const newsStories = new NewsStoryStore(newsStore, undefined, {
+    resolveAsset: async asset => {
+      const nativeSymbol = asset.barId.slice(asset.barId.indexOf('|') + 1)
+      const candidates = await barService.searchBarSources(nativeSymbol, { limit: 100 })
+      return candidates.filter(candidate => candidate.barId === asset.barId && candidate.assetClass === asset.assetClass).length === 1
+    },
+    onFollowUpdate: update => onNewsFollowUpdate?.(update) ?? Promise.resolve(),
+    coverage: () => (newsCollector?.getStatus() ?? []).filter(source => source.state === 'healthy' && source.lastSuccessAt !== null && source.lastSuccessAt >= Date.now() - 30 * 60000)
+      .map(source => JSON.stringify([source.moduleId, source.id, source.source])),
+  })
 
   // ==================== Embedded Provider Clients ====================
 
@@ -266,6 +279,7 @@ async function main(shutdownRequested: Promise<void>) {
     toolCenter.register(createEtfTools(etfClient), 'etf')
   }
   toolCenter.register(createNewsArchiveTools(newsStore), 'rss')
+  toolCenter.register(createNewsReadingTools(newsStories), 'news-reading')
   // v1 calculateIndicator (createAnalysisTools) is retired from the tool surface
   // — calculateQuant (v2, barId-keyed) supersedes it and the two descriptions
   // confused the model / bloated context. The code remains for now.
@@ -403,6 +417,7 @@ async function main(shutdownRequested: Promise<void>) {
     utaManager,
     tradingModePolicy: currentTradingModePolicy,
     newsProvider: newsStore,
+    newsStories,
   }
 
   for (const plugin of [...corePlugins, ...optionalPlugins.values()]) {
@@ -417,8 +432,9 @@ async function main(shutdownRequested: Promise<void>) {
   // journal core never imports or starts the collector.
   const newsActivity = workspaceServiceRef.current?.activityJournal.registerFamily({
     family: 'news',
-    types: ['news.ingested'] as const,
+    types: ['news.ingested', 'news.story.updated'] as const,
   })
+  if (newsActivity) onNewsFollowUpdate = update => newsActivity.record('news.story.updated', update)
   newsCollector = new NewsCollector({
     store: newsStore,
     feeds: config.news.feeds,

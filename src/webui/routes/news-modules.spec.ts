@@ -76,6 +76,23 @@ function artifact() {
 }
 
 describe('news module management HTTP routes', () => {
+  it('manages exact-approved v2 credentials without returning their values', async () => {
+    const routes = app()
+    const value = artifact()
+    const result = await routes.request('/api/news/modules', json('POST', { artifact: { ...value, manifest: { ...value.manifest, abiVersion: 2, credentials: [{ key: 'apiKey', label: 'Provider key' }] } } }))
+    const installed = await result.json()
+    const path = `/api/news/modules/${installed.contentHash}/credentials`
+    expect((await routes.request(path, json('PUT', { operation: 'set', key: 'apiKey', value: 'private-http-test' }))).status).toBe(400)
+    await routes.request(`/api/news/modules/${installed.contentHash}/approve`, { method: 'POST' })
+    const saved = await routes.request(path, json('PUT', { operation: 'set', key: 'apiKey', value: 'private-http-test' }))
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toEqual({ credentials: [{ key: 'apiKey', label: 'Provider key', configured: true, available: true }] })
+    expect(JSON.stringify(await (await routes.request(path)).json())).not.toContain('private-http-test')
+    expect((await routes.request(path, json('PUT', { operation: 'set', key: 'unknown', value: 'private-http-test' }))).status).toBe(400)
+    expect((await routes.request(path, json('PUT', { operation: 'clear', key: 'apiKey' }))).status).toBe(200)
+    const remote = { incoming: { socket: { remoteAddress: '198.51.100.11' } } }
+    expect((await app(true, true).request(path, json('PUT', { operation: 'set', key: 'apiKey', value: 'private-http-test' }), remote)).status).toBe(401)
+  })
   it('installs and approves an artifact without executing unselected code, then uninstalls it', async () => {
     const routes = app()
     const installed = await routes.request('/api/news/modules', json('POST', { artifact: artifact() }))

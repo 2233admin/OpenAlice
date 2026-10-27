@@ -1,3 +1,5 @@
+export const WINDOWS_NEWS_HELPER_TIMEOUT_MS = 10_000
+
 /** Windows Job Object supervisor: crash/parent exit closes the whole owned tree.
  * CREATE_SUSPENDED closes the assign-before-module-execution race. Not a sandbox. */
 export const WINDOWS_NEWS_JOB = String.raw`
@@ -37,6 +39,7 @@ public static class NewsJob {
       si.input=GetStdHandle(-10); si.output=GetStdHandle(-11); si.error=GetStdHandle(-12);
       if(!CreateProcess(null,commandLine,IntPtr.Zero,IntPtr.Zero,true,0x08000004,IntPtr.Zero,null,ref si,out pi)) throw new Exception("Worker creation failed");
       if(!AssignProcessToJobObject(job,pi.process)) throw new Exception("Worker assignment failed");
+      Console.Out.WriteLine("{\"type\":\"supervisor-ready\"}"); Console.Out.Flush();
       if(ResumeThread(pi.thread)==0xffffffff) throw new Exception("Worker resume failed");
       uint result=WaitForMultipleObjects(2,new IntPtr[]{parent,pi.process},false,0xffffffff);
       if(result==0) return 2;

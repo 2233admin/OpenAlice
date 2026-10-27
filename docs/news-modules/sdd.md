@@ -54,6 +54,62 @@ export const newsModule: {
 
 `newsModule` 是 ESM 命名导出。宿主检查 ABI、moduleId、version 和 collect；模块无需自行实现 stdio。来源和参数键唯一，标识符为受限 ASCII；未知字段、未知参数、缺必填值、类型不符均拒绝。普通参数不接收核心密钥。
 
+### ABI v2：统一内容采集
+
+v1 上述数组契约继续有效，其规范化清单和已有批准 hash 不增加字段。v2
+须显式声明 `abiVersion: 2` 以及 `credentials: {key,label}[]`（无凭据时为
+空数组，最多 8 项，键在忽略大小写后唯一）。改变 ABI 或代码会产生新 hash，
+须重新批准；不会继承旧版本凭据。
+
+v2 `collect` 的输入增加 `checkpoint`，上下文增加 `credentials`，返回
+`{items, checkpoint}`。条目沿用 v1 必填字段，可增加：
+
+- `publisher,author,language`：原始发布者、作者和语言。
+- `kind`：`article | social | announcement`；`role`：
+  `official | reporting | discussion`。这是来源归属，不是事实正确性评分。
+- `symbols`：最多 32 个 `市场/交易所:代码` 标识，不从公司名猜股票。
+- `media`：最多 16 个 `{type: image|video,url}` 引用；不下载媒体。
+- `quote`：`{author,text,url}` 引用帖，正文与引用保持独立。
+
+宿主完整校验后把这些原始字段写入现有 JSONL metadata；数组和引用为 JSON
+字符串。新闻 API 校验并投影结构化字段，展示原始发布者、作者、引用和股票
+关联。原始订阅 source 标签仍保存在归档并可筛选。旧记录不重写。
+
+`checkpoint` 为 null 或扁平 JSON 对象（值为字符串、有限数值、布尔或 null），
+序列化最多 16384 字符。宿主按制品 hash、订阅 ID、sourceKey、排序后参数
+隔离状态；查询或版本改变从新状态开始，去重身份保持不变。归档全部写入成功
+后才原子提交游标；部分写入或提交失败重放整批，由稳定 externalId 去重。
+空结果同样可推进游标。此处是进程重启恢复，不承诺硬件掉电事务。
+
+状态文件独立保存为版本 1 的私有 `.checkpoint-*.json`，不迁移或清理既有
+配置、制品和归档。损坏或未知版本明确失败，不能当作首次采集。
+
+### 服务商凭据
+
+获批 v2 制品可在设置页逐项保存/清除其声明的凭据；这不启用模块或订阅。
+凭据绑定精确制品 hash，单独密封落盘，不进入普通参数、清单、配置、归档、
+状态返回或日志。宿主只通过在途私有 stdio 请求交给该版本；worker 不继承
+服务商环境变量。卸载制品清除其绑定凭据，归档保留。
+
+| HTTP 操作 | 请求与结果 |
+|---|---|
+| GET `/api/news/modules/:hash/credentials` | `{credentials:[{key,label,configured,available}]}`，不含值 |
+| PUT 同一路径 | `{operation:"set",key,value}` 或 `{operation:"clear",key}` → 同上状态 |
+
+写入经过采集器串行协调器；只接受获批 v2 清单声明的键，请求体最多 32 KiB。
+密封仍不能防御同一 OS 用户的获准代码；批准并绑定凭据意味着把该服务商凭据
+交给这一版模块。缺失/损坏凭据停止该订阅；模块抛出的普通 v2 请求错误保留
+worker，下一轮重试。坏输出、协议错误、崩溃和超时仍进入原有故障/显式 retry
+流程。错误消息不透传模块或带 API key 的 URL。
+
+新闻页按原始发布者显示来源。单个来源筛选使用 `sourceExact`，完整保留名称
+中的逗号；原 `source` 逗号分隔多来源查询继续兼容。API 可按归档的订阅标签
+或原始发布者匹配来源，结构化 symbols 也参与检索。
+
+### 后续数据接入
+
+当前交付保留通用 v2 制品、元数据、游标和凭据隔离契约。新增官方信源、公司公告与商品报告、X/FMP，以及更多地区和微信等渠道均留待后续；对应的账户源适配制品及其专属集成测试不纳入本轮 PR。
+
 `publishedAt` 为可解析的带时区 RFC3339；`url` 必须 HTTP(S) 且不含用户名密码。内容仅作文本，不能提交 HTML 执行字段。`externalId` 在整个 moduleId 内稳定：多来源模块自行加入稳定来源域。核心去重键是无歧义的 `[moduleId, externalId]`，不包含版本或订阅 ID。
 
 完整制品 SHA-256 覆盖规范化清单和排序后的全部文件内容。安装到独立 hash 目录；相同内容复用，改变任何成员须重新批准。禁止绝对路径、穿越、链接、大小写冲突、文件/目录冲突、Windows 保留名和核心元数据覆盖。加载前重新核对清单、内容身份及成员字节。发现只读取清单，不导入代码。
@@ -93,6 +149,8 @@ export const newsModule: {
 私有 stdio 每行 UTF-8 JSON，每个 worker 同时一个请求。宿主生成单调请求 ID；不接收主动推送、错 ID 或重复结果。console 在 import 前被限制到 stderr；直接写 stdout 会破坏协议并导致故障。模块的 AbortSignal 是合作取消，宿主截止时间仍可强制结束忽略 signal 的代码。
 
 Windows 由窄启动器将 CREATE_SUSPENDED 子进程加入 kill-on-close Job Object 后恢复。POSIX 用不导入模块的独立进程组监督器；停止时先枚举可见后代并由叶到根发信号，再确认 PID 退出。已自行 daemonize、在扫描前已脱离父子关系的进程可能不再可归属，因此 POSIX 进程组/树清理不是对抗恶意同用户代码的 OS containment。所有权记录持久保存 PID、启动身份、机器身份和随机任务身份；恢复不凭裸 PID 杀进程。停止失败保留所有权、阻止替换/卸载，退出也报告失败而非宣布已清理；不要把停止 worker 等同于沙箱。
+
+Windows 启动器的 PowerShell/C# 准备限时独立为 10 秒；完成 Job 归属后、恢复 worker 前发送一次私有 `supervisor-ready`。收到后才计模块 ready 的 5 秒，重复通知视为协议错误；此通知不属于外部模块 ABI。停止辅助进程同样有 10 秒限时，并继承 TEMP/TMP，避免编译辅助代码绕过隔离临时目录；Job 内活动进程归零仍须确认。外层 Guardian/桌面的关闭宽限和强制后备保持原有边界。
 
 内置 Guardian 和桌面用父进程独占的 child IPC `openalice:shutdown` 请求 Alice 执行同一个幂等关闭函数；不增加 HTTP 停机面。Alice 在 startup await 前捕获请求，关闭函数可用后处理，不丢掉启动途中收到的请求。Windows 的 SIGTERM 不会执行 Node/Bun 的信号清理，故 IPC 是优雅阶段，10 秒后仍未退出保留强制后备。Guardian 在子进程确认退出后才释放 owner，强制后最多再等 2 秒；未确认时保留归属。CLI down 的现有返回条件仍是 Guardian absent，不单独证明新闻 owner 收据消失；实际验收须检查收据、进程和历史，不以请求发出或退出码替代。开发 watch 包装器仍走原树停止路径。
 关闭标志设置后，Guardian/桌面的每个实际 spawn 同步拒绝新增子进程；已跨 await 的启动、重启和回到集成模式检查关闭状态，关闭后才返回的归属直接释放、不发布。桌面 IPC 失败在 POSIX 后备为原生 SIGTERM，在 Windows 等待现有宽限后强制，不因回调错误立即杀树。Alice 收集器关闭未确认或其他清理失败时退出非零且不主动释放 runtime lock；启动异常也先尝试关闭收集器。已退出 PID 的锁会按现有恢复逻辑视为 stale，不能把保留 Alice 锁说成永久阻止接管；worker 的身份收据和 recovery 门禁仍是独立边界。

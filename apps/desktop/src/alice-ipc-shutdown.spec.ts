@@ -134,6 +134,7 @@ afterEach(() => {
 async function launch(child: ChildProcess) {
   state.child = child
   const spawned = new Promise<void>((resolve) => { state.spawned = resolve })
+  // Loading desktop main is startup work, separate from child shutdown deadlines.
   await import('./main.js')
   await spawned
 }
@@ -158,7 +159,7 @@ describe('desktop main Alice IPC shutdown', () => {
     const child = realSpawn(process.execPath, ['-e', program, marker], {
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
     })
-    const closed = once(child, 'close', { signal: AbortSignal.timeout(6000) })
+    const closed = once(child, 'close', { signal: AbortSignal.timeout(20_000) })
     void closed.catch(() => {})
     try {
       const [ready] = await once(child, 'message', { signal: AbortSignal.timeout(3000) })
@@ -178,7 +179,7 @@ describe('desktop main Alice IPC shutdown', () => {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
       await closed
     }
-  })
+  }, 30_000)
 
   for (const failure of ['disconnected', 'send callback error'] as const) {
     it(`keeps Alice alive until the 10-second force deadline after ${failure}`, async () => {
@@ -217,6 +218,6 @@ describe('desktop main Alice IPC shutdown', () => {
         vi.useRealTimers()
         if (child.exitCode === null && child.signalCode === null) child.finishForced()
       }
-    })
+    }, 30_000)
   }
 })

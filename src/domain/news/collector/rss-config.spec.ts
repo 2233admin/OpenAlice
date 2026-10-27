@@ -115,6 +115,15 @@ describe('NewsCollector RSS configuration', () => {
     })
   }
 
+  it('archives feed provenance and collection-time fallback without guessing an unzoned publication time', async () => {
+    reply = (_pathname, response) => sendFeed(response, '<rss><channel><item><guid>quality</guid><title>Source release</title><description>Source summary</description><pubDate>2026-10-28T09:30:00</pubDate></item></channel></rss>')
+    const collector = createCollector([{ name: 'Source', source: 'quality', url: origin + '/quality' }])
+    await collector.fetchAll()
+    const [item] = await storedItems()
+    expect(item.metadata).toMatchObject({ contentBasis: 'feed-summary', timeBasis: 'collection', publicationTimeRaw: '2026-10-28T09:30:00' })
+    expect(await collector.fetchAll()).toMatchObject({ new: 0 })
+  })
+
   it('keeps direct URLs fixed while an RSSHub route follows a changed base instead of its stale URL', async () => {
     const feeds: RSSFeedConfig[] = [
       { id: 'direct', name: 'Direct', source: 'direct-source', url: origin + '/direct/feed' },

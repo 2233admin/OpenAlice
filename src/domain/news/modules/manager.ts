@@ -1,15 +1,16 @@
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NewsModuleRegistry } from './registry.js'
-import { NewsWorkerHost } from './host.js'
+import { NewsWorkerHost, NewsModuleRequestError } from './host.js'
+import { NewsModuleState, checkpointIdentity } from './state.js'
 import { createNewsWorkerLaunch } from './launch.js'
 import {
   moduleSelectionSchema, subscriptionSchema,
   type ModuleSelection, type NewsSubscription, type NewsModuleArtifact,
-  type InstalledModule, type ModuleStatus,
+  type InstalledModule, type ModuleStatus, type NewsCheckpoint,
 } from './contract.js'
 
-type Identity = { moduleId: string; version: string; contentHash: string }
+type Identity = { moduleId: string; version: string; contentHash: string; abiVersion: 1 | 2; credentialKeys: string[] }
 export class NewsModuleValidationError extends Error {
   constructor() { super('Invalid module configuration; approve the exact artifact before enabling'); this.name = 'NewsModuleValidationError' }
 }
@@ -23,9 +24,11 @@ export class NewsModuleManager {
   private subscriptions: NewsSubscription[] = []
   private workers = new Map<string, NewsWorkerHost>()
   private identities = new Map<string, Identity>()
+  private readonly state: NewsModuleState
 
   constructor(opts: { directory: string; launch?: { command: string; args: string[] } }) {
     this.registry = new NewsModuleRegistry(opts.directory)
+    this.state = new NewsModuleState(opts.directory)
     this.launch = opts.launch ?? createNewsWorkerLaunch()
   }
 
@@ -52,6 +55,36 @@ export class NewsModuleManager {
 
   async importArtifact(value: unknown): Promise<InstalledModule> { return this.registry.importArtifact(value) }
   async approve(hash: string): Promise<InstalledModule> { return this.registry.approve(hash) }
+
+  private async credentialDefinitions(hash: string) {
+    const artifact = await this.registry.read(hash)
+    if (!await this.registry.approved(hash) || artifact.manifest.abiVersion !== 2) throw new Error('Approve the exact v2 artifact before binding credentials')
+    return artifact.manifest.credentials
+  }
+  async credentialStatus(hash: string) {
+    const definitions = await this.credentialDefinitions(hash)
+    return Promise.all(definitions.map(async definition => {
+      try { return { ...definition, configured: !!await this.state.credential(hash, definition.key), available: true } }
+      catch { return { ...definition, configured: true, available: false } }
+    }))
+  }
+  async setCredential(hash: string, key: string, value: string): Promise<void> {
+    if (!(await this.credentialDefinitions(hash)).some(definition => definition.key === key)) throw new Error('Unknown module credential')
+    await this.state.setCredential(hash, key, value)
+  }
+  async clearCredential(hash: string, key: string): Promise<void> {
+    if (!(await this.credentialDefinitions(hash)).some(definition => definition.key === key)) throw new Error('Unknown module credential')
+    await this.state.clearCredential(hash, key)
+  }
+  async commitCheckpoint(row: NewsSubscription, checkpoint: NewsCheckpoint): Promise<void> {
+    const identity = await this.identity(row.moduleId)
+    if (identity.abiVersion !== 2) throw new Error('Checkpoint requires a v2 module')
+    await this.state.commitCheckpoint(checkpointIdentity(identity.contentHash, row), checkpoint)
+  }
+  private loadedIdentity(hash: string, artifact: NewsModuleArtifact): Identity {
+    const manifest = artifact.manifest
+    return { moduleId: manifest.moduleId, version: manifest.version, contentHash: hash, abiVersion: manifest.abiVersion, credentialKeys: manifest.abiVersion === 2 ? manifest.credentials.map(value => value.key) : [] }
+  }
 
   async list(selections: ModuleSelection[] = this.selections, enabled = true): Promise<ModuleStatus[]> {
     const entries = await this.registry.list()
@@ -149,9 +182,9 @@ export class NewsModuleManager {
         if (!artifact) continue
         worker = this.host(selection.contentHash)
         this.workers.set(selection.contentHash, worker)
-        await worker.start(this.registry.entry(selection.contentHash, artifact), artifact.manifest.moduleId, artifact.manifest.version)
+        await worker.start(this.registry.entry(selection.contentHash, artifact), artifact.manifest.moduleId, artifact.manifest.version, artifact.manifest.abiVersion)
         if (!worker.isLoaded()) throw new Error('Module startup failed')
-        this.identities.set(selection.contentHash, { moduleId: selection.moduleId, version: artifact.manifest.version, contentHash: selection.contentHash })
+        this.identities.set(selection.contentHash, this.loadedIdentity(selection.contentHash, artifact))
       } catch {
         await this.quarantine(selection.contentHash)
         // A stop failure cannot be treated as an isolated, safely-ended startup failure.
@@ -168,8 +201,20 @@ export class NewsModuleManager {
     if (!selection) throw new Error('Module disabled or not installed')
     const worker = this.workers.get(selection.contentHash)
     if (!worker?.isLoaded()) throw new Error('Module unavailable; explicit retry required')
-    try { return await worker.collect(row) }
-    catch {
+    const identity = await this.identity(row.moduleId)
+    let context: { checkpoint: NewsCheckpoint; credentials: Record<string, string> } | undefined
+    if (identity.abiVersion === 2) {
+      const credentials: Record<string, string> = {}
+      for (const key of identity.credentialKeys) {
+        const value = await this.state.credential(selection.contentHash, key)
+        if (!value) throw new Error('Configure the approved news module credential before collection')
+        credentials[key] = value
+      }
+      context = { credentials, checkpoint: await this.state.checkpoint(checkpointIdentity(selection.contentHash, row)) }
+    }
+    try { return await worker.collect(row, context) }
+    catch (error) {
+      if (error instanceof NewsModuleRequestError) throw error
       await this.quarantine(selection.contentHash)
       await worker.stop()
       this.workers.delete(selection.contentHash)
@@ -200,8 +245,8 @@ export class NewsModuleManager {
     const worker = this.host(hash)
     this.workers.set(hash, worker)
     try {
-      await worker.start(this.registry.entry(hash, artifact), artifact.manifest.moduleId, artifact.manifest.version)
-      this.identities.set(hash, { moduleId: selection.moduleId, version: artifact.manifest.version, contentHash: hash })
+      await worker.start(this.registry.entry(hash, artifact), artifact.manifest.moduleId, artifact.manifest.version, artifact.manifest.abiVersion)
+      this.identities.set(hash, this.loadedIdentity(hash, artifact))
     } catch {
       await this.quarantine(hash)
       await worker.stop()
@@ -217,6 +262,7 @@ export class NewsModuleManager {
     await this.host(hash).recover()
     this.workers.delete(hash)
     this.identities.delete(hash)
+    await this.state.clearArtifactCredentials(hash)
     await this.registry.uninstall(hash)
     await rm(this.failurePath(hash), { force: true })
   }

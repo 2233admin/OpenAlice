@@ -258,7 +258,12 @@ export interface NewsCollectorConfig {
 }
 
 export interface NewsCollectorPresetsResponse {
-  feeds: NewsCollectorFeed[]
+  feeds: NewsCollectorPreset[]
+}
+
+export interface NewsCollectorPreset extends NewsCollectorFeed {
+  regions?: string[]
+  markets?: string[]
 }
 
 export type NewsCollectorFeedState =
@@ -279,6 +284,11 @@ export interface NewsCollectorFeedStatus {
   lastItemCount: number | null
   lastNewItemCount: number | null
   lastError: string | null
+  lastPublishedAt?: number | null
+  lastUndatedItemCount?: number | null
+  lastEmptyContentCount?: number | null
+  lastEmptyItemCount?: number | null
+  lastDurationMs?: number | null
 }
 
 export interface NewsCollectorStatusResponse {
@@ -310,7 +320,8 @@ export interface NewsSubscription {
 }
 
 export interface NewsModuleManifest {
-  abiVersion: 1
+  abiVersion: 1 | 2
+  credentials?: Array<{ key: string; label: string }>
   moduleId: string
   version: string
   name: string
@@ -355,20 +366,43 @@ export interface RssHubKeyStatus {
 
 // ==================== News Articles ====================
 
+export type { NewsReadProgress, NewsReadStatus, NewsReaderPatch, NewsReaderState, NewsStory, NewsStoryDetail, NewsStoryPreview } from '../../../src/domain/news/reading-contract'
+
 export interface NewsArticle {
+  important?: boolean
+  id?: number
+  // null means conflicting event assignments; absent means not prepared.
+  eventRef?: { storyId: string; developmentId: string } | null
   time: string
+  timeBasis?: 'collection'
+  contentBasis?: 'feed-content' | 'feed-summary' | 'missing'
   title: string
   content: string
   source: string | null
   link: string | null
   categories: string | null
   image?: string | null
+  publisher?: string
+  author?: string
+  kind?: 'article' | 'social' | 'announcement'
+  role?: 'official' | 'reporting' | 'discussion'
+  language?: string
+  symbols?: string[]
+  media?: Array<{ type: 'image' | 'video'; url: string }>
+  quote?: { author: string; text: string; url: string }
 }
+
+export interface NewsModuleCredential { key: string; label: string; configured: boolean; available: boolean }
 
 export interface NewsListResponse {
   items: NewsArticle[]
   count: number
   lookback: string | null
+  stories?: import('../../../src/domain/news/reading-contract').NewsStoryPreview[]
+  storyError?: boolean
+  storySources?: string[]
+  storyTopics?: Array<{ topic: string; count: number }>
+  storyNextOffset?: number | null
 }
 
 

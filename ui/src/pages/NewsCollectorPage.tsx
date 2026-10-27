@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api, type AppConfig, type NewsCollectorConfig, type NewsCollectorFeed } from '../api'
-import type { NewsCollectorFeedState, NewsCollectorFeedStatus } from '../api/types'
+import type { NewsCollectorFeedState, NewsCollectorFeedStatus, NewsCollectorPreset } from '../api/types'
 import { SaveIndicator } from '../components/SaveIndicator'
 import { ConfigSection, Field, SettingsScrollArea, inputClass } from '../components/form'
 import { Toggle } from '../components/Toggle'
@@ -10,6 +11,9 @@ import { PageHeader } from '../components/PageHeader'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { NewsModulesSection, RssHubKeySection } from '../components/news-modules/NewsModulesSection'
+import { NewsSourceCatalog, NewsSourceCoverage, isSamePresetSource } from '../components/news/NewsSourceCatalog'
+import { NewsPreparation } from '../components/news/NewsPreparation'
+import { useLocation } from 'react-router-dom'
 
 const DEFAULT_NEWS_CONFIG: NewsCollectorConfig = {
   enabled: true,
@@ -28,7 +32,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
 
-function CollectorSettings() {
+function CollectorSettings({ focusDirectory }: { focusDirectory: boolean }) {
   const { config, status, loadError, updateConfig, updateConfigImmediate, retry, reload } = useConfigPage<NewsCollectorConfig>({
     section: 'news',
     extract: (full: AppConfig) => (full as Record<string, unknown>).news as NewsCollectorConfig,
@@ -36,7 +40,7 @@ function CollectorSettings() {
 
   const cfg = { ...DEFAULT_NEWS_CONFIG, ...(config ?? {}) }
   const enabled = cfg.enabled !== false
-  const [presets, setPresets] = useState<NewsCollectorFeed[]>([])
+  const [presets, setPresets] = useState<NewsCollectorPreset[]>([])
   const [presetsLoading, setPresetsLoading] = useState(true)
   const [presetsError, setPresetsError] = useState<string | null>(null)
   const [presetsRetryKey, setPresetsRetryKey] = useState(0)
@@ -48,6 +52,9 @@ function CollectorSettings() {
   const [checkError, setCheckError] = useState<string | null>(null)
   const [checkResult, setCheckResult] = useState<{ total: number; new: number } | null>(null)
   const statusRefreshRef = useRef<((afterCollection?: boolean) => Promise<void>) | null>(null)
+  const [autoRefreshStatus, setAutoRefreshStatus] = useState(true)
+  const autoRefreshStatusRef = useRef(autoRefreshStatus)
+  autoRefreshStatusRef.current = autoRefreshStatus
 
   useEffect(() => {
     const controller = new AbortController()
@@ -68,7 +75,7 @@ function CollectorSettings() {
     const controller = new AbortController()
     let mounted = true
     let currentRequest: Promise<void> | null = null
-    const refresh = async (afterCollection = false) => {
+    const refresh = async (afterCollection = false, automatic = false) => {
       if (currentRequest) {
         if (!afterCollection) return currentRequest
         await currentRequest
@@ -78,12 +85,12 @@ function CollectorSettings() {
         setStatusLoading(true)
         try {
           const result = await api.news.getCollectorStatus(controller.signal)
-          if (mounted) {
+          if (mounted && (!automatic || autoRefreshStatusRef.current)) {
             setStatusFeeds(result.feeds)
             setStatusError(null)
           }
         } catch (error) {
-          if (mounted && !controller.signal.aborted) setStatusError(getErrorMessage(error, 'Failed to load collector status.'))
+          if (mounted && !controller.signal.aborted && (!automatic || autoRefreshStatusRef.current)) setStatusError(getErrorMessage(error, 'Failed to load collector status.'))
         } finally {
           if (mounted) setStatusLoading(false)
         }
@@ -92,7 +99,7 @@ function CollectorSettings() {
     }
     statusRefreshRef.current = refresh
     void refresh()
-    const interval = window.setInterval(() => { void refresh() }, STATUS_POLL_INTERVAL_MS)
+    const interval = window.setInterval(() => { if (autoRefreshStatusRef.current) void refresh(false, true) }, STATUS_POLL_INTERVAL_MS)
     return () => {
       mounted = false
       window.clearInterval(interval)
@@ -136,7 +143,8 @@ function CollectorSettings() {
         </div>
       </div>
 
-      <div className={`${!enabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <NewsPreparation />
+      <fieldset disabled={!enabled} aria-label="Collection configuration" className={`min-w-0 ${!enabled ? 'opacity-40' : ''}`}>
         <ConfigSection
           title="Collection Settings"
           description="Source, instance and interval changes apply without restart. Retention changes take effect after restarting Alice."
@@ -176,6 +184,7 @@ function CollectorSettings() {
 
         <FeedsSection
           feeds={cfg.feeds}
+          focusDirectory={focusDirectory}
           onChange={(feeds) => updateConfigImmediate({ feeds })}
           presets={presets}
           presetsLoading={presetsLoading}
@@ -184,6 +193,10 @@ function CollectorSettings() {
           rsshubBaseUrl={cfg.rsshubBaseUrl}
         />
 
+      </fieldset>
+      <div className="flex flex-wrap items-center gap-3 py-3 text-xs">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={autoRefreshStatus} onChange={event => setAutoRefreshStatus(event.target.checked)} />Automatic status updates (5 seconds)</label>
+        <Button type="button" variant="outline" size="sm" onClick={() => setStatusRetryKey(value => value + 1)}>Refresh status</Button>
       </div>
       <RssHubKeySection />
       {config && <NewsModulesSection
@@ -193,6 +206,8 @@ function CollectorSettings() {
         onSubscriptionsChange={(subscriptions) => updateConfigImmediate({ subscriptions })}
         collectorEnabled={enabled}
         saveStatus={status}
+        autoRefresh={autoRefreshStatus}
+        refreshToken={statusRetryKey}
       />}
 
       <CollectionStatusSection
@@ -253,12 +268,6 @@ function isValidRsshubRoute(value: string): boolean {
   }
 }
 
-function isSamePresetSource(feed: NewsCollectorFeed, preset: NewsCollectorFeed): boolean {
-  if (feed.source.trim().toLowerCase() !== preset.source.trim().toLowerCase()) return false
-  if (preset.rsshubRoute) return feed.rsshubRoute === preset.rsshubRoute
-  return !feed.rsshubRoute && feed.url === preset.url
-}
-
 function formatTimestamp(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—'
   const date = new Date(value)
@@ -269,7 +278,7 @@ const FEED_STATE_LABELS: Record<NewsCollectorFeedState, string> = {
   disabled: 'Disabled',
   never_attempted: 'Never checked',
   checking: 'Checking',
-  healthy: 'Healthy',
+  healthy: 'Fetch succeeded',
   error: 'Error',
 }
 
@@ -294,22 +303,20 @@ function CollectionStatusSection({
   checkResult: { total: number; new: number } | null
   onRetryCheck: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <ConfigSection
       title="Source status"
-      description="In-memory status for each news source. Status resets when the OpenAlice server restarts."
+      description={t('news.sourceStatusDescription')}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12px] text-muted-foreground">Status refreshes every 5 seconds while this page is open.</p>
         <Button type="button" variant="outline" size="sm" disabled={checking} onClick={onCheckNow}>
           {checking ? 'Checking…' : 'Check now'}
         </Button>
       </div>
-      {checkResult && (
-        <p role="status" aria-live="polite" className="mb-3 text-[12px] text-muted-foreground">
-          Check complete: {checkResult.total} articles fetched, {checkResult.new} new.
+        <p role="status" className="mb-3 text-[12px] text-muted-foreground">
+          {checkResult && <>Check complete: {checkResult.total} articles fetched, {checkResult.new} new.</>}
         </p>
-      )}
       {checkError && (
         <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
           <p className="text-[12px] text-destructive">{checkError}</p>
@@ -339,6 +346,11 @@ function CollectionStatusSection({
                 <div><dt className="inline">Last success: </dt><dd className="inline">{formatTimestamp(feed.lastSuccessAt)}</dd></div>
                 <div><dt className="inline">Items: </dt><dd className="inline">{feed.lastItemCount ?? '—'}</dd></div>
                 <div><dt className="inline">New items: </dt><dd className="inline">{feed.lastNewItemCount ?? '—'}</dd></div>
+                <div><dt className="inline">{t('news.sourceLatestPublication')}: </dt><dd className="inline">{formatTimestamp(feed.lastPublishedAt ?? null)}</dd></div>
+                <div><dt className="inline">{t('news.sourceMissingDates')}: </dt><dd className="inline">{feed.lastUndatedItemCount ?? '—'}</dd></div>
+                <div><dt className="inline">{t('news.sourceMissingContent')}: </dt><dd className="inline">{feed.lastEmptyContentCount ?? '—'}</dd></div>
+                <div><dt className="inline">{t('news.sourceEmptyItems')}: </dt><dd className="inline">{feed.lastEmptyItemCount ?? '—'}</dd></div>
+                <div><dt className="inline">{t('news.sourceFetchDuration')}: </dt><dd className="inline">{feed.lastDurationMs == null ? '—' : `${feed.lastDurationMs} ms`}</dd></div>
               </dl>
               {feed.lastError && <p className="mt-2 break-words text-[11px] text-destructive">{feed.lastError}</p>}
             </article>
@@ -376,8 +388,8 @@ function FeedEditor({
   const baseUrl = normalizeRsshubBaseUrl(rsshubBaseUrl)
   const directUrlValid = isValidFeedUrl(url)
   const routeValid = isValidRsshubRoute(route)
-  const showDirectUrlError = !directUrlValid && (submitted || url.trim().length > 0)
-  const showRouteError = !routeValid && (submitted || route.trim().length > 0)
+  const showDirectUrlError = !directUrlValid && submitted
+  const showRouteError = !routeValid && submitted
   const canSave = Boolean(name.trim() && source.trim() && (sourceType === 'direct' ? directUrlValid : routeValid && baseUrl))
   const fieldId = (name: string) => formId + '-' + name
   const errorId = (name: string) => fieldId(name) + '-error'
@@ -385,7 +397,11 @@ function FeedEditor({
   const save = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitted(true)
-    if (!canSave) return
+    if (!canSave) {
+      const invalid = !name.trim() ? fieldId('name') : !source.trim() ? fieldId('source') : sourceType === 'direct' ? fieldId('url') : !routeValid ? fieldId('route') : 'news-rsshub-base-url'
+      requestAnimationFrame(() => document.getElementById(invalid)?.focus())
+      return
+    }
 
     const normalizedRoute = route.trim()
     const next: NewsCollectorFeed = {
@@ -418,7 +434,7 @@ function FeedEditor({
   }
 
   return (
-    <form onSubmit={save} className="space-y-3 rounded-lg border border-border/60 p-4">
+    <form aria-label={isEditing ? 'Edit source' : 'Add source'} onSubmit={save} className="space-y-3 rounded-lg border border-border/60 p-4">
       <p className="text-[13px] font-medium text-foreground">{isEditing ? 'Edit source' : 'Add source'}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Name" controlId={fieldId('name')}>
@@ -474,30 +490,29 @@ export function FeedsSection({
   presetsError,
   onRetryPresets,
   rsshubBaseUrl,
+  focusDirectory = false,
 }: {
   feeds: NewsCollectorFeed[]
   onChange: (feeds: NewsCollectorFeed[]) => void
-  presets: NewsCollectorFeed[]
+  presets: NewsCollectorPreset[]
   presetsLoading: boolean
   presetsError: string | null
   onRetryPresets: () => void
   rsshubBaseUrl: string
+  focusDirectory?: boolean
 }) {
-  const [selectedPresetIndex, setSelectedPresetIndex] = useState('')
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<{ feed: NewsCollectorFeed; index: number } | null>(null)
   const activeCount = useMemo(() => feeds.filter((feed) => feed.enabled !== false).length, [feeds])
-  const selectedPreset = selectedPresetIndex === '' ? undefined : presets[Number(selectedPresetIndex)]
-  const duplicatePreset = selectedPreset ? feeds.some((feed) => isSamePresetSource(feed, selectedPreset)) : false
 
   const setEnabled = (index: number, enabled: boolean) => {
     onChange(feeds.map((feed, feedIndex) => feedIndex === index ? { ...feed, enabled } : feed))
   }
 
-  const addPreset = () => {
-    if (!selectedPreset || duplicatePreset) return
-    onChange([...feeds, { ...selectedPreset, id: crypto.randomUUID(), enabled: true, categories: selectedPreset.categories ? [...selectedPreset.categories] : undefined }])
-    setSelectedPresetIndex('')
+  const addPreset = (preset: NewsCollectorPreset) => {
+    if (feeds.some(feed => isSamePresetSource(feed, preset))) return
+    const { regions: _regions, markets: _markets, ...subscription } = preset
+    onChange([...feeds, { ...subscription, id: crypto.randomUUID(), enabled: true, categories: preset.categories ? [...preset.categories] : undefined }])
   }
 
   return (
@@ -505,32 +520,7 @@ export function FeedsSection({
       title="RSS Feeds"
       description={feeds.length > 0 ? activeCount + ' of ' + feeds.length + ' feeds active.' : 'Add a feed to start collecting articles.'}
     >
-      <div className="mb-4 space-y-3 border-b border-border/60 pb-4">
-        <h4 className="text-[13px] font-medium">Quick-add sources</h4>
-        <p className="text-[12px] leading-5 text-muted-foreground">Choose from the server-provided English and Chinese sources, or add a custom source below.</p>
-        {presetsError && (
-          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
-            <p className="text-[12px] text-destructive">{presetsError}</p>
-            <Button type="button" variant="outline" size="sm" onClick={onRetryPresets}>Retry presets</Button>
-          </div>
-        )}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <Field label="News source preset" controlId="news-source-preset">
-            <select id="news-source-preset" className={inputClass} value={selectedPresetIndex} onChange={(event) => setSelectedPresetIndex(event.target.value)} disabled={presetsLoading || Boolean(presetsError) || presets.length === 0}>
-              <option value="">{presetsLoading ? 'Loading sources…' : 'Select a source'}</option>
-              {presets.map((preset, index) => (
-                <option key={preset.id || preset.source + ':' + preset.url + ':' + index} value={String(index)}>
-                  {(preset.rsshubRoute ? 'RSSHub · ' : 'Direct · ') + preset.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Button type="button" variant="outline" className="mb-3.5" disabled={!selectedPreset || duplicatePreset} onClick={addPreset}>
-            {duplicatePreset ? 'Already added' : 'Add preset'}
-          </Button>
-        </div>
-        {!presetsLoading && !presetsError && presets.length === 0 && <p className="text-[12px] text-muted-foreground">No source presets are available.</p>}
-      </div>
+      <NewsSourceCatalog presets={presets} feeds={feeds} loading={presetsLoading} error={presetsError} onRetry={onRetryPresets} onAdd={addPreset} focusDirectory={focusDirectory} />
 
       {feeds.length > 0 && (
         <div className="mb-4 space-y-2">
@@ -542,6 +532,7 @@ export function FeedsSection({
                   <Toggle ariaLabel={feed.name} size="sm" checked={isEnabled} onChange={(value) => setEnabled(index, value)} />
                   <div className="min-w-0 flex-1">
                     <p className="break-words text-[13px] font-medium text-foreground">{feed.name}</p>
+                    <NewsSourceCoverage preset={presets.find(preset => isSamePresetSource(feed, preset))} />
                     {feed.description && <p className="mt-0.5 break-words text-[12px] text-muted-foreground/80">{feed.description}</p>}
                     <p className="mt-0.5 break-all text-[11px] text-muted-foreground/60">{feed.rsshubRoute ? 'RSSHub route: ' + feed.rsshubRoute : feed.url}</p>
                     <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground/60">
@@ -610,12 +601,18 @@ export function FeedsSection({
 // ==================== Page ====================
 
 export function NewsCollectorPage() {
+  const location = useLocation()
+  useEffect(() => {
+    const previous = document.title
+    document.title = 'News Collector · OpenAlice'
+    return () => { document.title = previous }
+  }, [])
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <PageHeader title="News Collector" />
 
       <SettingsScrollArea className="px-4 py-5 md:px-8">
-        <CollectorSettings />
+        <CollectorSettings focusDirectory={location.state?.newsSourceDirectory === true || location.hash === '#news-source-directory'} />
       </SettingsScrollArea>
     </div>
   )

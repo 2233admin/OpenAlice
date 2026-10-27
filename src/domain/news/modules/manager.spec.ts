@@ -30,6 +30,33 @@ afterEach(async () => {
 })
 
 describe('news module manager with real child processes', () => {
+  it('removes bound credentials when an unselected v2 artifact is uninstalled', async () => {
+    const value = { ...artifact(), manifest: { ...artifact().manifest, abiVersion: 2 as const, credentials: [{ key: 'apiKey', label: 'Provider key' }] } }
+    const installed = await manager.importArtifact(value)
+    await manager.approve(installed.contentHash)
+    await manager.setCredential(installed.contentHash, 'apiKey', 'test-only-private')
+    await manager.uninstall(installed.contentHash)
+    await manager.importArtifact(value)
+    await manager.approve(installed.contentHash)
+    expect(await manager.credentialStatus(installed.contentHash)).toMatchObject([{ configured: false }])
+  })
+  it('keeps v2 credentials bound to approval and persists only acknowledged checkpoints', async () => {
+    const value: NewsModuleArtifact = {
+      manifest: { ...artifact().manifest, abiVersion: 2, credentials: [{ key: 'apiKey', label: 'Provider key' }] },
+      files: { 'entry.mjs': 'export const newsModule = { abiVersion: 2, moduleId: "test.news", version: "1", async collect(input, context) { if (!context.credentials.apiKey) throw new Error("Missing key"); return { items: [' + JSON.stringify(item) + '], checkpoint: { count: (input.checkpoint?.count ?? 0) + 1 } } } }' },
+    }
+    const installed = await manager.importArtifact(value)
+    await expect(manager.setCredential(installed.contentHash, 'apiKey', 'test-private')).rejects.toThrow()
+    await manager.approve(installed.contentHash)
+    await manager.setCredential(installed.contentHash, 'apiKey', 'test-private')
+    expect(JSON.stringify(await manager.credentialStatus(installed.contentHash))).not.toContain('test-private')
+    await manager.configure([{ moduleId: row.moduleId, contentHash: installed.contentHash, enabled: true }], [row])
+    expect(await manager.collect(row)).toMatchObject({ checkpoint: { count: 1 } })
+    expect(await manager.collect(row)).toMatchObject({ checkpoint: { count: 1 } })
+    await manager.commitCheckpoint(row, { count: 1 })
+    expect(await manager.collect(row)).toMatchObject({ checkpoint: { count: 2 } })
+    await expect(manager.setCredential(installed.contentHash, 'unknown', 'test-private')).rejects.toThrow()
+  }, 35_000)
   it('never imports code for install/list/unapproved enable, then collects only after exact approval', async () => {
     const marker = join(home, 'imported.txt')
     const installed = await manager.importArtifact(artifact(

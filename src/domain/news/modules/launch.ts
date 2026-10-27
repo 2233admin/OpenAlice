@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 
-/** The worker entry is separate from Alice, UTA, and every credential-owning process. */
+/** Launch only the worker entry, without importing Alice or UTA. */
 export function createNewsWorkerLaunch(): { command: string; args: string[] } {
   if ((globalThis as { __OPENALICE_BUN_STANDALONE__?: boolean }).__OPENALICE_BUN_STANDALONE__ === true) {
     return { command: process.execPath, args: ['--internal-role', 'news-worker'] }

@@ -19,17 +19,28 @@ afterEach(async () => {
   try { for (const host of hosts) await host.stop() }
   finally { await rm(home, { recursive: true, force: true }) }
 })
-async function start(code: string): Promise<NewsWorkerHost> {
+async function start(code: string, abiVersion: 1 | 2 = 1): Promise<NewsWorkerHost> {
   const entry = join(home, 'entry.mjs')
   await writeFile(entry, code)
   const host = new NewsWorkerHost(home, hash, launch)
   hosts.push(host)
-  await host.start(entry, 'test.news', '1')
+  await host.start(entry, 'test.news', '1', abiVersion)
   return host
 }
 const moduleCode = (body: string) => 'export const newsModule = { abiVersion: 1, moduleId: "test.news", version: "1", async collect(input) { ' + body + ' } }'
 
 describe('real news module worker process', () => {
+  it('treats a malformed v2 result as a module contract failure', async () => {
+    const host = await start('export const newsModule = { abiVersion: 2, moduleId: "test.news", version: "1", async collect() { return { items: [{ url: "file:///secret" }], checkpoint: null } } }', 2)
+    await expect(host.collect(row, { checkpoint: null, credentials: {} })).rejects.toThrow()
+    expect(host.isLoaded()).toBe(false)
+  }, 30_000)
+  it('exchanges v2 checkpoints, credentials and rich materials without disabling the worker for a request error', async () => {
+    const host = await start('export const newsModule = { abiVersion: 2, moduleId: "test.news", version: "1", async collect(input, context) { if (!context.credentials.apiKey) throw new Error("do not leak a provider credential"); return { items: [{ ...' + JSON.stringify(item) + ', publisher: "Original publisher", author: context.credentials.apiKey }], checkpoint: input.checkpoint }; } }', 2)
+    await expect(host.collect(row, { checkpoint: null, credentials: {} })).rejects.toThrow()
+    expect(host.isLoaded()).toBe(true)
+    expect(await host.collect(row, { checkpoint: { sinceId: '123' }, credentials: { apiKey: 'test-only' } })).toMatchObject({ items: [{ publisher: 'Original publisher', author: 'test-only' }], checkpoint: { sinceId: '123' } })
+  }, 30_000)
   it('loads an actual .mjs and exchanges a typed collection batch with the child', async () => {
     const host = await start(moduleCode('return [{ ...' + JSON.stringify(item) + ', title: input.sourceKey }]'))
     expect(host.isLoaded()).toBe(true)
